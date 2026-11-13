@@ -9,7 +9,7 @@ A version that can be cloned and run locally on macOS, taking a task through int
 The CLI loop is implemented and documented in the [README](../README.md).
 
 - **Verified with real models**, against a throwaway local repository: intake → Haiku classification → Sonnet coding in a worktree → verification → Sonnet review → approval gate → `revise` with a human note → re-review → `approve` bound to the head commit → `open-pr` pushed the branch to the remote. Two tasks took about 20 seconds and $0.30 each.
-- **Not yet verified live:** `gh pr create` against a real GitHub repository. The local test remote wasn't GitHub, so `gh` refused cleanly and the task correctly stayed `approved`. The PR call itself is covered only by the end-to-end test with a fake GitHub.
+- **Verified on GitHub** (2026-11-13), using this repository as the target: a task to add a pnpm check to `factory doctor` went through classify, code, verify (`pnpm run check`), review, `revise` with the reviewer's two minor findings, re-review, owner approval of the reviewed commit, and `open-pr --draft`. The result is [draft PR #1](https://github.com/chepetime/factory-elections/pull/1); its head matches the approved commit. It took about 3 minutes and $1.33 in five model attempts.
 - **Verified from a fresh clone** (Node 26.13.1, pnpm 12.18.0): `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (21 tests pass). The test suite makes no model, GitHub or network calls.
 - **Not built:** the web app in `frontend.plain`, and every feature marked as planned in the [feature inventory](feature-inventory.md).
 
@@ -21,10 +21,9 @@ If turri returns, don't render over the hand-written tree blindly; reconcile the
 
 ## Suggested next steps
 
-1. Run one task against a real GitHub repository to confirm `open-pr` end to end.
-2. Worktree cleanup command (`factory task cleanup`) for finished or rejected tasks.
-3. Tighter shell sandboxing for the coder (the Agent SDK's `sandbox` option).
-4. The web app from `frontend.plain`: read-only project, task and gate views first, over the CLI's JSON output.
-5. Phase 2 of the plan: PR tending, research route, slicer.
+1. Worktree cleanup command (`factory task cleanup`) for finished or rejected tasks.
+2. Tighter shell sandboxing for the coder (the Agent SDK's `sandbox` option).
+3. The web app from `frontend.plain`: read-only project, task and gate views first, over the CLI's JSON output.
+4. Phase 2 of the plan: PR tending, research route, slicer.
 
 Do not put credentials, task data or machine-specific paths into the repository.
