@@ -1,6 +1,6 @@
 # factory-elections
 
-My own software factory, tailored to my needs. It starts from the ideas in the sibling repo [`devin-factory`](/Users/jlugo/Projects/personal/devin-factory) and keeps only the parts I want.
+My own software factory, tailored to my needs. It starts from the ideas in the sibling repo `devin-factory` and keeps only the parts I want.
 
 ## Plan
 
@@ -206,6 +206,10 @@ Recommended defaults. Change any of them.
   4. Dispatcher queue, LaunchAgents, QA step.
   5. Telemetry store, weekly view, retro, evals.
 
+## Continue on another computer
+
+See [the project handoff](docs/HANDOFF.md) for the current scope, known build issue, and next steps. A clone contains the ***plain and project configuration, but not generated code, local regeneration records, or this chat.
+
 ## Local agent setup
 
 After cloning on macOS or Linux, run `node scripts/setup-agent-env.mjs` from the project root before regenerating. Node 26 or later and pnpm must already be installed. The script writes ignored `.turri/agent.env` with this checkout's writable pnpm lock directory and direct Node and pnpm paths; it does not alter machine settings. Re-run it if the checkout moves or the tools change.
@@ -213,4 +217,4 @@ After cloning on macOS or Linux, run `node scripts/setup-agent-env.mjs` from the
 ## Next steps
 
 - [ ] Confirm or change the Decision column and Tailoring.
-- [ ] Give [docs/migration-prompt.md](/Users/jlugo/Projects/personal/factory-elections/docs/migration-prompt.md) to the LLM that builds phase 1.
+- [ ] Give [docs/migration-prompt.md](docs/migration-prompt.md) to the LLM that builds phase 1.
