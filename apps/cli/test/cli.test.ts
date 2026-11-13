@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pnpmCheck } from '../src/doctor.ts';
 
 const BIN = resolve(import.meta.dirname, '..', '..', '..', 'bin', 'factory');
 const DEFS = resolve(import.meta.dirname, '..', '..', '..', 'definitions');
@@ -119,6 +120,15 @@ test('verdict check and record-verdict', async () => {
   assert.deepEqual(JSON.parse(factory(root, 'task', 'readiness', '--project', 'demo', '--id', id).stdout), {
     action: 'continue',
   });
+});
+
+test('doctor pnpm check reports the version or an install hint', async () => {
+  const found = await pnpmCheck(async () => ({ code: 0, stdout: '12.18.0\n' }));
+  assert.equal(found.ok, true);
+  assert.equal(found.detail, '12.18.0');
+  const missing = await pnpmCheck(async () => ({ code: 127, stdout: '' }));
+  assert.equal(missing.ok, false);
+  assert.match(missing.fix ?? '', /brew install pnpm/);
 });
 
 test('serve reports health on 127.0.0.1', async () => {

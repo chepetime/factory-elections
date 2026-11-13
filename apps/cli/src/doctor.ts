@@ -2,11 +2,24 @@
 import { run } from '@factory/adapters-process';
 import { isReadableDirectory } from '@factory/adapters-fs';
 
-interface Check {
+export interface Check {
   name: string;
   ok: boolean;
   detail: string;
   fix?: string;
+}
+
+type Runner = (command: string, args: readonly string[]) => Promise<{ code: number | null; stdout: string }>;
+
+export async function pnpmCheck(runner: Runner = run): Promise<Check> {
+  const pnpm = await runner('pnpm', ['--version']);
+  const ok = pnpm.code === 0;
+  return {
+    name: 'pnpm',
+    ok,
+    detail: ok ? pnpm.stdout.trim() : 'not found',
+    fix: 'Install pnpm: `brew install pnpm` (or `corepack enable`).',
+  };
 }
 
 export async function doctor(root: string): Promise<boolean> {
@@ -26,6 +39,8 @@ export async function doctor(root: string): Promise<boolean> {
     detail: gitVersion.stdout.trim() || 'not found',
     fix: 'Install git: `xcode-select --install`.',
   });
+
+  checks.push(await pnpmCheck());
 
   const gh = await run('gh', ['auth', 'status']);
   checks.push({
