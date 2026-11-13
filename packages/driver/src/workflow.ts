@@ -60,6 +60,10 @@ export class Driver {
   }
 
   async runClassifierRequest(raw: unknown): Promise<ClassifierVerdict> {
+    return (await this.runClassifier(raw)).verdict;
+  }
+
+  private async runClassifier(raw: unknown): Promise<{ verdict: ClassifierVerdict; costUsd: number | null }> {
     const parsed = ClassifierRequest.safeParse(raw);
     if (!parsed.success) throw new DriverError(`invalid classifier request: ${describeIssues(parsed.error)}`);
     const request = parsed.data;
@@ -87,7 +91,7 @@ export class Driver {
       throw new DriverError(`classifier returned an invalid verdict: ${describeIssues(verdict.error)}`);
     if (verdict.data.intake_id !== request.task.id)
       throw new DriverError('classifier verdict intake_id does not match the task');
-    return verdict.data;
+    return { verdict: verdict.data, costUsd: result.costUsd };
   }
 
   async recordVerdict(project: string, id: string, raw: unknown): Promise<TaskRecord> {
@@ -109,8 +113,22 @@ export class Driver {
   async classify(project: string, id: string, paths?: StepPaths): Promise<TaskRecord> {
     const request = await this.prepareClassifierRequest(project, id, paths);
     this.deps.log(`Classifying with ${request.model} (${request.effort})…`);
-    const verdict = await this.runClassifierRequest(request);
-    return this.recordVerdict(project, id, verdict);
+    const started = this.deps.now();
+    const { verdict, costUsd } = await this.runClassifier(request);
+    const recorded = await this.recordVerdict(project, id, verdict);
+    const attempt: StepAttempt = {
+      step: 'classifier',
+      rung: 'first',
+      model: request.model,
+      effort: request.effort,
+      started_at: started,
+      finished_at: this.deps.now(),
+      outcome: 'completed',
+      cost_usd: costUsd,
+    };
+    const updated = { ...recorded, attempts: [...(recorded.attempts ?? []), attempt] };
+    await this.deps.tasks.write(updated);
+    return updated;
   }
 
   async readiness(project: string, id: string) {
@@ -194,6 +212,13 @@ export class Driver {
         output += `\n[${label} exited with status ${result.code}]\n`;
         return { passed: false, output, headSha: await this.deps.git.headSha(path) };
       }
+    }
+    // Verification must not change the reviewed change: generated files that are not ignored
+    // would otherwise be missing from the commit, or block opening the pull request.
+    const dirty = await this.deps.git.dirtyFiles(path);
+    if (dirty.length) {
+      output += `\n[verification left uncommitted changes: ${dirty.join(', ')}. Commit them or add them to .gitignore.]\n`;
+      return { passed: false, output, headSha: await this.deps.git.headSha(path) };
     }
     return { passed: true, output, headSha: await this.deps.git.headSha(path) };
   }

@@ -34,6 +34,14 @@ export async function isClean(dir: string): Promise<boolean> {
   return (await git(dir, ['status', '--porcelain'])).trim() === '';
 }
 
+/** Paths with uncommitted or untracked (not ignored) changes. */
+export async function dirtyFiles(dir: string): Promise<string[]> {
+  return (await git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']))
+    .split('\0')
+    .filter((entry) => entry.length > 3)
+    .map((entry) => entry.slice(3));
+}
+
 export async function branchExists(repo: string, branch: string): Promise<boolean> {
   return gitOk(repo, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
 }

@@ -153,7 +153,10 @@ test('task goes from intake to an opened pull request only after approval', asyn
     gate.headSha,
   );
   const stored = await store.read('demo', task.id);
-  assert.equal(stored.attempts?.length, 2);
+  assert.deepEqual(
+    stored.attempts?.map((a) => a.step),
+    ['classifier', 'coder', 'reviewer'],
+  );
   await assert.rejects(driver.openPr('demo', task.id), /already open/);
 });
 
@@ -268,4 +271,16 @@ test('blocking review findings need explicit acceptance', async () => {
     acceptBlocking: true,
   });
   assert.equal(approved.stage, 'approved');
+});
+
+test('verification that leaves uncommitted files fails', async () => {
+  const { driver, task, store } = await setup(
+    { classifier: [ready], coder: [writeFeature] },
+    'test -f feature.txt && touch artifact.out',
+  );
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'verification-failed');
+  assert.match(stored.verification!.output_tail, /artifact\.out/);
+  assert.equal(stored.attempts?.[0]?.step, 'classifier');
 });

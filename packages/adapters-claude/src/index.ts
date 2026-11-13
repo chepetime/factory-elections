@@ -29,7 +29,7 @@ export class ClaudeAgentRunner implements ModelRunner {
       model: request.model,
       effort: request.effort,
       tools,
-      allowedTools: request.tools === 'edit' ? [] : tools,
+      // No allowedTools: pre-approved tools would bypass canUseTool and the step's guard.
       // Do not load the user's or the target repository's Claude settings, hooks or plugins.
       settingSources: [],
       persistSession: false,
@@ -58,7 +58,8 @@ export class ClaudeAgentRunner implements ModelRunner {
         if (message.type === 'result') result = message;
         else if (message.type === 'assistant' && this.options.onProgress) {
           for (const block of message.message.content) {
-            if (block.type === 'tool_use') this.options.onProgress(describeToolUse(block.name, block.input));
+            if (block.type === 'tool_use' && block.name !== 'StructuredOutput')
+              this.options.onProgress(describeToolUse(block.name, block.input));
           }
         }
       }

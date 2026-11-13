@@ -71,7 +71,7 @@ test('profile init drafts an unapproved profile that check rejects until approve
   assert.equal(init.code, 0, init.stderr);
   const path = init.stdout.trim();
   const draft = await readFile(path, 'utf8');
-  assert.match(draft, /npm run test/);
+  assert.match(draft, /npm install --no-package-lock && npm run test/);
   assert.notEqual(factory(root, 'profile', 'check', '--project', 'demo').code, 0);
   await writeFile(path, draft.replace('approved_at: ""', 'approved_at: "2026-11-13"'));
   assert.equal(factory(root, 'profile', 'check', '--project', 'demo').stdout, 'Profile valid: demo\n');

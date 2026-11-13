@@ -37,6 +37,19 @@ async function packageScripts(
   }
 }
 
+/** An install that never rewrites the lockfile, so verification leaves the worktree unchanged. */
+async function installCommand(repo: string, manager: string): Promise<string> {
+  const exists = async (f: string) =>
+    readFile(join(repo, f)).then(
+      () => true,
+      () => false,
+    );
+  if (manager === 'pnpm') return 'pnpm install --frozen-lockfile';
+  if (manager === 'yarn') return 'yarn install --immutable';
+  if (manager === 'bun') return 'bun install --frozen-lockfile';
+  return (await exists('package-lock.json')) ? 'npm ci' : 'npm install --no-package-lock';
+}
+
 export async function draftProfile(project: string, repo: string): Promise<string> {
   const pkg = await packageScripts(repo);
   const runScript = (name: string) => (pkg ? `${pkg.manager} run ${name}` : undefined);
@@ -46,7 +59,7 @@ export async function draftProfile(project: string, repo: string): Promise<strin
         .map((s) => (pkg.scripts[s] ? runScript(s) : undefined))
         .find(Boolean) ?? test)
     : test;
-  const install = pkg ? `${pkg.manager} install` : undefined;
+  const install = pkg ? await installCommand(repo, pkg.manager) : undefined;
   const profile = {
     project,
     approved_at: '',
