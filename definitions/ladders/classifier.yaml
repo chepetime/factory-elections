@@ -1,0 +1,5 @@
+name: classifier
+rungs:
+  - name: haiku-low
+    model: claude-haiku-5-5
+    effort: low

@@ -1,0 +1,18 @@
+{
+  "name": "@factory/cli",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-claude": "workspace:*",
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/adapters-git": "workspace:*",
+    "@factory/adapters-github": "workspace:*",
+    "@factory/adapters-process": "workspace:*",
+    "@factory/core": "workspace:*",
+    "@factory/driver": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

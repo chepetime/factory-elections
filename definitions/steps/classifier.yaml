@@ -1,0 +1,5 @@
+name: classifier
+prompt: ../prompts/classifier.md
+model: classifier
+inputs: [task]
+outputs: [verdict]

@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// Entry point for `factory`; runs the TypeScript CLI directly with Node's type stripping.
+import { main } from '../apps/cli/src/main.ts';
+
+process.exitCode = await main(process.argv.slice(2));

@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+plain_modules
+dist
+.turri
+apps/web/.next
+*.md
+*.plain

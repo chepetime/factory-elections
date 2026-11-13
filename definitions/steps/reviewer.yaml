@@ -1,0 +1,5 @@
+name: reviewer
+prompt: ../prompts/reviewer.md
+model: reviewer
+inputs: [task, diff]
+outputs: [review]

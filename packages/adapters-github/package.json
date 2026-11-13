@@ -1,0 +1,11 @@
+{
+  "name": "@factory/adapters-github",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-process": "workspace:*"
+  }
+}

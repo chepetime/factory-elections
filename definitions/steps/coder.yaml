@@ -1,0 +1,5 @@
+name: coder
+prompt: ../prompts/coder.md
+model: coder
+inputs: [task, profile, revision_notes, verification_output]
+outputs: [commit]

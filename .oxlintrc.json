@@ -1,0 +1,28 @@
+{
+  "ignorePatterns": ["plain_modules/**", "dist/**", "apps/web/.next/**"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["node:*", "@anthropic-ai/*", "@factory/adapters-*", "@factory/driver"],
+            "message": "packages/core must stay pure"
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/adapters-*/**",
+        "packages/driver/**",
+        "apps/**",
+        "packages/*/test/**",
+        "scripts/**"
+      ],
+      "rules": { "no-restricted-imports": "off" }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@factory/driver",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/adapters-git": "workspace:*",
+    "@factory/adapters-process": "workspace:*"
+  }
+}

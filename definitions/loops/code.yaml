@@ -1,0 +1,12 @@
+# The loop `factory task run` follows. The validator rejects code loops without these gates.
+name: code
+produces_code: true
+entries:
+  - { kind: step, name: classifier }
+  - { kind: gate, name: readiness }
+  - { kind: step, name: coder }
+  - { kind: gate, name: verify }
+  - { kind: step, name: reviewer }
+  - { kind: gate, name: human-review }
+  - { kind: gate, name: decisions-clear }
+  - { kind: gate, name: open-pr }

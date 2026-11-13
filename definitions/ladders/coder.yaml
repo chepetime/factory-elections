@@ -1,0 +1,16 @@
+# The driver starts at the first rung and climbs one rung after each failed verification.
+name: coder
+rungs:
+  - name: sonnet-medium
+    model: claude-sonnet-5-5
+    effort: medium
+  - name: sonnet-high
+    model: claude-sonnet-5-5
+    effort: high
+  - name: opus-high
+    model: claude-opus-5-5
+    effort: high
+  - name: fable-high
+    model: claude-fable-5-2
+    effort: high
+    requires_human_approval: true

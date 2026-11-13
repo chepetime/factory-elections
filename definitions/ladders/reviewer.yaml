@@ -1,0 +1,5 @@
+name: reviewer
+rungs:
+  - name: sonnet-high
+    model: claude-sonnet-5-5
+    effort: high
