@@ -1,220 +1,202 @@
 # factory-elections
 
-My own software factory, tailored to my needs. It starts from the ideas in the sibling repo `devin-factory` and keeps only the parts I want.
+A personal software factory that runs on your Mac. You give it a task for a git repository. It classifies the task, writes the change in an isolated git worktree, runs the repository's checks, and has a second model review the diff. Then it **stops and waits for you**. Nothing is pushed and no pull request is opened until you approve the exact commit you reviewed.
 
-## Plan
+```
+intake → classify → worktree → code → verify ─┬→ review → YOUR APPROVAL → push + pull request
+                       │                  ↑    │
+                       └ unclear: stops   └────┘ verification failed: retry on a stronger model
+```
 
-1. Use `devin-factory` as the reference. Do not fork it as-is.
-2. Describe what `devin-factory` does (below).
-3. Make a feature inventory of `devin-factory` (below). Mark each feature **Keep**, **Change** or **Drop**.
-4. Build the "Keep" and "Change" features here, smallest useful loop first.
+It is a command-line tool (`factory`). It descends from the ideas in the sibling `devin-factory` repository; see [the feature inventory](docs/feature-inventory.md) for the long-term plan.
 
-## What devin-factory does
+## Requirements
 
-`devin-factory` is a personal software factory. It takes a plain-language prompt and a target repo, and it gives back a reviewed pull request. A Node **driver** runs a fixed set of model **steps** on the Claude Agent SDK (and Codex for some coder rungs). The steps classify, build, review and ship the change. The human stays in control: nothing becomes a PR until the human looks at the diff and says yes.
+- macOS (tested on macOS 27; Linux should work but is untested)
+- Node.js 26 or later, and pnpm 10 or later (the repository pins pnpm 11.28.9 in `packageManager`)
+- git
+- GitHub CLI (`gh`), signed in to an account that can push to your repositories and open pull requests
+- Access to Claude models: either a signed-in Claude Code installation (`claude`), or an `ANTHROPIC_API_KEY`
 
-A task moves through these stages:
+Model calls are billed to whichever Claude account or API key is active. A small task costs roughly $0.10–$0.50 with the default ladders.
 
-1. **Intake.** A prompt becomes a task. Sources: the app's New task form, `bin/factory-run`, or the mirror hook in interactive Claude Code sessions. Each task gets a directory and a `task.json` in the data root (`~/.local/share/factory/`).
-2. **Queue.** The dispatcher service starts queued tasks during opening hours (weekdays, 09:00–17:00). It pauses them at closing time. Overtime, Stop and Halt change this.
-3. **Classify.** The classifier states facts: size (LOE), readiness, kind, shape and risk signals. The driver maps those facts to a route and a starting model rung with `config/policy.json`. The classifier never picks the route.
-4. **Clarify (gate 1).** If the task is not clear, it stops and asks the human before any code.
-5. **Build.** The coder writes code and tests in a dedicated worktree and branch. The driver runs the repo's checks and commits. The reviewer reads the diff against the brief. Failures climb a model ladder. A task too big for one PR goes to the slicer. The human approves the slices (gate 2).
-6. **Review gate.** The app shows the diff, the reviewer's findings and open decisions. The human answers, asks for changes, or opens the PR.
-7. **PR and tending.** The author step writes the PR body. The driver pushes and opens the PR. The tender step then watches the PR and fixes review threads, failing CI and merge conflicts.
+## Install
 
-Research tasks take a short path: the researcher answers and writes a research file, with no branch.
+```sh
+# Prerequisites, if you don't have them (pick your own Node manager if you prefer)
+brew install node pnpm gh git
+gh auth login
+claude            # sign in once, or: export ANTHROPIC_API_KEY=...
 
-Around this core loop, the factory records every run, cost and decision. It reviews its own runs (retro, row review, grading) and proposes changes to its own policy.
+# The factory
+git clone <this repository> factory-elections
+cd factory-elections
+pnpm install
+./bin/factory doctor
+```
 
-## Feature inventory
+`doctor` checks Node, git, the GitHub CLI sign-in, Claude access and the data directory, and tells you how to fix anything that fails.
 
-Source: `devin-factory` at commit `38f7e12b` (2026-11-13), about 160 ADRs. The latest ADRs (0162–0164) retire the Work Hub, make the task the one record, and move loops and agents to YAML definitions. Those changes are in progress there.
+To run `factory` from anywhere, link it onto your `PATH`:
 
-Decision column: **K** = keep, **C** = change, **D** = drop, **?** = undecided. The values are recommendations, open for change. Phases are in [Tailoring](#tailoring).
+```sh
+mkdir -p ~/.local/bin
+ln -sf "$PWD/bin/factory" ~/.local/bin/factory   # make sure ~/.local/bin is on PATH
+```
 
-### 1. Intake and task records
+There is no build step. Node runs the TypeScript sources directly. After `git pull`, run `pnpm install` again.
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Task directory + `task.json` | One directory per task, with stage, answers, timeline | data root `<project>/tasks/<intake-id>/` | K |
-| `factory-run` CLI | Start a task from the shell | `bin/factory-run` | K |
-| New task form | Start a task from the app | `app/` | K (phase 3) |
-| Mirror hook | Records plain-prompt tasks from interactive Claude Code sessions (SessionStart hook) | `hooks/hooks.json`, `bin/factory-mirror-hook` | D (hub retired) |
-| Side entrance | Other queue sources, for example a mobile session that leaves a prompt | ADR 0022 | D (later) |
-| Intake brief | Normalized brief for the classifier, whatever the source | `lib/` | K |
-| Intent step + why-probe | Checks intent. Asks "why" when the brief does not say | `steps/intent.md` | K |
-| Task export | Export a task's record | `bin/factory-task-export` | D (later) |
-| Start over / rerun with instructions | Restart a task fresh, or rerun it with a note that wins over the brief | app, Send | K |
+## Configure a repository
 
-### 2. Classification and routing
+The factory works on **registered projects**. Each project has a **profile** that you approve. The profile holds the commands that verify a change and the paths and commands the coder must never touch.
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Classifier step | States size, readiness, kind, shape, signals. Never picks route | `steps/classifier.md` | K |
-| Policy table | Maps facts to route and starting model rung | `config/policy.json` | C: YAML, split by reader (ADR 0164) |
-| Bump signals | `root_cause_unknown`, `shared_surface`, `new_pattern`, `data_or_migration` raise the starting rung | `policy.json#bump` | K |
-| Gate 1 (clarification) | Stops unclear tasks before any code | ADR 0003 | K |
-| PR budget + tripwire | Coder stops with `needs-slicing` when the diff passes the line budget | `bin/factory-diff-budget`, ADR 0006 | K |
+```sh
+factory project add --name myapp --repo /Users/me/code/myapp
+factory profile init --project myapp      # prints the path of a drafted profile.yaml
+```
 
-### 3. Build loop (steps and driver)
+Open the drafted file (by default `~/.local/share/factory/myapp/profile.yaml`), check every value, then set `approved_at`:
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Driver state machine | Counts failures, runs checks, commits, writes task file, enforces gates | `lib/driver*.mjs` | C: pure core + adapters, loops as data |
-| `runStep` | Runs one step via the Agent SDK, with permissions from the repo profile | `lib/run-step.mjs` | C: behind a model-runner interface |
-| Coder | Writes code and tests in the task's worktree | `steps/coder.md` | K |
-| Reviewer | Reads the diff against the brief, returns findings | `steps/reviewer.md` | K |
-| Model ladder | On failure, climb rungs: Codex (sol) → Sonnet medium → Sonnet high → Opus medium → Opus high | `policy.json#coder_codex` | C: Claude only (Sonnet med → Sonnet high → Opus med → Opus high) |
-| Codex rounds | Delegate a coder round to Codex, guarded by a before/after snapshot | `bin/factory-codex-round`, `bin/factory-round-check` | D (add later as an adapter) |
-| Break-glass (Fable) | One-task human yes to run Fable, only after Opus fails or at the critic offer | ADR 0008 | C: top ladder rung, needs human yes |
-| Full check | Runs the repo's full test suite, one at a time across the factory | `policy.json#full_check` | K |
-| Stall watchdog | Aborts a step with no progress, records `stalled`, does not count as failure | `policy.json#stall` | K |
-| Worktree per task | Own branch and worktree per task | `bin/factory-worktree-new` | K |
+```yaml
+project: myapp
+approved_at: '2026-11-13' # the factory refuses to work until this is set
+repo:
+  base_branch:
+    value: main # PRs target this branch; worktrees start from it
+    source: origin/HEAD
+commands:
+  test: pnpm install --frozen-lockfile && pnpm run test # runs first, in the task worktree
+  full_check: pnpm run lint # runs second
+confirmed:
+  forbidden_paths: [.env, .github/workflows/, infra/] # exact path, "dir/" prefix, or * glob
+  forbidden_commands: [terraform apply, npm publish] # substrings the coder may not run
+design_sources: []
+qa_targets: []
+```
 
-### 4. Large work: efforts, slicing, planning
+```sh
+factory profile check --project myapp     # "Profile valid: myapp"
+```
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Slicer | Splits a big task into PR-sized slices | `steps/slicer.md` | K (phase 2) |
-| Gate 2 | Human approves the slicer's proposal | ADR 0018 | K (phase 2) |
-| Critic + critic gate | Critiques big or risky slice plans (≥4 slices, deep chains, migrations) | `steps/critic.md`, `lib/critic-gate.mjs` | C: phase 2, simpler trigger rules |
-| Deploy guard / waits-for | Holds a consumer slice until the human confirms its producer is live | ADR 0018 | K (phase 2, Elections has several deploy units) |
-| Wayfinder | Plans an effort: charts a map, grills the human one ticket at a time, writes a spec | `steps/wayfinder.md`, ADR 0091 | D (later) |
-| Efforts and maps | Planning record with decisions and open questions | app effort page | D (later) |
+Both commands run with `/bin/sh -c` in a fresh worktree, so `test` must install dependencies first. Verification fails if the commands leave uncommitted, non-ignored files, so use lockfile-respecting installs.
 
-### 5. QA
+The repository needs a GitHub `origin` remote, and the local base branch must exist. The working tree must be clean when a task starts: the factory never touches your checkout, but it creates the task branch from it.
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| QA step | Drives the app (Playwright MCP) to test the change | `steps/qa.md` | C: phase 4, drive Elections apps via chrome-devtools MCP |
-| QA gate | Decides run/skip (skips docs-, config- and test-only diffs), logs every skip | ADR 0027 | K (phase 4) |
-| Monkey loop | Bounded exploratory clicking inside a QA target | `policy.json#qa.monkey` | D |
-| QA targets | Per-repo targets that QA may touch | repo profile | K (phase 4) |
+### Where data lives
 
-### 6. Review gate and PR
+| What                         | Where                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| Data root                    | `$FACTORY_ROOT`, default `~/.local/share/factory`                           |
+| Project record               | `<root>/<project>/project.json`                                             |
+| Profile                      | `<root>/<project>/profile.yaml`                                             |
+| Task record (the one source) | `<root>/<project>/tasks/<id>/task.json`                                     |
+| Task worktree                | `<root>/<project>/worktrees/<id>` on branch `factory/<id>`                  |
+| Models, prompts, loop        | `definitions/` in this repository (edit the YAML and prompts to tune steps) |
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Review gate | Human reviews diff, findings, decisions in the app | `app/src/app/tasks/[id]/review` | K |
-| Author step | Writes the PR body | `steps/author.md` | K |
-| Open PR | Pushes branch, opens PR. Merges a moved base first and returns to the gate | ADR 0156 | K |
-| Screenshots | Attach human-submitted screenshots; steps can see them | `bin/factory-github-attach`, ADR 0160 | C: QA screenshots only, phase 4 |
-| Tender | Tends open PRs: review threads, failing CI, conflicts. Fixes go through coder | `steps/tender.md`, `bin/factory-tender` | K (phase 2) |
-| PR sweep | Dispatcher queues tender runs for PRs that need attention | ADR 0121 | K (phase 2) |
-| Merged-PR resolver | Detects merged PRs and closes tasks | dispatcher | K (phase 2) |
+## Run a task
 
-### 7. Research
+```sh
+ID=$(factory intake --project myapp "Add a --verbose flag to the export command, with a test.")
+factory task run --project myapp --id "$ID"
+```
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Researcher step | Answers a question, writes a research file. No branch | `steps/researcher.md` | K (phase 2) |
-| Research pass for unknown size | Tasks of unknown LOE get research first | `policy.json#coder_starting_rung.unknown` | K (phase 2) |
-| Second pass on blockers | An open research blocker gets a second pass before it goes to the human | ADR 0161 | K (phase 2) |
+`task run` does every automated step and prints the approval gate:
 
-### 8. Scheduling and control
+```
+Task 71d452ef-… — stage: awaiting-approval
+Branch factory/71d452ef-… → main, head 7f4fed4364a3
+ src/export.ts      | 12 ++++++++++--
+ src/export.test.ts | 18 ++++++++++++++++++
+Verification: passed at 7f4fed4364a3
+Review (7f4fed4364a3): approve — Adds the flag and a test …
+  [nit] src/export.ts: …
+Model attempts: 3, estimated cost: $0.27
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Dispatcher | Long-running scheduler: global concurrency 2, one task per repo | `lib/dispatcher*.mjs`, `bin/factory-dispatcher` | C: phase 4, simple queue, concurrency in config |
-| Opening hours | Works weekdays 09:00–17:00 only, pauses at closing, grace window | `policy.json#dispatcher` | D (run on demand) |
-| Overtime | Keeps the factory open outside opening hours | `bin/factory-mode` | D |
-| Stop | Graceful: sessions pause at the next safe point | `bin/factory-stop` | K |
-| Halt | Hard abort of all sessions | `bin/factory-halt` | K |
-| Stop task / steering | Per-task stop, and unprompted human direction shown on the timeline | app, Send | K |
-| Self-update | Pull main and reload services without losing work | `pnpm factory:update` | D (later) |
-| LaunchAgents | Dispatcher and app run as macOS user services | `config/*.plist`, `scripts/install-services` | C: phase 4, with the dispatcher |
+Next, after reading `factory task diff`:
+  approve:  factory task approve --project myapp --id 71d452ef-… --head 7f4fed4364a3
+  revise:   factory task revise --project myapp --id 71d452ef-… --note "<what to change>"
+  reject:   factory task reject --project myapp --id 71d452ef-… --note "<why>"
+```
 
-### 9. Factory app (Next.js, localhost:4317)
+Read the change with `factory task diff …`, or open the worktree in your editor. Then choose one:
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Inbox | Decisions waiting on the human, one card at a time | `app/src/app/inbox` | K (phase 3) |
-| Pipeline / task table | All tasks and stages in one table | `app/src/app/page.tsx` | K (phase 3) |
-| Task page + timeline | Task detail, events, step activity, hub ticket | `app/src/app/tasks/[id]` | K (phase 3) |
-| Projects and efforts | Per-project views, effort pages, ticket triage | `app/src/app/projects` | C: projects only (phase 3) |
-| Weekly view | Cost and outcomes per week. Codex cost shown as an estimate | `app/src/app/weekly` | C: cost and outcomes only (phase 5) |
-| Settings | Gateways (plan, OpenRouter, custom), profile edit, other settings | `app/src/app/settings` | C: fewer options (phase 3) |
-| Ask panel | Ask read-only questions about the open page. Suggestions become tasks | `steps/ask.md`, `bin/factory-ask` | D (later) |
-| Send templates | Fixed set of actions the app can take. App holds no state | `app/` | K: app is a thin client over one command API |
-| Preview mode | Seeded throwaway data root with Send stubbed out | `scripts/preview-app.mjs` | K (phase 3) |
+```sh
+factory task revise  --project myapp --id "$ID" --note "Also document the flag in README"   # coder → verify → review again
+factory task approve --project myapp --id "$ID" --head 7f4fed4364a3 [--note "..."]
+factory task open-pr --project myapp --id "$ID" [--draft]    # pushes factory/<id> and prints the PR URL
+```
 
-### 10. Repo profiles
+`approve` needs the commit you reviewed (`--head`). If anything changes after you look, approval is refused and you review again. `open-pr` re-checks every gate before pushing.
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Repo profile | Per-repo checks, worktree/env setup, safety lists, pinned docs | `<data root>/<project>/profile.yaml` | K |
-| `profile-draft` skill | Drafts a profile from repo evidence, asks safety checklist, human approves | `skills/profile-draft` | K |
-| Drift check | Every run checks the profile for drift before it starts | `bin/factory-profile` | K |
-| Deny rules / step permissions | Tool permissions per step from the profile | `lib/` | K |
+If the classifier finds the task unclear, too large for one PR, or in need of research, `task run` stops before writing any code. It exits with status 3 and prints the questions; submit a clearer task.
 
-### 11. Telemetry, grading and self-improvement
+## What works today
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Run records | Per-run record of steps, cost, outcome | data root | K |
-| Telemetry store | Rebuildable SQLite cache: runs, stalls, verdicts, calls, outcomes, gaps | `bin/factory-store` | C: phase 5, rebuilt from run records |
-| Gaps | Missing values shown as "—", never as zero | ADR 0020 | K |
-| Grading | Grades policy rows from telemetry | `bin/factory-grade` | D (later) |
-| Row review | Reviews a policy row; returns keep/change with proposals | `steps/row-review.md` | D (later) |
-| Retro | Reviews every finished run, flags outliers (spend > 2× median), proposes changes | `steps/retro.md`, `bin/factory-retro` | C: phase 5, simpler |
-| Counsel | Second-opinion review step | `steps/counsel.md` | D |
-| Overtime summary | Summarizes work done in overtime | `steps/overtime.md` | D |
-| Classifier and intent evals | Eval cases built from past PRs, tuning/holdout split | `bin/factory-eval`, `policy.json#evals` | C: phase 5; build classifier fixtures from day 1 |
+| Area                | Status                                                                                                                                                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Intake and records  | Works. `intake`, `task show`, `task list`; one JSON task file holds stage, verdict, attempts, costs, verification, review, approval, PR and an event timeline.                                                                         |
+| Projects, profiles  | Works. `project add/list`, `profile init/check`. You approve profiles by editing `approved_at`.                                                                                                                                         |
+| Classification      | Works (Claude Haiku). States kind, size, readiness and blockers. Blocked tasks stop before any code.                                                                                                                                    |
+| Coding              | Works (Claude Sonnet, climbing to Opus). Runs in its own worktree and branch. The factory commits; the coder cannot push, use `gh`, switch branches, run forbidden commands, edit forbidden paths, or use files outside the worktree. |
+| Verification        | Works. Runs the profile's `test` and `full_check`. Failures feed the output to the next, stronger attempt (default up to 3 attempts).                                                                                                    |
+| Review              | Works (Claude Sonnet, read-only). Findings are graded blocking, major, minor or nit. Blocking findings need `--accept-blocking` to approve.                                                                                              |
+| Human gate          | Works. `gate`, `diff`, `approve`, `revise`, `reject`. Approval is bound to the reviewed commit.                                                                                                                                        |
+| Pull request        | Works through `gh pr create`, after approval only. The PR body is built from the task record.                                                                                                                                         |
+| Health API          | `factory serve` serves `GET http://127.0.0.1:4318/health`.                                                                                                                                                                             |
+| Definition checks   | `definition check-step/check-ladder/check-loop`, `verdict check`, `classifier run`, and the individual step commands in `factory --help`.                                                                                             |
+| Web app             | **Not built.** `frontend.plain` specifies it, but no code exists.                                                                                                                                                                      |
+| Everything else     | Not built: dispatcher/queue, PR tending, slicing, research route, QA step, telemetry store, retros. See [the feature inventory](docs/feature-inventory.md).                                                                             |
 
-### 12. Upkeep and housekeeping
+## Limitations
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Overnight pass | Daily 03:00 local script, no model call: housekeeping sync and upkeep report | `bin/factory-overnight-pass` | D |
-| Housekeeping | Prunes worktrees older than 7 days, retention, archives | `bin/factory-housekeeping` | C: one CLI command (worktree prune) |
-| Upkeep skill + agent | Session-start report of pending questions and next work (Haiku agent) | `skills/upkeep`, `agents/upkeep.md` | D |
-| Archives | Task and effort archives, done-effort check | `lib/` | C: archive finished tasks only |
+- **One task at a time, on demand.** There is no queue or background service. `task run` runs in the foreground and takes minutes.
+- **Shell sandboxing is partial.** The coder's Bash calls are screened for forbidden command substrings, and file tools are confined to the worktree. A shell command can still read or write outside the worktree. Use the factory only on repositories and prompts you trust, and keep secrets out of reach of your shell user.
+- **No break-glass rung yet.** The Fable rung in `definitions/ladders/coder.yaml` is marked `requires_human_approval`, and nothing in the CLI grants that approval yet, so it is never used.
+- **The PR body is generated from the task record**, not written by a model.
+- **Worktrees and branches are not cleaned up.** Remove them yourself when a task is finished (see Troubleshooting).
+- **Costs are estimates** reported by the Agent SDK. "unknown" means the SDK reported none; it is not zero.
+- **No resume of an interrupted step.** If `task run` is killed while coding, the task stays in `coding`. Use `task revise` to try again on the same worktree.
+- Rebasing onto a moved base branch is not automatic. The PR shows conflicts, and you resolve them yourself.
 
-### 13. Work Hub and trackers (being retired upstream)
+## Troubleshooting
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| Work Hub | Efforts and items. Local JSON files, or GitHub issues for the factory itself | `bin/factory-hub` | D (retired upstream) |
-| Mirror skill | One-way copy of task files to the hub | `skills/mirror`, `bin/factory-mirror` | D |
-| Tracker + denylist | Reads external trackers, with a denylist | `bin/factory-tracker`, `config/tracker-denylist.json` | C: optional Jira intake adapter later |
+| Symptom                                                                    | Fix                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doctor` says Claude is not signed in                                      | Run `claude` and sign in, or `export ANTHROPIC_API_KEY=…` in the shell that runs `factory`.                                                                                                        |
+| `model run failed: …` (authentication, rate limit, overloaded)            | Check `claude auth status`, wait, then `factory task revise … --note "retry"` (if a worktree exists) or rerun `task run`.                                                                         |
+| `invalid profile: approved_at: …`                                          | Review `profile.yaml` and set `approved_at` to a date string.                                                                                                                                       |
+| `task repository has uncommitted changes`                                  | Commit or stash in your own checkout. The factory needs a clean repository to branch from.                                                                                                          |
+| `worktree path already exists` / `branch already exists`                   | A previous attempt left them. Remove both (below) or submit a new task.                                                                                                                             |
+| `verification left uncommitted changes: …`                                 | Your test command writes files git doesn't ignore (lockfiles, build output). Use `npm ci` / `pnpm install --frozen-lockfile`, or add the outputs to `.gitignore`.                                  |
+| `verification still failing after N coder attempt(s)`                      | Read `factory task show … ` (`verification.output_tail`). Fix the profile commands if they are wrong, or `task revise` with guidance.                                                              |
+| `cannot approve: … older commit` or `--head must be …`                     | The branch changed after you looked. Run `factory task gate …` and approve the head it shows.                                                                                                     |
+| `gh pr create failed: … known GitHub host`                                 | `origin` must point at GitHub, and `gh auth status` must succeed. Fix it, then rerun `task open-pr`. The task stays `approved`, and pushing again is safe.                                         |
+| `node: … ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` or similar                     | Node is older than 26. Check `node --version`.                                                                                                                                                      |
+| `Cannot find package '@factory/…'` or `'zod'`                              | Run `pnpm install` in the repository.                                                                                                                                                               |
 
-### 14. Engineering practices
+To clean up a finished task's worktree and branch (run in your repository):
 
-| Feature | What it does | Where | Decision |
-|---|---|---|---|
-| ADRs | One decision per record, about 160 records | `docs/adr/` | K |
-| Glossary | Shared terms for code, docs and commits | `CONTEXT.md` | K |
-| Coding standards | What a review checks | `CODING_STANDARDS.md` | K |
-| Tests | `node --test` unit tests plus e2e flows, changed-only runners | `test/`, `scripts/test-changed.mjs` | K: tests per package |
-| Tooling | pnpm only, Node ≥ 26, oxlint with warnings denied | `package.json` | C: add TypeScript strict |
+```sh
+git worktree remove ~/.local/share/factory/<project>/worktrees/<id>
+git branch -D factory/<id>
+```
 
-## Tailoring
+## Development
 
-Recommended defaults. Change any of them.
+```sh
+pnpm test           # unit and end-to-end tests: scripted model, temp git repos, fake GitHub; no network or model calls
+pnpm check          # prettier, oxlint (warnings denied), tsc, tests
+```
 
-- **Target repos.** The Elections monorepo first, then this repo itself.
-- **Models.** Claude only, on my plan. Haiku for cheap steps (classifier), Sonnet for coder and reviewer, Opus for ladder climbs. Fable only with a human yes. No Codex in v1.
-- **Hours.** Run on demand. No opening hours or overtime.
-- **Concurrency.** One task at a time in v1. Raise it later in config.
-- **Budget.** Record the cost of every run. Flag a run that costs more than 2× the median. No hard cap in v1.
-- **Language.** TypeScript (strict), ESM, pnpm workspaces, Node ≥ 26.
-- **Phases.**
-  1. CLI loop: intake → classify → coder → reviewer → human review gate → open PR, for one repo profile.
-  2. Tender, research route, slicer with gate 2 and critic.
-  3. Web app: inbox, task table, task page, review gate, settings.
-  4. Dispatcher queue, LaunchAgents, QA step.
-  5. Telemetry store, weekly view, retro, evals.
+| Path                       | Contents                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `packages/core`            | Pure domain: schemas, readiness, gates, PR text. Lint forbids I/O imports.                   |
+| `packages/adapters-*`      | Filesystem store, git, GitHub CLI, process spawning, Claude Agent SDK runner.                |
+| `packages/driver`          | The workflow (classify → … → open PR) over injected ports.                                   |
+| `apps/cli`                 | `factory` command, `serve`, `doctor`, profile drafting.                                      |
+| `definitions/`             | Step, ladder and loop YAML and step prompts.                                                 |
+| `factory.plain`            | Specification of the CLI behaviour; `frontend.plain` specifies the (unbuilt) web app.        |
+| `resources/`               | JSON Schema and OpenAPI contracts referenced by the specs.                                   |
+| `docs/adr/`                | Decisions. [ADR 0002](docs/adr/0002-hand-written-v1.md) explains why v1 is hand-written.     |
 
-## Continue on another computer
-
-See [the project handoff](docs/HANDOFF.md) for the current scope, known build issue, and next steps. A clone contains the ***plain and project configuration, but not generated code, local regeneration records, or this chat.
-
-## Local agent setup
-
-After cloning on macOS or Linux, run `node scripts/setup-agent-env.mjs` from the project root before regenerating. Node 26 or later and pnpm must already be installed. The script writes ignored `.turri/agent.env` with this checkout's writable pnpm lock directory and direct Node and pnpm paths; it does not alter machine settings. Re-run it if the checkout moves or the tools change.
-
-## Next steps
-
-- [ ] Confirm or change the Decision column and Tailoring.
-- [ ] Give [docs/migration-prompt.md](docs/migration-prompt.md) to the LLM that builds phase 1.
+The `.plain` files are the specification. Change them along with the code. They were written for the turri renderer, which is not available on this machine. `test_scripts/` and `scripts/setup-agent-env.mjs` are turri pulse helpers and aren't needed to run or test the factory. See [the handoff](docs/HANDOFF.md) for project status.

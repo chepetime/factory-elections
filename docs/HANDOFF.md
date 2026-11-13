@@ -2,29 +2,29 @@
 
 ## Goal
 
-Deliver a version that can be cloned and run locally on macOS and takes a task from intake through classification, coding, verification, review, human approval and pull request creation. Document installation, configuration, available features and limitations before calling the version ready.
+A version that can be cloned and run locally on macOS, taking a task through intake, classification, coding in an isolated worktree, verification, review, human approval and pull-request creation, with documented installation, configuration, features, limitations and troubleshooting.
 
-## Source of truth
+## Status (2026-11-13)
 
-`factory.plain` describes the backend CLI and `frontend.plain` describes the web interface. Files linked under `resources/` are part of those descriptions. Regenerate code from the relevant `.plain` file rather than editing generated files. `config.turri.yaml` and `config.turri.frontend.yaml` configure the project and frontend stack.
+The CLI loop is implemented and documented in the [README](../README.md).
 
-`plain_modules/`, `dist/` and `.turri/` are ignored by Git. A clone does not contain the generated application, a release, local regeneration records or a chat transcript. The project does not yet define a verified way to install and run the application from a fresh clone.
+- **Verified with real models**, against a throwaway local repository: intake → Haiku classification → Sonnet coding in a worktree → verification → Sonnet review → approval gate → `revise` with a human note → re-review → `approve` bound to the head commit → `open-pr` pushed the branch to the remote. Two tasks took about 20 seconds and $0.30 each.
+- **Not yet verified live:** `gh pr create` against a real GitHub repository. The local test remote wasn't GitHub, so `gh` refused cleanly and the task correctly stayed `approved`. The PR call itself is covered only by the end-to-end test with a fake GitHub.
+- **Verified from a fresh clone:** `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (21 tests pass). The test suite makes no model, GitHub or network calls.
+- **Not built:** the web app in `frontend.plain`, and every feature marked as planned in the [feature inventory](feature-inventory.md).
 
-## Current scope
+## Source of truth and turri
 
-The backend `.plain` covers task intake and records, configuration validation, classification, health, project registration and project listing. It also describes creating an isolated worktree for a ready task. The frontend `.plain` describes a local interface and project and task views. A functional spec's presence does not mean its code has landed: inspect module drift and pulse results before relying on it.
+`factory.plain` specifies the CLI, including the workflow commands added in v1, and `frontend.plain` specifies the web app. Files under `resources/` are part of the specs. turri, the renderer these specs were written for, was not available on the continuing machine and has no public install source. The owner chose to write v1 by hand; see [ADR 0002](adr/0002-hand-written-v1.md). Change the specs alongside the code.
 
-The full coder, verification, reviewer, human approval and pull-request workflow is not yet complete. The feature inventory in `README.md` includes plans as well as implemented capabilities; it is not a list of features ready to use.
+If turri returns, don't render over the hand-written tree blindly; reconcile them. The earlier turri issue (unit-test script exceeding a 120-second limit while installing into a fresh isolated pnpm store) was never resolved and does not affect `pnpm test`.
 
-## Continuation
+## Suggested next steps
 
-1. Install turri and the Node and pnpm toolchains on the new Mac, and sign in to the required model provider through turri. The project's implementation requirements name Node.js 26 or later. Follow `README.md` for the existing local agent setup; that setup has not yet been verified as a complete installation guide.
-2. Open the repository in turri and check drift for both `factory.plain` and `frontend.plain`. Inspect any failed pulses and the current testing scripts before retrying.
-3. Continue the task-to-PR loop in small, ordered functional specs. Keep the human approval gate before pushing or opening a pull request.
-4. Establish a reproducible clone-to-running-app workflow, then write and verify installation, configuration, feature and troubleshooting documentation on a clean Mac checkout.
+1. Run one task against a real GitHub repository to confirm `open-pr` end to end.
+2. Worktree cleanup command (`factory task cleanup`) for finished or rejected tasks.
+3. Tighter shell sandboxing for the coder (the Agent SDK's `sandbox` option).
+4. The web app from `frontend.plain`: read-only project, task and gate views first, over the CLI's JSON output.
+5. Phase 2 of the plan: PR tending, research route, slicer.
 
-## Known build issue
-
-Recent backend and frontend pulses exceeded the 120-second unit-test command limit during isolated dependency installation or cleanup. One backend run passed static checks and all 27 tests before timing out during cleanup; the pulse was rolled back. Work to adapt the backend unit-test script was started separately. Check its outcome and the current pulse state rather than assuming the issue is fixed.
-
-Do not put credentials, local task data or machine-specific paths into the repository. A fresh machine needs its own provider authentication and any project-specific configuration.
+Do not put credentials, task data or machine-specific paths into the repository.

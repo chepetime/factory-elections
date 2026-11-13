@@ -9,8 +9,111 @@
     "project": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
     "repo": { "type": "string", "minLength": 1 },
     "prompt": { "type": "string", "minLength": 1 },
-    "stage": { "const": "queued" },
-    "verdict": { "$ref": "urn:factory:classifier-verdict:v1" }
+    "stage": {
+      "enum": [
+        "queued",
+        "classified",
+        "blocked",
+        "coding",
+        "verification-failed",
+        "reviewing",
+        "awaiting-approval",
+        "approved",
+        "rejected",
+        "pr-opened",
+        "failed"
+      ]
+    },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" },
+    "verdict": { "$ref": "urn:factory:classifier-verdict:v1" },
+    "worktree": {
+      "type": "object",
+      "required": ["path", "branch", "base_branch"],
+      "properties": {
+        "path": { "type": "string" },
+        "branch": { "type": "string" },
+        "base_branch": { "type": "string" }
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "rung", "model", "effort", "started_at", "finished_at", "outcome", "cost_usd"],
+        "properties": {
+          "step": { "type": "string" },
+          "rung": { "type": "string" },
+          "model": { "type": "string" },
+          "effort": { "enum": ["low", "medium", "high", "max"] },
+          "started_at": { "type": "string" },
+          "finished_at": { "type": "string" },
+          "outcome": { "enum": ["completed", "failed"] },
+          "cost_usd": { "type": ["number", "null"] },
+          "error": { "type": "string" }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["passed", "head_sha", "at", "output_tail"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "head_sha": { "type": "string" },
+        "at": { "type": "string" },
+        "output_tail": { "type": "string" }
+      }
+    },
+    "review": {
+      "allOf": [
+        { "$ref": "urn:factory:review:v1" },
+        {
+          "type": "object",
+          "required": ["head_sha", "at"],
+          "properties": { "head_sha": { "type": "string" }, "at": { "type": "string" } }
+        }
+      ]
+    },
+    "approval": {
+      "type": "object",
+      "required": ["decision", "head_sha", "at"],
+      "properties": {
+        "decision": { "enum": ["approved", "rejected"] },
+        "head_sha": { "type": "string" },
+        "at": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "revision_notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "note"],
+        "properties": { "at": { "type": "string" }, "note": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "pr": {
+      "type": "object",
+      "required": ["url", "branch", "head_sha", "at"],
+      "properties": {
+        "url": { "type": "string" },
+        "branch": { "type": "string" },
+        "head_sha": { "type": "string" },
+        "at": { "type": "string" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "kind", "message"],
+        "properties": {
+          "at": { "type": "string" },
+          "kind": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
   },
   "additionalProperties": true
 }

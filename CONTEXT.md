@@ -47,3 +47,15 @@ _Avoid_: decision, route
 **Blocker**:
 A research, clarification or slicing reason a task is not ready, with its question.
 _Avoid_: issue
+
+**Worktree**:
+The task's own git working directory and `factory/<id>` branch, where the coder works and checks run.
+_Avoid_: sandbox, checkout
+
+**Approval**:
+A human's recorded decision to open a pull request for one exact reviewed commit.
+_Avoid_: sign-off, merge
+
+**Revision**:
+A human request for changes that sends an awaiting task back through coder, verification and review.
+_Avoid_: retry, rework

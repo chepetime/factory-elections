@@ -28,17 +28,23 @@ description: CLI-driven software factory.
 
 - :EngineHealthApi: is the local engine health contract in [resources/engine-health.openapi.yaml](resources/engine-health.openapi.yaml).
 
+- :ReviewOutput: records the reviewer's verdict, summary and findings, described by [resources/review.schema.json](resources/review.schema.json).
+
+- :Gate: is a check the driver enforces before a :Task: may move on; the human approval gate binds an approval to one reviewed commit.
+
 ***implementation reqs***
 
-- :Implementation: uses pnpm workspaces, Node.js 26 or later, ESM and strict TypeScript.
+- :Implementation: uses pnpm workspaces, Node.js 26 or later, ESM and strict TypeScript limited to erasable syntax, run directly by Node without a build step. `bin/factory` is the executable.
 
-- The backend uses Effect for effectful workflows, dependency composition and typed errors; the domain core remains pure and independent of Effect.
+- The domain core is pure and has no I/O; the driver coordinates adapters through interfaces and uses plain async functions with typed error classes (see docs/adr/0002-hand-written-v1.md; Effect is deferred).
 
-- The model-runner adapter uses the Claude Agent SDK and takes its model and effort from :ClassifierRequest:.
+- The model-runner adapter uses the Claude Agent SDK with the machine's own Claude sign-in or `ANTHROPIC_API_KEY`. It takes model and effort from the request or ladder rung, loads no user or repository Claude settings, and routes every tool call through the step's guard.
+
+- Default step, ladder and loop definitions and step prompts live under `definitions/`.
 
 - :UnitTests: of model execution use a scripted fake of the model-runner interface; they never call real model APIs, GitHub or git remotes.
 
-- The :Task: domain is pure and resides in `packages/core`; filesystem access resides in an adapter package, and the CLI composes them.
+- The :Task: domain is pure and resides in `packages/core`; filesystem, git, GitHub, process and Claude access reside in `packages/adapters-*`, workflow coordination in `packages/driver`, and `apps/cli` composes them.
 - :UnitTests: use test-driven development: write a failing test before the implementation that makes it pass.
 
 - :RepoProfile:, :StepDefinition: and :ModelLadder: YAML are validated with zod.
@@ -53,8 +59,9 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 # submit-task
 `factory intake --project <project> --repo <absolute-path> <prompt>` creates a :TaskFile: and prints its :IntakeId: followed by a newline, then exits 0.
 - The data root is `FACTORY_ROOT` when set, otherwise `~/.local/share/factory`; the :TaskFile: is `<data-root>/<project>/tasks/<id>/task.json`.
-- The :IntakeId: is a newly generated UUID. The :TaskFile: contains `id`, `project`, `repo`, `prompt` and `stage`, with `stage` set to `queued`; `prompt` is preserved verbatim.
+- The :IntakeId: is a newly generated UUID. The :TaskFile: contains `id`, `project`, `repo`, `prompt`, `stage`, `created_at`, `updated_at` and an `events` timeline, with `stage` set to `queued`; `prompt` is preserved verbatim.
 - `project` is a nonempty name containing only ASCII letters, digits, hyphens and underscores; `repo` is an existing absolute directory; `prompt` is nonempty after trimming. Invalid input exits nonzero without creating a :Task:.
+- `--repo` may be omitted when the project is registered; the registered :Project: repository is used.
 
 # show-task
 `factory task show --project <project> --id <id>` reads the :TaskFile: at `<data-root>/<project>/tasks/<id>/task.json`, prints it as one JSON value followed by a newline, and exits 0.
@@ -97,7 +104,7 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 # record-classifier-verdict
 `factory task record-verdict --project <project> --id <id> --verdict <path>` records a :ClassifierVerdict: in an existing :TaskFile: and prints `Verdict recorded: <id>` followed by a newline, then exits 0.
 - The task is read and validated as in `show-task`; the verdict is validated as in `check-classifier-verdict`, and its `intake_id` must equal the task's `id`.
-- The `verdict` property is atomically replaced with the validated verdict; all other task properties, including `stage`, are preserved.
+- The `verdict` property is atomically replaced with the validated verdict and a `verdict` event is appended; all other task properties, including `stage`, are preserved.
 - Invalid or mismatched arguments, task or verdict, or a failed write exits nonzero with an error on standard error, prints nothing on standard output, and leaves the :TaskFile: unchanged. No model is called and no route is selected.
 
 # task-readiness
@@ -110,12 +117,14 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 `factory task prepare-worktree --project <project> --id <id>` creates a dedicated git worktree and prints its absolute path followed by a newline, then exits 0.
 - The task, project profile and readiness are validated as in `show-task`, `check-profile` and `task-readiness`; the readiness action must be `continue`. The task repository must be a git repository with a clean working tree and an existing approved base branch.
 - The worktree is `<data-root>/<project>/worktrees/<id>`, on a new branch `factory/<id>` created from `repo.base_branch.value` in the approved profile.
+- On success the :TaskFile: records `worktree` with its path, branch and base branch.
 - Invalid input, an existing worktree path or branch, or a git failure exits nonzero with an error on standard error and no standard output. A failed creation removes any worktree and branch created by this command; it never changes an existing branch, worktree or :TaskFile:.
 
 # verify-task-worktree
 `factory task verify --project <project> --id <id>` runs the approved profile's `commands.test` and then `commands.full_check` in the task's dedicated worktree.
 - The task and profile are validated as in `show-task` and `check-profile`. The worktree at `<data-root>/<project>/worktrees/<id>` must belong to the task's repository and be on branch `factory/<id>`; the command never falls back to the original repository.
 - Each command runs with `/bin/sh -c`, with its output forwarded to standard error. A nonzero exit stops verification before the next command.
+- Verification fails when the commands leave uncommitted or untracked, non-ignored files in the worktree.
 - If both commands succeed, the command prints `Verification passed: <id>` followed by a newline and exits 0. Invalid input, a missing or mismatched worktree, or a failed command exits nonzero with an error on standard error and no standard output. Verification does not update the :TaskFile: or commit changes.
 
 # prepare-classifier-run
@@ -133,7 +142,9 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 # classify-task
 `factory task classify --project <project> --id <id> --step <path> --ladder <path>` prepares the classifier request, runs it and records its verdict as in `prepare-classifier-run`, `run-classifier-request` and `record-classifier-verdict`.
 - Success prints `Verdict recorded: <id>` followed by a newline and exits 0.
+- The classifier attempt, with its model, effort and reported cost, is appended to `attempts`.
 - A preparation, model, verdict validation or persistence failure exits nonzero with an error on standard error, prints nothing on standard output, and leaves the :TaskFile: unchanged. The command selects no loop and starts no coding.
+- When `--step` and `--ladder` are omitted, `definitions/steps/classifier.yaml` and `definitions/ladders/classifier.yaml` are used.
 
 # serve-engine-health
 `factory serve --port <port>` starts a local HTTP server bound to `127.0.0.1` that serves :EngineHealthApi:; the port defaults to 4318 when omitted.
@@ -151,3 +162,40 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 `factory project list` prints registered :Project: records as a JSON array sorted lexicographically by name, followed by a newline, and exits 0.
 - The data root follows `submit-task`. Each direct child directory with a `project.json` contributes its validated :Project:, whose name must match the directory. Direct child directories or `project.json` files that are symbolic links are ignored.
 - A missing data root yields `[]`; directories without `project.json` are ignored. An unreadable root, unreadable or invalid project record, or a name mismatch exits nonzero with an error on standard error and no partial output. No files are changed.
+
+# draft-profile
+`factory profile init --project <project>` writes an unapproved :RepoProfile: draft to `<data-root>/<project>/profile.yaml`, prints its path followed by a newline and exits 0.
+- The repository is `--repo` or the registered :Project: repository. The base branch comes from `origin/HEAD`, else the current branch. For a `package.json` repository, `commands.test` installs dependencies without rewriting the lockfile and runs the `test` script; `commands.full_check` runs `check`, `ci`, `verify` or `lint` when present, else the test command.
+- `approved_at` is empty, so `check-profile` fails until a human reviews the draft and sets it. An existing profile is never overwritten.
+
+# doctor
+`factory doctor` checks Node.js 26 or later, git, GitHub CLI sign-in, Claude model access (Claude Code sign-in or `ANTHROPIC_API_KEY`) and the data root, prints one line per check with a fix for each failure, and exits 0 only when all pass. It changes no files and makes no model calls.
+
+# code-task
+The driver's coder step runs one :ModelLadder: rung in the task's verified worktree, then the driver commits the result on `factory/<id>`.
+- The coder receives the task prompt, human revision notes, blocking reviewer findings from a `request-changes` review, and the previous verification output when retrying. It may read, edit and run shell commands only inside the worktree; `git push`, `gh`, branch switching, git configuration, the profile's forbidden commands and edits to forbidden paths are denied.
+- Changes to forbidden paths are unstaged and fail the attempt; an attempt with no changes and no earlier commits fails. Every attempt is appended to `attempts`; a failed attempt sets `stage` to `failed`.
+- After each failed verification the next attempt climbs one rung, skipping rungs marked `requires_human_approval`, up to `--max-attempts` (default 3).
+
+# review-task
+`factory task review --project <project> --id <id>` runs the reviewer step on the diff between the base branch and the verified head, records :ReviewOutput: with that head's commit as `review`, clears any approval, sets `stage` to `awaiting-approval`, prints `Review recorded: <verdict>` and exits 0.
+- Verification must have passed for the current head. The reviewer has read-only tools inside the worktree. Invalid reviewer output sets `stage` to `failed` and exits nonzero.
+
+# run-task
+`factory task run --project <project> --id <id> [--max-attempts <n>]` classifies an unclassified task, stops with `stage` `blocked` and exit status 3 unless the readiness action is `continue`, prepares the worktree, runs coder and verification as in `code-task`, then reviews as in `review-task`.
+- It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request.
+
+# approval-gate
+`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. Neither changes the task.
+
+# approve-task
+`factory task approve --project <project> --id <id> --head <sha> [--note <text>] [--accept-blocking]` records the human's approval of the current head and sets `stage` to `approved`.
+- The task must be `awaiting-approval`, with passing verification and a review at the current head. `--head` must be at least seven characters and a prefix of the current head commit.
+- Blocking reviewer findings refuse approval unless `--accept-blocking` is given; the event records the accepted count.
+- `factory task reject --note <text>` records a rejection and sets `stage` to `rejected`. `factory task revise --note <text>` appends the note to `revision_notes`, clears any approval, and reruns coder, verification and review as in `run-task`.
+
+# open-pull-request
+`factory task open-pr --project <project> --id <id> [--draft]` pushes `factory/<id>` to `origin` and opens a pull request into the base branch with the GitHub CLI, records `pr`, sets `stage` to `pr-opened`, prints the pull request URL and exits 0.
+- Every gate must hold at the current head: verification passed, review recorded, human approval recorded for this exact commit, `stage` `approved`, a clean worktree, an `origin` remote and no existing `pr`.
+- The title is the first line of the prompt. The body contains the prompt, classifier size, verification result, reviewer summary and findings, and the approval note.
+- A failed push or pull request creation exits nonzero and leaves `stage` `approved`, so the command can be retried.
