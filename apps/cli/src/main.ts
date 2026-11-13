@@ -30,7 +30,7 @@ Setup
   project list                                    List registered projects (JSON)
   profile init --project <name>                   Draft <data-root>/<name>/profile.yaml for you to approve
   profile check --project <name>                  Validate the approved profile
-  doctor                                          Check Node, git, pnpm,gh and Claude sign-in
+  doctor                                          Check Node, git, pnpm, gh and Claude sign-in
 
 Workflow
   intake --project <name> [--repo <abs-path>] <prompt>   Submit a task; prints its id

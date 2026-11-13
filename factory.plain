@@ -169,7 +169,7 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 - `approved_at` is empty, so `check-profile` fails until a human reviews the draft and sets it. An existing profile is never overwritten.
 
 # doctor
-`factory doctor` checks Node.js 26 or later, git, GitHub CLI sign-in, Claude model access (Claude Code sign-in or `ANTHROPIC_API_KEY`) and the data root, prints one line per check with a fix for each failure, and exits 0 only when all pass. It changes no files and makes no model calls.
+`factory doctor` checks Node.js 26 or later, git, pnpm (reporting its version, with an install hint such as `brew install pnpm` when missing), GitHub CLI sign-in, Claude model access (Claude Code sign-in or `ANTHROPIC_API_KEY`) and the data root, prints one line per check with a fix for each failure, and exits 0 only when all pass. It changes no files and makes no model calls.
 
 # code-task
 The driver's coder step runs one :ModelLadder: rung in the task's verified worktree, then the driver commits the result on `factory/<id>`.

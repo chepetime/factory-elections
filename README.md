@@ -35,7 +35,7 @@ pnpm install
 ./bin/factory doctor
 ```
 
-`doctor` checks Node, git, the GitHub CLI sign-in, Claude access and the data directory, and tells you how to fix anything that fails.
+`doctor` checks Node, git, pnpm (and reports its version), the GitHub CLI sign-in, Claude access and the data directory, and tells you how to fix anything that fails.
 
 To run `factory` from anywhere, link it onto your `PATH`:
 
