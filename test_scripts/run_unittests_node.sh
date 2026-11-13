@@ -26,26 +26,24 @@ if [ ! -d "$1" ]; then
   exit 2
 fi
 SOURCE_FOLDER=$(cd "$1" && pwd -P) || exit 2
-WORKING_FOLDER="/tmp/node_$(basename "$SOURCE_FOLDER")"
-if [ "$SOURCE_FOLDER" = "$WORKING_FOLDER" ]; then
-  echo "Error: source folder is the staging folder: $SOURCE_FOLDER" >&2
-  exit 2
-fi
-
 printf '\n===== [3/8] Working directory setup =====\n'
-echo "Source: $SOURCE_FOLDER; staging and isolation root: $WORKING_FOLDER"
-# Never remove a source directory that contains the staging directory.
+# Each invocation needs its own tree: concurrent factory pulses use the same
+# build-folder basename and must not delete each other's dependencies.
+WORKING_FOLDER=$(mktemp -d "/tmp/node_$(basename "$SOURCE_FOLDER").XXXXXX") || exit 2
+trap 'rm -rf -- "$WORKING_FOLDER"' EXIT
+# Never stage within the source tree, including when the source is /tmp.
 case "$WORKING_FOLDER/" in
   "$SOURCE_FOLDER/"*) echo "Error: staging directory is inside the source folder." >&2; exit 2 ;;
 esac
-trap 'rm -rf -- "$WORKING_FOLDER"' EXIT
-rm -rf -- "$WORKING_FOLDER" || exit 2
-mkdir -p "$WORKING_FOLDER" || exit 2
+echo "Source: $SOURCE_FOLDER; staging and isolation root: $WORKING_FOLDER"
 
 printf '\n===== [4/8] Copy build =====\n'
-cp -R "$SOURCE_FOLDER"/. "$WORKING_FOLDER"/ || exit 2
-# Do not reuse source node_modules, whose symlinks can point outside the staging tree.
-find "$WORKING_FOLDER" -name node_modules -prune -exec rm -rf -- {} + || exit 2
+# Exclude dependencies during copying: copying and deleting a large node_modules
+# tree can consume the entire test deadline. Install a fresh isolated tree below.
+# A temporary archive preserves dotfiles and lets us check both tar exit codes.
+tar -C "$SOURCE_FOLDER" --exclude=node_modules -cf "$WORKING_FOLDER/.build-copy.tar" . || exit 2
+tar -C "$WORKING_FOLDER" -xf "$WORKING_FOLDER/.build-copy.tar" || exit 2
+rm -f "$WORKING_FOLDER/.build-copy.tar" || exit 2
 
 printf '\n===== [5/8] Enter working directory =====\n'
 echo "Moving to: $WORKING_FOLDER"
