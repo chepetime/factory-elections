@@ -10,7 +10,7 @@ The CLI loop is implemented and documented in the [README](../README.md).
 
 - **Verified with real models**, against a throwaway local repository: intake → Haiku classification → Sonnet coding in a worktree → verification → Sonnet review → approval gate → `revise` with a human note → re-review → `approve` bound to the head commit → `open-pr` pushed the branch to the remote. Two tasks took about 20 seconds and $0.30 each.
 - **Not yet verified live:** `gh pr create` against a real GitHub repository. The local test remote wasn't GitHub, so `gh` refused cleanly and the task correctly stayed `approved`. The PR call itself is covered only by the end-to-end test with a fake GitHub.
-- **Verified from a fresh clone:** `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (21 tests pass). The test suite makes no model, GitHub or network calls.
+- **Verified from a fresh clone** (Node 26.13.1, pnpm 12.18.0): `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (21 tests pass). The test suite makes no model, GitHub or network calls.
 - **Not built:** the web app in `frontend.plain`, and every feature marked as planned in the [feature inventory](feature-inventory.md).
 
 ## Source of truth and turri

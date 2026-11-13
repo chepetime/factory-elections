@@ -13,7 +13,7 @@ It is a command-line tool (`factory`). It descends from the ideas in the sibling
 ## Requirements
 
 - macOS (tested on macOS 27; Linux should work but is untested)
-- Node.js 26 or later, and pnpm 10 or later (the repository pins pnpm 11.28.9 in `packageManager`)
+- Node.js 26 or later (26.13.1 LTS tested), and pnpm 12 (the repository pins pnpm 12.18.0 in `packageManager`)
 - git
 - GitHub CLI (`gh`), signed in to an account that can push to your repositories and open pull requests
 - Access to Claude models: either a signed-in Claude Code installation (`claude`), or an `ANTHROPIC_API_KEY`
