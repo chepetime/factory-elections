@@ -1,0 +1,6 @@
+{
+  "name": "@factory/filesystem",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:factory:classifier-verdict:v1",
+  "title": "Classifier verdict v1",
+  "type": "object",
+  "required": ["intake_id", "kind", "loe", "readiness", "blockers"],
+  "properties": {
+    "intake_id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["code", "research", "unsupported"] },
+    "loe": { "enum": ["S", "M", "L", "unknown"] },
+    "readiness": { "enum": ["ready", "needs-research", "needs-clarification", "needs-slicing"] },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "question"],
+        "properties": {
+          "kind": { "enum": ["research", "clarification", "slicing"] },
+          "question": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

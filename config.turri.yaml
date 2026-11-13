@@ -1,0 +1,6 @@
+module: factory.plain
+sentinel: true
+unittests-script: test_scripts/run_unittests_node.sh
+toolchains: [/Users/jlugo/.config/mise]
+agent-env:
+  files: [plain_modules/.turri/pnpm-runtime.env]

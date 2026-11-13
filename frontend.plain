@@ -1,0 +1,46 @@
+---
+description: Next.js frontend for the software factory.
+---
+
+***definitions***
+
+- :ComponentPlaceholderList: names the planned interface components in [resources/frontend-component-placeholders.json](resources/frontend-component-placeholders.json).
+
+- :TaskRecordContract: describes a task record in [resources/task-record.schema.json](resources/task-record.schema.json).
+
+- :TaskReadApi: is the local task-read HTTP contract in [resources/task-read-api.openapi.yaml](resources/task-read-api.openapi.yaml).
+
+***implementation reqs***
+
+- :Implementation: uses Next.js with the App Router, React, shadcn/ui, pnpm, Node.js 26 or later, ESM and strict TypeScript.
+- :Implementation: is formatted with Prettier and linted with oxlint with warnings denied.
+
+- :Implementation: binds its development and production HTTP servers to `127.0.0.1`.
+
+- Each original component inspired by Affect UI records its corresponding source URL from [resources/frontend-component-origins.json](resources/frontend-component-origins.json) in a comment in its source file; the URL is attribution, not a dependency. No Affect UI Pro source or assets are copied.
+- :UnitTests: use test-driven development: write a failing test before the implementation that makes it pass.
+
+***functional specs***
+
+# app-home
+`GET /` returns a page with the heading `Software Factory`.
+
+# component-placeholders
+The home page displays a non-interactive placeholder card for each name in :ComponentPlaceholderList: inside an app shell.
+- Each card shows its component name and `Not connected`; no card presents fabricated live data or working actions.
+
+# component-navigation
+The home page's app shell has an accessible navigation region linking to its `Components` and `Data contracts` sections.
+- `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that says `Not connected to backend`.
+- Both links can be reached and activated with a keyboard.
+
+# task-list-endpoint
+:TaskReadApi: returns a project's :TaskRecordContract: records through `GET /api/projects/{project}/tasks`.
+- The handler invokes the separately released factory CLI script named by the absolute `FACTORY_CLI_SCRIPT` path, using Node with arguments `task list --project <project>` and without a shell. It forwards `FACTORY_ROOT` when set.
+- The handler validates CLI output against :TaskRecordContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :TaskReadApi: without exposing stderr or filesystem paths.
+- An invalid project name produces the invalid-project response in :TaskReadApi:. The handler makes no model calls.
+
+# project-task-view
+`GET /projects/<project>/tasks` shows the heading `Tasks: <project>` and reads that project's tasks from :TaskReadApi:.
+- On success, the page shows one row per task with its `id`, `prompt` and `stage`, in API order; an empty list shows `No tasks yet`.
+- A failed request or non-success response shows `Tasks unavailable`, not an empty list. The page links back to `/` and has no task-editing controls.

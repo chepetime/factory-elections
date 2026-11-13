@@ -1,0 +1,46 @@
+openapi: 3.1.0
+info:
+  title: Factory task read API
+  version: 1.0.0
+paths:
+  /api/projects/{project}/tasks:
+    get:
+      operationId: listProjectTasks
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]+$'
+      responses:
+        '200':
+          description: Project task records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './task-record.schema.json'
+        '400':
+          description: Invalid project name
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    const: invalid_project
+                additionalProperties: false
+        '503':
+          description: Task source is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    const: task_source_unavailable
+                additionalProperties: false
