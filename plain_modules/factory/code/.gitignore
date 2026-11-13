@@ -1,9 +1,0 @@
-node_modules/
-.pnpm-store/
-.cache/
-.config/
-.data/
-.state/
-.home/
-.npm-cache/
-.tmp/
