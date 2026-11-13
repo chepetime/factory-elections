@@ -6,9 +6,17 @@ description: Next.js frontend for the software factory.
 
 - :ComponentPlaceholderList: names the planned interface components in [resources/frontend-component-placeholders.json](resources/frontend-component-placeholders.json).
 
-- :TaskRecordContract: describes a task record in [resources/task-record.schema.json](resources/task-record.schema.json).
+- :VerdictContract: describes classifier facts in [resources/classifier-verdict.schema.json](resources/classifier-verdict.schema.json).
+
+- :TaskRecordContract: describes a task record in [resources/task-record.schema.json](resources/task-record.schema.json); its optional verdict follows :VerdictContract:.
 
 - :TaskReadApi: is the local task-read HTTP contract in [resources/task-read-api.openapi.yaml](resources/task-read-api.openapi.yaml).
+
+- :EngineHealthContract: is the local engine health contract in [resources/engine-health.openapi.yaml](resources/engine-health.openapi.yaml).
+
+- :ProjectContract: describes a registered project in [resources/project.schema.json](resources/project.schema.json).
+
+- :ProjectReadApi: is the local project-read HTTP contract in [resources/project-read-api.openapi.yaml](resources/project-read-api.openapi.yaml).
 
 ***implementation reqs***
 
@@ -19,6 +27,10 @@ description: Next.js frontend for the software factory.
 
 - Each original component inspired by Affect UI records its corresponding source URL from [resources/frontend-component-origins.json](resources/frontend-component-origins.json) in a comment in its source file; the URL is attribution, not a dependency. No Affect UI Pro source or assets are copied.
 - :UnitTests: use test-driven development: write a failing test before the implementation that makes it pass.
+
+- :UnitTests: of `engine-health-panel` render the home page with a controlled health-response seam and assert every displayed state: all task-store values, the engine, the unconfigured database and integrations, and the unavailable state for non-success, malformed, invalid and failed responses.
+
+- :UnitTests: of `engine-health-panel` verify that two page requests fetch separately and display changed health data, and use a controlled clock to check the two-second timeout boundary without relying on wall-clock delays.
 
 ***functional specs***
 
@@ -34,6 +46,22 @@ The home page's app shell has an accessible navigation region linking to its `Co
 - `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that says `Not connected to backend`.
 - Both links can be reached and activated with a keyboard.
 
+# engine-health-panel
+The home page shows an `Engine health` section from :EngineHealthContract: at `http://127.0.0.1:4318/health`.
+- On a valid response, it shows the engine and task-store states, the telemetry database state, and `No integrations configured` when the integrations list is empty.
+- A non-success response, invalid response, connection failure or a request lasting more than two seconds shows `Engine unavailable`; it never presents missing information as healthy.
+- The request is made by the frontend server on each page request, without caching. Engine `running` describes the server process, not classifier readiness.
+
+# project-list-endpoint
+:ProjectReadApi: returns registered :ProjectContract: records through `GET /api/projects`.
+- The handler invokes the separately released factory CLI script named by the absolute `FACTORY_CLI_SCRIPT` path, using Node with arguments `project list` and without a shell. It forwards `FACTORY_ROOT` when set.
+- The handler validates CLI output as an array of :ProjectContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :ProjectReadApi: without exposing stderr or filesystem paths. The handler makes no model calls.
+
+# project-selector
+The home page has a `Projects` section that reads projects from :ProjectReadApi: and lets a person select one.
+- While the request is pending it shows `Loading projects`. On success it shows one link per project, labeled with its name and ordered as returned; each link opens `/projects/<name>/tasks`.
+- An empty list shows `No projects yet`. A failed request or non-success response shows `Projects unavailable`, not an empty list. Selection is not persisted and the section has no create or delete controls.
+
 # task-list-endpoint
 :TaskReadApi: returns a project's :TaskRecordContract: records through `GET /api/projects/{project}/tasks`.
 - The handler invokes the separately released factory CLI script named by the absolute `FACTORY_CLI_SCRIPT` path, using Node with arguments `task list --project <project>` and without a shell. It forwards `FACTORY_ROOT` when set.
@@ -44,3 +72,8 @@ The home page's app shell has an accessible navigation region linking to its `Co
 `GET /projects/<project>/tasks` shows the heading `Tasks: <project>` and reads that project's tasks from :TaskReadApi:.
 - On success, the page shows one row per task with its `id`, `prompt` and `stage`, in API order; an empty list shows `No tasks yet`.
 - A failed request or non-success response shows `Tasks unavailable`, not an empty list. The page links back to `/` and has no task-editing controls.
+
+# task-verdict-display
+The project task view shows the classifier readiness and blockers of each task that has a verdict in :TaskRecordContract:.
+- A task with a verdict shows `Readiness: <readiness>` and each blocker's kind and question. A task without one shows `Not classified`.
+- The display is read-only and provides no approval or model controls.

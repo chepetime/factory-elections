@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:factory:classifier-request:v1",
+  "title": "Classifier request v1",
+  "type": "object",
+  "required": ["task", "prompt", "model", "effort"],
+  "properties": {
+    "task": { "$ref": "urn:factory:task-record:v1" },
+    "prompt": { "type": "string", "minLength": 1 },
+    "model": { "type": "string", "pattern": "^claude-" },
+    "effort": { "enum": ["low", "medium", "high", "max"] }
+  },
+  "additionalProperties": false
+}

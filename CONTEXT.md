@@ -4,6 +4,10 @@ A factory that turns work requested for a repository into a reviewed change.
 
 ## Language
 
+**Project**:
+A repository registered with the factory and its associated tasks.
+_Avoid_: workspace, effort
+
 **Task**:
 A unit of work requested for one repository.
 _Avoid_: job, ticket

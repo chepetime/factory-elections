@@ -206,6 +206,10 @@ Recommended defaults. Change any of them.
   4. Dispatcher queue, LaunchAgents, QA step.
   5. Telemetry store, weekly view, retro, evals.
 
+## Local agent setup
+
+After cloning on macOS or Linux, run `node scripts/setup-agent-env.mjs` from the project root before regenerating. Node 26 or later and pnpm must already be installed. The script writes ignored `.turri/agent.env` with this checkout's writable pnpm lock directory and direct Node and pnpm paths; it does not alter machine settings. Re-run it if the checkout moves or the tools change.
+
 ## Next steps
 
 - [ ] Confirm or change the Decision column and Tailoring.

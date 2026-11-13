@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:factory:project:v1",
+  "title": "Factory project v1",
+  "type": "object",
+  "required": ["name", "repo"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "repo": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

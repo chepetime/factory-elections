@@ -9,7 +9,8 @@
     "project": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
     "repo": { "type": "string", "minLength": 1 },
     "prompt": { "type": "string", "minLength": 1 },
-    "stage": { "const": "queued" }
+    "stage": { "const": "queued" },
+    "verdict": { "$ref": "urn:factory:classifier-verdict:v1" }
   },
   "additionalProperties": true
 }

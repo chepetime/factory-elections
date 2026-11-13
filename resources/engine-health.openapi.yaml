@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info:
+  title: Factory engine health API
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      operationId: readEngineHealth
+      responses:
+        '200':
+          description: Engine process and configured dependencies
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [engine, task_store, telemetry_database, integrations]
+                properties:
+                  engine:
+                    const: running
+                  task_store:
+                    enum: [available, not_initialized, unavailable]
+                  telemetry_database:
+                    const: not_configured
+                  integrations:
+                    type: array
+                    maxItems: 0
+                additionalProperties: false

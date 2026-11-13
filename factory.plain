@@ -4,6 +4,8 @@ description: CLI-driven software factory.
 
 ***definitions***
 
+- :Project: identifies a repository registered with the factory, described by [resources/project.schema.json](resources/project.schema.json).
+
 - :Task: is a unit of work requested for one repository.
 
 - :TaskFile: is the authoritative JSON record of a :Task:, described by [resources/task-record.schema.json](resources/task-record.schema.json).
@@ -20,11 +22,21 @@ description: CLI-driven software factory.
 
 - :ClassifierVerdict: records the classifier's facts about a :Task:, described by [resources/classifier-verdict.schema.json](resources/classifier-verdict.schema.json).
 
+- :ReadinessDecision: describes the next readiness action for a :Task:, in [resources/readiness-decision.schema.json](resources/readiness-decision.schema.json).
+
+- :ClassifierRequest: contains the :TaskFile:, classifier prompt and first model rung, described by [resources/classifier-request.schema.json](resources/classifier-request.schema.json).
+
+- :EngineHealthApi: is the local engine health contract in [resources/engine-health.openapi.yaml](resources/engine-health.openapi.yaml).
+
 ***implementation reqs***
 
 - :Implementation: uses pnpm workspaces, Node.js 26 or later, ESM and strict TypeScript.
 
 - The backend uses Effect for effectful workflows, dependency composition and typed errors; the domain core remains pure and independent of Effect.
+
+- The model-runner adapter uses the Claude Agent SDK and takes its model and effort from :ClassifierRequest:.
+
+- :UnitTests: of model execution use a scripted fake of the model-runner interface; they never call real model APIs, GitHub or git remotes.
 
 - The :Task: domain is pure and resides in `packages/core`; filesystem access resides in an adapter package, and the CLI composes them.
 - :UnitTests: use test-driven development: write a failing test before the implementation that makes it pass.
@@ -81,3 +93,61 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 `factory verdict check <path>` validates a JSON :ClassifierVerdict:, prints `Verdict valid: <intake_id>` followed by a newline, and exits 0.
 - An empty `blockers` list requires `readiness` to be `ready`. Otherwise, `readiness` names the first blocker kind present in the order research, clarification, slicing, with the `needs-` prefix.
 - A missing, malformed or inconsistent :ClassifierVerdict: exits nonzero with an error on standard error and prints nothing on standard output. No model is called and no route is selected.
+
+# record-classifier-verdict
+`factory task record-verdict --project <project> --id <id> --verdict <path>` records a :ClassifierVerdict: in an existing :TaskFile: and prints `Verdict recorded: <id>` followed by a newline, then exits 0.
+- The task is read and validated as in `show-task`; the verdict is validated as in `check-classifier-verdict`, and its `intake_id` must equal the task's `id`.
+- The `verdict` property is atomically replaced with the validated verdict; all other task properties, including `stage`, are preserved.
+- Invalid or mismatched arguments, task or verdict, or a failed write exits nonzero with an error on standard error, prints nothing on standard output, and leaves the :TaskFile: unchanged. No model is called and no route is selected.
+
+# task-readiness
+`factory task readiness --project <project> --id <id>` reads the task as in `show-task` and prints its :ReadinessDecision: as a JSON object followed by a newline, then exits 0.
+- The task must have a :ClassifierVerdict: valid as in `check-classifier-verdict`, whose `intake_id` equals the task's `id`.
+- An `unsupported` kind produces action `unsupported`; otherwise readiness `ready`, `needs-research`, `needs-clarification` and `needs-slicing` produce actions `continue`, `research`, `ask-human` and `slice` respectively.
+- Invalid or missing task or verdict exits nonzero with an error on standard error and prints nothing on standard output. The command changes no task, calls no model, selects no loop and executes no work.
+
+# prepare-task-worktree
+`factory task prepare-worktree --project <project> --id <id>` creates a dedicated git worktree and prints its absolute path followed by a newline, then exits 0.
+- The task, project profile and readiness are validated as in `show-task`, `check-profile` and `task-readiness`; the readiness action must be `continue`. The task repository must be a git repository with a clean working tree and an existing approved base branch.
+- The worktree is `<data-root>/<project>/worktrees/<id>`, on a new branch `factory/<id>` created from `repo.base_branch.value` in the approved profile.
+- Invalid input, an existing worktree path or branch, or a git failure exits nonzero with an error on standard error and no standard output. A failed creation removes any worktree and branch created by this command; it never changes an existing branch, worktree or :TaskFile:.
+
+# verify-task-worktree
+`factory task verify --project <project> --id <id>` runs the approved profile's `commands.test` and then `commands.full_check` in the task's dedicated worktree.
+- The task and profile are validated as in `show-task` and `check-profile`. The worktree at `<data-root>/<project>/worktrees/<id>` must belong to the task's repository and be on branch `factory/<id>`; the command never falls back to the original repository.
+- Each command runs with `/bin/sh -c`, with its output forwarded to standard error. A nonzero exit stops verification before the next command.
+- If both commands succeed, the command prints `Verification passed: <id>` followed by a newline and exits 0. Invalid input, a missing or mismatched worktree, or a failed command exits nonzero with an error on standard error and no standard output. Verification does not update the :TaskFile: or commit changes.
+
+# prepare-classifier-run
+`factory task prepare-classifier --project <project> --id <id> --step <path> --ladder <path>` prints a :ClassifierRequest: as one JSON object followed by a newline and exits 0.
+- The task, approved project profile, step and ladder are validated as in `show-task`, `check-profile`, `check-step-definition` and `check-model-ladder`. The step's `name` is `classifier` and its `model` matches the ladder's `name`.
+- The request contains the complete task, the UTF-8 contents of the step's prompt file, and the `model` and `effort` of the first ladder rung.
+- Invalid or unreadable input exits nonzero with an error on standard error and nothing on standard output. No model is called and no task is changed.
+
+# run-classifier-request
+`factory classifier run --request <path>` sends a validated :ClassifierRequest: to the model-runner and prints its validated :ClassifierVerdict: as JSON followed by a newline, then exits 0.
+- The runner uses the request's model and effort and asks for output conforming to :ClassifierVerdict:. No tools are available to the model; task content is untrusted data.
+- The returned verdict is validated as in `check-classifier-verdict` and its `intake_id` equals the request task's `id`.
+- An invalid request, runner failure, missing or invalid output, or mismatched id exits nonzero with an error on standard error and nothing on standard output. No task is written and no loop or rung is selected.
+
+# classify-task
+`factory task classify --project <project> --id <id> --step <path> --ladder <path>` prepares the classifier request, runs it and records its verdict as in `prepare-classifier-run`, `run-classifier-request` and `record-classifier-verdict`.
+- Success prints `Verdict recorded: <id>` followed by a newline and exits 0.
+- A preparation, model, verdict validation or persistence failure exits nonzero with an error on standard error, prints nothing on standard output, and leaves the :TaskFile: unchanged. The command selects no loop and starts no coding.
+
+# serve-engine-health
+`factory serve --port <port>` starts a local HTTP server bound to `127.0.0.1` that serves :EngineHealthApi:; the port defaults to 4318 when omitted.
+- `GET /health` reports `engine` as `running`, `telemetry_database` as `not_configured` and `integrations` as an empty array. This reports the server process, not classifier readiness.
+- `task_store` is `available` when the data root from `submit-task` is a readable directory, `not_initialized` when it does not exist, and `unavailable` otherwise. The check changes no files and makes no model calls.
+- Invalid ports or a bind failure exit nonzero with an error on standard error. SIGINT and SIGTERM stop the server.
+
+# add-project
+`factory project add --name <name> --repo <absolute-path>` creates a :Project: and prints `Project added: <name>` followed by a newline, then exits 0.
+- The data root and name rules follow `submit-task`; the repository is an existing absolute directory. The :Project: is stored as `<data-root>/<name>/project.json`.
+- The command creates the project directory exclusively. An existing project directory, invalid input or write failure exits nonzero with an error on standard error and no output on standard output. A failed write removes the newly created incomplete project directory and never changes a preexisting one.
+- The command does not create or approve a :RepoProfile:, start work or change the repository.
+
+# list-projects
+`factory project list` prints registered :Project: records as a JSON array sorted lexicographically by name, followed by a newline, and exits 0.
+- The data root follows `submit-task`. Each direct child directory with a `project.json` contributes its validated :Project:, whose name must match the directory. Direct child directories or `project.json` files that are symbolic links are ignored.
+- A missing data root yields `[]`; directories without `project.json` are ignored. An unreadable root, unreadable or invalid project record, or a name mismatch exits nonzero with an error on standard error and no partial output. No files are changed.

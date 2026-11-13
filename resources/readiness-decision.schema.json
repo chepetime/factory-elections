@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:factory:readiness-decision:v1",
+  "title": "Readiness decision v1",
+  "type": "object",
+  "required": ["action"],
+  "properties": {
+    "action": { "enum": ["continue", "research", "ask-human", "slice", "unsupported"] }
+  },
+  "additionalProperties": false
+}

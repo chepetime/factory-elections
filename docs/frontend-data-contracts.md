@@ -23,6 +23,7 @@ The initial task record shape is [task-record.schema.json](../resources/task-rec
 
 - Define versioned, machine-readable request and response schemas before wiring a frontend view to the backend; share them across independently built frontend and backend modules.
 - Separate reads from commands. A view reports which actions are available; commands validate the task's current state and safety rules on the backend.
+- Removing a project deletes its task records after human confirmation. The repository itself is never deleted; concurrency and in-flight-run safeguards remain to be specified.
 - Specify each action's authorization, state transition, error response and concurrency behavior before enabling it. A checkpoint display does not imply rewind, and a plan display does not imply editable execution.
 - Distinguish unavailable, pending and zero values. Preserve actual provider usage and currency rather than inventing estimates.
 - Do not expose secrets, unrestricted filesystem paths, model context, tool inputs or untrusted agent output without an explicit disclosure and sanitization policy.
