@@ -284,3 +284,16 @@ test('verification that leaves uncommitted files fails', async () => {
   assert.match(stored.verification!.output_tail, /artifact\.out/);
   assert.equal(stored.attempts?.[0]?.step, 'classifier');
 });
+
+test('verification fails when the change commits generated files', async () => {
+  const writeWithCache: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+    await writeFile(join(r.cwd!, 'tsconfig.tsbuildinfo'), '{}\n');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task, store } = await setup({ classifier: [ready], coder: [writeWithCache] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'verification-failed');
+  assert.match(stored.verification!.output_tail, /generated files: tsconfig\.tsbuildinfo/);
+});

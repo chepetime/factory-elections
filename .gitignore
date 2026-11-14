@@ -13,3 +13,8 @@ packages/affect-ui/dist/
 apps/web/storybook-static/
 apps/web/test-results/
 apps/web/src/stories/__screenshots__/
+# Generated output the factory's verification also refuses to commit (see isGeneratedPath).
+.turbo/
+storybook-static/
+test-results/
+.DS_Store

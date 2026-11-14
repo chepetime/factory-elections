@@ -12,6 +12,7 @@ import {
   describeIssues,
   isForbiddenCommand,
   isForbiddenPath,
+  isGeneratedPath,
   openPrBlockers,
   prBody,
   prTitle,
@@ -196,7 +197,7 @@ export class Driver {
   async verify(project: string, id: string): Promise<{ passed: boolean; output: string; headSha: string }> {
     const task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
-    const { path } = await this.checkedWorktree(task);
+    const { path, base } = await this.checkedWorktree(task);
     let output = '';
     const onOutput = (chunk: string) => {
       output += chunk;
@@ -218,6 +219,13 @@ export class Driver {
     const dirty = await this.deps.git.dirtyFiles(path);
     if (dirty.length) {
       output += `\n[verification left uncommitted changes: ${dirty.join(', ')}. Commit them or add them to .gitignore.]\n`;
+      return { passed: false, output, headSha: await this.deps.git.headSha(path) };
+    }
+    // Build output and caches do not belong in the change, even when the repository forgot to
+    // ignore them (a committed tsconfig.tsbuildinfo once slipped through review this way).
+    const generated = (await this.deps.git.addedOrModifiedSince(path, base)).filter(isGeneratedPath);
+    if (generated.length) {
+      output += `\n[the change commits generated files: ${generated.join(', ')}. Remove them from the change and add them to .gitignore.]\n`;
       return { passed: false, output, headSha: await this.deps.git.headSha(path) };
     }
     return { passed: true, output, headSha: await this.deps.git.headSha(path) };

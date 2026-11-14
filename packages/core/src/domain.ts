@@ -64,6 +64,28 @@ export function isForbiddenPath(path: string, patterns: readonly string[]): bool
   });
 }
 
+/** Directories whose contents are build output, caches or tool reports, wherever they appear. */
+export const GENERATED_DIRS = [
+  'node_modules',
+  '.next',
+  '.turbo',
+  'coverage',
+  'storybook-static',
+  'test-results',
+];
+/** File names or suffixes that are build output or OS litter, wherever they appear. */
+export const GENERATED_FILES = ['.tsbuildinfo', '.DS_Store'];
+
+/** Whether a repository path is generated output that a change should not commit. */
+export function isGeneratedPath(path: string): boolean {
+  const parts = path.split('/');
+  const name = parts.at(-1) ?? '';
+  return (
+    parts.slice(0, -1).some((part) => GENERATED_DIRS.includes(part)) ||
+    GENERATED_FILES.some((suffix) => name.endsWith(suffix))
+  );
+}
+
 const ALWAYS_FORBIDDEN_COMMANDS = [
   'git push',
   'gh ',
