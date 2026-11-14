@@ -1,5 +1,6 @@
 import placeholders from '../../../../resources/frontend-component-placeholders.json';
 import { EngineHealthPanel } from '@/components/engine-health-panel';
+import { LayerStack } from '@/components/layer-stack';
 import { ProjectSelector } from '@/components/project-selector';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,10 @@ export default function Home() {
         </section>
         <EngineHealthPanel />
       </div>
+
+      <section aria-label="Overview" className="mx-auto w-full max-w-xl">
+        <LayerStack />
+      </section>
 
       <section id="components" aria-labelledby="components-heading">
         <h2 id="components-heading" className="mb-1 font-medium">
