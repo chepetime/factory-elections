@@ -31,18 +31,12 @@ claude            # sign in once, or: export ANTHROPIC_API_KEY=...
 # The factory
 git clone <this repository> factory-elections
 cd factory-elections
-pnpm install
-./bin/factory doctor
+pnpm run setup
 ```
+
+`pnpm run setup` (or `npm run setup`) does three things. It installs dependencies, links `factory` into `~/.local/bin` (set `FACTORY_BIN_DIR` to use another directory), and runs `factory doctor`. If that directory isn't on your `PATH`, it prints the line to add to `~/.zshrc`. It's safe to rerun. Note that `pnpm setup` without `run` is pnpm's own built-in command, so it won't run this script.
 
 `doctor` checks Node, git, the GitHub CLI sign-in, Claude access and the data directory, and tells you how to fix anything that fails.
-
-To run `factory` from anywhere, link it onto your `PATH`:
-
-```sh
-mkdir -p ~/.local/bin
-ln -sf "$PWD/bin/factory" ~/.local/bin/factory   # make sure ~/.local/bin is on PATH
-```
 
 There is no build step. Node runs the TypeScript sources directly. After `git pull`, run `pnpm install` again.
 
