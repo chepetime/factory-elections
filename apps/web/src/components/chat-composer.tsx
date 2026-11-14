@@ -12,10 +12,11 @@ import {
   LoaderCircle,
   Mic,
   Paperclip,
-  Plus,
   Square,
   X,
 } from 'lucide-react';
+import { ComposerMenu, composerMenuRow as menuRow } from '@/components/composer-menu';
+import { ChatComposerAddMenu, type ChatAddAction } from '@/components/chat-composer-add-menu';
 import { ApprovalModePicker, type ApprovalMode } from '@/components/approval-mode-picker';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -54,6 +55,7 @@ export type ChatComposerProps = {
   onAppsChange?: (connected: string[]) => void;
   attachments?: ChatAttachment[];
   onAttach?: () => void;
+  addActions?: ChatAddAction[];
   onRemoveAttachment?: (attachment: ChatAttachment) => void;
   onSend?: (message: string, details: ChatMessageDetails) => void | Promise<void>;
   /** A preference passed to the caller; the caller enforces actual permissions. */
@@ -87,6 +89,7 @@ export function ChatComposer({
   onAppsChange,
   attachments = [],
   onAttach,
+  addActions = [],
   onRemoveAttachment,
   onSend,
   approvalMode,
@@ -154,6 +157,12 @@ export function ChatComposer({
       sendLock.current = false;
       setPending(false);
     }
+  }
+
+  function chooseFolder(next: string | null) {
+    if (folder === undefined) setOwnFolder(next);
+    onFolderChange?.(next);
+    setAnnouncement(next ? `Working in ${next}.` : 'No folder selected.');
   }
 
   function stopDictation(commit: boolean) {
@@ -250,17 +259,16 @@ export function ChatComposer({
             </AnimatePresence>
           </ul>
           <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-11 shrink-0 text-muted-foreground"
-              aria-label="Attach files"
-              disabled={locked || recording || !onAttach}
-              onClick={onAttach}
-            >
-              <Plus />
-            </Button>
+            <ChatComposerAddMenu
+              disabled={locked || recording}
+              onAttach={onAttach}
+              actions={addActions}
+              folderItems={
+                folders.length > 0 ? (
+                  <FolderOptions folders={folders} selected={chosenFolder} onSelect={chooseFolder} />
+                ) : undefined
+              }
+            />
             <ApprovalModePicker
               value={chosenApprovalMode}
               disabled={locked}
@@ -270,15 +278,26 @@ export function ChatComposer({
                 onApprovalModeChange?.(next);
               }}
             />
-            <div className="ml-auto flex min-w-0 items-center gap-1">
+            <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
               {models.length > 0 && (
                 <Menu.Root modal={false}>
                   <Menu.Trigger
-                    render={<Button variant="ghost" type="button" className="min-h-11 min-w-0 gap-1 px-2" />}
+                    render={
+                      <Button variant="ghost" type="button" className="min-h-11 min-w-0 shrink gap-2 px-2" />
+                    }
                     aria-label={`Model: ${chosenModel?.name ?? 'Unavailable'}`}
+                    title={chosenModel?.name}
                     disabled={locked || !chosenModel}
                   >
-                    <span className="max-w-20 truncate text-sm">{chosenModel?.name ?? 'No model'}</span>
+                    {chosenModel?.icon && (
+                      <span
+                        aria-hidden="true"
+                        className="flex size-4 shrink-0 items-center justify-center [&>svg]:size-full"
+                      >
+                        {chosenModel.icon}
+                      </span>
+                    )}
+                    <span className="min-w-0 truncate text-sm">{chosenModel?.name ?? 'No model'}</span>
                     <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
                   </Menu.Trigger>
                   <ComposerMenu label="Choose a model" align="end" showHeading={false}>
@@ -371,35 +390,7 @@ export function ChatComposer({
                   <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
                 </Menu.Trigger>
                 <ComposerMenu label="Work in a folder" align="start">
-                  <Menu.Item
-                    className={menuRow}
-                    onClick={() => {
-                      if (folder === undefined) setOwnFolder(null);
-                      onFolderChange?.(null);
-                      setAnnouncement('No folder selected.');
-                    }}
-                  >
-                    <span className="flex-1">No folder</span>
-                    {!chosenFolder && <Check aria-hidden="true" className="size-4" />}
-                  </Menu.Item>
-                  {folders.map((path) => (
-                    <Menu.Item
-                      key={path}
-                      className={menuRow}
-                      onClick={() => {
-                        const next = path === chosenFolder ? null : path;
-                        if (folder === undefined) setOwnFolder(next);
-                        onFolderChange?.(next);
-                        setAnnouncement(next ? `Working in ${next}.` : 'No folder selected.');
-                      }}
-                    >
-                      <Folder aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate" title={path}>
-                        {path}
-                      </span>
-                      {chosenFolder === path && <Check aria-hidden="true" className="size-4" />}
-                    </Menu.Item>
-                  ))}
+                  <FolderOptions folders={folders} selected={chosenFolder} onSelect={chooseFolder} />
                 </ComposerMenu>
               </Menu.Root>
             )}
@@ -468,31 +459,30 @@ export function ChatComposer({
   );
 }
 
-const menuRow =
-  'flex min-h-11 cursor-default items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50';
-
-function ComposerMenu({
-  label,
-  align,
-  children,
-  showHeading = true,
+function FolderOptions({
+  folders,
+  selected,
+  onSelect,
 }: {
-  label: string;
-  showHeading?: boolean;
-  align: 'start' | 'end';
-  children: ReactNode;
+  folders: string[];
+  selected: string | null;
+  onSelect: (folder: string | null) => void;
 }) {
   return (
-    <Menu.Portal>
-      <Menu.Positioner align={align} side="top" sideOffset={8} className="z-50 outline-none">
-        <Menu.Popup
-          aria-label={label}
-          className="max-h-[min(24rem,var(--available-height))] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 motion-safe:ease-out data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:transition-none"
-        >
-          {showHeading && <div className="px-3 py-2 text-sm text-muted-foreground">{label}</div>}
-          {children}
-        </Menu.Popup>
-      </Menu.Positioner>
-    </Menu.Portal>
+    <>
+      <Menu.Item className={menuRow} onClick={() => onSelect(null)}>
+        <span className="flex-1">No folder</span>
+        {!selected && <Check aria-hidden="true" className="size-4" />}
+      </Menu.Item>
+      {folders.map((path) => (
+        <Menu.Item key={path} className={menuRow} onClick={() => onSelect(path === selected ? null : path)}>
+          <Folder aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate" title={path}>
+            {path}
+          </span>
+          {selected === path && <Check aria-hidden="true" className="size-4" />}
+        </Menu.Item>
+      ))}
+    </>
   );
 }

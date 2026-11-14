@@ -16,3 +16,5 @@ export const CHAT_DEMO_MODELS = [
   { id: 'gpt', name: 'GPT-5', icon: <Aperture /> },
 ];
 export const CHAT_DEMO_FOLDERS = ['Q3 Campaign', 'Brand assets', 'Hiring', 'Research'];
+
+export const CHAT_DEMO_ADD_ACTIONS = [{ id: 'claude-context', label: 'Attach Claude', icon: <ClaudeMark /> }];

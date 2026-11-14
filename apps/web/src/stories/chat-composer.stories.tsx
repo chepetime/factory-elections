@@ -47,6 +47,7 @@ export const MenuToggling: Story = {
     const document = canvasElement.ownerDocument;
     const page = within(document.body);
     const controls = [
+      ['Add', 'Add'],
       ['Request approval', 'How should actions be approved?'],
       ['Model: Auto', 'Choose a model'],
       ['Work in a folder', 'Work in a folder'],
@@ -76,6 +77,29 @@ export const MenuToggling: Story = {
 export const Ready: Story = {
   args: { defaultValue: 'Review the retry flow and preserve the previous attempt.' },
 };
+export const SelectedModel: Story = {
+  args: {
+    models: [
+      { id: 'auto', name: 'Auto' },
+      {
+        id: 'research',
+        name: 'Research model v2026.11',
+        icon: <span data-testid="research-model-icon">◈</span>,
+      },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole('button', { name: 'Model: Auto' }));
+    await userEvent.click(await page.findByRole('menuitemradio', { name: /Research model v2026.11/ }));
+    const trigger = canvas.getByRole('button', { name: 'Model: Research model v2026.11' });
+    await expect(within(trigger).getByTestId('research-model-icon')).toBeInTheDocument();
+    const label = within(trigger).getByText('Research model v2026.11');
+    await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1);
+    await expect(trigger).toHaveAttribute('title', 'Research model v2026.11');
+  },
+};
 export const Sending: Story = { args: { defaultValue: 'Review the latest changes.', sending: true } };
 export const Disabled: Story = { args: { defaultValue: 'This composer is disabled.', disabled: true } };
 export const Error: Story = {
@@ -103,6 +127,9 @@ export const Minimal: Story = {
 };
 export const Narrow: Story = {
   args: {
+    models: [
+      { id: 'long', name: 'An unusually long custom model name for this project', icon: <span>◈</span> },
+    ],
     defaultValue: 'A long prompt in a narrow component container.',
     folder: 'a-very-long-folder-name/with-a-deeply-nested/project',
     folders: ['a-very-long-folder-name/with-a-deeply-nested/project'],
@@ -117,6 +144,37 @@ export const Narrow: Story = {
   play: async ({ canvasElement }) => {
     const form = within(canvasElement).getByRole('form', { name: 'Chat composer' });
     await expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth + 1);
+  },
+};
+export const AddActions: Story = {
+  args: {
+    folders: [],
+    addActions: Array.from({ length: 30 }, (_, index) => ({
+      id: `action-${index}`,
+      label: `Custom action ${index + 1}`,
+      onSelect: fn(),
+    })),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole('button', { name: 'Add' }));
+    await userEvent.click(await page.findByRole('menuitem', { name: 'Files and folders' }));
+    await expect(args.onAttach).toHaveBeenCalledTimes(1);
+    await userEvent.click(canvas.getByRole('button', { name: 'Add' }));
+    const menu = await page.findByRole('menu', { name: 'Add' });
+    await waitFor(() =>
+      expect(menu).toContainElement(canvasElement.ownerDocument.activeElement as HTMLElement),
+    );
+    await userEvent.keyboard('{End}');
+    const last = page.getByRole('menuitem', { name: 'Custom action 30' });
+    await waitFor(() => expect(last).toHaveFocus());
+    await expect(menu.scrollHeight).toBeGreaterThan(menu.clientHeight);
+    await expect(menu.scrollTop).toBeGreaterThan(0);
+    await userEvent.keyboard('{Enter}');
+    await expect(args.addActions![29]!.onSelect).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(menu).not.toBeInTheDocument());
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Add' })).toHaveFocus());
   },
 };
 export const Attachments: Story = {
@@ -140,7 +198,8 @@ export const ModelAndContext: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Model: Auto' }));
     await userEvent.click(await page.findByRole('menuitemradio', { name: /^Claude/ }));
     await expect(args.onModelChange).toHaveBeenCalledWith(expect.objectContaining({ id: 'claude' }));
-    await userEvent.click(canvas.getByRole('button', { name: 'Work in a folder' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Add' }));
+    await userEvent.click(await page.findByRole('menuitem', { name: 'Work in a folder' }));
     await userEvent.click(await page.findByRole('menuitem', { name: 'factory-elections' }));
     await expect(args.onFolderChange).toHaveBeenCalledWith('factory-elections');
     await userEvent.click(canvas.getByRole('button', { name: /^Connect apps/ }));

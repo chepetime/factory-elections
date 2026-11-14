@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import {
   CHAT_DEMO_APPS,
+  CHAT_DEMO_ADD_ACTIONS,
   CHAT_DEMO_MODELS,
   CHAT_DEMO_FOLDERS,
 } from '@/components/demos/chat-composer-fixtures';
@@ -57,6 +58,15 @@ export function ChatComposerDemo() {
         models={CHAT_DEMO_MODELS}
         folders={CHAT_DEMO_FOLDERS}
         apps={CHAT_DEMO_APPS}
+        addActions={CHAT_DEMO_ADD_ACTIONS.map((action) => ({
+          ...action,
+          onSelect: () =>
+            setAttachments((items) =>
+              items.some((item) => item.id === action.id)
+                ? items
+                : [...items, { id: action.id, name: action.label }],
+            ),
+        }))}
         attachments={attachments}
         onAttach={() => picker.current?.click()}
         onRemoveAttachment={(attachment) =>
