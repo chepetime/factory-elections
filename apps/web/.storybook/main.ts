@@ -9,6 +9,7 @@ const config: StorybookConfig = {
   core: { disableTelemetry: true },
   async viteFinal(base) {
     return mergeConfig(base, {
+      optimizeDeps: { include: ['@base-ui/react/menu'] },
       resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
     });
   },

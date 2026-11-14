@@ -22,9 +22,6 @@ If turri returns, don't render over the hand-written tree blindly; reconcile the
 
 ## Suggested next steps
 
-1. Worktree cleanup command (`factory task cleanup`) for finished or rejected tasks.
-2. Widen the coder sandbox deliberately: per-profile allowed hosts and write paths, and denying reads of secrets (`~/.ssh`, `~/.npmrc`, cloud credentials).
-3. Web: an inbox of tasks awaiting a decision, and replacing placeholder cards with real views.
-4. Phase 2 of the plan: PR tending, research route, slicer.
+See [TODO.md](../TODO.md).
 
 Do not put credentials, task data or machine-specific paths into the repository.

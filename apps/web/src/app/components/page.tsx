@@ -75,7 +75,7 @@ export default function ComponentsPage() {
           number="03"
           id="chat-composer"
           name="Chat Composer"
-          description="Compose a message with the right model, folder, and apps. Attach files, request approval, and add dictation to a draft."
+          description="Compose a message with the right model, folder, and apps. Attach files, choose an approval mode, and add dictation to a draft."
         >
           <ChatComposerDemo />
         </GalleryItem>

@@ -9,7 +9,6 @@ import {
   Check,
   ChevronDown,
   Folder,
-  Hand,
   LoaderCircle,
   Mic,
   Paperclip,
@@ -17,6 +16,7 @@ import {
   Square,
   X,
 } from 'lucide-react';
+import { ApprovalModePicker, type ApprovalMode } from '@/components/approval-mode-picker';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,8 @@ export type ChatModel = {
 export type ChatApp = { id: string; name: string; logo?: ReactNode };
 export type ChatAttachment = { id: string; name: string };
 export type ChatMessageDetails = {
-  model: string;
+  model: string | null;
+  approvalMode: ApprovalMode;
   folder: string | null;
   connectedApps: string[];
   attachments: ChatAttachment[];
@@ -55,9 +56,10 @@ export type ChatComposerProps = {
   onAttach?: () => void;
   onRemoveAttachment?: (attachment: ChatAttachment) => void;
   onSend?: (message: string, details: ChatMessageDetails) => void | Promise<void>;
-  /** Requesting approval does not grant permission. The caller owns that workflow. */
-  onRequestApproval?: () => void | Promise<void>;
-  approvalStatus?: 'idle' | 'pending' | 'requested';
+  /** A preference passed to the caller; the caller enforces actual permissions. */
+  approvalMode?: ApprovalMode;
+  onApprovalModeChange?: (mode: ApprovalMode) => void;
+  approvalHelpUrl?: string;
   /** Speech integration belongs to the caller; this component never opens a microphone. */
   recording?: boolean;
   dictation?: string;
@@ -69,18 +71,12 @@ export type ChatComposerProps = {
   className?: string;
 };
 
-const DEFAULT_MODELS: ChatModel[] = [
-  { id: 'auto', name: 'Auto', description: 'Let the assistant choose' },
-  { id: 'claude', name: 'Claude', description: 'Use your configured Anthropic model' },
-  { id: 'chatgpt', name: 'ChatGPT', description: 'Use your configured OpenAI model' },
-];
-
 export function ChatComposer({
   value,
   defaultValue = '',
   onValueChange,
   placeholder = 'Start by typing…',
-  models = DEFAULT_MODELS,
+  models = [],
   model,
   onModelChange,
   folders = [],
@@ -93,8 +89,9 @@ export function ChatComposer({
   onAttach,
   onRemoveAttachment,
   onSend,
-  onRequestApproval,
-  approvalStatus,
+  approvalMode,
+  onApprovalModeChange,
+  approvalHelpUrl,
   recording = false,
   dictation = '',
   onStartDictation,
@@ -105,15 +102,14 @@ export function ChatComposer({
   className,
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(defaultValue);
-  const [ownModel, setOwnModel] = useState(models.find((entry) => !entry.disabled)?.id);
+  const [ownModel, setOwnModel] = useState(() => models.find((entry) => !entry.disabled)?.id);
   const [ownFolder, setOwnFolder] = useState<string | null>(null);
   const [ownApps, setOwnApps] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
-  const [approval, setApproval] = useState<'idle' | 'pending' | 'requested'>('idle');
+  const [ownApprovalMode, setOwnApprovalMode] = useState<ApprovalMode>('request');
   const [failure, setFailure] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const sendLock = useRef(false);
-  const approvalLock = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const id = useId();
   const reduceMotion = useReducedMotion();
@@ -124,7 +120,7 @@ export function ChatComposer({
   const chosenFolder = folder !== undefined ? folder : ownFolder;
   const appIds = connectedApps ?? ownApps;
   const connected = apps.filter((app) => appIds.includes(app.id)).map((app) => app.id);
-  const approvalState = approvalStatus ?? approval;
+  const chosenApprovalMode = approvalMode ?? ownApprovalMode;
   const busy = sending || pending;
   const locked = disabled || busy;
   const messageError = error || failure;
@@ -143,7 +139,8 @@ export function ChatComposer({
     setFailure(null);
     try {
       await onSend(text.trim(), {
-        model: chosenModel?.id ?? 'auto',
+        model: chosenModel?.id ?? null,
+        approvalMode: chosenApprovalMode,
         folder: chosenFolder,
         connectedApps: [...connected],
         attachments: [...attachments],
@@ -156,24 +153,6 @@ export function ChatComposer({
     } finally {
       sendLock.current = false;
       setPending(false);
-    }
-  }
-
-  async function requestApproval() {
-    if (!onRequestApproval || locked || approvalState !== 'idle' || approvalLock.current) return;
-    approvalLock.current = true;
-    setApproval('pending');
-    setFailure(null);
-    setAnnouncement('Requesting approval.');
-    try {
-      await onRequestApproval();
-      setApproval('requested');
-      setAnnouncement('Approval requested. Permission has not been granted by this component.');
-    } catch (cause) {
-      setApproval('idle');
-      setFailure(cause instanceof Error ? cause.message : 'Approval request failed. Try again.');
-    } finally {
-      approvalLock.current = false;
     }
   }
 
@@ -193,7 +172,10 @@ export function ChatComposer({
           event.preventDefault();
           void send();
         }}
-        className={cn('mx-auto w-full max-w-[680px] rounded-2xl border bg-muted/50 shadow-xs', className)}
+        className={cn(
+          '@container mx-auto w-full max-w-[680px] rounded-2xl border bg-muted/50 shadow-xs',
+          className,
+        )}
       >
         <div className="rounded-2xl border-b bg-card p-3 shadow-xs sm:p-4">
           <label htmlFor={`${id}-message`} className="sr-only">
@@ -233,39 +215,40 @@ export function ChatComposer({
           <p id={`${id}-hint`} className="sr-only">
             Enter sends. Shift plus Enter adds a new line. Escape discards active dictation.
           </p>
-          {attachments.length > 0 && (
-            <ul aria-label="Attachments" className="mb-3 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-              <AnimatePresence initial={false}>
-                {attachments.map((attachment) => (
-                  <m.li
-                    key={attachment.id}
-                    layout={!reduceMotion}
-                    initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: reduceMotion ? 0 : 0.15 }}
-                    className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border bg-muted/50 pl-3"
+          <ul
+            aria-label="Attachments"
+            className={cn('flex max-h-28 flex-wrap gap-2 overflow-y-auto', attachments.length > 0 && 'mb-3')}
+          >
+            <AnimatePresence initial={false}>
+              {attachments.map((attachment) => (
+                <m.li
+                  key={attachment.id}
+                  layout={!reduceMotion}
+                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.15 }}
+                  className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border bg-muted/50 pl-3"
+                >
+                  <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="max-w-48 truncate text-xs" title={attachment.name}>
+                    {attachment.name}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 shrink-0"
+                    aria-label={`Remove attachment ${attachment.name}`}
+                    disabled={locked || !onRemoveAttachment}
+                    onClick={() => onRemoveAttachment?.(attachment)}
                   >
-                    <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="max-w-48 truncate text-xs" title={attachment.name}>
-                      {attachment.name}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 shrink-0"
-                      aria-label={`Remove attachment ${attachment.name}`}
-                      disabled={locked || !onRemoveAttachment}
-                      onClick={() => onRemoveAttachment?.(attachment)}
-                    >
-                      <X className="size-3.5" />
-                    </Button>
-                  </m.li>
-                ))}
-              </AnimatePresence>
-            </ul>
-          )}
+                    <X className="size-3.5" />
+                  </Button>
+                </m.li>
+              ))}
+            </AnimatePresence>
+          </ul>
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -278,47 +261,15 @@ export function ChatComposer({
             >
               <Plus />
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="min-h-11 gap-2 px-2 text-muted-foreground"
-              aria-label={
-                approvalState === 'requested'
-                  ? 'Approval requested'
-                  : approvalState === 'pending'
-                    ? 'Requesting approval'
-                    : 'Request approval'
-              }
-              aria-busy={approvalState === 'pending'}
-              disabled={locked || !onRequestApproval || approvalState !== 'idle'}
-              onClick={() => void requestApproval()}
-            >
-              <AnimatePresence mode="wait" initial={false}>
-                <m.span
-                  aria-hidden="true"
-                  key={approvalState}
-                  initial={{ opacity: reduceMotion ? 1 : 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.1 }}
-                >
-                  {approvalState === 'pending' ? (
-                    <LoaderCircle className="size-4 motion-safe:animate-spin" />
-                  ) : approvalState === 'requested' ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <Hand className="size-4" />
-                  )}
-                </m.span>
-              </AnimatePresence>
-              <span className="hidden text-xs min-[480px]:inline">
-                {approvalState === 'requested'
-                  ? 'Approval requested'
-                  : approvalState === 'pending'
-                    ? 'Requesting…'
-                    : 'Request approval'}
-              </span>
-            </Button>
+            <ApprovalModePicker
+              value={chosenApprovalMode}
+              disabled={locked}
+              helpUrl={approvalHelpUrl}
+              onChange={(next) => {
+                if (approvalMode === undefined) setOwnApprovalMode(next);
+                onApprovalModeChange?.(next);
+              }}
+            />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               {models.length > 0 && (
                 <Menu.Root modal={false}>
@@ -330,7 +281,7 @@ export function ChatComposer({
                     <span className="max-w-20 truncate text-sm">{chosenModel?.name ?? 'No model'}</span>
                     <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
                   </Menu.Trigger>
-                  <ComposerMenu label="Choose a model" align="end">
+                  <ComposerMenu label="Choose a model" align="end" showHeading={false}>
                     <Menu.RadioGroup
                       value={chosenModel?.id}
                       onValueChange={(next: string) => {
@@ -345,6 +296,7 @@ export function ChatComposer({
                         <Menu.RadioItem
                           key={entry.id}
                           value={entry.id}
+                          closeOnClick
                           disabled={entry.disabled}
                           className={menuRow}
                         >
@@ -418,7 +370,7 @@ export function ChatComposer({
                   <span className="truncate text-xs">{chosenFolder ?? 'Work in a folder'}</span>
                   <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
                 </Menu.Trigger>
-                <ComposerMenu label="Choose a folder" align="start">
+                <ComposerMenu label="Work in a folder" align="start">
                   <Menu.Item
                     className={menuRow}
                     onClick={() => {
@@ -479,7 +431,7 @@ export function ChatComposer({
                     ))}
                   </span>
                 </Menu.Trigger>
-                <ComposerMenu label="Choose connected apps" align="end">
+                <ComposerMenu label="Apps" align="end">
                   {apps.map((app) => (
                     <Menu.CheckboxItem
                       key={app.id}
@@ -517,27 +469,27 @@ export function ChatComposer({
 }
 
 const menuRow =
-  'flex min-h-11 cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50';
+  'flex min-h-11 cursor-default items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50';
 
 function ComposerMenu({
   label,
   align,
   children,
+  showHeading = true,
 }: {
   label: string;
+  showHeading?: boolean;
   align: 'start' | 'end';
   children: ReactNode;
 }) {
   return (
     <Menu.Portal>
-      <Menu.Positioner align={align} sideOffset={8} className="z-50 outline-none">
+      <Menu.Positioner align={align} side="top" sideOffset={8} className="z-50 outline-none">
         <Menu.Popup
           aria-label={label}
-          className="max-h-[min(24rem,var(--available-height))] w-72 max-w-[calc(100vw-2rem)] origin-[var(--transform-origin)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none motion-safe:transition-[opacity,transform] motion-safe:duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0"
+          className="max-h-[min(24rem,var(--available-height))] w-80 max-w-[calc(100vw-2rem)] origin-[var(--transform-origin)] overflow-y-auto rounded-2xl border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none motion-safe:transition-[opacity,transform] motion-safe:duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0"
         >
-          <div className="px-3 py-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-            {label}
-          </div>
+          {showHeading && <div className="px-3 py-2 text-sm text-muted-foreground">{label}</div>}
           {children}
         </Menu.Popup>
       </Menu.Positioner>

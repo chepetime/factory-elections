@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { GitBranch, MessageSquare, NotebookPen, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
+import {
+  CHAT_DEMO_APPS,
+  CHAT_DEMO_MODELS,
+  CHAT_DEMO_FOLDERS,
+} from '@/components/demos/chat-composer-fixtures';
 import { ChatComposer, type ChatAttachment, type ChatMessageDetails } from '@/components/chat-composer';
 import { Button } from '@/components/ui/button';
 
-const APPS = [
-  { id: 'github', name: 'GitHub', logo: <GitBranch className="text-violet-600 dark:text-violet-400" /> },
-  { id: 'slack', name: 'Slack', logo: <MessageSquare className="text-blue-600 dark:text-blue-400" /> },
-  { id: 'notes', name: 'Notes', logo: <NotebookPen className="text-amber-700 dark:text-amber-400" /> },
-];
 const TRANSCRIPT = 'Summarize the latest findings and suggest the next step.';
 
 export function ChatComposerDemo() {
@@ -54,14 +54,15 @@ export function ChatComposerDemo() {
       />
       <ChatComposer
         key={version}
-        folders={['factory-elections', 'design-notes', 'research']}
-        apps={APPS}
+        models={CHAT_DEMO_MODELS}
+        folders={CHAT_DEMO_FOLDERS}
+        apps={CHAT_DEMO_APPS}
         attachments={attachments}
         onAttach={() => picker.current?.click()}
         onRemoveAttachment={(attachment) =>
           setAttachments((previous) => previous.filter((item) => item.id !== attachment.id))
         }
-        onRequestApproval={() => new Promise<void>((resolve) => window.setTimeout(resolve, 700))}
+        approvalHelpUrl="#chat-composer-help"
         recording={recording}
         dictation={dictation}
         onStartDictation={() => {
@@ -86,15 +87,16 @@ export function ChatComposerDemo() {
           <p className="text-xs font-medium text-muted-foreground">Sent in this demo</p>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{sent.message}</p>
           <p className="text-xs text-muted-foreground">
-            Model: {sent.details.model} · Folder: {sent.details.folder ?? 'None'} · Apps:{' '}
-            {sent.details.connectedApps.length} · Attachments: {sent.details.attachments.length}
+            Model: {sent.details.model} · Approval: {sent.details.approvalMode} · Folder:{' '}
+            {sent.details.folder ?? 'None'} · Apps: {sent.details.connectedApps.length} · Attachments:{' '}
+            {sent.details.attachments.length}
           </p>
         </div>
       )}
       <div className="mx-auto flex max-w-[680px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-          Local preview. Dictation is simulated; messages, file contents, approval requests, and app
-          selections are never sent to a service.
+        <p id="chat-composer-help" className="max-w-md text-xs leading-relaxed text-muted-foreground">
+          Local preview. Dictation is simulated; messages, file contents, approval modes, and app selections
+          stay local. Permission rules are enforced by the integrating application.
         </p>
         <Button
           type="button"
