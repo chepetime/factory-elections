@@ -10,13 +10,18 @@
     "factory": "./bin/factory"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "factory": "node apps/cli/src/main.ts",
-    "test": "node --test --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit --pretty false",
+    "test": "node --test --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\" && pnpm --filter @factory/web test",
+    "typecheck": "tsc --noEmit --pretty false && pnpm --filter @factory/web typecheck",
     "lint": "oxlint --deny-warnings .",
     "format": "prettier --write .",
     "format:check": "prettier --list-different --ignore-unknown .",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "web": "node scripts/web.mjs",
+    "storybook": "pnpm --filter @factory/web storybook",
+    "storybook:build": "pnpm --filter @factory/web storybook:build",
+    "storybook:test": "pnpm --filter @factory/web storybook:test"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

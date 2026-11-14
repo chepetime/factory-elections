@@ -5,3 +5,9 @@ dist
 apps/web/.next
 *.md
 *.plain
+
+# Preserve licensed upstream source byte-for-byte.
+packages/affect-ui/upstream/
+packages/affect-ui/dist/
+apps/web/storybook-static/
+apps/web/test-results/

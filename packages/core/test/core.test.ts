@@ -8,6 +8,7 @@ import {
   approvalBlockers,
   isForbiddenCommand,
   isForbiddenPath,
+  isGeneratedPath,
   openPrBlockers,
   readinessDecision,
   type RepoProfile,
@@ -115,4 +116,17 @@ test('forbidden paths and commands', () => {
   assert.equal(isForbiddenCommand('git  push origin', profile), 'git push');
   assert.equal(isForbiddenCommand('cd x && terraform apply', profile), 'terraform apply');
   assert.equal(isForbiddenCommand('pnpm test', profile), undefined);
+});
+
+test('generated output is recognised anywhere in the tree, deliberate files are not', () => {
+  for (const path of [
+    'apps/web/tsconfig.tsbuildinfo',
+    'apps/web/.next/server/app.js',
+    'node_modules/x/index.js',
+    'coverage/lcov.info',
+    'docs/.DS_Store',
+  ])
+    assert.equal(isGeneratedPath(path), true, path);
+  for (const path of ['src/next.ts', 'docs/coverage.md', 'packages/x/dist-notes.md', 'tsconfig.json'])
+    assert.equal(isGeneratedPath(path), false, path);
 });

@@ -120,7 +120,7 @@ Decision column: **K** = keep, **C** = change, **D** = drop, **?** = undecided. 
 | Self-update | Pull main and reload services without losing work | `pnpm factory:update` | D (later) |
 | LaunchAgents | Dispatcher and app run as macOS user services | `config/*.plist`, `scripts/install-services` | C: phase 4, with the dispatcher |
 
-### 9. Factory app (Next.js, localhost:4317)
+### 9. Factory app (Next.js, localhost:3000)
 
 | Feature | What it does | Where | Decision |
 |---|---|---|---|

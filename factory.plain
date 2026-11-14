@@ -125,6 +125,7 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 - The task and profile are validated as in `show-task` and `check-profile`. The worktree at `<data-root>/<project>/worktrees/<id>` must belong to the task's repository and be on branch `factory/<id>`; the command never falls back to the original repository.
 - Each command runs with `/bin/sh -c`, with its output forwarded to standard error. A nonzero exit stops verification before the next command.
 - Verification fails when the commands leave uncommitted or untracked, non-ignored files in the worktree.
+- Verification fails when the change adds or modifies generated files: anything under a `node_modules`, `.next`, `.turbo`, `coverage`, `storybook-static` or `test-results` directory, `*.tsbuildinfo`, or `.DS_Store`. Deleting such a file is allowed.
 - If both commands succeed, the command prints `Verification passed: <id>` followed by a newline and exits 0. Invalid input, a missing or mismatched worktree, or a failed command exits nonzero with an error on standard error and no standard output. Verification does not update the :TaskFile: or commit changes.
 
 # prepare-classifier-run
@@ -173,7 +174,7 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 
 # code-task
 The driver's coder step runs one :ModelLadder: rung in the task's verified worktree, then the driver commits the result on `factory/<id>`.
-- The coder receives the task prompt, human revision notes, blocking reviewer findings from a `request-changes` review, and the previous verification output when retrying. It may read, edit and run shell commands only inside the worktree; `git push`, `gh`, branch switching, git configuration, the profile's forbidden commands and edits to forbidden paths are denied.
+- The coder receives the task prompt, human revision notes, blocking reviewer findings from a `request-changes` review, and the previous verification output when retrying. It may read, edit and run shell commands only inside the worktree. Its shell commands run in the OS sandbox, with writes limited to the worktree and package-manager caches, network limited to the npm registry, no way to run a command outside the sandbox, and a failed step when the sandbox is unavailable; `git push`, `gh`, branch switching, git configuration, the profile's forbidden commands and edits to forbidden paths are denied.
 - Changes to forbidden paths are unstaged and fail the attempt; an attempt with no changes and no earlier commits fails. Every attempt is appended to `attempts`; a failed attempt sets `stage` to `failed`.
 - After each failed verification the next attempt climbs one rung, skipping rungs marked `requires_human_approval`, up to `--max-attempts` (default 3).
 
@@ -186,7 +187,7 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 - It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request.
 
 # approval-gate
-`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. Neither changes the task.
+`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. With `--json`, `task gate` prints one JSON object with `task`, `head_sha`, `diff_stat` and `blockers`. Neither changes the task.
 
 # approve-task
 `factory task approve --project <project> --id <id> --head <sha> [--note <text>] [--accept-blocking]` records the human's approval of the current head and sets `stage` to `approved`.

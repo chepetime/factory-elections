@@ -79,8 +79,11 @@ export async function commit(dir: string, message: string): Promise<string> {
   return headSha(dir);
 }
 
-export async function changedFilesSince(dir: string, base: string): Promise<string[]> {
-  return (await git(dir, ['diff', '--name-only', '-z', `${base}...HEAD`])).split('\0').filter(Boolean);
+/** Paths the branch adds or modifies since it left `base`; deletions are not listed. */
+export async function addedOrModifiedSince(dir: string, base: string): Promise<string[]> {
+  return (await git(dir, ['diff', '--name-only', '--diff-filter=d', '-z', `${base}...HEAD`]))
+    .split('\0')
+    .filter(Boolean);
 }
 
 export async function diffSince(dir: string, base: string, stat = false): Promise<string> {

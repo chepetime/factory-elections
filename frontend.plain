@@ -18,12 +18,18 @@ description: Next.js frontend for the software factory.
 
 - :ProjectReadApi: is the local project-read HTTP contract in [resources/project-read-api.openapi.yaml](resources/project-read-api.openapi.yaml).
 
+- :ReviewContract: describes reviewer output in [resources/review.schema.json](resources/review.schema.json).
+
+- :FactoryCli: is the `factory` command specified by factory.plain. The web app keeps no state: every read and every action runs :FactoryCli: with Node, without a shell.
+
 ***implementation reqs***
 
 - :Implementation: uses Next.js with the App Router, React, shadcn/ui, pnpm, Node.js 26 or later, ESM and strict TypeScript.
 - :Implementation: is formatted with Prettier and linted with oxlint with warnings denied.
 
-- :Implementation: binds its development and production HTTP servers to `127.0.0.1`.
+- :Implementation: binds its development and production HTTP servers to `localhost` on port 3000.
+- :Implementation: lives in `apps/web`, is bundled with webpack (`--webpack`) so dependencies linked from pnpm's global virtual store resolve, loads no remote fonts, and is started with `pnpm web` (`scripts/web.mjs`), which also starts `factory serve` and sets `FACTORY_CLI_SCRIPT` to this repository's `bin/factory`. When `FACTORY_CLI_SCRIPT` is unset the app uses `../../bin/factory` relative to its working directory; a relative value is invalid.
+- A request proxy rejects any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, and any non-GET request whose `Origin` is missing or differs from its `Host`.
 
 - Each original component inspired by Affect UI records its corresponding source URL from [resources/frontend-component-origins.json](resources/frontend-component-origins.json) in a comment in its source file; the URL is attribution, not a dependency. No Affect UI Pro source or assets are copied.
 - :UnitTests: use test-driven development: write a failing test before the implementation that makes it pass.
@@ -42,8 +48,8 @@ The home page displays a non-interactive placeholder card for each name in :Comp
 - Each card shows its component name and `Not connected`; no card presents fabricated live data or working actions.
 
 # component-navigation
-The home page's app shell has an accessible navigation region linking to its `Components` and `Data contracts` sections.
-- `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that says `Not connected to backend`.
+The home page's app shell has an accessible navigation region linking to its `Projects`, `Components` and `Data contracts` sections.
+- `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that lists the contracts in `resources/` and says every view reads and acts through the local factory CLI.
 - Both links can be reached and activated with a keyboard.
 
 # engine-health-panel
@@ -54,7 +60,7 @@ The home page shows an `Engine health` section from :EngineHealthContract: at `h
 
 # project-list-endpoint
 :ProjectReadApi: returns registered :ProjectContract: records through `GET /api/projects`.
-- The handler invokes the separately released factory CLI script named by the absolute `FACTORY_CLI_SCRIPT` path, using Node with arguments `project list` and without a shell. It forwards `FACTORY_ROOT` when set.
+- The handler invokes :FactoryCli: (see implementation reqs for `FACTORY_CLI_SCRIPT`) using Node with arguments `project list` and without a shell. It forwards `FACTORY_ROOT` when set.
 - The handler validates CLI output as an array of :ProjectContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :ProjectReadApi: without exposing stderr or filesystem paths. The handler makes no model calls.
 
 # project-selector
@@ -64,16 +70,35 @@ The home page has a `Projects` section that reads projects from :ProjectReadApi:
 
 # task-list-endpoint
 :TaskReadApi: returns a project's :TaskRecordContract: records through `GET /api/projects/{project}/tasks`.
-- The handler invokes the separately released factory CLI script named by the absolute `FACTORY_CLI_SCRIPT` path, using Node with arguments `task list --project <project>` and without a shell. It forwards `FACTORY_ROOT` when set.
+- The handler invokes :FactoryCli: using Node with arguments `task list --project <project>` and without a shell. It forwards `FACTORY_ROOT` when set.
 - The handler validates CLI output against :TaskRecordContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :TaskReadApi: without exposing stderr or filesystem paths.
 - An invalid project name produces the invalid-project response in :TaskReadApi:. The handler makes no model calls.
 
 # project-task-view
 `GET /projects/<project>/tasks` shows the heading `Tasks: <project>` and reads that project's tasks from :TaskReadApi:.
 - On success, the page shows one row per task with its `id`, `prompt` and `stage`, in API order; an empty list shows `No tasks yet`.
-- A failed request or non-success response shows `Tasks unavailable`, not an empty list. The page links back to `/` and has no task-editing controls.
+- Tasks are listed newest first; each row links to the task page. A failed request or non-success response shows `Tasks unavailable`, not an empty list. The page links back to `/`.
 
 # task-verdict-display
 The project task view shows the classifier readiness and blockers of each task that has a verdict in :TaskRecordContract:.
 - A task with a verdict shows `Readiness: <readiness>` and each blocker's kind and question. A task without one shows `Not classified`.
-- The display is read-only and provides no approval or model controls.
+- The list itself is read-only; actions live on the task page.
+
+# new-task
+The project task view has a `New task` form with the task text and a `Start the run now` checkbox, checked by default.
+- Submitting runs `factory intake --project <project> <prompt>`; when the box is checked it then starts `factory task run` in the background as in `background-run`, and opens the new task's page. An empty prompt or a CLI failure shows the error and creates nothing further.
+
+# task-page
+`GET /projects/<project>/tasks/<id>` shows one task from `factory task show`, and from `factory task gate --json` and `factory task diff` when it has a worktree.
+- It shows the prompt, stage, id and total model cost (`unknown` when any attempt's cost is unknown, `—` with no attempts); the classifier kind, size, readiness and blockers; the branch, head commit, worktree path, diff summary and an expandable full diff; verification result and output; reviewer verdict, summary and findings by severity; the pull request link; model attempts with model, effort, outcome and cost; and the event timeline.
+- An invalid project or id returns not-found. A task that cannot be read shows `Task unavailable` with the CLI's error, with the data root path replaced by `<data root>`.
+
+# background-run
+`Run task` (shown for tasks without a worktree that are not blocked) and `Revise` start `factory task run` or `factory task revise --note <note>` as a detached process, writing its output to `web-run.log` and its process id to `web-run.json` in the task directory.
+- Only one web-started run per task may be alive; a second start is refused. While a run is alive, or the stage is `coding` or `reviewing`, the task page shows the log tail, hides the action forms and refreshes every three seconds. A finished run's log stays visible until dismissed.
+
+# task-actions
+The task page offers the human gate actions only in the stages where :FactoryCli: allows them, and each runs the matching CLI command so its checks apply unchanged.
+- `awaiting-approval`: `Approve <head>` sends the head commit displayed on the page as `--head`, with an optional note, and offers `--accept-blocking` as a checkbox only when there are blocking findings; it is replaced by the gate's reasons when the gate reports blockers. `Reject` requires a note.
+- `Revise` requires a note and is offered when the task has a worktree and no pull request in stages `awaiting-approval`, `verification-failed`, `failed`, `rejected` or `approved`.
+- `approved`: `Push and open pull request` runs `factory task open-pr`, with `--draft` checked by default, and shows the pull request URL or the CLI's error.

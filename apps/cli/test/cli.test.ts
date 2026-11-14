@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pnpmCheck } from '../src/doctor.ts';
@@ -148,4 +148,29 @@ test('serve reports health on 127.0.0.1', async () => {
   } finally {
     child.kill('SIGTERM');
   }
+});
+
+test('setup links factory into the bin directory and is safe to rerun', async () => {
+  const { base } = await env();
+  const binDir = join(base, 'bin');
+  const script = resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'setup.mjs');
+  const run = () =>
+    spawnSync(process.execPath, [script, '--no-install', '--no-doctor'], {
+      encoding: 'utf8',
+      env: { ...process.env, FACTORY_BIN_DIR: binDir },
+    });
+  for (const r of [run(), run()]) {
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /is not on your PATH/);
+  }
+  const linked = spawnSync(join(binDir, 'factory'), ['--help'], { encoding: 'utf8' });
+  assert.match(linked.stdout, /^Usage: factory/);
+  // Replace the link itself (writing through it would overwrite bin/factory).
+  await rm(join(binDir, 'factory'));
+  await writeFile(join(binDir, 'factory'), 'not a link');
+  const refused = spawnSync(process.execPath, [script, '--no-install', '--no-doctor'], {
+    encoding: 'utf8',
+    env: { ...process.env, FACTORY_BIN_DIR: binDir },
+  });
+  assert.equal(refused.status, 1);
 });
