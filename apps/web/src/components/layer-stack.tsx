@@ -1,5 +1,6 @@
 'use client';
 
+import { MotionConfig, motion } from 'motion/react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 /*
@@ -47,6 +48,7 @@ const STEP = 26; // vertical distance between resting layers
 const GAP = 34; // the chosen layer lifts off the ones below it
 const ABOVE = 24; // and the layers above it lift a little further, so it shows
 const THICK = 9; // layer thickness
+const EASE = [0.65, 0, 0.25, 1] as const;
 const CX = 168; // stack centre
 const TOP = 109; // y of the top layer's back corner when nothing is lifted
 
@@ -85,94 +87,144 @@ export function LayerStack({
     TOP + i * STEP - (i < active ? GAP + ABOVE : i === active && active < last ? GAP : 0);
 
   return (
-    <div
-      className={['ui-lyr', className].filter(Boolean).join(' ')}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-    >
-      {/* React 19 hoists this into <head> once, no matter how many instances render */}
-      <style href="ui-layer-stack" precedence="default">
-        {css}
-      </style>
+    <MotionConfig reducedMotion="user">
+      <div
+        className={['ui-lyr', className].filter(Boolean).join(' ')}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocus={() => setPaused(true)}
+        onBlur={() => setPaused(false)}
+      >
+        {/* React 19 hoists this into <head> once, no matter how many instances render */}
+        <style href="ui-layer-stack" precedence="default">
+          {css}
+        </style>
 
-      <svg className="ui-lyr-stack" viewBox="0 0 600 400" aria-hidden="true">
-        <defs>
-          <filter id={`${id}-glow`} x="-60%" y="-120%" width="220%" height="340%">
-            <feGaussianBlur stdDeviation="14" />
-          </filter>
-        </defs>
+        <svg className="ui-lyr-stack" viewBox="0 0 600 400" aria-hidden="true">
+          <defs>
+            <filter id={`${id}-glow`} x="-60%" y="-120%" width="220%" height="340%">
+              <feGaussianBlur stdDeviation="14" />
+            </filter>
+          </defs>
 
-        {/* Bottom layer first, so the upper ones overlap it */}
-        {list
-          .map((item, i) => (
-            <g
-              key={i}
-              className="ui-lyr-layer"
-              data-active={i === active ? '' : undefined}
-              data-above={i < active ? '' : undefined}
-              style={{ transform: `translate(${CX}px, ${yOf(i)}px)` }}
-            >
-              {/* Glow just beneath this layer – fades in while it's the chosen one, same strength on every layer */}
-              <ellipse
-                className="ui-lyr-glow"
-                cx={0}
-                cy={SIZE / 2 + THICK + 18}
-                rx={70}
-                ry={24}
-                filter={`url(#${id}-glow)`}
-              />
-              {/* Thickness: the same rhombus, shifted down, peeks out below the top face */}
-              <g transform={`translate(0 ${THICK}) matrix(1 0.5 -1 0.5 0 0)`}>
-                <rect className="ui-lyr-side" width={SIZE} height={SIZE} rx={9} />
-                <rect className="ui-lyr-side-on" width={SIZE} height={SIZE} rx={9} />
-              </g>
-              <g transform="matrix(1 0.5 -1 0.5 0 0)">
-                <rect className="ui-lyr-face" width={SIZE} height={SIZE} rx={9} />
-                <rect className="ui-lyr-face-on" width={SIZE} height={SIZE} rx={9} />
-                <g
-                  className="ui-lyr-icon"
-                  transform={`translate(${SIZE / 2 - 18} ${SIZE / 2 - 18}) scale(1.5)`}
-                >
-                  {icons[item.icon ?? 'bolt']}
+          {/* Bottom layer first, so the upper ones overlap it */}
+          {list
+            .map((item, i) => (
+              <motion.g
+                key={i}
+                className="ui-lyr-layer"
+                initial={false}
+                animate={{ y: yOf(i) }}
+                transition={{ duration: 0.56, ease: EASE }}
+                style={{ x: CX }}
+              >
+                {/* Glow just beneath this layer – fades in while it's the chosen one, same strength on every layer */}
+                <motion.ellipse
+                  className="ui-lyr-glow"
+                  initial={false}
+                  animate={{ opacity: i === active ? 1 : 0 }}
+                  transition={{ duration: 0.42 }}
+                  cx={0}
+                  cy={SIZE / 2 + THICK + 18}
+                  rx={70}
+                  ry={24}
+                  filter={`url(#${id}-glow)`}
+                />
+                {/* Thickness: the same rhombus, shifted down, peeks out below the top face */}
+                <g transform={`translate(0 ${THICK}) matrix(1 0.5 -1 0.5 0 0)`}>
+                  <motion.rect
+                    className="ui-lyr-side"
+                    width={SIZE}
+                    height={SIZE}
+                    rx={9}
+                    initial={false}
+                    animate={{ opacity: i < active ? 0.55 : 1 }}
+                    transition={{ duration: 0.36 }}
+                  />
+                  <motion.rect
+                    className="ui-lyr-side-on"
+                    width={SIZE}
+                    height={SIZE}
+                    rx={9}
+                    initial={false}
+                    animate={{ opacity: i === active ? 1 : 0 }}
+                    transition={{ duration: 0.36 }}
+                  />
                 </g>
-              </g>
-            </g>
-          ))
-          .reverse()}
-      </svg>
+                <g transform="matrix(1 0.5 -1 0.5 0 0)">
+                  <motion.rect
+                    className="ui-lyr-face"
+                    width={SIZE}
+                    height={SIZE}
+                    rx={9}
+                    initial={false}
+                    animate={{ opacity: i < active ? 0.5 : 1 }}
+                    transition={{ duration: 0.36 }}
+                  />
+                  <motion.rect
+                    className="ui-lyr-face-on"
+                    width={SIZE}
+                    height={SIZE}
+                    rx={9}
+                    initial={false}
+                    animate={{ opacity: i === active ? 1 : 0 }}
+                    transition={{ duration: 0.36 }}
+                  />
+                  <motion.g
+                    className="ui-lyr-icon"
+                    initial={false}
+                    animate={{ opacity: i === active ? 1 : 0 }}
+                    transition={{ duration: 0.3, delay: i === active ? 0.12 : 0 }}
+                    transform={`translate(${SIZE / 2 - 18} ${SIZE / 2 - 18}) scale(1.5)`}
+                  >
+                    {icons[item.icon ?? 'bolt']}
+                  </motion.g>
+                </g>
+              </motion.g>
+            ))
+            .reverse()}
+        </svg>
 
-      <div className="ui-lyr-menu" role="tablist" aria-label="Layers" aria-orientation="vertical">
-        <span
-          className="ui-lyr-pill"
-          aria-hidden="true"
-          style={{ transform: `translateY(calc(${active} * var(--ui-lyr-row)))` }}
-        />
-        {list.map((item, i) => (
-          <button
-            key={i}
-            type="button"
-            role="tab"
-            aria-selected={i === active}
-            tabIndex={i === active ? 0 : -1}
-            className="ui-lyr-row"
-            onClick={() => pick(i)}
-            onKeyDown={(e) => {
-              const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : null;
-              if (next === null) return;
-              e.preventDefault();
-              const n = (next + list.length) % list.length;
-              pick(n);
-              (e.currentTarget.parentElement?.children[n + 1] as HTMLElement | undefined)?.focus();
-            }}
-          >
-            <span className="ui-lyr-title">{item.title}</span>
-            {item.hint && <span className="ui-lyr-hint">{item.hint}</span>}
-          </button>
-        ))}
+        <div className="ui-lyr-menu" role="tablist" aria-label="Layers" aria-orientation="vertical">
+          <motion.span
+            className="ui-lyr-pill"
+            aria-hidden="true"
+            initial={false}
+            animate={{ y: `calc(${active} * var(--ui-lyr-row))` }}
+            transition={{ duration: 0.46, ease: EASE }}
+          />
+          {list.map((item, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={i === active}
+              tabIndex={i === active ? 0 : -1}
+              className="ui-lyr-row"
+              onClick={() => pick(i)}
+              onKeyDown={(e) => {
+                const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : null;
+                if (next === null) return;
+                e.preventDefault();
+                const n = (next + list.length) % list.length;
+                pick(n);
+                (e.currentTarget.parentElement?.children[n + 1] as HTMLElement | undefined)?.focus();
+              }}
+            >
+              <motion.span
+                className="ui-lyr-title"
+                initial={false}
+                animate={{ color: i === active ? 'var(--ui-lyr-accent)' : 'var(--ui-lyr-text)' }}
+                transition={{ duration: 0.3 }}
+              >
+                {item.title}
+              </motion.span>
+              {item.hint && <span className="ui-lyr-hint">{item.hint}</span>}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }
 
@@ -228,31 +280,25 @@ const css = /* css */ `
 /* ---------- Stack ---------- */
 
 .ui-lyr-stack { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.ui-lyr-layer { transition: transform 560ms var(--ui-lyr-ease); }
 .ui-lyr-glow {
   fill: var(--ui-lyr-glow);
   opacity: 0;
-  transition: opacity 420ms ease;
 }
-.ui-lyr-layer[data-active] .ui-lyr-glow { opacity: 1; }
 .ui-lyr-side-on {
   fill: var(--ui-lyr-accent-deep);
   opacity: 0;
-  transition: opacity 360ms ease;
 }
 .ui-lyr-side {
   fill: var(--ui-lyr-side);
   stroke: var(--ui-lyr-edge);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
-  transition: fill 360ms ease, stroke 360ms ease;
 }
 .ui-lyr-face {
   fill: var(--ui-lyr-face);
   stroke: var(--ui-lyr-edge);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
-  transition: fill 360ms ease, stroke 360ms ease;
 }
 .ui-lyr-face-on {
   fill: var(--ui-lyr-tint);
@@ -260,7 +306,6 @@ const css = /* css */ `
   opacity: 0;
   stroke-width: 1.6;
   vector-effect: non-scaling-stroke;
-  transition: opacity 360ms ease;
 }
 .ui-lyr-icon {
   fill: none;
@@ -269,14 +314,7 @@ const css = /* css */ `
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0;
-  transition: opacity 300ms ease;
 }
-/* Layers above the chosen one turn more glassy, so its color shows through */
-.ui-lyr-layer[data-above] .ui-lyr-face { fill: var(--ui-lyr-face-above); }
-.ui-lyr-layer[data-above] .ui-lyr-side { fill: var(--ui-lyr-side-above); }
-.ui-lyr-layer[data-active] .ui-lyr-side-on { opacity: 1; }
-.ui-lyr-layer[data-active] .ui-lyr-face-on { opacity: 1; }
-.ui-lyr-layer[data-active] .ui-lyr-icon { opacity: 1; transition-delay: 120ms; }
 
 /* ---------- Menu ---------- */
 
@@ -300,7 +338,6 @@ const css = /* css */ `
   border-radius: calc(12 * var(--u));
   background: var(--ui-lyr-pill);
   box-shadow: 0 0 0 1px var(--ui-lyr-pill-ring), 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: transform 460ms var(--ui-lyr-ease);
 }
 .ui-lyr-row {
   position: relative;
@@ -332,7 +369,6 @@ const css = /* css */ `
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--ui-lyr-text);
-  transition: color 300ms ease;
 }
 .ui-lyr-hint {
   /* The title comes first – the hint gives way and ends in … */
@@ -345,11 +381,6 @@ const css = /* css */ `
   font-size: calc(12 * var(--u));
   line-height: 1.3;
   color: var(--ui-lyr-muted);
-}
-.ui-lyr-row[aria-selected="true"] .ui-lyr-title { color: var(--ui-lyr-accent); }
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-lyr-layer, .ui-lyr-glow, .ui-lyr-pill { transition: none; }
 }
 
 /* Dark mode: follows a .dark class or data-theme="dark" on any ancestor, e.g. <html> */
