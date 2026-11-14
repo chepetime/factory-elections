@@ -1,6 +1,13 @@
 // Model runner backed by the Claude Agent SDK. Authentication is the machine's own Claude sign-in
 // (or ANTHROPIC_API_KEY); this adapter stores no credentials.
-import { query, type Options, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import {
+  query,
+  type Options,
+  type SandboxSettings,
+  type SDKResultMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import type { ModelResult, ModelRun, ModelRunner, ToolAccess } from '@factory/core';
 
 const TOOLS: Record<ToolAccess, string[]> = {
@@ -8,6 +15,34 @@ const TOOLS: Record<ToolAccess, string[]> = {
   'read-only': ['Read', 'Grep', 'Glob'],
   edit: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash'],
 };
+
+/** Package registries a sandboxed coder may reach, so it can update a lockfile. */
+export const SANDBOX_ALLOWED_DOMAINS = ['registry.npmjs.org'];
+
+/**
+ * OS sandbox for steps that may run Bash. A first guardrail, to be widened deliberately: commands
+ * can write only inside the working directory (the task worktree) and the package-manager caches,
+ * and reach only the package registries. The step guard still screens every command, because
+ * sandboxed Bash is not auto-approved, and the model cannot opt a command out of the sandbox.
+ */
+export function sandboxFor(tools: ToolAccess, home: string = homedir()): SandboxSettings | undefined {
+  if (!TOOLS[tools].includes('Bash')) return undefined;
+  return {
+    enabled: true,
+    failIfUnavailable: true,
+    autoAllowBashIfSandboxed: false,
+    allowUnsandboxedCommands: false,
+    network: { allowedDomains: SANDBOX_ALLOWED_DOMAINS },
+    filesystem: {
+      allowWrite: [
+        join(home, 'Library', 'pnpm'),
+        join(home, 'Library', 'Caches', 'pnpm'),
+        join(home, '.npm'),
+        join(home, '.cache'),
+      ],
+    },
+  };
+}
 
 export class ModelRunError extends Error {}
 
@@ -25,6 +60,7 @@ export class ClaudeAgentRunner implements ModelRunner {
   async run(request: ModelRun): Promise<ModelResult> {
     const tools = TOOLS[request.tools];
     const guard = request.guard;
+    const sandbox = sandboxFor(request.tools);
     const options: Options = {
       model: request.model,
       effort: request.effort,
@@ -45,6 +81,7 @@ export class ClaudeAgentRunner implements ModelRunner {
           ? request.systemPrompt
           : { type: 'preset', preset: 'claude_code', append: request.systemPrompt },
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0' },
+      ...(sandbox ? { sandbox } : {}),
       ...(request.cwd ? { cwd: request.cwd } : {}),
       ...(request.maxTurns ? { maxTurns: request.maxTurns } : {}),
       ...(request.outputSchema

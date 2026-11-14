@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Starts the local web app on http://127.0.0.1:4317 together with the engine health server
+// Starts the local web app on http://localhost:3000 together with the engine health server
 // (factory serve, 127.0.0.1:4318). Builds the app first unless --dev is given. Ctrl-C stops both.
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -31,7 +31,7 @@ children.push(health);
 
 const app = spawn('pnpm', ['run', dev ? 'dev' : 'start'], { cwd: web, env, stdio: 'inherit' });
 children.push(app);
-console.log('\nSoftware Factory: http://127.0.0.1:4317  (Ctrl-C to stop)\n');
+console.log('\nSoftware Factory: http://localhost:3000  (Ctrl-C to stop)\n');
 
 const stop = () => {
   for (const child of children) child.kill('SIGTERM');

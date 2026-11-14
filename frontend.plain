@@ -27,7 +27,7 @@ description: Next.js frontend for the software factory.
 - :Implementation: uses Next.js with the App Router, React, shadcn/ui, pnpm, Node.js 26 or later, ESM and strict TypeScript.
 - :Implementation: is formatted with Prettier and linted with oxlint with warnings denied.
 
-- :Implementation: binds its development and production HTTP servers to `127.0.0.1`.
+- :Implementation: binds its development and production HTTP servers to `localhost` on port 3000.
 - :Implementation: lives in `apps/web`, is bundled with webpack (`--webpack`) so dependencies linked from pnpm's global virtual store resolve, loads no remote fonts, and is started with `pnpm web` (`scripts/web.mjs`), which also starts `factory serve` and sets `FACTORY_CLI_SCRIPT` to this repository's `bin/factory`. When `FACTORY_CLI_SCRIPT` is unset the app uses `../../bin/factory` relative to its working directory; a relative value is invalid.
 - A request proxy rejects any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, and any non-GET request whose `Origin` is missing or differs from its `Host`.
 

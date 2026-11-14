@@ -131,7 +131,22 @@ pnpm web          # builds, then serves http://127.0.0.1:4317 and the health API
 pnpm web -- --dev # development mode with hot reload, no build step
 ```
 
-Open <http://127.0.0.1:4317>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
+Open <http://localhost:3000>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
+
+### Component library and Storybook
+
+The in-app gallery is at `/components`. It includes the free affectUI catalog and the original factory components.
+
+```sh
+pnpm storybook        # isolated component workshop at http://127.0.0.1:6006
+pnpm storybook:build  # static build in apps/web/storybook-static
+pnpm storybook:test   # browser interaction and accessibility checks, light and dark
+```
+
+For a fresh checkout, run `pnpm --filter @factory/web exec playwright install chromium` before the browser tests. Regular `pnpm test` keeps running the unit/CLI suite without launching a browser.
+
+See [Storybook workflow](docs/storybook.md), [component patterns](docs/frontend-component-patterns.md), and the [MIT source inventory](resources/affect-ui-free-components.json).
+
 
 - **Home:** your projects, engine health, and placeholders for planned views.
 - **Project page:** submit a task (by default it starts the run straight away) and see every task with its stage, readiness and blockers.
@@ -163,7 +178,7 @@ The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form s
 ## Limitations
 
 - **One task at a time, on demand.** There is no queue or background service. `task run` runs in the foreground and takes minutes.
-- **Shell sandboxing is partial.** The coder's Bash calls are screened for forbidden command substrings, and file tools are confined to the worktree. A shell command can still read or write outside the worktree. Use the factory only on repositories and prompts you trust, and keep secrets out of reach of your shell user.
+- **Shell sandboxing is a first guardrail.** The coder's Bash calls are screened for forbidden command substrings, and they run in the Agent SDK's macOS sandbox. Commands can write only inside the worktree and the pnpm/npm caches, and can reach only `registry.npmjs.org`. They can still *read* most of your home directory. Commands that need other hosts (other registries, `git fetch`, downloads) fail inside the sandbox; widen `sandboxFor` in `packages/adapters-claude` if a repository needs them. If the sandbox can't start, the coder step fails instead of running unsandboxed. Use the factory only on repositories and prompts you trust.
 - **No break-glass rung yet.** The Fable rung in `definitions/ladders/coder.yaml` is marked `requires_human_approval`, and nothing in the CLI grants that approval yet, so it is never used.
 - **The PR body is generated from the task record**, not written by a model.
 - **Worktrees and branches are not cleaned up.** Remove them yourself when a task is finished (see Troubleshooting).
@@ -180,6 +195,7 @@ The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form s
 | `invalid profile: approved_at: …`                                          | Review `profile.yaml` and set `approved_at` to a date string.                                                                                                                                       |
 | `task repository has uncommitted changes`                                  | Commit or stash in your own checkout. The factory needs a clean repository to branch from.                                                                                                          |
 | `worktree path already exists` / `branch already exists`                   | A previous attempt left them. Remove both (below) or submit a new task.                                                                                                                             |
+| `the change commits generated files: …`                                     | The coder committed build output or caches (`*.tsbuildinfo`, `.next/`, `node_modules/`, `coverage/`, `.DS_Store`, …). Add them to the repository's `.gitignore` and revise the task so it removes them from the change.                       |
 | `verification left uncommitted changes: …`                                 | Your test command writes files git doesn't ignore (lockfiles, build output). Use `npm ci` / `pnpm install --frozen-lockfile`, or add the outputs to `.gitignore`.                                  |
 | `verification still failing after N coder attempt(s)`                      | Read `factory task show … ` (`verification.output_tail`). Fix the profile commands if they are wrong, or `task revise` with guidance.                                                              |
 | `cannot approve: … older commit` or `--head must be …`                     | The branch changed after you looked. Run `factory task gate …` and approve the head it shows.                                                                                                     |
@@ -188,8 +204,8 @@ The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form s
 | `Cannot find package '@factory/…'` or `'zod'`                              | Run `pnpm install` in the repository.                                                                                                                                                               |
 | Web page says `Engine unavailable`                                         | Start the app with `pnpm web`, which also runs `factory serve`, or run `factory serve` yourself.                                                                                                    |
 | Web page says `Projects unavailable` or `Tasks unavailable`               | Check that `factory project list` works in a terminal. If you start Next.js yourself, set `FACTORY_CLI_SCRIPT` to the absolute path of `bin/factory`.                                               |
-| `Forbidden` (403) in the browser                                           | Open `http://127.0.0.1:4317` or `http://localhost:4317`. Other host names are refused on purpose.                                                                                                   |
-| `EADDRINUSE` on 4317                                                       | Another copy is running. Stop it, or find it with `lsof -i :4317`.                                                                                                                                  |
+| `Forbidden` (403) in the browser                                           | Open `http://localhost:3000`. Other host names are refused on purpose.                                                                                                   |
+| `EADDRINUSE` on 3000                                                       | Another copy is running. Stop it, or find it with `lsof -i :3000`.                                                                                                                                  |
 
 To clean up a finished task's worktree and branch (run in your repository):
 

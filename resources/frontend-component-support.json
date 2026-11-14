@@ -1,0 +1,217 @@
+{
+  "source": "frontend-component-origins.json",
+  "items": [
+    {
+      "name": "Agent Checkpoints",
+      "reference": "https://www.affectui.com/components/agent-checkpoints",
+      "kind": "component",
+      "status": "implemented",
+      "implementation": "apps/web/src/components/agent-checkpoints.tsx",
+      "storybookId": "factory-agent-checkpoints--interactive",
+      "integration": "demo"
+    },
+    {
+      "name": "Agent Findings",
+      "reference": "https://www.affectui.com/components/agent-findings",
+      "kind": "component",
+      "status": "implemented",
+      "implementation": "apps/web/src/components/agent-findings.tsx",
+      "storybookId": "factory-agent-findings--interactive",
+      "integration": "demo"
+    },
+    {
+      "name": "Agent Fleet",
+      "reference": "https://www.affectui.com/components/agent-fleet",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Graph",
+      "reference": "https://www.affectui.com/components/agent-graph",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Inbox",
+      "reference": "https://www.affectui.com/components/agent-inbox",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Monitor",
+      "reference": "https://www.affectui.com/components/agent-monitor",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Plan",
+      "reference": "https://www.affectui.com/components/agent-plan",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Queue",
+      "reference": "https://www.affectui.com/components/agent-queue",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Recap",
+      "reference": "https://www.affectui.com/components/agent-recap",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Sequence",
+      "reference": "https://www.affectui.com/components/agent-sequence",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Steering",
+      "reference": "https://www.affectui.com/components/agent-steering",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Agent Trail",
+      "reference": "https://www.affectui.com/components/agent-trail",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Approval Card",
+      "reference": "https://www.affectui.com/components/approval-card",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Chat Composer",
+      "reference": "https://www.affectui.com/components/chat-composer",
+      "kind": "component",
+      "status": "implemented",
+      "implementation": "apps/web/src/components/chat-composer.tsx",
+      "storybookId": "factory-chat-composer--interactive",
+      "integration": "demo"
+    },
+    {
+      "name": "Conflict Radar",
+      "reference": "https://www.affectui.com/components/conflict-radar",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Context Map",
+      "reference": "https://www.affectui.com/components/context-map",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Context Window",
+      "reference": "https://www.affectui.com/components/context-window",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Cost Waterfall",
+      "reference": "https://www.affectui.com/components/cost-waterfall",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Model Picker",
+      "reference": "https://www.affectui.com/components/model-picker",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Plan vs Actual",
+      "reference": "https://www.affectui.com/components/plan-vs-actual",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Root Cause Tree",
+      "reference": "https://www.affectui.com/components/root-cause-tree",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Running Now",
+      "reference": "https://www.affectui.com/components/running-now",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Thinking Loader",
+      "reference": "https://www.affectui.com/components/thinking-loader",
+      "kind": "component",
+      "status": "available",
+      "implementation": "@factory/affect-ui/components/thinking-loader-clean",
+      "storybookId": "affectui-components-thinking-loader--clean",
+      "integration": "upstream-mit"
+    },
+    {
+      "name": "Tool Access Map",
+      "reference": "https://www.affectui.com/components/tool-access-map",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "Trace Waterfall",
+      "reference": "https://www.affectui.com/components/trace-waterfall",
+      "kind": "component",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    },
+    {
+      "name": "App Shell Flat",
+      "reference": "https://www.affectui.com/screens/app-shell-flat",
+      "kind": "screen",
+      "status": "planned",
+      "implementation": null,
+      "storybookId": null
+    }
+  ]
+}

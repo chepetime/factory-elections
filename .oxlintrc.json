@@ -1,5 +1,13 @@
 {
-  "ignorePatterns": ["plain_modules/**", "dist/**", "apps/web/.next/**"],
+  "ignorePatterns": [
+    "plain_modules/**",
+    "dist/**",
+    "apps/web/.next/**",
+    "packages/affect-ui/upstream/**",
+    "packages/affect-ui/dist/**",
+    "apps/web/storybook-static/**",
+    "apps/web/test-results/**"
+  ],
   "rules": {
     "no-restricted-imports": [
       "error",
@@ -22,7 +30,9 @@
         "packages/*/test/**",
         "scripts/**"
       ],
-      "rules": { "no-restricted-imports": "off" }
+      "rules": {
+        "no-restricted-imports": "off"
+      }
     }
   ]
 }

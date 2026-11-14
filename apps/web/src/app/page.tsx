@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import placeholders from '../../../../resources/frontend-component-placeholders.json';
 import { EngineHealthPanel } from '@/components/engine-health-panel';
 import { LayerStack } from '@/components/layer-stack';
@@ -23,9 +24,9 @@ export default function Home() {
           <a href="#projects" className="underline-offset-4 hover:underline">
             Projects
           </a>
-          <a href="#components" className="underline-offset-4 hover:underline">
+          <Link href="/components" className="underline-offset-4 hover:underline">
             Components
-          </a>
+          </Link>
           <a href="#data-contracts" className="underline-offset-4 hover:underline">
             Data contracts
           </a>

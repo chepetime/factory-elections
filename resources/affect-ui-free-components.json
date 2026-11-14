@@ -1,0 +1,1839 @@
+{
+  "upstream": "https://github.com/flohoeller/affectui",
+  "revision": "46721aa59276d97927a8cb89ee898027b637834d",
+  "checkedAt": "2026-11-13",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Florian Höller (adfects)",
+  "items": [
+    {
+      "slug": "avatar",
+      "category": "components",
+      "title": "Avatar",
+      "description": "A person's picture or initials on a soft color of their own",
+      "reference": "https://www.affectui.com/components/avatar",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/avatar.tsx",
+          "importPath": "@factory/affect-ui/components/avatar",
+          "exports": ["Avatar", "AvatarGroup"],
+          "sha256": "860343add045d1275eea1a2024d6119756e6f69e3aa562606191503d77c26875",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/avatar.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/avatar-clean.tsx",
+          "importPath": "@factory/affect-ui/components/avatar-clean",
+          "exports": ["Avatar", "AvatarGroup"],
+          "sha256": "77ff605558de18612fd45e1b91857826698e41fa893f6a70a5afa03485610a46",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/avatar-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Avatar",
+      "storybookId": "affectui-components-avatar"
+    },
+    {
+      "slug": "badge",
+      "category": "components",
+      "title": "Badge",
+      "description": "A small status label that carries the color",
+      "reference": "https://www.affectui.com/components/badge",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/badge.tsx",
+          "importPath": "@factory/affect-ui/components/badge",
+          "exports": ["Badge"],
+          "sha256": "d08ed5ce421b57d2aeee7c7863d6d10f5b65defc0f91b0297fc2ccd21d2b7244",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/badge.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/badge-clean.tsx",
+          "importPath": "@factory/affect-ui/components/badge-clean",
+          "exports": ["Badge"],
+          "sha256": "d5e6309addea4d8a9d65e4c58abd1075ed85bef43f6e65812e55a9918d3b234f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/badge-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Badge",
+      "storybookId": "affectui-components-badge"
+    },
+    {
+      "slug": "breadcrumb",
+      "category": "components",
+      "title": "Breadcrumb",
+      "description": "Where a page sits and the way back up",
+      "reference": "https://www.affectui.com/components/breadcrumb",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/breadcrumb.tsx",
+          "importPath": "@factory/affect-ui/components/breadcrumb",
+          "exports": ["Breadcrumb"],
+          "sha256": "5a0d21c34027dde4bd1e07962d5afdb0bbd47d57b00521d4f902558d2087a5f3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/breadcrumb.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/breadcrumb-clean.tsx",
+          "importPath": "@factory/affect-ui/components/breadcrumb-clean",
+          "exports": ["Breadcrumb"],
+          "sha256": "f083bb8936aa1e7e83850a542c873ddf0b0c087dfc9603ea760d6e13b738cd55",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/breadcrumb-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Breadcrumb",
+      "storybookId": "affectui-components-breadcrumb"
+    },
+    {
+      "slug": "button",
+      "category": "components",
+      "title": "Button",
+      "description": "Primary, secondary, ghost and destructive buttons with icons, sizes and a shimmering loading state",
+      "reference": "https://www.affectui.com/components/button",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/button.tsx",
+          "importPath": "@factory/affect-ui/components/button",
+          "exports": ["Button"],
+          "sha256": "7c04dbc5edbe5153c522eb0b564430b32208ec86ab88ee2aa3843362f653e38b",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/button.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/button-clean.tsx",
+          "importPath": "@factory/affect-ui/components/button-clean",
+          "exports": ["Button"],
+          "sha256": "686046d5fbe47b1d2234980c05d4fc56d2ad69ee3a084de8583c82759a7d4acb",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/button-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Button",
+      "storybookId": "affectui-components-button"
+    },
+    {
+      "slug": "card",
+      "category": "components",
+      "title": "Card",
+      "description": "The card every screen is built from",
+      "reference": "https://www.affectui.com/components/card",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/card.tsx",
+          "importPath": "@factory/affect-ui/components/card",
+          "exports": ["Card", "CardHeader", "CardContent", "CardFooter"],
+          "sha256": "a6f082bfd90f20a79db3dbf07d48ccbca04862adff2a7d20a5aecf5ddded64e3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/card.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/card-clean.tsx",
+          "importPath": "@factory/affect-ui/components/card-clean",
+          "exports": ["Card", "CardHeader", "CardContent", "CardFooter"],
+          "sha256": "71e8b374ab0faabb133f5058b6415ee5086352db87e712ffc457dec0b8c4a1cc",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/card-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Card",
+      "storybookId": "affectui-components-card"
+    },
+    {
+      "slug": "change-summary",
+      "category": "components",
+      "title": "Change Summary",
+      "description": "What moved since last time",
+      "reference": "https://www.affectui.com/components/change-summary",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/change-summary.tsx",
+          "importPath": "@factory/affect-ui/components/change-summary",
+          "exports": ["ChangeSummary"],
+          "sha256": "e80df257ef6db0c2e109f2c2a53efdf221f3f54e95d505021912e4fb631afdc3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/change-summary.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/change-summary-clean.tsx",
+          "importPath": "@factory/affect-ui/components/change-summary-clean",
+          "exports": ["ChangeSummary"],
+          "sha256": "27d22c7ae835395ff68079b8eeb40ccb44ae5702f6ae7c3ce34c6c676ac3591a",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/change-summary-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Change Summary",
+      "storybookId": "affectui-components-change-summary"
+    },
+    {
+      "slug": "checkbox",
+      "category": "components",
+      "title": "Checkbox",
+      "description": "A real checkbox with a label and a second line, a some-of-them state for Select all, an error and a card row",
+      "reference": "https://www.affectui.com/components/checkbox",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/checkbox.tsx",
+          "importPath": "@factory/affect-ui/components/checkbox",
+          "exports": ["Checkbox"],
+          "sha256": "697d838a4b4b6dbf7466949e5066670dbfd78157fbba61c789fa3876bb20addf",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/checkbox.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/checkbox-clean.tsx",
+          "importPath": "@factory/affect-ui/components/checkbox-clean",
+          "exports": ["Checkbox"],
+          "sha256": "a148a739581a76055d45a231dcfa46daa8cd9abac541ce033e9498f10e9ade30",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/checkbox-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Checkbox",
+      "storybookId": "affectui-components-checkbox"
+    },
+    {
+      "slug": "code-block",
+      "category": "components",
+      "title": "Code Block",
+      "description": "Code to read and copy",
+      "reference": "https://www.affectui.com/components/code-block",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/code-block.tsx",
+          "importPath": "@factory/affect-ui/components/code-block",
+          "exports": ["CodeBlock"],
+          "sha256": "3077adb840b09f73d6af5236d17c3db9752150791504cfce633a4e88969bef4c",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/code-block.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/code-block-clean.tsx",
+          "importPath": "@factory/affect-ui/components/code-block-clean",
+          "exports": ["CodeBlock"],
+          "sha256": "928a4e93648c7fbee2074c07d67f39a0b574ecee189ead60d4da8b0463504979",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/code-block-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Code Block",
+      "storybookId": "affectui-components-code-block"
+    },
+    {
+      "slug": "color-picker",
+      "category": "components",
+      "title": "Color Picker",
+      "description": "A swatch button that opens a color card",
+      "reference": "https://www.affectui.com/components/color-picker",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/color-picker.tsx",
+          "importPath": "@factory/affect-ui/components/color-picker",
+          "exports": ["ColorPicker", "ColorPickerPanel"],
+          "sha256": "55226d3ba54a065574d6113fe0ce365d9261db3541e2089afd0f0934540f4cd3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/color-picker.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/color-picker-clean.tsx",
+          "importPath": "@factory/affect-ui/components/color-picker-clean",
+          "exports": ["ColorPicker", "ColorPickerPanel"],
+          "sha256": "86b54f1e41eb9bcc819bdf8ab86da787db6bcc17b1b2e174d775825b8f5b3ca6",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/color-picker-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Color Picker",
+      "storybookId": "affectui-components-color-picker"
+    },
+    {
+      "slug": "comment-thread",
+      "category": "components",
+      "title": "Comment Thread",
+      "description": "One comment with replies",
+      "reference": "https://www.affectui.com/components/comment-thread",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/comment-thread.tsx",
+          "importPath": "@factory/affect-ui/components/comment-thread",
+          "exports": ["CommentThread", "AssistantMark"],
+          "sha256": "2139cf7b163913921527329fccfa66ec091df0beb68a15d38cc6e3c1c95da4c2",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/comment-thread.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/comment-thread-clean.tsx",
+          "importPath": "@factory/affect-ui/components/comment-thread-clean",
+          "exports": ["CommentThread", "AssistantMark"],
+          "sha256": "10f429e65f9f8fd5e619d935f39057d07e4bfd393bf8b52949b40601180be04f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/comment-thread-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Comment Thread",
+      "storybookId": "affectui-components-comment-thread"
+    },
+    {
+      "slug": "context-menu",
+      "category": "components",
+      "title": "Context Menu",
+      "description": "The menu a right-click opens, right at the pointer",
+      "reference": "https://www.affectui.com/components/context-menu",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/context-menu.tsx",
+          "importPath": "@factory/affect-ui/components/context-menu",
+          "exports": ["ContextMenu"],
+          "sha256": "bcaa9ad15bc53524b8845594fece53c2fdad6e67bac8ef4c2f282642597ef775",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/context-menu.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/context-menu-clean.tsx",
+          "importPath": "@factory/affect-ui/components/context-menu-clean",
+          "exports": ["ContextMenu"],
+          "sha256": "7e277d150bd116858f753e7ec511c3b3884516b88652cf65b8c3755950c85fe7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/context-menu-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Context Menu",
+      "storybookId": "affectui-components-context-menu"
+    },
+    {
+      "slug": "date-picker",
+      "category": "components",
+      "title": "Date Picker",
+      "description": "Pick one day in the Text Field's look",
+      "reference": "https://www.affectui.com/components/date-picker",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/date-picker.tsx",
+          "importPath": "@factory/affect-ui/components/date-picker",
+          "exports": ["DatePicker"],
+          "sha256": "90abeafb589cbb9c53a457a50ff015d04b6860c3ae46d6f43f33a42a53267e00",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/date-picker.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/date-picker-clean.tsx",
+          "importPath": "@factory/affect-ui/components/date-picker-clean",
+          "exports": ["DatePicker"],
+          "sha256": "23142ce3e6c16177b4d6c0b9ef7485dcaa1582b738d6127820f0198f9574cbca",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/date-picker-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Date Picker",
+      "storybookId": "affectui-components-date-picker"
+    },
+    {
+      "slug": "decision-inbox",
+      "category": "components",
+      "title": "Decision Inbox",
+      "description": "Open decisions with two quick answers each",
+      "reference": "https://www.affectui.com/components/decision-inbox",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/decision-inbox.tsx",
+          "importPath": "@factory/affect-ui/components/decision-inbox",
+          "exports": ["DecisionInbox"],
+          "sha256": "2ace7c51a22611b4ef581a8d5598973e75ee25b616a1f83a8900aa410a2d32fe",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/decision-inbox.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/decision-inbox-clean.tsx",
+          "importPath": "@factory/affect-ui/components/decision-inbox-clean",
+          "exports": ["DecisionInbox"],
+          "sha256": "0ed6b48c68376d491919ed41577d0dd6c59f795263f320c620a2988db933f186",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/decision-inbox-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Decision Inbox",
+      "storybookId": "affectui-components-decision-inbox"
+    },
+    {
+      "slug": "dialog",
+      "category": "components",
+      "title": "Dialog",
+      "description": "A modal window on a dimmed backdrop",
+      "reference": "https://www.affectui.com/components/dialog",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/dialog.tsx",
+          "importPath": "@factory/affect-ui/components/dialog",
+          "exports": ["Dialog", "AlertDialog"],
+          "sha256": "2dc8e3cb724dcfb3b8394e3e2ec5632613f3e042e55c4298450f89879fb1928a",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/dialog.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/dialog-clean.tsx",
+          "importPath": "@factory/affect-ui/components/dialog-clean",
+          "exports": ["Dialog", "AlertDialog"],
+          "sha256": "3d377b605125ad7287a09f454d315a7d71ec1c8a6afab733316f23ca3bb355a4",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/dialog-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Dialog",
+      "storybookId": "affectui-components-dialog"
+    },
+    {
+      "slug": "dropdown-menu",
+      "category": "components",
+      "title": "Dropdown Menu",
+      "description": "Actions and choices behind any trigger",
+      "reference": "https://www.affectui.com/components/dropdown-menu",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/dropdown-menu.tsx",
+          "importPath": "@factory/affect-ui/components/dropdown-menu",
+          "exports": ["DropdownMenu"],
+          "sha256": "75428e1899a95ef218ec253d4273fe9b1bb512c05e006e4f771bc70d8c1165a8",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/dropdown-menu.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/dropdown-menu-clean.tsx",
+          "importPath": "@factory/affect-ui/components/dropdown-menu-clean",
+          "exports": ["DropdownMenu"],
+          "sha256": "d6552544746bdde40febc8e0d461f6caf10f54d1661816afad4c09dd08398c04",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/dropdown-menu-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Dropdown Menu",
+      "storybookId": "affectui-components-dropdown-menu"
+    },
+    {
+      "slug": "email-draft",
+      "category": "components",
+      "title": "Email Draft",
+      "description": "Agent-written email for review",
+      "reference": "https://www.affectui.com/components/email-draft",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/email-draft.tsx",
+          "importPath": "@factory/affect-ui/components/email-draft",
+          "exports": ["EmailDraft"],
+          "sha256": "2af6ae588ff51be42a34f0c5bb7362397f6143e0765723370820273a3c467099",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/email-draft.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/email-draft-clean.tsx",
+          "importPath": "@factory/affect-ui/components/email-draft-clean",
+          "exports": ["EmailDraft"],
+          "sha256": "bf848bf365f39702642b6100b77567c14e5e5c3c19452fb96318a7e8f92a78c9",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/email-draft-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Email Draft",
+      "storybookId": "affectui-components-email-draft"
+    },
+    {
+      "slug": "empty-state",
+      "category": "components",
+      "title": "Empty State",
+      "description": "What a list, table or panel shows while it has nothing yet",
+      "reference": "https://www.affectui.com/components/empty-state",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/empty-state.tsx",
+          "importPath": "@factory/affect-ui/components/empty-state",
+          "exports": ["EmptyState"],
+          "sha256": "425c9c03937cbb1d289cc1632958f4b94e018bcdb9de2c980b60968ff929793f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/empty-state.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/empty-state-clean.tsx",
+          "importPath": "@factory/affect-ui/components/empty-state-clean",
+          "exports": ["EmptyState"],
+          "sha256": "495f16a093feb816c8d1f26f9f4adeecfb95712fbf2ee55f9961432de9fe4d46",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/empty-state-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Empty State",
+      "storybookId": "affectui-components-empty-state"
+    },
+    {
+      "slug": "filter-menu",
+      "category": "components",
+      "title": "Filter Menu",
+      "description": "Grouped filters with removable chips, collapsible checkbox groups, Clear all and full keyboard control",
+      "reference": "https://www.affectui.com/components/filter-menu",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/filter-menu.tsx",
+          "importPath": "@factory/affect-ui/components/filter-menu",
+          "exports": ["FilterMenu"],
+          "sha256": "e84e29eab1cd3e46a6a3ce61a1bd77798cef536ac2d5aaf641a2cf7c82d9ce6e",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/filter-menu.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/filter-menu-clean.tsx",
+          "importPath": "@factory/affect-ui/components/filter-menu-clean",
+          "exports": ["FilterMenu"],
+          "sha256": "fe0a4ce7152cd6c884f783b73fc77ae87eb5f3fc086a98a6fb58097ba5c1a618",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/filter-menu-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Filter Menu",
+      "storybookId": "affectui-components-filter-menu"
+    },
+    {
+      "slug": "form-field",
+      "category": "components",
+      "title": "Form Field",
+      "description": "The frame around any control",
+      "reference": "https://www.affectui.com/components/form-field",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/form-field.tsx",
+          "importPath": "@factory/affect-ui/components/form-field",
+          "exports": ["FormField"],
+          "sha256": "2ff9984013f76b2dc7250ce6285d7e194d4b0f801974469f023c79b99d988d71",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/form-field.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/form-field-clean.tsx",
+          "importPath": "@factory/affect-ui/components/form-field-clean",
+          "exports": ["FormField"],
+          "sha256": "f19466ad2ccf8af680ac2f0da43f0c3648b4c335c771ea8700594c725f7ca56a",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/form-field-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Form Field",
+      "storybookId": "affectui-components-form-field"
+    },
+    {
+      "slug": "hover-card",
+      "category": "components",
+      "title": "Hover Card",
+      "description": "A preview of what a link or name points to",
+      "reference": "https://www.affectui.com/components/hover-card",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/hover-card.tsx",
+          "importPath": "@factory/affect-ui/components/hover-card",
+          "exports": ["HoverCard"],
+          "sha256": "ab71189ee9171cf372376e864a5417c17454dda83c0a9371633bd52539b2301d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/hover-card.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/hover-card-clean.tsx",
+          "importPath": "@factory/affect-ui/components/hover-card-clean",
+          "exports": ["HoverCard"],
+          "sha256": "1bc3812c0a6efa497377d5f254c18b56658a0a44fc6e43c71653af132ca8c470",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/hover-card-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Hover Card",
+      "storybookId": "affectui-components-hover-card"
+    },
+    {
+      "slug": "icon-button",
+      "category": "components",
+      "title": "Icon Button",
+      "description": "A square button that is only an icon",
+      "reference": "https://www.affectui.com/components/icon-button",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/icon-button.tsx",
+          "importPath": "@factory/affect-ui/components/icon-button",
+          "exports": ["IconButton"],
+          "sha256": "56e6324b18b26134160c9da87409c70e112eb734fa856a6825ecd730ed433f6b",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/icon-button.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/icon-button-clean.tsx",
+          "importPath": "@factory/affect-ui/components/icon-button-clean",
+          "exports": ["IconButton"],
+          "sha256": "ce35654ae863e861f1e486f1f1df9d4bc21430629d429658905b08d414d727e0",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/icon-button-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Icon Button",
+      "storybookId": "affectui-components-icon-button"
+    },
+    {
+      "slug": "kbd",
+      "category": "components",
+      "title": "Kbd",
+      "description": "A key chip for shortcuts",
+      "reference": "https://www.affectui.com/components/kbd",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/kbd.tsx",
+          "importPath": "@factory/affect-ui/components/kbd",
+          "exports": ["Kbd"],
+          "sha256": "641b06e265e47347431d542ae7847ce05d22791ca2b37acbc4c8afd444177ba4",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/kbd.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/kbd-clean.tsx",
+          "importPath": "@factory/affect-ui/components/kbd-clean",
+          "exports": ["Kbd"],
+          "sha256": "3cfc4db4bab61171ef7804963fa9e1accb495918f70259713d0659d2d32bfcef",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/kbd-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Kbd",
+      "storybookId": "affectui-components-kbd"
+    },
+    {
+      "slug": "message-actions",
+      "category": "components",
+      "title": "Message Actions",
+      "description": "The quiet bar under an AI message",
+      "reference": "https://www.affectui.com/components/message-actions",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/message-actions.tsx",
+          "importPath": "@factory/affect-ui/components/message-actions",
+          "exports": ["MessageText", "MessageActions"],
+          "sha256": "efd39eca5e1b1ec32c8bc584892318954d3ad65411f63385173382ec6e5dc2d4",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/message-actions.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/message-actions-clean.tsx",
+          "importPath": "@factory/affect-ui/components/message-actions-clean",
+          "exports": ["MessageText", "MessageActions"],
+          "sha256": "5aa7807be975f21192e3c6ff65933594bc5ce235a16740f71a3e36879e5d6dfb",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/message-actions-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Message Actions",
+      "storybookId": "affectui-components-message-actions"
+    },
+    {
+      "slug": "notification-stack",
+      "category": "components",
+      "title": "Notification Stack",
+      "description": "Notice cards stacked behind each other",
+      "reference": "https://www.affectui.com/components/notification-stack",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/notification-stack.tsx",
+          "importPath": "@factory/affect-ui/components/notification-stack",
+          "exports": ["NotificationStack"],
+          "sha256": "b5136de9b6a800d534ba5d0f9e928273bf9a230d4b358f484f8c4e71ed250551",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/notification-stack.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/notification-stack-clean.tsx",
+          "importPath": "@factory/affect-ui/components/notification-stack-clean",
+          "exports": ["NotificationStack"],
+          "sha256": "8fcbdc7e9bb9840c83feb85bd61d09ba9833927effff80fdcbee8e2baeed0d6d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/notification-stack-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Notification Stack",
+      "storybookId": "affectui-components-notification-stack"
+    },
+    {
+      "slug": "number-input",
+      "category": "components",
+      "title": "Number Input",
+      "description": "A field for one number",
+      "reference": "https://www.affectui.com/components/number-input",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/number-input.tsx",
+          "importPath": "@factory/affect-ui/components/number-input",
+          "exports": ["NumberInput"],
+          "sha256": "772300dc3b37d3ea1f78e5c4b600b939dcf17f91ec55dc6b99319aabbd15bf74",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/number-input.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/number-input-clean.tsx",
+          "importPath": "@factory/affect-ui/components/number-input-clean",
+          "exports": ["NumberInput"],
+          "sha256": "01c2322723b7fe55420073487f7ccaee55f0435caca31a5da51b294b375c3e27",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/number-input-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Number Input",
+      "storybookId": "affectui-components-number-input"
+    },
+    {
+      "slug": "otp-input",
+      "category": "components",
+      "title": "OTP Input",
+      "description": "The verification code field done right",
+      "reference": "https://www.affectui.com/components/otp-input",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/otp-input.tsx",
+          "importPath": "@factory/affect-ui/components/otp-input",
+          "exports": ["OtpInput"],
+          "sha256": "d62f27fce502e7c5ab826ac5f9739dcef714483edf8fda74751fffc2f4b97123",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/otp-input.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/otp-input-clean.tsx",
+          "importPath": "@factory/affect-ui/components/otp-input-clean",
+          "exports": ["OtpInput"],
+          "sha256": "b060151a2634e8a54bdf1bcacf2082238c1a19ee4ef8e06caf2cf393c7642aaf",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/otp-input-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/OTP Input",
+      "storybookId": "affectui-components-otp-input"
+    },
+    {
+      "slug": "pagination",
+      "category": "components",
+      "title": "Pagination",
+      "description": "Pages of a long list",
+      "reference": "https://www.affectui.com/components/pagination",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/pagination.tsx",
+          "importPath": "@factory/affect-ui/components/pagination",
+          "exports": ["Pagination"],
+          "sha256": "c01b75849cbc2f71e966448723d085fe75e1819f89da83b1aece6daf593a852e",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/pagination.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/pagination-clean.tsx",
+          "importPath": "@factory/affect-ui/components/pagination-clean",
+          "exports": ["Pagination"],
+          "sha256": "2d151572db3f7ca46d2b2cebb96bbb4f30568e5d45591bba50e4aafff7dc073e",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/pagination-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Pagination",
+      "storybookId": "affectui-components-pagination"
+    },
+    {
+      "slug": "popover",
+      "category": "components",
+      "title": "Popover",
+      "description": "A small floating card attached to its trigger",
+      "reference": "https://www.affectui.com/components/popover",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/popover.tsx",
+          "importPath": "@factory/affect-ui/components/popover",
+          "exports": ["Popover"],
+          "sha256": "a31e284aeb0c783b569425eeb087aa542415256d8d98bff4c9417701ba7d72ee",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/popover.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/popover-clean.tsx",
+          "importPath": "@factory/affect-ui/components/popover-clean",
+          "exports": ["Popover"],
+          "sha256": "1115cc51917c9d69ec2da53af5ee5dd1e95e8482ddbe754d585e5775c717ad5d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/popover-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Popover",
+      "storybookId": "affectui-components-popover"
+    },
+    {
+      "slug": "profile-menu",
+      "category": "components",
+      "title": "Profile Menu",
+      "description": "Account card with the signed-in user, menu actions and profile setup progress",
+      "reference": "https://www.affectui.com/components/profile-menu",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/profile-menu.tsx",
+          "importPath": "@factory/affect-ui/components/profile-menu",
+          "exports": ["ProfileMenu", "SettingsIcon", "LanguageIcon", "DocsIcon", "AppsIcon", "LogoutIcon"],
+          "sha256": "c78c375eed2c4a5d50e94195a3817ff370547ff2ea0967a42af82ad2e49fa173",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/profile-menu.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/profile-menu-clean.tsx",
+          "importPath": "@factory/affect-ui/components/profile-menu-clean",
+          "exports": ["ProfileMenu", "SettingsIcon", "LanguageIcon", "DocsIcon", "AppsIcon", "LogoutIcon"],
+          "sha256": "fb632b336ce6061151d5a329acc04f6b569bdf20bfb8d339fb27d59755a09270",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/profile-menu-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Profile Menu",
+      "storybookId": "affectui-components-profile-menu"
+    },
+    {
+      "slug": "progress-tracker",
+      "category": "components",
+      "title": "Progress Tracker",
+      "description": "Onboarding checklist with an animated progress bar, ticks that draw themselves and auto play",
+      "reference": "https://www.affectui.com/components/progress-tracker",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/progress-tracker.tsx",
+          "importPath": "@factory/affect-ui/components/progress-tracker",
+          "exports": ["ProgressTracker"],
+          "sha256": "d2f2d32c2ef7f08834de472162f2c4a4ab04c94b26e54b8491fd516ffdf406df",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/progress-tracker.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/progress-tracker-clean.tsx",
+          "importPath": "@factory/affect-ui/components/progress-tracker-clean",
+          "exports": ["ProgressTracker"],
+          "sha256": "31c2172b973342f19ba98ac0caa5950bd846385032eef724a6cef59ebe1bfe60",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/progress-tracker-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Progress Tracker",
+      "storybookId": "affectui-components-progress-tracker"
+    },
+    {
+      "slug": "rating",
+      "category": "components",
+      "title": "Rating",
+      "description": "Stars or thumbs up and down for an AI answer",
+      "reference": "https://www.affectui.com/components/rating",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/rating.tsx",
+          "importPath": "@factory/affect-ui/components/rating",
+          "exports": ["Rating"],
+          "sha256": "8376509d8fb85d46c18134307e7cc7afca31f7fedac434e3fd62828d7f297b59",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/rating.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/rating-clean.tsx",
+          "importPath": "@factory/affect-ui/components/rating-clean",
+          "exports": ["Rating"],
+          "sha256": "d8f2575b7bcb7ecbbd14c93b17d0459684508f788e7c1e599394babd1863b7c7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/rating-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Rating",
+      "storybookId": "affectui-components-rating"
+    },
+    {
+      "slug": "reaction-bar",
+      "category": "components",
+      "title": "Reaction Bar",
+      "description": "Like, comment, repost and share in one pill",
+      "reference": "https://www.affectui.com/components/reaction-bar",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/reaction-bar.tsx",
+          "importPath": "@factory/affect-ui/components/reaction-bar",
+          "exports": ["ReactionBar"],
+          "sha256": "25d9529292d06c78d9289e7bca13383a852e5515e26a75ef52f40755e3d4d9b7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/reaction-bar.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/reaction-bar-clean.tsx",
+          "importPath": "@factory/affect-ui/components/reaction-bar-clean",
+          "exports": ["ReactionBar"],
+          "sha256": "84146a19d25034c40c70b71add8b8987c94b9ef2d5df452afbf8f9e5cf6d65b3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/reaction-bar-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Reaction Bar",
+      "storybookId": "affectui-components-reaction-bar"
+    },
+    {
+      "slug": "resizable",
+      "category": "components",
+      "title": "Resizable",
+      "description": "Panes side by side or stacked with a line between them you can drag",
+      "reference": "https://www.affectui.com/components/resizable",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/resizable.tsx",
+          "importPath": "@factory/affect-ui/components/resizable",
+          "exports": ["ResizablePanelGroup", "ResizablePanel", "ResizableHandle"],
+          "sha256": "81446094762dccb6eaf2fd1e981bc19e1897efae2d5d331a86f154bf3ace7d90",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/resizable.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/resizable-clean.tsx",
+          "importPath": "@factory/affect-ui/components/resizable-clean",
+          "exports": ["ResizablePanelGroup", "ResizablePanel", "ResizableHandle"],
+          "sha256": "39b6e2f5fe42814ab396c4ba21b2665f426390d8c129e70df216c7c355f0c64c",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/resizable-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Resizable",
+      "storybookId": "affectui-components-resizable"
+    },
+    {
+      "slug": "scroll-area",
+      "category": "components",
+      "title": "Scroll Area",
+      "description": "A box that scrolls the browser's own way with a slim scrollbar of its own",
+      "reference": "https://www.affectui.com/components/scroll-area",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/scroll-area.tsx",
+          "importPath": "@factory/affect-ui/components/scroll-area",
+          "exports": ["ScrollArea"],
+          "sha256": "c56e5f0046718a6d6c97ac89a5b932be92b03052da822f4a4f3c5538c1139de7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/scroll-area.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/scroll-area-clean.tsx",
+          "importPath": "@factory/affect-ui/components/scroll-area-clean",
+          "exports": ["ScrollArea"],
+          "sha256": "95e8c21e9af24234bf807f8d3e98f83f280787de8aa256e1ee81aa492495d59c",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/scroll-area-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Scroll Area",
+      "storybookId": "affectui-components-scroll-area"
+    },
+    {
+      "slug": "segmented-control",
+      "category": "components",
+      "title": "Segmented Control",
+      "description": "Switch between two to six options",
+      "reference": "https://www.affectui.com/components/segmented-control",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/segmented-control.tsx",
+          "importPath": "@factory/affect-ui/components/segmented-control",
+          "exports": ["SegmentedControl"],
+          "sha256": "6e4303382350f70b232e451816113855311512e7197410984bac4a764064f730",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/segmented-control.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/segmented-control-clean.tsx",
+          "importPath": "@factory/affect-ui/components/segmented-control-clean",
+          "exports": ["SegmentedControl"],
+          "sha256": "8547e6335fc70ec9aa8e5a89dec96deb95bb46de5894c3c0e2b26e1763abd506",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/segmented-control-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Segmented Control",
+      "storybookId": "affectui-components-segmented-control"
+    },
+    {
+      "slug": "select",
+      "category": "components",
+      "title": "Select",
+      "description": "Pick one option in the Text Field's look",
+      "reference": "https://www.affectui.com/components/select",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/select.tsx",
+          "importPath": "@factory/affect-ui/components/select",
+          "exports": ["Select"],
+          "sha256": "9caad90bfa8e9f6d6ef1f544d81486cef0f9ef427c48c1e3da34295ce5faca09",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/select.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/select-clean.tsx",
+          "importPath": "@factory/affect-ui/components/select-clean",
+          "exports": ["Select"],
+          "sha256": "086f8e8b71a40f9b221afdd61c3fe337fe2e1640a0e0e148a260db987e94440d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/select-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Select",
+      "storybookId": "affectui-components-select"
+    },
+    {
+      "slug": "separator",
+      "category": "components",
+      "title": "Separator",
+      "description": "A thin line between groups",
+      "reference": "https://www.affectui.com/components/separator",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/separator.tsx",
+          "importPath": "@factory/affect-ui/components/separator",
+          "exports": ["Separator"],
+          "sha256": "65c0f129115f0e95421fd62be17451b20d82e80199d81a2bd6d7e597c7c60acd",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/separator.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/separator-clean.tsx",
+          "importPath": "@factory/affect-ui/components/separator-clean",
+          "exports": ["Separator"],
+          "sha256": "b642c1780fe834682572463cae18112f6ade28ba6d7fbbbb4ff2cf0f960ec381",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/separator-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Separator",
+      "storybookId": "affectui-components-separator"
+    },
+    {
+      "slug": "skeleton",
+      "category": "components",
+      "title": "Skeleton",
+      "description": "Gray shapes in the exact size of the content they stand in for",
+      "reference": "https://www.affectui.com/components/skeleton",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/skeleton.tsx",
+          "importPath": "@factory/affect-ui/components/skeleton",
+          "exports": ["Skeleton", "Loading"],
+          "sha256": "a2e1dffc943448bbae17d83170cd4ff6d4940dd1e8da90fcc428d04eeac4b759",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/skeleton.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/skeleton-clean.tsx",
+          "importPath": "@factory/affect-ui/components/skeleton-clean",
+          "exports": ["Skeleton", "Loading"],
+          "sha256": "1664e4f6df2a4965b9f9cc483e69ba5f445bbde257c45b8c0f13b61784efb0e6",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/skeleton-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Skeleton",
+      "storybookId": "affectui-components-skeleton"
+    },
+    {
+      "slug": "smart-recommendation",
+      "category": "components",
+      "title": "Smart Recommendation",
+      "description": "Suggestion card with a confidence signal, alternatives to switch to and accept with undo",
+      "reference": "https://www.affectui.com/components/smart-recommendation",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/smart-recommendation.tsx",
+          "importPath": "@factory/affect-ui/components/smart-recommendation",
+          "exports": ["SmartRecommendation"],
+          "sha256": "2157333436989e22378528877f0db4311f802f76d75d30f2628fdbd42b7a4593",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/smart-recommendation.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/smart-recommendation-clean.tsx",
+          "importPath": "@factory/affect-ui/components/smart-recommendation-clean",
+          "exports": ["SmartRecommendation"],
+          "sha256": "0c7ed0fabf8c2d069e1b66ca36111d666221dc5bc0d9609497d6fd4573a15952",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/smart-recommendation-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Smart Recommendation",
+      "storybookId": "affectui-components-smart-recommendation"
+    },
+    {
+      "slug": "spinner",
+      "category": "components",
+      "title": "Spinner",
+      "description": "A small turning arc for work that runs right now",
+      "reference": "https://www.affectui.com/components/spinner",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/spinner.tsx",
+          "importPath": "@factory/affect-ui/components/spinner",
+          "exports": ["Spinner"],
+          "sha256": "34fab447f22df019280f53dc5e59f61ef036e97433531b9d3acc6ef93ba2b1dc",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/spinner.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/spinner-clean.tsx",
+          "importPath": "@factory/affect-ui/components/spinner-clean",
+          "exports": ["Spinner"],
+          "sha256": "e53e0798e1d6ad45afc1377b0bfcc1421edbafef83ae4d07562f883ab79896c4",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/spinner-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Spinner",
+      "storybookId": "affectui-components-spinner"
+    },
+    {
+      "slug": "switch",
+      "category": "components",
+      "title": "Switch",
+      "description": "On or off for things that apply right away",
+      "reference": "https://www.affectui.com/components/switch",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/switch.tsx",
+          "importPath": "@factory/affect-ui/components/switch",
+          "exports": ["Switch"],
+          "sha256": "f6c54a7808dff4d7bd1dc7c4379242a590d2386de24465c8616796f44c5b910d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/switch.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/switch-clean.tsx",
+          "importPath": "@factory/affect-ui/components/switch-clean",
+          "exports": ["Switch"],
+          "sha256": "b6926841451b1a944fb966a8f5a4904ffe7f56cd788ca672ba3db6986a45c5e7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/switch-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Switch",
+      "storybookId": "affectui-components-switch"
+    },
+    {
+      "slug": "tag-input",
+      "category": "components",
+      "title": "Tag Input",
+      "description": "Several values in one field as chips",
+      "reference": "https://www.affectui.com/components/tag-input",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/tag-input.tsx",
+          "importPath": "@factory/affect-ui/components/tag-input",
+          "exports": ["TagInput"],
+          "sha256": "4ca64c55fe71710a7bae24772fa656b17f7fc1a92639fdb40fec4638787d3922",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tag-input.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/tag-input-clean.tsx",
+          "importPath": "@factory/affect-ui/components/tag-input-clean",
+          "exports": ["TagInput"],
+          "sha256": "883405026fb70a66e3b71ba8cd60dc7ab9618bc14cf2377a5b5916d1268b164c",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tag-input-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Tag Input",
+      "storybookId": "affectui-components-tag-input"
+    },
+    {
+      "slug": "text-area",
+      "category": "components",
+      "title": "Text Area",
+      "description": "The multi-line twin of the Text Field",
+      "reference": "https://www.affectui.com/components/text-area",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/text-area.tsx",
+          "importPath": "@factory/affect-ui/components/text-area",
+          "exports": ["TextArea"],
+          "sha256": "1ad809803815e0b6908e07f81b1db18a4b3c3b3ecbfb9d8bf09b70bcce8dd50e",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/text-area.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/text-area-clean.tsx",
+          "importPath": "@factory/affect-ui/components/text-area-clean",
+          "exports": ["TextArea"],
+          "sha256": "8079d596daf5411293eab516e7d9432eac0db3a812548b158241e3aaad84fd52",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/text-area-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Text Area",
+      "storybookId": "affectui-components-text-area"
+    },
+    {
+      "slug": "text-field",
+      "category": "components",
+      "title": "Text Field",
+      "description": "One input for every form",
+      "reference": "https://www.affectui.com/components/text-field",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/text-field.tsx",
+          "importPath": "@factory/affect-ui/components/text-field",
+          "exports": ["TextField"],
+          "sha256": "466dc0c3d4eaf6bcfb7a0eca035b6d4affd26dc254f6f5a0ff985d660cbfb1b6",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/text-field.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/text-field-clean.tsx",
+          "importPath": "@factory/affect-ui/components/text-field-clean",
+          "exports": ["TextField"],
+          "sha256": "87a72ec504b23ff046d2b45944415c41f72f8ce99bcf9741918d96f5868717c4",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/text-field-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Text Field",
+      "storybookId": "affectui-components-text-field"
+    },
+    {
+      "slug": "thinking-loader",
+      "category": "components",
+      "title": "Thinking Loader",
+      "description": "A small working pill for AI replies",
+      "reference": "https://www.affectui.com/components/thinking-loader",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/thinking-loader.tsx",
+          "importPath": "@factory/affect-ui/components/thinking-loader",
+          "exports": ["ThinkingLoader"],
+          "sha256": "a595ac6e92946c6c8d70406ec59318504ad0b0df30a2906a7ce0a8d380828da1",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/thinking-loader.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/thinking-loader-clean.tsx",
+          "importPath": "@factory/affect-ui/components/thinking-loader-clean",
+          "exports": ["ThinkingLoader"],
+          "sha256": "9bec35e124c8bc11db671b0bddabf2d2b05a20e8b557435589e8599d18fee38f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/thinking-loader-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Thinking Loader",
+      "storybookId": "affectui-components-thinking-loader"
+    },
+    {
+      "slug": "time-picker",
+      "category": "components",
+      "title": "Time Picker",
+      "description": "A time of day you type or pick",
+      "reference": "https://www.affectui.com/components/time-picker",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/time-picker.tsx",
+          "importPath": "@factory/affect-ui/components/time-picker",
+          "exports": ["TimePicker"],
+          "sha256": "a22bfc908025b05bd7327f79a62dc4731d33685a1cf5658bd85c1b503d68a15e",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/time-picker.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/time-picker-clean.tsx",
+          "importPath": "@factory/affect-ui/components/time-picker-clean",
+          "exports": ["TimePicker"],
+          "sha256": "205070a4701cad7613b93749399579a1329e7e7cddda8e271f1badfcd38c3b58",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/time-picker-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Time Picker",
+      "storybookId": "affectui-components-time-picker"
+    },
+    {
+      "slug": "tips-panel",
+      "category": "components",
+      "title": "Tips Panel",
+      "description": "Grid of short tips with one action each",
+      "reference": "https://www.affectui.com/components/tips-panel",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/tips-panel.tsx",
+          "importPath": "@factory/affect-ui/components/tips-panel",
+          "exports": ["TipsPanel", "Kbd"],
+          "sha256": "f5ec5654adde1a2ca68887407915687949a0175e447c59b996df59b39bf68846",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tips-panel.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/tips-panel-clean.tsx",
+          "importPath": "@factory/affect-ui/components/tips-panel-clean",
+          "exports": ["TipsPanel", "Kbd"],
+          "sha256": "33300ded0a76984ceba882cd6b045c865c0a997199196074faedc725bdeb6f75",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tips-panel-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Tips Panel",
+      "storybookId": "affectui-components-tips-panel"
+    },
+    {
+      "slug": "toggle-group",
+      "category": "components",
+      "title": "Toggle Group",
+      "description": "A row of toggle buttons",
+      "reference": "https://www.affectui.com/components/toggle-group",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/toggle-group.tsx",
+          "importPath": "@factory/affect-ui/components/toggle-group",
+          "exports": ["ToggleGroup"],
+          "sha256": "1ddf35a0ed451bfcf2c53715d0dcb90ac15321f32db8d3b369534743c3e045d1",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/toggle-group.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/toggle-group-clean.tsx",
+          "importPath": "@factory/affect-ui/components/toggle-group-clean",
+          "exports": ["ToggleGroup"],
+          "sha256": "4a086d53e0ecf33966e84af16d1b1d2d8388f90a7f64c733132f3e026345a9ad",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/toggle-group-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Toggle Group",
+      "storybookId": "affectui-components-toggle-group"
+    },
+    {
+      "slug": "tool-call-card",
+      "category": "components",
+      "title": "Tool Call Card",
+      "description": "An agent's tool call in one line",
+      "reference": "https://www.affectui.com/components/tool-call-card",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/tool-call-card.tsx",
+          "importPath": "@factory/affect-ui/components/tool-call-card",
+          "exports": ["ToolCallCard", "ToolCallGroup"],
+          "sha256": "91ab651c72b613be544e2b2e83b557e2f522c9a6c458d05ade85365086865766",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tool-call-card.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/tool-call-card-clean.tsx",
+          "importPath": "@factory/affect-ui/components/tool-call-card-clean",
+          "exports": ["ToolCallCard", "ToolCallGroup"],
+          "sha256": "cc8f4c7a581e0c7fd7d05faa63122d06d01542e71c4df75dd0a88f1365c839ff",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tool-call-card-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Tool Call Card",
+      "storybookId": "affectui-components-tool-call-card"
+    },
+    {
+      "slug": "tooltip",
+      "category": "components",
+      "title": "Tooltip",
+      "description": "A small dark label for one control",
+      "reference": "https://www.affectui.com/components/tooltip",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/tooltip.tsx",
+          "importPath": "@factory/affect-ui/components/tooltip",
+          "exports": ["Tooltip"],
+          "sha256": "8d1634b5f7ea343fee1439fd87c110c175e5abba832fa2fc962fde9d7ab4b6e7",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tooltip.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/tooltip-clean.tsx",
+          "importPath": "@factory/affect-ui/components/tooltip-clean",
+          "exports": ["Tooltip"],
+          "sha256": "248d67efb0b588fb949990c6427fc9d7aea734056eadddca564a3da7269a44f1",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tooltip-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Tooltip",
+      "storybookId": "affectui-components-tooltip"
+    },
+    {
+      "slug": "tree-view",
+      "category": "components",
+      "title": "Tree View",
+      "description": "A nested list of folders and files or any hierarchy",
+      "reference": "https://www.affectui.com/components/tree-view",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/components/tree-view.tsx",
+          "importPath": "@factory/affect-ui/components/tree-view",
+          "exports": ["TreeView"],
+          "sha256": "d43ffcd54776400684a89a571dc752e8ef895a494832b62447d254cfa7f46a58",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tree-view.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/components/tree-view-clean.tsx",
+          "importPath": "@factory/affect-ui/components/tree-view-clean",
+          "exports": ["TreeView"],
+          "sha256": "1753f4e3bfe15704755bfd400a6902106b40569b85268d94d7febef255a07707",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/components/tree-view-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Components/Tree View",
+      "storybookId": "affectui-components-tree-view"
+    },
+    {
+      "slug": "logo-marquee",
+      "category": "blocks",
+      "title": "Logo Marquee",
+      "description": "The endless “Trusted by” strip",
+      "reference": "https://www.affectui.com/blocks/logo-marquee",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/blocks/logo-marquee.tsx",
+          "importPath": "@factory/affect-ui/blocks/logo-marquee",
+          "exports": ["LogoMarquee"],
+          "sha256": "65b4862d3fb7bf17134c761aa3b70b0ec39205770bef6e61e5af3fabae369f3a",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/blocks/logo-marquee.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/blocks/logo-marquee-clean.tsx",
+          "importPath": "@factory/affect-ui/blocks/logo-marquee-clean",
+          "exports": ["LogoMarquee"],
+          "sha256": "74d0750675ec3ceba387660a7b6acbe6ad77dfa9d7c0a3ad1d55b3d35be21d30",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/blocks/logo-marquee-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Blocks/Logo Marquee",
+      "storybookId": "affectui-blocks-logo-marquee"
+    },
+    {
+      "slug": "testimonial-wall",
+      "category": "blocks",
+      "title": "Testimonial Wall",
+      "description": "The landing-page wall of quotes",
+      "reference": "https://www.affectui.com/blocks/testimonial-wall",
+      "variants": [
+        {
+          "style": "classic",
+          "path": "packages/affect-ui/upstream/blocks/testimonial-wall.tsx",
+          "importPath": "@factory/affect-ui/blocks/testimonial-wall",
+          "exports": ["TestimonialWall"],
+          "sha256": "c8ee81d6d2cf67e49f509470e2151fd19e2187748672e95f8314e292eb6e5961",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/blocks/testimonial-wall.tsx"
+        },
+        {
+          "style": "clean",
+          "path": "packages/affect-ui/upstream/blocks/testimonial-wall-clean.tsx",
+          "importPath": "@factory/affect-ui/blocks/testimonial-wall-clean",
+          "exports": ["TestimonialWall"],
+          "sha256": "4c42c9a202918c4064cb96b9ed72fd90cb281847189512cd44fc35cdf2f4de61",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/blocks/testimonial-wall-clean.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Blocks/Testimonial Wall",
+      "storybookId": "affectui-blocks-testimonial-wall"
+    },
+    {
+      "slug": "agent-team",
+      "category": "illustrations",
+      "title": "Agent Team",
+      "description": "A prompt types itself and branches out into three agents, each with a role and overlapping tool logos",
+      "reference": "https://www.affectui.com/illustrations/agent-team",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/agent-team.tsx",
+          "importPath": "@factory/affect-ui/illustrations/agent-team",
+          "exports": ["AgentTeam"],
+          "sha256": "dbacf19316166c429e79f33c18d98b49be8505fbd75f1fe68047180b10b726b2",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/agent-team.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Agent Team",
+      "storybookId": "affectui-illustrations-agent-team"
+    },
+    {
+      "slug": "cover-flow",
+      "category": "illustrations",
+      "title": "Cover Flow",
+      "description": "Browse covers in 3D",
+      "reference": "https://www.affectui.com/illustrations/cover-flow",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/cover-flow.tsx",
+          "importPath": "@factory/affect-ui/illustrations/cover-flow",
+          "exports": ["CoverFlow"],
+          "sha256": "27f4573b7d67bc5355f5de3cee2ce6fe328e04144e6771135ae1c1a261f784f0",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/cover-flow.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Cover Flow",
+      "storybookId": "affectui-illustrations-cover-flow"
+    },
+    {
+      "slug": "empty-calendar",
+      "category": "illustrations",
+      "title": "Empty Calendar",
+      "description": "Stack of calendar cards marked empty, fanning out on hover",
+      "reference": "https://www.affectui.com/illustrations/empty-calendar",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/empty-calendar.tsx",
+          "importPath": "@factory/affect-ui/illustrations/empty-calendar",
+          "exports": ["EmptyCalendar"],
+          "sha256": "e3de6f44d69d5ad484fa588cf202f7ead07a5ba6c4b0b3100d33fdaaa7503ec3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/empty-calendar.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Empty Calendar",
+      "storybookId": "affectui-illustrations-empty-calendar"
+    },
+    {
+      "slug": "enrichment-orbit",
+      "category": "illustrations",
+      "title": "Enrichment Orbit",
+      "description": "Grok tile inside two rings with comets and data nodes orbiting around it",
+      "reference": "https://www.affectui.com/illustrations/enrichment-orbit",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/enrichment-orbit.tsx",
+          "importPath": "@factory/affect-ui/illustrations/enrichment-orbit",
+          "exports": ["EnrichmentOrbit"],
+          "sha256": "300cd510c1ded928ce02a20225684e47e4c80709b7b4fad861e648420320664d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/enrichment-orbit.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Enrichment Orbit",
+      "storybookId": "affectui-illustrations-enrichment-orbit"
+    },
+    {
+      "slug": "frost-cloud",
+      "category": "illustrations",
+      "title": "Frost Cloud",
+      "description": "A frosted white cloud with eyes cut out of it, on a blue or red-orange sky",
+      "reference": "https://www.affectui.com/illustrations/frost-cloud",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/frost-cloud.tsx",
+          "importPath": "@factory/affect-ui/illustrations/frost-cloud",
+          "exports": ["FrostCloud"],
+          "sha256": "b09e8919442f7bc90ff3770fc9abc76b269482826bf6216bde3d976e4eeef4d8",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/frost-cloud.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Frost Cloud",
+      "storybookId": "affectui-illustrations-frost-cloud"
+    },
+    {
+      "slug": "ghosted-chat",
+      "category": "illustrations",
+      "title": "Ghosted Chat",
+      "description": "Unanswered chat messages marked as read, with a thumbs-down reply on hover",
+      "reference": "https://www.affectui.com/illustrations/ghosted-chat",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/ghosted-chat.tsx",
+          "importPath": "@factory/affect-ui/illustrations/ghosted-chat",
+          "exports": ["GhostedChat"],
+          "sha256": "5ff7bf6384f11a4c970676ba525950bf5d71f5e4a3063669b6d7c7fefc44f71b",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/ghosted-chat.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Ghosted Chat",
+      "storybookId": "affectui-illustrations-ghosted-chat"
+    },
+    {
+      "slug": "glow-cloud",
+      "category": "illustrations",
+      "title": "Glow Cloud",
+      "description": "A glowing cloud with eyes in red-orange or blue",
+      "reference": "https://www.affectui.com/illustrations/glow-cloud",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/glow-cloud.tsx",
+          "importPath": "@factory/affect-ui/illustrations/glow-cloud",
+          "exports": ["GlowCloud"],
+          "sha256": "7d27f943b890c72e204b0274c9810bf257bd40e7869d54d58ee28984b953023f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/glow-cloud.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Glow Cloud",
+      "storybookId": "affectui-illustrations-glow-cloud"
+    },
+    {
+      "slug": "integration-beam",
+      "category": "illustrations",
+      "title": "Integration Beam",
+      "description": "Your product between the tools it connects",
+      "reference": "https://www.affectui.com/illustrations/integration-beam",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/integration-beam.tsx",
+          "importPath": "@factory/affect-ui/illustrations/integration-beam",
+          "exports": ["IntegrationBeam"],
+          "sha256": "533cfff48bfc8b2d03a1968292d79e2229b8156e690c587fc4b0dbc965445fe6",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/integration-beam.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Integration Beam",
+      "storybookId": "affectui-illustrations-integration-beam"
+    },
+    {
+      "slug": "integration-grid",
+      "category": "illustrations",
+      "title": "Integration Grid",
+      "description": "Honeycomb-like wall of integration logos around a bright centre tile with your product mark, fading out toward the edges",
+      "reference": "https://www.affectui.com/illustrations/integration-grid",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/integration-grid.tsx",
+          "importPath": "@factory/affect-ui/illustrations/integration-grid",
+          "exports": ["IntegrationGrid"],
+          "sha256": "807483dc182de27dc3ad5e4046cdd1e1454323904219c93d0c979d065d41c9d5",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/integration-grid.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Integration Grid",
+      "storybookId": "affectui-illustrations-integration-grid"
+    },
+    {
+      "slug": "layer-stack",
+      "category": "illustrations",
+      "title": "Layer Stack",
+      "description": "Isometric stack of five layers with a list beside it",
+      "reference": "https://www.affectui.com/illustrations/layer-stack",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/layer-stack.tsx",
+          "importPath": "@factory/affect-ui/illustrations/layer-stack",
+          "exports": ["LayerStack"],
+          "sha256": "4f8ea82ab8bca0c3a0a8f802eeaaa733fd2fac09b829f671519adbbaa8466cd6",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/layer-stack.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Layer Stack",
+      "storybookId": "affectui-illustrations-layer-stack"
+    },
+    {
+      "slug": "lead-sourcing",
+      "category": "illustrations",
+      "title": "Lead Sourcing",
+      "description": "ChatGPT tile linked to Gmail and Grok, with a shine running along the connection",
+      "reference": "https://www.affectui.com/illustrations/lead-sourcing",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/lead-sourcing.tsx",
+          "importPath": "@factory/affect-ui/illustrations/lead-sourcing",
+          "exports": ["LeadSourcing"],
+          "sha256": "baec1acba55f713644bf5e3fb8ed9fdd5a2d7c989d3a385d8fd89b674c13050f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/lead-sourcing.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Lead Sourcing",
+      "storybookId": "affectui-illustrations-lead-sourcing"
+    },
+    {
+      "slug": "logo-cluster",
+      "category": "illustrations",
+      "title": "Logo Cluster",
+      "description": "Your mark on a white disc in the middle",
+      "reference": "https://www.affectui.com/illustrations/logo-cluster",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/logo-cluster.tsx",
+          "importPath": "@factory/affect-ui/illustrations/logo-cluster",
+          "exports": ["LogoCluster"],
+          "sha256": "53e8bed208038a76406e85d2eb426f6029f4c110437fa94aa2bb2e2b2a5a83e9",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/logo-cluster.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Logo Cluster",
+      "storybookId": "affectui-illustrations-logo-cluster"
+    },
+    {
+      "slug": "model-wheel",
+      "category": "illustrations",
+      "title": "Model Wheel",
+      "description": "AI model names on a turning drum",
+      "reference": "https://www.affectui.com/illustrations/model-wheel",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/model-wheel.tsx",
+          "importPath": "@factory/affect-ui/illustrations/model-wheel",
+          "exports": ["defaultModels", "ModelWheel"],
+          "sha256": "9cc3cf09cd956558ffb6c00652e7212f9421e26d66a231a8a521289a48038d15",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/model-wheel.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Model Wheel",
+      "storybookId": "affectui-illustrations-model-wheel"
+    },
+    {
+      "slug": "region-dach",
+      "category": "illustrations",
+      "title": "DACH Region",
+      "description": "DACH map with fading neighbours and a pastel band along the border, switchable to the US, China, India, Brazil or Japan",
+      "reference": "https://www.affectui.com/illustrations/region-dach",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/region-dach.tsx",
+          "importPath": "@factory/affect-ui/illustrations/region-dach",
+          "exports": ["RegionDach"],
+          "sha256": "aefdfae0c301623075ae8b990549d984a6ddade362eaea5929c91ba15ca4036f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/region-dach.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/DACH Region",
+      "storybookId": "affectui-illustrations-dach-region"
+    },
+    {
+      "slug": "side-folder",
+      "category": "illustrations",
+      "title": "Side Folder",
+      "description": "Glassy blue folder on its side, documents sliding out to the right as the pocket swings open on hover",
+      "reference": "https://www.affectui.com/illustrations/side-folder",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/side-folder.tsx",
+          "importPath": "@factory/affect-ui/illustrations/side-folder",
+          "exports": ["SideFolder"],
+          "sha256": "22b497c8ea13638d17daed55e779a0f87d869429133a2b9f05e9f46b6da65f05",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/side-folder.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Side Folder",
+      "storybookId": "affectui-illustrations-side-folder"
+    },
+    {
+      "slug": "tab-overload",
+      "category": "illustrations",
+      "title": "Tab Overload",
+      "description": "Overlapping browser windows where the highlight follows the hovered tab",
+      "reference": "https://www.affectui.com/illustrations/tab-overload",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/tab-overload.tsx",
+          "importPath": "@factory/affect-ui/illustrations/tab-overload",
+          "exports": ["TabOverload"],
+          "sha256": "327924948676db859ee3c72e8cafbdb68f304bace3dc9c423cda803c6460bf3f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/tab-overload.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Tab Overload",
+      "storybookId": "affectui-illustrations-tab-overload"
+    },
+    {
+      "slug": "team-invite",
+      "category": "illustrations",
+      "title": "Team Invite",
+      "description": "Connected teammates",
+      "reference": "https://www.affectui.com/illustrations/team-invite",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/illustrations/team-invite.tsx",
+          "importPath": "@factory/affect-ui/illustrations/team-invite",
+          "exports": ["TeamInvite"],
+          "sha256": "975e8e7f198a43a310dbedf97d81244965232dcc68a0f53f5b90b0c7a5254906",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/team-invite.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Illustrations/Team Invite",
+      "storybookId": "affectui-illustrations-team-invite"
+    },
+    {
+      "slug": "grid-background",
+      "category": "motion",
+      "title": "Grid Background",
+      "description": "A fine line grid that drifts slowly behind your content and fades out towards the edges",
+      "reference": "https://www.affectui.com/motion/grid-background",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/motion/grid-background.tsx",
+          "importPath": "@factory/affect-ui/motion/grid-background",
+          "exports": ["GridBackground"],
+          "sha256": "c9c7936cffc22cf08f3c786ad2f09509ada9f2901aed0a89ceaa0037f43ae394",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/motion/grid-background.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Motion/Grid Background",
+      "storybookId": "affectui-motion-grid-background"
+    },
+    {
+      "slug": "number-ticker",
+      "category": "motion",
+      "title": "Number Ticker",
+      "description": "Odometer-style numbers",
+      "reference": "https://www.affectui.com/motion/number-ticker",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/motion/number-ticker.tsx",
+          "importPath": "@factory/affect-ui/motion/number-ticker",
+          "exports": ["NumberTicker"],
+          "sha256": "c56e7605203d19041fa33c6f177bccd4a02bf75b7923ba037461fd64f8440a6d",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/motion/number-ticker.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Motion/Number Ticker",
+      "storybookId": "affectui-motion-number-ticker"
+    },
+    {
+      "slug": "shimmer-loader",
+      "category": "motion",
+      "title": "Shimmer Loader",
+      "description": "Skeleton blocks that share one soft light sweep, plus shimmering text for “Thinking…” states",
+      "reference": "https://www.affectui.com/motion/shimmer-loader",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/motion/shimmer-loader.tsx",
+          "importPath": "@factory/affect-ui/motion/shimmer-loader",
+          "exports": ["Skeleton", "ShimmerText"],
+          "sha256": "2e78e807573cdf1f382400fba4c04f1828ebc847562ac8296683f6ac9fd370f3",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/motion/shimmer-loader.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Motion/Shimmer Loader",
+      "storybookId": "affectui-motion-shimmer-loader"
+    },
+    {
+      "slug": "text-reveal",
+      "category": "motion",
+      "title": "Text Reveal",
+      "description": "Text that arrives word by word or letter by letter",
+      "reference": "https://www.affectui.com/motion/text-reveal",
+      "variants": [
+        {
+          "style": "default",
+          "path": "packages/affect-ui/upstream/motion/text-reveal.tsx",
+          "importPath": "@factory/affect-ui/motion/text-reveal",
+          "exports": ["TextReveal"],
+          "sha256": "f8a66fc005cbd29f5441b204857c6a1c727911bcae8833993978df199e09938f",
+          "sourceUrl": "https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/motion/text-reveal.tsx"
+        }
+      ],
+      "storybookTitle": "affectUI/Motion/Text Reveal",
+      "storybookId": "affectui-motion-text-reveal"
+    }
+  ]
+}

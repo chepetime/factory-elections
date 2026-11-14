@@ -20,7 +20,7 @@ export interface GitPort {
   stageAll(dir: string): Promise<string[]>;
   unstageAll(dir: string): Promise<void>;
   commit(dir: string, message: string): Promise<string>;
-  changedFilesSince(dir: string, base: string): Promise<string[]>;
+  addedOrModifiedSince(dir: string, base: string): Promise<string[]>;
   diffSince(dir: string, base: string, stat?: boolean): Promise<string>;
   commitCountSince(dir: string, base: string): Promise<number>;
   remoteUrl(dir: string): Promise<string | undefined>;

@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
+import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -11,5 +13,31 @@ export default defineConfig({
       'server-only': fileURLToPath(new URL('./test/fixtures/server-only.ts', import.meta.url)),
     },
   },
-  test: { include: ['test/**/*.test.{ts,tsx}'], environment: 'node' },
+  test: {
+    projects: [
+      { extends: true, test: { name: 'unit', include: ['test/**/*.test.{ts,tsx}'], environment: 'node' } },
+      ...(['light', 'dark'] as const).map((theme) => ({
+        extends: true as const,
+        plugins: [
+          storybookTest({
+            configDir: fileURLToPath(new URL('./.storybook', import.meta.url)),
+            initialGlobals: { theme },
+          }),
+        ],
+        test: {
+          name: `storybook-${theme}`,
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright({
+              contextOptions: {
+                reducedMotion: process.env['STORYBOOK_MOTION'] === 'normal' ? 'no-preference' : 'reduce',
+              },
+            }),
+            instances: [{ browser: 'chromium' as const }],
+          },
+        },
+      })),
+    ],
+  },
 });

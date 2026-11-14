@@ -17,7 +17,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/" className="font-semibold">
               Software Factory
             </Link>
-            <span className="text-xs text-muted-foreground">local · 127.0.0.1</span>
+            <nav aria-label="Main navigation" className="ml-auto flex items-center gap-4 text-sm">
+              <Link href="/" className="text-muted-foreground underline-offset-4 hover:underline">
+                Projects
+              </Link>
+              <Link href="/components" className="text-muted-foreground underline-offset-4 hover:underline">
+                Components
+              </Link>
+            </nav>
+            <span className="hidden text-xs text-muted-foreground sm:inline">local · localhost</span>
           </div>
         </header>
         <div className="mx-auto max-w-6xl px-4 py-6">{children}</div>

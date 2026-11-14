@@ -39,6 +39,32 @@ const SEVERITY: Record<string, string> = {
   nit: 'text-muted-foreground',
 };
 
+/** First non-empty line of the prompt, shortened for a heading. */
+function title(prompt: string): string {
+  const line =
+    prompt
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) ?? prompt.trim();
+  return line.length > 120 ? `${line.slice(0, 117)}…` : line;
+}
+
+function PromptText({ prompt }: { prompt: string }) {
+  const long = prompt.length > 600 || prompt.split('\n').length > 12;
+  const body = (
+    <pre className="max-h-96 overflow-auto whitespace-pre-wrap font-sans text-sm leading-6">{prompt}</pre>
+  );
+  if (!long) return body;
+  return (
+    <details>
+      <summary className="cursor-pointer text-sm text-muted-foreground">
+        Show full prompt ({prompt.split('\n').length} lines)
+      </summary>
+      <div className="mt-2">{body}</div>
+    </details>
+  );
+}
+
 function money(task: TaskRecord): string {
   const attempts = task.attempts ?? [];
   if (attempts.length === 0) return '—';
@@ -91,7 +117,7 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
           ← Tasks: {project}
         </Link>
         <div className="flex items-start justify-between gap-4">
-          <h1 className="text-xl font-semibold whitespace-pre-wrap">{task.prompt}</h1>
+          <h1 className="line-clamp-2 text-lg font-semibold">{title(task.prompt)}</h1>
           <StageBadge stage={task.stage} />
         </div>
         <p className="font-mono text-xs text-muted-foreground">
@@ -99,14 +125,27 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
         </p>
       </div>
 
+      <Section title="Task">
+        <PromptText prompt={task.prompt} />
+      </Section>
+
       {(run.running || run.logTail) && (
         <Section title={run.running ? `In progress: ${run.label ?? 'running'}` : 'Last run log'}>
           {run.running && (
             <p className="mb-2 text-sm text-muted-foreground">This page refreshes every few seconds.</p>
           )}
-          <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-            {run.logTail || 'Starting…'}
-          </pre>
+          {run.running ? (
+            <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+              {run.logTail || 'Starting…'}
+            </pre>
+          ) : (
+            <details>
+              <summary className="cursor-pointer text-sm text-muted-foreground">Show output</summary>
+              <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+                {run.logTail}
+              </pre>
+            </details>
+          )}
           {!run.running && (
             <form action={dismissLog} className="mt-2">
               <input type="hidden" name="project" value={project} />

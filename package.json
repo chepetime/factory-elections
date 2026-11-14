@@ -18,7 +18,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --list-different --ignore-unknown .",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
-    "web": "node scripts/web.mjs"
+    "web": "node scripts/web.mjs",
+    "storybook": "pnpm --filter @factory/web storybook",
+    "storybook:build": "pnpm --filter @factory/web storybook:build",
+    "storybook:test": "pnpm --filter @factory/web storybook:test"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
