@@ -27,8 +27,15 @@ class ScriptedRunner implements ModelRunner {
   }
   async run(request: ModelRun): Promise<ModelResult> {
     this.calls.push(request);
-    const key = request.tools === 'none' ? 'classifier' : request.tools === 'edit' ? 'coder' : 'reviewer';
-    const next = this.scripts[key]?.shift();
+    const key =
+      request.step === 'pr-writer'
+        ? 'prWriter'
+        : request.tools === 'none'
+          ? 'classifier'
+          : request.tools === 'edit'
+            ? 'coder'
+            : 'reviewer';
+    const next = this.scripts[key]?.shift() ?? (key === 'prWriter' ? defaultDraft : undefined);
     if (!next) throw new Error(`no scripted response for ${key}`);
     return next(request);
   }
@@ -99,7 +106,12 @@ async function setup(scripts: Record<string, Script[]>, testCommand = 'test -f f
           () => false,
         ),
     },
-    steps: { classifier: paths('classifier'), coder: paths('coder'), reviewer: paths('reviewer') },
+    steps: {
+      classifier: paths('classifier'),
+      coder: paths('coder'),
+      reviewer: paths('reviewer'),
+      prWriter: paths('pr-writer'),
+    },
     now: () => new Date(Date.UTC(2026, 10, 13, 0, 0, tick++)).toISOString(),
     log: () => {},
   };
@@ -118,6 +130,11 @@ const writeFeature: Script = async (r) => (
   await writeFile(join(r.cwd!, 'feature.txt'), 'done\n'),
   { text: 'ok', costUsd: 0.1 }
 );
+const defaultDraft: Script = () => ({
+  text: '',
+  structured: { title: 'Add the feature file', body: '## Summary\n\nAdds `feature.txt`.' },
+  costUsd: 0.02,
+});
 const approveReview: Script = () => ({
   text: '',
   structured: { verdict: 'approve', summary: 'Looks right.', findings: [] },
@@ -145,6 +162,9 @@ test('task goes from intake to an opened pull request only after approval', asyn
   assert.equal(prs[0]?.head, `factory/${task.id}`);
   assert.equal(prs[0]?.base, 'main');
   assert.match(prs[0]!.body, /ship it/);
+  assert.equal(prs[0]?.title, 'Add the feature file');
+  assert.match(prs[0]!.body, /^## Summary\n\nAdds `feature.txt`\./);
+  assert.match(prs[0]!.body, /<summary>Factory record<\/summary>/);
   assert.equal(
     execFileSync('git', ['rev-parse', `refs/heads/factory/${task.id}`], {
       cwd: remote,
@@ -155,9 +175,50 @@ test('task goes from intake to an opened pull request only after approval', asyn
   const stored = await store.read('demo', task.id);
   assert.deepEqual(
     stored.attempts?.map((a) => a.step),
-    ['classifier', 'coder', 'reviewer'],
+    ['classifier', 'coder', 'reviewer', 'pr-writer'],
   );
   await assert.rejects(driver.openPr('demo', task.id), /already open/);
+});
+
+test('the PR draft is written after review and shown at the gate, a failed draft does not block', async () => {
+  const brokenDraft: Script = () => ({ text: 'not json', costUsd: 0.01 });
+  const { driver, store, task, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+    prWriter: [brokenDraft],
+  });
+  const reviewed = await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.equal(reviewed.stage, 'awaiting-approval');
+  assert.equal(reviewed.pr_draft, undefined);
+  assert.equal((await store.read('demo', task.id)).attempts?.at(-1)?.outcome, 'failed');
+
+  const drafted = await driver.draftPr('demo', task.id);
+  const gate = await driver.gate('demo', task.id);
+  assert.equal(drafted.pr_draft?.head_sha, gate.headSha);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  await driver.openPr('demo', task.id);
+  assert.equal(prs[0]?.title, 'Add the feature file');
+});
+
+test('a draft written for an older commit is not used', async () => {
+  const { driver, task, prs } = await setup({
+    classifier: [ready],
+    coder: [
+      writeFeature,
+      async (r) => (await writeFile(join(r.cwd!, 'feature.txt'), 'v2\n'), { text: 'ok', costUsd: 0.1 }),
+    ],
+    reviewer: [approveReview, approveReview],
+    prWriter: [defaultDraft, () => ({ text: '', costUsd: 0.01 })],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  await driver.revise('demo', task.id, 'make it v2', { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  assert.notEqual(gate.task.pr_draft?.head_sha, gate.headSha);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  await driver.openPr('demo', task.id);
+  assert.notEqual(prs[0]?.title, 'Add the feature file');
+  assert.match(prs[0]!.body, /^## Task/);
 });
 
 test('verification failure climbs the ladder with the failure output', async () => {

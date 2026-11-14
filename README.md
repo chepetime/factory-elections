@@ -104,7 +104,9 @@ Branch factory/71d452ef-… → main, head 7f4fed4364a3
 Verification: passed at 7f4fed4364a3
 Review (7f4fed4364a3): approve — Adds the flag and a test …
   [nit] src/export.ts: …
-Model attempts: 3, estimated cost: $0.27
+Pull request draft: Add a --verbose flag to the export command
+    ## Summary …
+Model attempts: 4, estimated cost: $0.29
 
 Next, after reading `factory task diff`:
   approve:  factory task approve --project myapp --id 71d452ef-… --head 7f4fed4364a3
@@ -119,6 +121,8 @@ factory task revise  --project myapp --id "$ID" --note "Also document the flag i
 factory task approve --project myapp --id "$ID" --head 7f4fed4364a3 [--note "..."]
 factory task open-pr --project myapp --id "$ID" [--draft]    # pushes factory/<id> and prints the PR URL
 ```
+
+The pull request title and description are drafted after review and shown at the gate, so you approve them together with the code. `factory task draft-pr` redrafts them for the current commit.
 
 `approve` needs the commit you reviewed (`--head`). If anything changes after you look, approval is refused and you review again. `open-pr` re-checks every gate before pushing.
 
@@ -169,7 +173,7 @@ The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form s
 | Verification        | Works. Runs the profile's `test` and `full_check`. Failures feed the output to the next, stronger attempt (default up to 3 attempts).                                                                                                    |
 | Review              | Works (Claude Sonnet, read-only). Findings are graded blocking, major, minor or nit. Blocking findings need `--accept-blocking` to approve.                                                                                              |
 | Human gate          | Works. `gate`, `diff`, `approve`, `revise`, `reject`. Approval is bound to the reviewed commit.                                                                                                                                        |
-| Pull request        | Works through `gh pr create`, after approval only. The PR body is built from the task record.                                                                                                                                         |
+| Pull request        | Works through `gh pr create`, after approval only. A pr-writer step (Claude Sonnet, read-only) drafts the title and a Summary / Evidence / Merge Danger description after review; the factory appends its record in a collapsed footer. |
 | Health API          | `factory serve` serves `GET http://127.0.0.1:4318/health`.                                                                                                                                                                             |
 | Definition checks   | `definition check-step/check-ladder/check-loop`, `verdict check`, `classifier run`, and the individual step commands in `factory --help`.                                                                                             |
 | Web app             | Works locally (`pnpm web`). Projects, tasks, task detail with diff, verification, review, cost and timeline; submit, run, revise, approve, reject and open PR. Placeholder cards remain for planned views.                          |

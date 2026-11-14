@@ -105,29 +105,63 @@ export function isForbiddenCommand(command: string, profile: RepoProfile): strin
   );
 }
 
-export function prTitle(task: TaskRecord): string {
-  const firstLine = task.prompt.trim().split('\n')[0] ?? task.id;
-  return firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine;
+/** The drafted PR text, when it was written for this exact commit. */
+export function currentPrDraft(task: TaskRecord, headSha: string): TaskRecord['pr_draft'] {
+  return task.pr_draft && task.pr_draft.head_sha === headSha ? task.pr_draft : undefined;
 }
 
-export function prBody(task: TaskRecord): string {
-  const lines = ['## Task', '', task.prompt.trim(), ''];
-  if (task.verdict)
-    lines.push(`Classifier: kind \`${task.verdict.kind}\`, size \`${task.verdict.loe}\`.`, '');
-  if (task.verification)
+const PROMPT_PREVIEW_CHARS = 1200;
+
+export function prTitle(task: TaskRecord, headSha: string): string {
+  const draft = currentPrDraft(task, headSha);
+  if (draft) return draft.title.trim().split('\n')[0]!.slice(0, 120);
+  return taskTitle(task);
+}
+
+/** A one-line title from the task prompt, for commits and when no PR draft exists. */
+export function taskTitle(task: TaskRecord): string {
+  const firstLine = (task.prompt.trim().split('\n')[0] ?? task.id).replace(/[\s:;,.-]+$/, '');
+  return firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine || task.id;
+}
+
+/**
+ * The PR description: the drafted body when there is one for this commit, otherwise a short
+ * summary of the task. Either way, the factory's record goes in a collapsed footer.
+ */
+export function prBody(task: TaskRecord, headSha: string): string {
+  const draft = currentPrDraft(task, headSha);
+  const lines: string[] = [];
+  if (draft) lines.push(draft.body.trim(), '');
+  else {
+    const prompt = task.prompt.trim();
     lines.push(
-      '## Verification',
+      '## Task',
       '',
-      `Profile test and full-check commands passed at \`${task.verification.head_sha.slice(0, 12)}\`.`,
+      prompt.length > PROMPT_PREVIEW_CHARS
+        ? `${prompt.slice(0, PROMPT_PREVIEW_CHARS)}\n\n… (truncated)`
+        : prompt,
       '',
     );
-  if (task.review) {
-    lines.push('## Automated review', '', task.review.summary, '');
-    for (const f of task.review.findings)
-      lines.push(`- **${f.severity}**${f.file ? ` \`${f.file}\`` : ''}: ${f.message}`);
-    if (task.review.findings.length) lines.push('');
+    if (task.review) lines.push('## Summary', '', task.review.summary, '');
   }
-  if (task.approval?.note) lines.push('## Human approval note', '', task.approval.note, '');
-  lines.push(`---`, `Opened by factory-elections for task \`${task.id}\` after human approval.`);
+  lines.push('---', '', '<details>', '<summary>Factory record</summary>', '');
+  lines.push(
+    `- Task: \`${task.id}\`${task.verdict ? ` (${task.verdict.kind}, size ${task.verdict.loe})` : ''}`,
+  );
+  if (task.verification)
+    lines.push(
+      `- Verification: ${task.verification.passed ? 'passed' : 'failed'} at \`${task.verification.head_sha.slice(0, 12)}\``,
+    );
+  if (task.review) {
+    lines.push(`- Automated review: ${task.review.verdict}, ${task.review.findings.length} finding(s)`);
+    for (const f of task.review.findings)
+      lines.push(`  - **${f.severity}**${f.file ? ` \`${f.file}\`` : ''}: ${oneLine(f.message)}`);
+  }
+  if (task.approval?.note) lines.push(`- Approval note: ${oneLine(task.approval.note)}`);
+  lines.push('', '</details>', '', 'Opened by factory-elections after human approval.');
   return lines.join('\n');
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }

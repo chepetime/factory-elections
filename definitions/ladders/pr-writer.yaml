@@ -1,0 +1,5 @@
+name: pr-writer
+rungs:
+  - name: sonnet-medium
+    model: claude-sonnet-5-5
+    effort: medium

@@ -3,7 +3,13 @@ import { access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { ClassifierVerdict, describeIssues, readinessDecision, type TaskRecord } from '@factory/core';
+import {
+  ClassifierVerdict,
+  currentPrDraft,
+  describeIssues,
+  readinessDecision,
+  type TaskRecord,
+} from '@factory/core';
 import * as fsAdapter from '@factory/adapters-fs';
 import * as git from '@factory/adapters-git';
 import * as github from '@factory/adapters-github';
@@ -43,7 +49,7 @@ Workflow
   task open-pr --project <p> --id <id> [--draft]         Push the branch and open the PR (approved tasks only)
 
 Individual steps
-  task show | list | readiness | classify | prepare-worktree | verify | review | record-verdict | prepare-classifier
+  task show | list | readiness | classify | prepare-worktree | verify | review | draft-pr | record-verdict | prepare-classifier
   classifier run --request <path>
   verdict check <path>
   definition check-step | check-ladder | check-loop <path>
@@ -107,7 +113,12 @@ export function composeDriver(root: string, quiet = false): Driver {
           () => false,
         ),
     },
-    steps: { classifier: step('classifier'), coder: step('coder'), reviewer: step('reviewer') },
+    steps: {
+      classifier: step('classifier'),
+      coder: step('coder'),
+      reviewer: step('reviewer'),
+      prWriter: step('pr-writer'),
+    },
     now: () => new Date().toISOString(),
     log,
   };
@@ -139,6 +150,9 @@ function gateText(gate: Awaited<ReturnType<Driver['gate']>>): string {
     for (const f of task.review.findings)
       lines.push(`  [${f.severity}] ${f.file ? `${f.file}: ` : ''}${f.message}`);
   } else lines.push('Review: not run');
+  const draft = currentPrDraft(task, headSha);
+  if (draft) lines.push('', `Pull request draft: ${draft.title}`, '', indent(draft.body), '');
+  else lines.push('Pull request draft: none for this commit (the PR will use the task summary)');
   const cost = (task.attempts ?? []).reduce<number | null>(
     (sum, a) => (a.cost_usd === null || sum === null ? null : sum + a.cost_usd),
     0,
@@ -313,6 +327,10 @@ async function taskCommand(
       const task = await driver.review(project(), id());
       return (out(`Review recorded: ${task.review!.verdict}`), 0);
     }
+    case 'draft-pr': {
+      const task = await driver.draftPr(project(), id());
+      return (out(`PR drafted: ${task.pr_draft!.title}`), 0);
+    }
     case 'run': {
       const task = await driver.run(project(), id(), { maxAttempts: maxAttempts(str('max-attempts')) });
       if (task.stage === 'blocked') {
@@ -366,4 +384,11 @@ async function taskCommand(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2));
+}
+
+function indent(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => (line ? `    ${line}` : line))
+    .join('\n');
 }

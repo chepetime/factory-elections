@@ -9,6 +9,8 @@ export interface ToolGuard {
 }
 
 export interface ModelRun {
+  /** The workflow step making the request, for logs and test doubles. */
+  step?: string;
   model: string;
   effort: Effort;
   systemPrompt: string;

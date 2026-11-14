@@ -181,13 +181,19 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 # review-task
 `factory task review --project <project> --id <id>` runs the reviewer step on the diff between the base branch and the verified head, records :ReviewOutput: with that head's commit as `review`, clears any approval, sets `stage` to `awaiting-approval`, prints `Review recorded: <verdict>` and exits 0.
 - Verification must have passed for the current head. The reviewer has read-only tools inside the worktree. Invalid reviewer output sets `stage` to `failed` and exits nonzero.
+- After a recorded review, the pr-writer step drafts the pull request as in `draft-pull-request`. A failed draft is logged and appended to `attempts`, and leaves the task `awaiting-approval` without a draft.
+
+# draft-pull-request
+`factory task draft-pr --project <project> --id <id>` runs the pr-writer step, records `pr_draft` (`title`, `body`, `head_sha`, `at`) for the current head, prints `PR drafted: <title>` and exits 0. It does not change `stage`.
+- The current head must be reviewed. The pr-writer has read-only tools inside the worktree and receives the task prompt (truncated), human notes, verification output, the review and the diff.
+- The title is at most 72 characters in the imperative mood. The body follows the Summary / Evidence / Merge Danger template adapted from Matt Pocock's `pr` skill (see `definitions/prompts/CREDITS.md`): a short summary with the smallest useful visual, before and after evidence limited to what the inputs show, and whether the change is a one-way or two-way door with its blast radius.
 
 # run-task
 `factory task run --project <project> --id <id> [--max-attempts <n>]` classifies an unclassified task, stops with `stage` `blocked` and exit status 3 unless the readiness action is `continue`, prepares the worktree, runs coder and verification as in `code-task`, then reviews as in `review-task`.
 - It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request.
 
 # approval-gate
-`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. With `--json`, `task gate` prints one JSON object with `task`, `head_sha`, `diff_stat` and `blockers`. Neither changes the task.
+`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, the pull request draft for the current head, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. With `--json`, `task gate` prints one JSON object with `task`, `head_sha`, `diff_stat` and `blockers`. Neither changes the task.
 
 # approve-task
 `factory task approve --project <project> --id <id> --head <sha> [--note <text>] [--accept-blocking]` records the human's approval of the current head and sets `stage` to `approved`.
@@ -198,5 +204,6 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 # open-pull-request
 `factory task open-pr --project <project> --id <id> [--draft]` pushes `factory/<id>` to `origin` and opens a pull request into the base branch with the GitHub CLI, records `pr`, sets `stage` to `pr-opened`, prints the pull request URL and exits 0.
 - Every gate must hold at the current head: verification passed, review recorded, human approval recorded for this exact commit, `stage` `approved`, a clean worktree, an `origin` remote and no existing `pr`.
-- The title is the first line of the prompt. The body contains the prompt, classifier size, verification result, reviewer summary and findings, and the approval note.
+- With a `pr_draft` for the current head, the title and body are the draft's. Without one, the title is the prompt's first line without trailing punctuation, and the body is the prompt (truncated to 1200 characters) and the reviewer summary.
+- Either body ends with a collapsed factory record: task id, classifier kind and size, verification result, review verdict and findings, and the approval note.
 - A failed push or pull request creation exits nonzero and leaves `stage` `approved`, so the command can be retried.

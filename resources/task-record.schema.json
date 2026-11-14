@@ -74,6 +74,16 @@
         }
       ]
     },
+    "pr_draft": {
+      "type": "object",
+      "required": ["title", "body", "head_sha", "at"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 1 },
+        "head_sha": { "type": "string" },
+        "at": { "type": "string" }
+      }
+    },
     "approval": {
       "type": "object",
       "required": ["decision", "head_sha", "at"],

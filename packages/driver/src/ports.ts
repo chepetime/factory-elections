@@ -64,7 +64,8 @@ export interface DriverDeps {
   github: GitHubPort;
   runner: ModelRunner;
   definitions: DefinitionsPort;
-  steps: { classifier: StepPaths; coder: StepPaths; reviewer: StepPaths };
+  /** `prWriter` is optional: without it, pull requests use the task-summary description. */
+  steps: { classifier: StepPaths; coder: StepPaths; reviewer: StepPaths; prWriter?: StepPaths };
   now(): string;
   /** Progress for the human, written to standard error by the CLI. */
   log(line: string): void;

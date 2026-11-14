@@ -274,6 +274,28 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
         </Section>
       )}
 
+      {gate && !task.pr && (
+        <Section title="Pull request draft">
+          {task.pr_draft && task.pr_draft.head_sha === gate.head_sha ? (
+            <>
+              <p className="text-sm font-medium">{task.pr_draft.title}</p>
+              <pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+                {task.pr_draft.body}
+              </pre>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Written for <span className="font-mono">{gate.head_sha.slice(0, 12)}</span>. The factory adds
+                its record (task, verification, review findings) below it.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No draft for this commit. The pull request will describe the task and the review summary. Run{' '}
+              <span className="font-mono">factory task draft-pr</span> to write one.
+            </p>
+          )}
+        </Section>
+      )}
+
       {gate && task.stage === 'awaiting-approval' && !busy && (
         <Section title="Your decision">
           {gate.blockers.length > 0 ? (

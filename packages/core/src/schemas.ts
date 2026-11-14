@@ -121,6 +121,22 @@ export const REVIEW_OUTPUT_SCHEMA = {
   },
 } as const;
 
+/** Pull-request title and description drafted by the pr-writer step. */
+export const PrDraft = z.looseObject({
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1),
+});
+export type PrDraft = z.infer<typeof PrDraft>;
+
+export const PR_DRAFT_SCHEMA = {
+  type: 'object',
+  required: ['title', 'body'],
+  properties: {
+    title: { type: 'string', maxLength: 72 },
+    body: { type: 'string' },
+  },
+} as const;
+
 const Iso = z.string().min(1);
 
 export const StepAttempt = z.looseObject({
@@ -154,6 +170,7 @@ export const TaskRecord = z.looseObject({
     .looseObject({ passed: z.boolean(), head_sha: NonEmpty, at: Iso, output_tail: z.string() })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
+  pr_draft: PrDraft.extend({ head_sha: NonEmpty, at: Iso }).optional(),
   approval: z
     .looseObject({
       decision: z.enum(['approved', 'rejected']),

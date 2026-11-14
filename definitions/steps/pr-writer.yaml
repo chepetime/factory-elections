@@ -1,0 +1,5 @@
+name: pr-writer
+prompt: ../prompts/pr-writer.md
+model: pr-writer
+inputs: [task, diff, verification, review]
+outputs: [pr_draft]
