@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @factory/affect-ui build && next dev --webpack --hostname 127.0.0.1 --port 4317",
+    "dev": "pnpm --filter @factory/affect-ui build && next dev --webpack --hostname localhost",
     "build": "pnpm --filter @factory/affect-ui build && next build --webpack",
-    "start": "next start --hostname 127.0.0.1 --port 4317",
+    "start": "next start --hostname localhost",
     "typecheck": "pnpm --filter @factory/affect-ui build && tsc --noEmit --pretty false",
     "test": "pnpm --filter @factory/affect-ui build && vitest run --project unit",
     "storybook": "pnpm --filter @factory/affect-ui build && storybook dev --host 127.0.0.1 -p 6006 --no-open --disable-telemetry",

@@ -41,6 +41,38 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Empty: Story = {};
+export const MenuToggling: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const document = canvasElement.ownerDocument;
+    const page = within(document.body);
+    const controls = [
+      ['Request approval', 'How should actions be approved?'],
+      ['Model: Auto', 'Choose a model'],
+      ['Work in a folder', 'Work in a folder'],
+      ['Connect apps, 0 selected', 'Apps'],
+    ];
+    for (let pass = 0; pass < 3; pass += 1) {
+      for (const [triggerName, menuName] of controls) {
+        const trigger = canvas.getByRole('button', { name: triggerName });
+        await userEvent.click(trigger);
+        const menu = await page.findByRole('menu', { name: menuName });
+        // Check the first painted frames, including the ordinary-motion entrance.
+        // Text and rows should retain their size instead of snapping between scales.
+        for (let frame = 0; frame < 2; frame += 1) {
+          const style = document.defaultView!.getComputedStyle(menu);
+          await expect(style.scale).toBe('none');
+          await expect(style.transform).toBe('none');
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+        await userEvent.keyboard('{Escape}');
+        await waitFor(() => expect(menu).not.toBeInTheDocument());
+        await waitFor(() => expect(trigger).toHaveFocus());
+      }
+    }
+    await expect(page.queryByRole('menu')).not.toBeInTheDocument();
+  },
+};
 export const Ready: Story = {
   args: { defaultValue: 'Review the retry flow and preserve the previous attempt.' },
 };

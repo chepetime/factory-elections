@@ -29,7 +29,11 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright({ contextOptions: { reducedMotion: 'reduce' } }),
+            provider: playwright({
+              contextOptions: {
+                reducedMotion: process.env['STORYBOOK_MOTION'] === 'normal' ? 'no-preference' : 'reduce',
+              },
+            }),
             instances: [{ browser: 'chromium' as const }],
           },
         },

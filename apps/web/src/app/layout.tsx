@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 Components
               </Link>
             </nav>
-            <span className="hidden text-xs text-muted-foreground sm:inline">local · 127.0.0.1</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">local · localhost</span>
           </div>
         </header>
         <div className="mx-auto max-w-6xl px-4 py-6">{children}</div>

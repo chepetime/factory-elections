@@ -131,7 +131,7 @@ pnpm web          # builds, then serves http://127.0.0.1:4317 and the health API
 pnpm web -- --dev # development mode with hot reload, no build step
 ```
 
-Open <http://127.0.0.1:4317>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
+Open <http://localhost:3000>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
 
 ### Component library and Storybook
 
@@ -204,8 +204,8 @@ The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form s
 | `Cannot find package '@factory/…'` or `'zod'`                              | Run `pnpm install` in the repository.                                                                                                                                                               |
 | Web page says `Engine unavailable`                                         | Start the app with `pnpm web`, which also runs `factory serve`, or run `factory serve` yourself.                                                                                                    |
 | Web page says `Projects unavailable` or `Tasks unavailable`               | Check that `factory project list` works in a terminal. If you start Next.js yourself, set `FACTORY_CLI_SCRIPT` to the absolute path of `bin/factory`.                                               |
-| `Forbidden` (403) in the browser                                           | Open `http://127.0.0.1:4317` or `http://localhost:4317`. Other host names are refused on purpose.                                                                                                   |
-| `EADDRINUSE` on 4317                                                       | Another copy is running. Stop it, or find it with `lsof -i :4317`.                                                                                                                                  |
+| `Forbidden` (403) in the browser                                           | Open `http://localhost:3000`. Other host names are refused on purpose.                                                                                                   |
+| `EADDRINUSE` on 3000                                                       | Another copy is running. Stop it, or find it with `lsof -i :3000`.                                                                                                                                  |
 
 To clean up a finished task's worktree and branch (run in your repository):
 

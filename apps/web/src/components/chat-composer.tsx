@@ -487,7 +487,7 @@ function ComposerMenu({
       <Menu.Positioner align={align} side="top" sideOffset={8} className="z-50 outline-none">
         <Menu.Popup
           aria-label={label}
-          className="max-h-[min(24rem,var(--available-height))] w-80 max-w-[calc(100vw-2rem)] origin-[var(--transform-origin)] overflow-y-auto rounded-2xl border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none motion-safe:transition-[opacity,transform] motion-safe:duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0"
+          className="max-h-[min(24rem,var(--available-height))] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 motion-safe:ease-out data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:transition-none"
         >
           {showHeading && <div className="px-3 py-2 text-sm text-muted-foreground">{label}</div>}
           {children}

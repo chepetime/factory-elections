@@ -16,6 +16,7 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 
 ## Workflow
 
+- [ ] **LLM-generated task name:** the classifier should also return a short task name, stored on the task record and shown in the CLI and web app instead of the first line of the prompt or the UUID.
 - [ ] **`factory task cleanup`:** remove worktrees and branches of tasks that are pr-opened, rejected or failed.
 - [ ] **Rebase or refresh a task branch** when `main` moves on, so a PR doesn't start with conflicts (see bb64645e).
 - [ ] **Resume after a usage limit:** a model run that fails on "hit your limit" should leave the task resumable at the failed step (today a manual `factory task review` was needed), and could retry after the reset time.
@@ -23,6 +24,8 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 
 ## Web app
 
+- [ ] **Chat-style task view:** show the task as a conversation (prompt, coder and reviewer turns, revise notes, approval) with a toggleable sidebar listing all task events.
+- [ ] **Use the new components across the app:** the affect-ui free components (`packages/affect-ui`) and shadcn/ui, following [docs/frontend-component-patterns.md](docs/frontend-component-patterns.md), instead of hand-rolled markup.
 - [ ] **Inbox:** tasks awaiting a decision across all projects, on the home page.
 - [ ] **Render the approval gate's diff** with a proper code view (affect-ui `CodeBlock` / Tool Call Card patterns) instead of plain text.
 - [ ] Show the task's cost and model attempts as a small breakdown.

@@ -7,7 +7,7 @@ The setup uses Storybook 10.6 with React/Vite because these components take plai
 ## What is included
 
 - **Library:** searchable inventory of all 74 installed MIT items, the 26-item support roadmap, and the patterns guide.
-- **Factory:** Agent Checkpoints (branched, empty, read-only, long history, interactive), Agent Findings (running, empty, no findings, completed, interactive), and Chat Composer (18 stories covering menus, attachments, sending, approval modes, dictation, and narrow layouts).
+- **Factory:** Agent Checkpoints (branched, empty, read-only, long history, interactive), Agent Findings (running, empty, no findings, completed, interactive), and Chat Composer (19 stories covering menus, attachments, sending, approval modes, dictation, and narrow layouts).
 - **affectUI:** individual Autodocs and live stories for all 74 free items, grouped into Components (51), Blocks (2), Illustrations (17), and Motion (4). All 127 installed style variants have a preview. Classic and Clean use matching fixtures; compound components render primitives from the same variant. The original detailed stories for Code Block, Decision Inbox, and Segmented Control are retained.
 - **Controls and Autodocs:** inspect props and try different inputs. `fn()` callbacks appear in the Actions panel. Interactive stories own sample state.
 - **Theme and viewport tools:** switch Light/Dark in the toolbar and select Phone, Tablet, or Desktop. Reduced motion follows the OS in the workshop.
@@ -23,11 +23,15 @@ pnpm storybook:build
 # Once on a fresh machine, install the browser used by the test project:
 pnpm --filter @factory/web exec playwright install chromium
 pnpm storybook:test
+
+# Exercise the composer with ordinary animations enabled as well:
+STORYBOOK_MOTION=normal pnpm --filter @factory/web exec vitest run \
+  --project storybook-light --project storybook-dark src/stories/chat-composer.stories.tsx
 ```
 
 Every command builds the local `@factory/affect-ui` dependency before using it. Static output is ignored by Git. Storybook runs on loopback and has telemetry disabled. pnpm explicitly permits the esbuild package's install script, required by Storybook's tooling.
 
-`pnpm check` runs formatting, lint, types, and the existing CLI/unit tests. `pnpm storybook:test` separately runs all 162 stories (324 browser checks) in Chromium in both light and dark themes, including click/keyboard flows and axe checks. The tests request reduced motion to inspect settled states rather than capturing intermediate fades. Accessibility tests fail on violations, with the two narrowly scoped exceptions documented below. Passing stories covers these fixtures, not every possible state of all 74 imported modules.
+`pnpm check` runs formatting, lint, types, and the existing CLI/unit tests. `pnpm storybook:test` separately runs all 163 stories (326 browser checks) in Chromium in both light and dark themes, including click/keyboard flows and axe checks. The tests request reduced motion to inspect settled states rather than capturing intermediate fades. Accessibility tests fail on violations, with the two narrowly scoped exceptions documented below. Passing stories covers these fixtures, not every possible state of all 74 imported modules.
 
 ## Add a component
 
