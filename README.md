@@ -124,6 +124,25 @@ factory task open-pr --project myapp --id "$ID" [--draft]    # pushes factory/<i
 
 If the classifier finds the task unclear, too large for one PR, or in need of research, `task run` stops before writing any code. It exits with status 3 and prints the questions; submit a clearer task.
 
+## Web app
+
+```sh
+pnpm web          # builds, then serves http://127.0.0.1:4317 and the health API on :4318
+pnpm web -- --dev # development mode with hot reload, no build step
+```
+
+Open <http://127.0.0.1:4317>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
+
+- **Home:** your projects, engine health, and placeholders for planned views.
+- **Project page:** submit a task (by default it starts the run straight away) and see every task with its stage, readiness and blockers.
+- **Task page:**
+  - the diff, verification output, review findings, model attempts with cost, and the timeline;
+  - **Approve**, which sends the exact commit shown on the page;
+  - **Revise** with a note, **Reject**, and **Open pull request** (draft by default).
+  - Runs and revisions continue in the background. The page shows their log and refreshes until they finish.
+
+The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form submissions only from its own pages. Every action runs the same CLI command you would type, so the approval rules are identical.
+
 ## What works today
 
 | Area                | Status                                                                                                                                                                                                                                 |
@@ -138,8 +157,8 @@ If the classifier finds the task unclear, too large for one PR, or in need of re
 | Pull request        | Works through `gh pr create`, after approval only. The PR body is built from the task record.                                                                                                                                         |
 | Health API          | `factory serve` serves `GET http://127.0.0.1:4318/health`.                                                                                                                                                                             |
 | Definition checks   | `definition check-step/check-ladder/check-loop`, `verdict check`, `classifier run`, and the individual step commands in `factory --help`.                                                                                             |
-| Web app             | **Not built.** `frontend.plain` specifies it, but no code exists.                                                                                                                                                                      |
-| Everything else     | Not built: dispatcher/queue, PR tending, slicing, research route, QA step, telemetry store, retros. See [the feature inventory](docs/feature-inventory.md).                                                                             |
+| Web app             | Works locally (`pnpm web`). Projects, tasks, task detail with diff, verification, review, cost and timeline; submit, run, revise, approve, reject and open PR. Placeholder cards remain for planned views.                          |
+| Everything else     | Not built: dispatcher/queue, PR tending, slicing, research route, QA step, telemetry store, retros, inbox. See [the feature inventory](docs/feature-inventory.md).                                                                             |
 
 ## Limitations
 
@@ -167,6 +186,10 @@ If the classifier finds the task unclear, too large for one PR, or in need of re
 | `gh pr create failed: … known GitHub host`                                 | `origin` must point at GitHub, and `gh auth status` must succeed. Fix it, then rerun `task open-pr`. The task stays `approved`, and pushing again is safe.                                         |
 | `node: … ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` or similar                     | Node is older than 26. Check `node --version`.                                                                                                                                                      |
 | `Cannot find package '@factory/…'` or `'zod'`                              | Run `pnpm install` in the repository.                                                                                                                                                               |
+| Web page says `Engine unavailable`                                         | Start the app with `pnpm web`, which also runs `factory serve`, or run `factory serve` yourself.                                                                                                    |
+| Web page says `Projects unavailable` or `Tasks unavailable`               | Check that `factory project list` works in a terminal. If you start Next.js yourself, set `FACTORY_CLI_SCRIPT` to the absolute path of `bin/factory`.                                               |
+| `Forbidden` (403) in the browser                                           | Open `http://127.0.0.1:4317` or `http://localhost:4317`. Other host names are refused on purpose.                                                                                                   |
+| `EADDRINUSE` on 4317                                                       | Another copy is running. Stop it, or find it with `lsof -i :4317`.                                                                                                                                  |
 
 To clean up a finished task's worktree and branch (run in your repository):
 
@@ -178,7 +201,7 @@ git branch -D factory/<id>
 ## Development
 
 ```sh
-pnpm test           # unit and end-to-end tests: scripted model, temp git repos, fake GitHub; no network or model calls
+pnpm test           # CLI tests (scripted model, temp git repos, fake GitHub) and web tests (fake CLI); no network or model calls
 pnpm check          # prettier, oxlint (warnings denied), tsc, tests
 ```
 
@@ -188,8 +211,9 @@ pnpm check          # prettier, oxlint (warnings denied), tsc, tests
 | `packages/adapters-*`      | Filesystem store, git, GitHub CLI, process spawning, Claude Agent SDK runner.                |
 | `packages/driver`          | The workflow (classify → … → open PR) over injected ports.                                   |
 | `apps/cli`                 | `factory` command, `serve`, `doctor`, profile drafting.                                      |
+| `apps/web`                 | Next.js web app (App Router, shadcn/ui) over the CLI; `pnpm web` starts it.                  |
 | `definitions/`             | Step, ladder and loop YAML and step prompts.                                                 |
-| `factory.plain`            | Specification of the CLI behaviour; `frontend.plain` specifies the (unbuilt) web app.        |
+| `factory.plain`            | Specification of the CLI behaviour; `frontend.plain` specifies the web app.        |
 | `resources/`               | JSON Schema and OpenAPI contracts referenced by the specs.                                   |
 | `docs/adr/`                | Decisions. [ADR 0002](docs/adr/0002-hand-written-v1.md) explains why v1 is hand-written.     |
 

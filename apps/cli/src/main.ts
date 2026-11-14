@@ -35,7 +35,7 @@ Setup
 Workflow
   intake --project <name> [--repo <abs-path>] <prompt>   Submit a task; prints its id
   task run --project <p> --id <id> [--max-attempts N]    Classify, code, verify and review; stops at approval
-  task gate --project <p> --id <id>                      Show what awaits your approval
+  task gate --project <p> --id <id> [--json]             Show what awaits your approval
   task diff --project <p> --id <id>                      Print the full diff against the base branch
   task approve --project <p> --id <id> --head <sha> [--note <text>] [--accept-blocking]
   task revise --project <p> --id <id> --note <text>      Ask for changes; reruns coder, verify, review
@@ -72,6 +72,7 @@ const OPTIONS = {
   draft: { type: 'boolean' },
   'max-attempts': { type: 'string' },
   quiet: { type: 'boolean', short: 'q' },
+  json: { type: 'boolean' },
 } as const;
 
 class UsageError extends Error {}
@@ -325,8 +326,14 @@ async function taskCommand(
       process.stderr.write(`\n${gateText(await driver.gate(task.project, task.id))}\n`);
       return (out(task.stage), 0);
     }
-    case 'gate':
-      return (out(gateText(await driver.gate(project(), id()))), 0);
+    case 'gate': {
+      const gate = await driver.gate(project(), id());
+      if (v.json) {
+        out({ task: gate.task, head_sha: gate.headSha, diff_stat: gate.diffStat, blockers: gate.blockers });
+        return 0;
+      }
+      return (out(gateText(gate)), 0);
+    }
     case 'diff':
       return (process.stdout.write(await driver.diff(project(), id())), 0);
     case 'approve': {

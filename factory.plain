@@ -186,7 +186,7 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 - It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request.
 
 # approval-gate
-`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. Neither changes the task.
+`factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. With `--json`, `task gate` prints one JSON object with `task`, `head_sha`, `diff_stat` and `blockers`. Neither changes the task.
 
 # approve-task
 `factory task approve --project <project> --id <id> --head <sha> [--note <text>] [--accept-blocking]` records the human's approval of the current head and sets `stage` to `approved`.

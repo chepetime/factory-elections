@@ -10,8 +10,9 @@ The CLI loop is implemented and documented in the [README](../README.md).
 
 - **Verified with real models**, against a throwaway local repository: intake → Haiku classification → Sonnet coding in a worktree → verification → Sonnet review → approval gate → `revise` with a human note → re-review → `approve` bound to the head commit → `open-pr` pushed the branch to the remote. Two tasks took about 20 seconds and $0.30 each.
 - **Verified on GitHub** (2026-11-13), using this repository as the target: a task to add a pnpm check to `factory doctor` went through classify, code, verify (`pnpm run check`), review, `revise` with the reviewer's two minor findings, re-review, owner approval of the reviewed commit, and `open-pr --draft`. The result is [draft PR #1](https://github.com/chepetime/factory-elections/pull/1); its head matches the approved commit. It took about 3 minutes and $1.33 in five model attempts.
-- **Verified from a fresh clone** (Node 26.13.1, pnpm 12.18.0): `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (21 tests pass). The test suite makes no model, GitHub or network calls.
-- **Not built:** the web app in `frontend.plain`, and every feature marked as planned in the [feature inventory](feature-inventory.md).
+- **Verified from a fresh clone** (Node 26.13.1, pnpm 12.18.0): `pnpm install --frozen-lockfile`, `./bin/factory --help`, `doctor`, and `pnpm check` (22 CLI and 21 web tests pass). The test suite makes no model, GitHub or network calls.
+- **Web app** (`pnpm web`, `apps/web`): built from `frontend.plain` and extended with a task page and the gate actions. In Chrome against the demo data, these were checked live: the home page, health panel, project and task pages, the gate view, and a Revise submitted from the browser. The revision ran with real models in the background while the page refreshed itself, and the new commit appeared on the Approve button. Approve and Open PR from the browser were left for the owner to click, since approval is the human's gate. Those buttons run the same CLI commands verified above. The proxy rejects foreign `Host` headers and writes without `Origin` (403, checked with curl).
+- **Not built:** every feature marked as planned in the [feature inventory](feature-inventory.md).
 
 ## Source of truth and turri
 
@@ -23,7 +24,7 @@ If turri returns, don't render over the hand-written tree blindly; reconcile the
 
 1. Worktree cleanup command (`factory task cleanup`) for finished or rejected tasks.
 2. Tighter shell sandboxing for the coder (the Agent SDK's `sandbox` option).
-3. The web app from `frontend.plain`: read-only project, task and gate views first, over the CLI's JSON output.
+3. Web: an inbox of tasks awaiting a decision, and replacing placeholder cards with real views.
 4. Phase 2 of the plan: PR tending, research route, slicer.
 
 Do not put credentials, task data or machine-specific paths into the repository.
