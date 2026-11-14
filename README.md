@@ -133,6 +133,21 @@ pnpm web -- --dev # development mode with hot reload, no build step
 
 Open <http://127.0.0.1:4317>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
 
+### Component library and Storybook
+
+The in-app gallery is at `/components`. It includes the free affectUI catalog and the original factory components.
+
+```sh
+pnpm storybook        # isolated component workshop at http://127.0.0.1:6006
+pnpm storybook:build  # static build in apps/web/storybook-static
+pnpm storybook:test   # browser interaction and accessibility checks, light and dark
+```
+
+For a fresh checkout, run `pnpm --filter @factory/web exec playwright install chromium` before the browser tests. Regular `pnpm test` keeps running the unit/CLI suite without launching a browser.
+
+See [Storybook workflow](docs/storybook.md), [component patterns](docs/frontend-component-patterns.md), and the [MIT source inventory](resources/affect-ui-free-components.json).
+
+
 - **Home:** your projects, engine health, and placeholders for planned views.
 - **Project page:** submit a task (by default it starts the run straight away) and see every task with its stage, readiness and blockers.
 - **Task page:**

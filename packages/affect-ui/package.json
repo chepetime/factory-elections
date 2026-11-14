@@ -1,0 +1,34 @@
+{
+  "name": "@factory/affect-ui",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "exports": {
+    "./components/*": {
+      "types": "./dist/components/*.d.ts",
+      "import": "./dist/components/*.js"
+    },
+    "./blocks/*": {
+      "types": "./dist/blocks/*.d.ts",
+      "import": "./dist/blocks/*.js"
+    },
+    "./illustrations/*": {
+      "types": "./dist/illustrations/*.d.ts",
+      "import": "./dist/illustrations/*.js"
+    },
+    "./motion/*": {
+      "types": "./dist/motion/*.d.ts",
+      "import": "./dist/motion/*.js"
+    }
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  }
+}
