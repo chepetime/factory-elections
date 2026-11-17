@@ -81,9 +81,9 @@ function TaskRows({
 
 const LEVEL = [
   'bg-muted',
-  'bg-emerald-200 dark:bg-emerald-900',
-  'bg-emerald-400 dark:bg-emerald-700',
-  'bg-emerald-600 dark:bg-emerald-500',
+  'bg-orange-200 dark:bg-orange-950',
+  'bg-orange-400 dark:bg-orange-800',
+  'bg-orange-600 dark:bg-orange-500',
 ];
 
 function level(count: number, max: number): number {

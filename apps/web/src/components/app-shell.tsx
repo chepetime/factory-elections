@@ -48,6 +48,11 @@ const menuPopup =
   'z-50 w-72 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 data-starting-style:opacity-0 data-ending-style:opacity-0';
 const menuItem =
   'flex min-h-9 pointer-coarse:min-h-11 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50';
+// The icon rail is dark in both themes; its items use light-on-dark tones of their own.
+const railItem =
+  'flex size-9 pointer-coarse:size-11 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-neutral-400';
+const railActive = 'bg-white/10 text-orange-400 hover:text-orange-300';
+
 const railButton =
   'flex size-9 pointer-coarse:size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring';
 
@@ -210,7 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-sidebar text-foreground">
+    <div className="relative flex h-dvh overflow-hidden bg-sidebar text-foreground">
       {drawer && (
         <button
           type="button"
@@ -257,9 +262,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="truncate text-sm font-medium">{project ?? 'Software Factory'}</span>
           </div>
           {fullBleed ? (
-            <div className="min-h-0 flex-1">{children}</div>
+            <div className="relative min-h-0 flex-1">{children}</div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="relative min-h-0 flex-1 overflow-y-auto">
               <div className="mx-auto max-w-5xl px-6 py-6">{children}</div>
             </div>
           )}
@@ -283,11 +288,11 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
     { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
   ];
   return (
-    <nav aria-label="Main navigation" className="flex w-14 flex-col items-center gap-1 py-3">
+    <nav aria-label="Main navigation" className="flex w-14 flex-col items-center gap-1 bg-neutral-950 py-3">
       <Menu.Root>
         <Menu.Trigger
           aria-label="Software Factory menu"
-          className="mb-3 flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="mb-3 flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
         >
           SF
         </Menu.Trigger>
@@ -317,7 +322,7 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
           aria-label={label}
           title={label}
           aria-current={active ? 'page' : undefined}
-          className={cn(railButton, active && 'bg-foreground/8 text-foreground')}
+          className={cn(railItem, active && railActive)}
         >
           <Icon className="size-4" />
         </Link>
@@ -328,16 +333,12 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
         aria-label="Settings"
         title="Settings"
         aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
-        className={cn(
-          railButton,
-          'mt-auto mb-2',
-          pathname.startsWith('/settings') && 'bg-foreground/8 text-foreground',
-        )}
+        className={cn(railItem, 'mt-auto mb-2', pathname.startsWith('/settings') && railActive)}
       >
         <Settings className="size-4" />
       </Link>
       <div
-        className="flex size-8 items-center justify-center rounded-full bg-muted-foreground/20 text-muted-foreground"
+        className="flex size-8 items-center justify-center rounded-full bg-white/12 text-neutral-300"
         title="Local user"
         aria-label="Local user"
         role="img"
@@ -387,7 +388,7 @@ function Sidebar({
     <aside
       aria-label="Tasks"
       style={{ width }}
-      className="relative my-2 mr-2 flex flex-col rounded-xl bg-muted/70 max-[899px]:my-0 max-[899px]:mr-0 max-[899px]:rounded-none max-[899px]:!w-72"
+      className="relative m-2 flex flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
     >
       <div className="flex items-center gap-1 p-2">
         <Menu.Root>

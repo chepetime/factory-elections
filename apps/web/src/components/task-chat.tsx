@@ -125,11 +125,13 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' }>) {
                 type="button"
                 role="radio"
                 aria-checked={t === type}
-                variant={t === type ? 'secondary' : 'ghost'}
+                variant="ghost"
                 size="sm"
                 className={cn(
                   'rounded-full pointer-coarse:h-11 pointer-coarse:px-4',
-                  t === type ? 'ring-1 ring-border' : 'text-muted-foreground',
+                  t === type
+                    ? 'bg-primary/10 text-primary ring-1 ring-primary/25 hover:bg-primary/15 hover:text-primary'
+                    : 'text-muted-foreground',
                 )}
                 onClick={() => setType(t)}
               >
