@@ -1,13 +1,15 @@
+import { Bot } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { blockingFindings, type TaskRecord } from '@factory/core';
-import { approveTask, dismissLog, openPullRequest, rejectTask, reviseTask, runTask } from '@/app/actions';
+import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
+import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { StageBadge } from '@/components/stage-badge';
+import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   backgroundRun,
   isProjectName,
@@ -15,28 +17,26 @@ import {
   readDiff,
   readGate,
   showTask,
+  type BackgroundRun,
   type Gate,
 } from '@/lib/factory';
+import { lastStepId, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
+import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = title.toLowerCase().replace(/\W+/g, '-');
-  return (
-    <section aria-labelledby={id} className="rounded-xl border p-4">
-      <h2 id={id} className="mb-3 font-medium">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 const SEVERITY: Record<string, string> = {
   blocking: 'text-destructive font-semibold',
   major: 'text-destructive',
   minor: 'text-foreground',
   nit: 'text-muted-foreground',
+};
+
+const TONE_DOT: Record<AgentStep['tone'], string> = {
+  neutral: 'bg-muted-foreground/40',
+  success: 'bg-emerald-500',
+  danger: 'bg-destructive',
+  attention: 'bg-amber-500',
 };
 
 /** First non-empty line of the prompt, shortened for a heading. */
@@ -49,22 +49,6 @@ function title(prompt: string): string {
   return line.length > 120 ? `${line.slice(0, 117)}…` : line;
 }
 
-function PromptText({ prompt }: { prompt: string }) {
-  const long = prompt.length > 600 || prompt.split('\n').length > 12;
-  const body = (
-    <pre className="max-h-96 overflow-auto whitespace-pre-wrap font-sans text-sm leading-6">{prompt}</pre>
-  );
-  if (!long) return body;
-  return (
-    <details>
-      <summary className="cursor-pointer text-sm text-muted-foreground">
-        Show full prompt ({prompt.split('\n').length} lines)
-      </summary>
-      <div className="mt-2">{body}</div>
-    </details>
-  );
-}
-
 function money(task: TaskRecord): string {
   const attempts = task.attempts ?? [];
   if (attempts.length === 0) return '—';
@@ -72,16 +56,157 @@ function money(task: TaskRecord): string {
   return `$${attempts.reduce((sum, a) => sum + (a.cost_usd ?? 0), 0).toFixed(2)}`;
 }
 
+function clock(at: string | undefined): string {
+  if (!at) return '';
+  const d = new Date(at);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/* ---------- Right panel ---------- */
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  const id = `panel-${title.toLowerCase().replace(/\W+/g, '-')}`;
+  return (
+    <section aria-labelledby={id} className="border-b px-5 py-4 last:border-b-0">
+      <h2 id={id} className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/* ---------- Conversation ---------- */
+
+function UserMessage({ entry }: { entry: Extract<ChatEntry, { role: 'user' }> }) {
+  const lines = entry.text.split('\n');
+  const long = entry.text.length > 700 || lines.length > 14;
+  const text = (t: string) => <p className="text-sm leading-6 whitespace-pre-wrap">{t}</p>;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5">
+        {long ? (
+          <details className="group">
+            <summary className="cursor-pointer list-none">
+              {text(lines.slice(0, 8).join('\n'))}
+              <span className="mt-1 block text-xs text-muted-foreground group-open:hidden">
+                Show all {lines.length} lines
+              </span>
+            </summary>
+            {text(lines.slice(8).join('\n'))}
+          </details>
+        ) : (
+          text(entry.text)
+        )}
+      </div>
+      <p className="px-1 text-xs text-muted-foreground">
+        {entry.label ? `${entry.label} · ` : ''}
+        {clock(entry.at)}
+      </p>
+    </div>
+  );
+}
+
+function AgentMessage({ at, children }: { at?: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground">
+        <Bot className="size-4" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="mb-1 text-xs text-muted-foreground">Factory{at ? ` · ${clock(at)}` : ''}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function StepList({ steps, extra }: { steps: AgentStep[]; extra: (step: AgentStep) => ReactNode }) {
+  return (
+    <ol className="flex flex-col gap-1.5">
+      {steps.map((step) => (
+        <li key={step.id}>
+          <div className="flex items-baseline gap-2.5 text-sm">
+            <span
+              className={cn('size-1.5 shrink-0 translate-y-[-2px] rounded-full', TONE_DOT[step.tone])}
+              aria-hidden
+            />
+            <span
+              className={cn(
+                'min-w-0 flex-1 break-words',
+                step.tone === 'danger' && 'text-destructive',
+                step.tone === 'attention' && 'font-medium',
+              )}
+            >
+              {step.href ? (
+                <a href={step.href} target="_blank" rel="noreferrer" className="font-medium underline">
+                  Pull request opened
+                </a>
+              ) : (
+                step.text
+              )}
+            </span>
+            <time dateTime={step.at} className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {new Date(step.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </time>
+          </div>
+          {extra(step)}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ReviewCard({ review }: { review: NonNullable<TaskRecord['review']> }) {
+  return (
+    <div className="mt-2 mb-1 ml-4 rounded-xl border bg-background p-3 text-sm shadow-xs">
+      <p>
+        <span className="font-medium">Review: {review.verdict}</span> — {review.summary}
+      </p>
+      {review.findings.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {review.findings.map((f, i) => (
+            <li key={i}>
+              <span className={cn('text-xs uppercase', SEVERITY[f.severity])}>{f.severity}</span>{' '}
+              {f.file && <span className="font-mono text-xs">{f.file}: </span>}
+              {f.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RunningTurn({ run }: { run: BackgroundRun }) {
+  return (
+    <AgentMessage>
+      <div className="affect-ui-theme">
+        <ThinkingLoader phases={[run.label ?? 'Working']} variant="plain" size="sm" />
+      </div>
+      {run.logTail && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground">Live output</summary>
+          <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+            {run.logTail}
+          </pre>
+        </details>
+      )}
+    </AgentMessage>
+  );
+}
+
+/* ---------- Page ---------- */
+
 export default async function TaskPage({ params }: { params: Promise<{ project: string; id: string }> }) {
   const { project, id } = await params;
   if (!isProjectName(project) || !isTaskId(id)) notFound();
   const shown = await showTask(project, id);
   if (!shown.ok) {
     return (
-      <div className="flex flex-col gap-3">
-        <Link href={`/projects/${project}/tasks`} className="text-sm text-muted-foreground hover:underline">
-          ← Tasks: {project}
-        </Link>
+      <div className="px-6 py-6">
         <p className="text-destructive">Task unavailable: {shown.error}</p>
       </div>
     );
@@ -108,318 +233,322 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
     !task.pr &&
     !busy &&
     ['awaiting-approval', 'verification-failed', 'failed', 'rejected', 'approved'].includes(task.stage);
+  const canRun = !task.worktree && !busy && task.stage !== 'blocked';
+
+  const conversation = taskConversation(task);
+  const reviewAt = lastStepId(conversation, 'stage:awaiting-approval');
+  const blockedAt = lastStepId(conversation, 'stage:blocked') ?? lastStepId(conversation, 'verdict');
+  const blockers = task.verdict?.blockers ?? [];
+  const stepExtra = (step: AgentStep) => {
+    if (step.id === reviewAt && task.review) return <ReviewCard review={task.review} />;
+    if (step.id === blockedAt && blockers.length > 0)
+      return (
+        <ul className="mt-2 mb-1 ml-4 list-disc rounded-xl border bg-background py-3 pr-3 pl-8 text-sm shadow-xs">
+          {blockers.map((b, i) => (
+            <li key={i}>
+              <span className="font-medium">{b.kind}:</span> {b.question}
+            </li>
+          ))}
+        </ul>
+      );
+    return null;
+  };
+
+  const composer = canRevise ? (
+    <TaskChatComposer mode="revise" project={project} id={id} />
+  ) : (
+    <TaskChatComposer
+      mode="locked"
+      reason={
+        busy
+          ? 'The factory is working. You can ask for changes when this run finishes.'
+          : task.pr
+            ? 'The pull request is open. This task is finished.'
+            : task.stage === 'blocked'
+              ? 'Blocked before any code. Start a new task that answers the questions above.'
+              : canRun
+                ? 'Run the task to start the conversation.'
+                : `Nothing to send while the task is ${task.stage}.`
+      }
+    />
+  );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:grid lg:grid-cols-[2fr_1fr]">
       {busy && <AutoRefresh />}
-      <div className="flex flex-col gap-2">
-        <Link href={`/projects/${project}/tasks`} className="text-sm text-muted-foreground hover:underline">
-          ← Tasks: {project}
-        </Link>
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="line-clamp-2 text-lg font-semibold">{title(task.prompt)}</h1>
+
+      <section aria-label="Conversation" className="flex min-h-0 flex-col max-lg:h-[85dvh] max-lg:shrink-0">
+        <header className="flex shrink-0 items-center gap-3 border-b px-6 py-3">
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={task.prompt}>
+            {title(task.prompt)}
+          </h1>
           <StageBadge stage={task.stage} />
-        </div>
-        <p className="font-mono text-xs text-muted-foreground">
-          {task.id} · model cost {money(task)}
-        </p>
-      </div>
+        </header>
 
-      <Section title="Task">
-        <PromptText prompt={task.prompt} />
-      </Section>
-
-      {(run.running || run.logTail) && (
-        <Section title={run.running ? `In progress: ${run.label ?? 'running'}` : 'Last run log'}>
-          {run.running && (
-            <p className="mb-2 text-sm text-muted-foreground">This page refreshes every few seconds.</p>
+        <ChatScroll>
+          {conversation.map((entry) =>
+            entry.role === 'user' ? (
+              <UserMessage key={entry.id} entry={entry} />
+            ) : (
+              <AgentMessage key={entry.id} at={entry.at}>
+                <StepList steps={entry.steps} extra={stepExtra} />
+              </AgentMessage>
+            ),
           )}
-          {run.running ? (
-            <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-              {run.logTail || 'Starting…'}
-            </pre>
-          ) : (
-            <details>
-              <summary className="cursor-pointer text-sm text-muted-foreground">Show output</summary>
-              <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-                {run.logTail}
-              </pre>
-            </details>
+
+          {run.running && <RunningTurn run={run} />}
+
+          {canRun && (
+            <AgentMessage>
+              <ActionForm action={runTask} hidden={hidden} submit="Run task" pendingLabel="Starting…">
+                <p className="text-sm">
+                  Ready when you are. I&apos;ll classify the task, code it in a new worktree, verify and
+                  review it, then stop for your approval. Nothing is pushed.
+                </p>
+              </ActionForm>
+            </AgentMessage>
           )}
-          {!run.running && (
-            <form action={dismissLog} className="mt-2">
-              <input type="hidden" name="project" value={project} />
-              <input type="hidden" name="id" value={id} />
-              <button className="text-xs text-muted-foreground hover:underline">Dismiss log</button>
-            </form>
-          )}
-        </Section>
-      )}
 
-      {task.pr && (
-        <Section title="Pull request">
-          <a href={task.pr.url} className="text-sm font-medium underline" target="_blank" rel="noreferrer">
-            {task.pr.url}
-          </a>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Opened from {task.pr.head_sha.slice(0, 12)} on {task.pr.branch}
-          </p>
-        </Section>
-      )}
-
-      {!task.worktree && !busy && task.stage !== 'blocked' && (
-        <Section title="Run">
-          <ActionForm action={runTask} hidden={hidden} submit="Run task" pendingLabel="Starting…">
-            <p className="text-sm text-muted-foreground">
-              Classifies, codes in a new worktree, verifies and reviews, then stops for your approval. Nothing
-              is pushed.
-            </p>
-          </ActionForm>
-        </Section>
-      )}
-
-      {task.verdict && (
-        <Section title="Classifier">
-          <p className="text-sm">
-            Kind <b>{task.verdict.kind}</b> · size <b>{task.verdict.loe}</b> · Readiness:{' '}
-            <b>{task.verdict.readiness}</b>
-          </p>
-          {task.verdict.blockers.length > 0 && (
-            <>
-              <ul className="mt-2 list-disc pl-5 text-sm">
-                {task.verdict.blockers.map((b, i) => (
-                  <li key={i}>
-                    <span className="font-medium">{b.kind}:</span> {b.question}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-sm text-muted-foreground">
-                The task stopped before any code. Submit a clearer task that answers these questions.
+          {!busy && task.stage === 'awaiting-approval' && (
+            <AgentMessage>
+              <p className="text-sm">
+                Waiting for your decision. Approve or reject in the panel, or reply below to ask for changes.
               </p>
-            </>
+            </AgentMessage>
           )}
+
+          {!run.running && run.logTail && (
+            <AgentMessage>
+              <details>
+                <summary className="cursor-pointer text-sm text-muted-foreground">Last run output</summary>
+                <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+                  {run.logTail}
+                </pre>
+              </details>
+              <form action={dismissLog} className="mt-1">
+                <input type="hidden" name="project" value={project} />
+                <input type="hidden" name="id" value={id} />
+                <button className="text-xs text-muted-foreground hover:underline">Dismiss</button>
+              </form>
+            </AgentMessage>
+          )}
+        </ChatScroll>
+
+        {composer}
+      </section>
+
+      <aside
+        aria-label="Task details"
+        className="min-h-0 border-t bg-muted/30 lg:overflow-y-auto lg:border-t-0 lg:border-l"
+      >
+        <Section title="Task">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">Stage</dt>
+            <dd>
+              <StageBadge stage={task.stage} />
+            </dd>
+            <dt className="text-muted-foreground">Cost</dt>
+            <dd>{money(task)}</dd>
+            <dt className="text-muted-foreground">Created</dt>
+            <dd>{clock(task.created_at) || '—'}</dd>
+            <dt className="text-muted-foreground">ID</dt>
+            <dd className="truncate font-mono text-xs leading-5" title={task.id}>
+              {task.id}
+            </dd>
+          </dl>
         </Section>
-      )}
 
-      {gateError && <p className="text-sm text-destructive">Gate unavailable: {gateError}</p>}
+        {task.pr && (
+          <Section title="Pull request">
+            <a
+              href={task.pr.url}
+              className="text-sm font-medium break-all underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {task.pr.url}
+            </a>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Opened from {task.pr.head_sha.slice(0, 12)} on {task.pr.branch}
+            </p>
+          </Section>
+        )}
 
-      {gate && (
-        <Section title="Change">
-          <p className="text-sm">
-            <span className="font-mono">{task.worktree?.branch}</span> → {task.worktree?.base_branch}, head{' '}
-            <span className="font-mono font-medium">{gate.head_sha.slice(0, 12)}</span>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Worktree: <span className="font-mono">{task.worktree?.path}</span>
-          </p>
-          <pre className="mt-3 overflow-auto rounded-lg bg-muted p-3 text-xs">
-            {gate.diff_stat || 'No changes yet.'}
-          </pre>
-          {diff && (
-            <details className="mt-3">
-              <summary className="cursor-pointer text-sm font-medium">Full diff</summary>
-              <pre className="mt-2 max-h-[32rem] overflow-auto rounded-lg bg-muted p-3 text-xs">
-                {diff.split('\n').map((line, i) => (
-                  <span
-                    key={i}
-                    className={
-                      line.startsWith('+') && !line.startsWith('+++')
-                        ? 'block text-green-700 dark:text-green-400'
-                        : line.startsWith('-') && !line.startsWith('---')
-                          ? 'block text-red-700 dark:text-red-400'
-                          : 'block'
-                    }
-                  >
-                    {line || ' '}
-                  </span>
-                ))}
+        {gate && task.stage === 'awaiting-approval' && !busy && (
+          <Section title="Your decision">
+            {gate.blockers.length > 0 ? (
+              <p className="text-sm text-destructive">Not ready for approval: {gate.blockers.join('; ')}</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <ActionForm
+                  action={approveTask}
+                  hidden={{ ...hidden, head: gate.head_sha }}
+                  submit={`Approve ${gate.head_sha.slice(0, 12)}`}
+                  pendingLabel="Approving…"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    Approves exactly this commit. If the branch changes, approval is refused and you review
+                    again.
+                  </p>
+                  <Input name="note" placeholder="Note for the pull request (optional)" />
+                  {blocking > 0 && (
+                    <label className="flex items-center gap-2 text-sm text-destructive">
+                      <input type="checkbox" name="acceptBlocking" /> Accept {blocking} blocking finding(s)
+                    </label>
+                  )}
+                </ActionForm>
+                <ActionForm
+                  action={rejectTask}
+                  hidden={hidden}
+                  submit="Reject"
+                  variant="destructive"
+                  pendingLabel="Rejecting…"
+                >
+                  <Input name="note" required placeholder="Why is this change rejected?" />
+                </ActionForm>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {task.stage === 'approved' && !task.pr && !busy && (
+          <Section title="Open the pull request">
+            <ActionForm
+              action={openPullRequest}
+              hidden={hidden}
+              submit="Push and open pull request"
+              pendingLabel="Pushing…"
+            >
+              <p className="text-sm text-muted-foreground">
+                Pushes <span className="font-mono">{task.worktree?.branch}</span> to origin and opens a pull
+                request into {task.worktree?.base_branch}. Every gate is checked again first.
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="draft" defaultChecked /> Open as draft
+              </label>
+            </ActionForm>
+          </Section>
+        )}
+
+        {task.verdict && (
+          <Section title="Classifier">
+            <p className="text-sm">
+              Kind <b>{task.verdict.kind}</b> · size <b>{task.verdict.loe}</b> · {task.verdict.readiness}
+            </p>
+          </Section>
+        )}
+
+        {gateError && (
+          <Section title="Gate">
+            <p className="text-sm text-destructive">Gate unavailable: {gateError}</p>
+          </Section>
+        )}
+
+        {gate && (
+          <Section title="Change">
+            <p className="text-sm break-all">
+              <span className="font-mono text-xs">{task.worktree?.branch}</span> →{' '}
+              {task.worktree?.base_branch}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Head <span className="font-mono">{gate.head_sha.slice(0, 12)}</span>
+            </p>
+            <pre className="mt-3 overflow-auto rounded-lg bg-background p-3 text-xs">
+              {gate.diff_stat || 'No changes yet.'}
+            </pre>
+            {diff && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm font-medium">Full diff</summary>
+                <pre className="mt-2 max-h-[32rem] overflow-auto rounded-lg bg-background p-3 text-xs">
+                  {diff.split('\n').map((line, i) => (
+                    <span
+                      key={i}
+                      className={
+                        line.startsWith('+') && !line.startsWith('+++')
+                          ? 'block text-green-700 dark:text-green-400'
+                          : line.startsWith('-') && !line.startsWith('---')
+                            ? 'block text-red-700 dark:text-red-400'
+                            : 'block'
+                      }
+                    >
+                      {line || ' '}
+                    </span>
+                  ))}
+                </pre>
+              </details>
+            )}
+            <p className="mt-2 truncate text-xs text-muted-foreground" title={task.worktree?.path}>
+              Worktree: <span className="font-mono">{task.worktree?.path}</span>
+            </p>
+          </Section>
+        )}
+
+        {task.verification && (
+          <Section title="Verification">
+            <p className={cn('text-sm', !task.verification.passed && 'text-destructive')}>
+              {task.verification.passed ? 'Passed' : 'Failed'} at{' '}
+              <span className="font-mono">{task.verification.head_sha.slice(0, 12)}</span>
+            </p>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-sm">Output</summary>
+              <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-background p-3 text-xs whitespace-pre-wrap">
+                {task.verification.output_tail}
               </pre>
             </details>
-          )}
-        </Section>
-      )}
+          </Section>
+        )}
 
-      {task.verification && (
-        <Section title="Verification">
-          <p className={`text-sm ${task.verification.passed ? '' : 'text-destructive'}`}>
-            {task.verification.passed ? 'Passed' : 'Failed'} at{' '}
-            <span className="font-mono">{task.verification.head_sha.slice(0, 12)}</span>
-          </p>
-          <details className="mt-2">
-            <summary className="cursor-pointer text-sm">Output</summary>
-            <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-              {task.verification.output_tail}
-            </pre>
-          </details>
-        </Section>
-      )}
+        {gate && !task.pr && (
+          <Section title="Pull request draft">
+            {task.pr_draft && task.pr_draft.head_sha === gate.head_sha ? (
+              <>
+                <p className="text-sm font-medium">{task.pr_draft.title}</p>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-sm">Body</summary>
+                  <pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-background p-3 text-xs whitespace-pre-wrap">
+                    {task.pr_draft.body}
+                  </pre>
+                </details>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No draft for this commit. Run <span className="font-mono">factory task draft-pr</span> to
+                write one.
+              </p>
+            )}
+          </Section>
+        )}
 
-      {task.review && (
-        <Section title="Review">
-          <p className="text-sm">
-            <b>{task.review.verdict}</b> at{' '}
-            <span className="font-mono">{task.review.head_sha.slice(0, 12)}</span> — {task.review.summary}
-          </p>
-          {task.review.findings.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-2">
-              {task.review.findings.map((f, i) => (
-                <li key={i} className="text-sm">
-                  <span className={`uppercase text-xs ${SEVERITY[f.severity]}`}>{f.severity}</span>{' '}
-                  {f.file && <span className="font-mono text-xs">{f.file}: </span>}
-                  {f.message}
+        {(task.attempts?.length ?? 0) > 0 && (
+          <Section title="Model attempts">
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {task.attempts!.map((a, i) => (
+                <li key={i} className="flex items-baseline gap-2">
+                  <span className="w-20 shrink-0">{a.step}</span>
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 truncate font-mono text-xs',
+                      a.outcome === 'failed' && 'text-destructive',
+                    )}
+                    title={a.error ? `${a.outcome}: ${a.error}` : a.outcome}
+                  >
+                    {a.model} ({a.effort}){a.outcome === 'failed' ? ' · failed' : ''}
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    {a.cost_usd === null ? '?' : `$${a.cost_usd.toFixed(2)}`}
+                  </span>
                 </li>
               ))}
             </ul>
-          )}
-        </Section>
-      )}
+          </Section>
+        )}
 
-      {gate && !task.pr && (
-        <Section title="Pull request draft">
-          {task.pr_draft && task.pr_draft.head_sha === gate.head_sha ? (
-            <>
-              <p className="text-sm font-medium">{task.pr_draft.title}</p>
-              <pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-                {task.pr_draft.body}
-              </pre>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Written for <span className="font-mono">{gate.head_sha.slice(0, 12)}</span>. The factory adds
-                its record (task, verification, review findings) below it.
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No draft for this commit. The pull request will describe the task and the review summary. Run{' '}
-              <span className="font-mono">factory task draft-pr</span> to write one.
-            </p>
-          )}
+        <Section title="Project">
+          <Link href={`/projects/${project}/tasks`} className="text-sm hover:underline">
+            All tasks in {project}
+          </Link>
         </Section>
-      )}
-
-      {gate && task.stage === 'awaiting-approval' && !busy && (
-        <Section title="Your decision">
-          {gate.blockers.length > 0 ? (
-            <p className="text-sm text-destructive">Not ready for approval: {gate.blockers.join('; ')}</p>
-          ) : (
-            <ActionForm
-              action={approveTask}
-              hidden={{ ...hidden, head: gate.head_sha }}
-              submit={`Approve ${gate.head_sha.slice(0, 12)}`}
-              pendingLabel="Approving…"
-            >
-              <p className="text-sm text-muted-foreground">
-                Approves exactly commit <span className="font-mono">{gate.head_sha.slice(0, 12)}</span>. If
-                the branch changes, approval is refused and you review again.
-              </p>
-              <Input name="note" placeholder="Note for the pull request (optional)" />
-              {blocking > 0 && (
-                <label className="flex items-center gap-2 text-sm text-destructive">
-                  <input type="checkbox" name="acceptBlocking" /> Accept {blocking} blocking finding(s)
-                </label>
-              )}
-            </ActionForm>
-          )}
-        </Section>
-      )}
-
-      {task.stage === 'approved' && !task.pr && !busy && (
-        <Section title="Open the pull request">
-          <ActionForm
-            action={openPullRequest}
-            hidden={hidden}
-            submit="Push and open pull request"
-            pendingLabel="Pushing…"
-          >
-            <p className="text-sm text-muted-foreground">
-              Pushes <span className="font-mono">{task.worktree?.branch}</span> to origin and opens a pull
-              request into {task.worktree?.base_branch}. Every gate is checked again first.
-            </p>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="draft" defaultChecked /> Open as draft
-            </label>
-          </ActionForm>
-        </Section>
-      )}
-
-      {canRevise && (
-        <Section title="Ask for changes">
-          <ActionForm
-            action={reviseTask}
-            hidden={hidden}
-            submit="Revise"
-            variant="secondary"
-            pendingLabel="Starting…"
-          >
-            <Textarea
-              name="note"
-              required
-              rows={2}
-              placeholder="What should change? The coder sees this note, then verification and review run again."
-            />
-          </ActionForm>
-        </Section>
-      )}
-
-      {task.stage === 'awaiting-approval' && !busy && (
-        <Section title="Reject">
-          <ActionForm
-            action={rejectTask}
-            hidden={hidden}
-            submit="Reject"
-            variant="destructive"
-            pendingLabel="Rejecting…"
-          >
-            <Input name="note" required placeholder="Why is this change rejected?" />
-          </ActionForm>
-        </Section>
-      )}
-
-      {(task.attempts?.length ?? 0) > 0 && (
-        <Section title="Model attempts">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1 font-normal">Step</th>
-                <th className="font-normal">Model</th>
-                <th className="font-normal">Outcome</th>
-                <th className="text-right font-normal">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {task.attempts!.map((a, i) => (
-                <tr key={i} className="border-t">
-                  <td className="py-1">{a.step}</td>
-                  <td className="font-mono text-xs">
-                    {a.model} ({a.effort})
-                  </td>
-                  <td className={a.outcome === 'failed' ? 'text-destructive' : ''}>
-                    {a.outcome}
-                    {a.error ? `: ${a.error}` : ''}
-                  </td>
-                  <td className="text-right">
-                    {a.cost_usd === null ? 'unknown' : `$${a.cost_usd.toFixed(2)}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Section>
-      )}
-
-      {(task.events?.length ?? 0) > 0 && (
-        <Section title="Timeline">
-          <ol className="flex flex-col gap-1 text-sm">
-            {task.events!.map((e, i) => (
-              <li key={i} className="grid grid-cols-[10rem_1fr] gap-3">
-                <time className="text-xs text-muted-foreground" dateTime={e.at}>
-                  {e.at.replace('T', ' ').slice(0, 19)}
-                </time>
-                <span>{e.message}</span>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      )}
+      </aside>
     </div>
   );
 }

@@ -127,6 +127,9 @@
   html {
     @apply font-sans;
   }
+  :where(button, a, input, textarea, select, summary, [role='button']) {
+    touch-action: manipulation;
+  }
 }
 
 /* Shared upstream tokens: source stays unchanged, styling follows the app. */

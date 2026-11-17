@@ -4,6 +4,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { clearBackgroundLog, command, isProjectName, isTaskId, startBackground } from '@/lib/factory';
+import { saveAssignment } from '@/lib/team';
 
 export interface ActionState {
   error?: string;
@@ -119,4 +120,20 @@ export async function dismissLog(form: FormData): Promise<void> {
   if ('error' in t) return;
   clearBackgroundLog(t.project, t.id);
   refresh(t.project, t.id);
+}
+
+/** Saves one team member's team and tags. Called directly from the team table. */
+export async function assignMember(
+  project: string,
+  email: string,
+  team: string | undefined,
+  tags: string[],
+): Promise<ActionState> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  if (typeof email !== 'string' || !email.includes('@') || !Array.isArray(tags))
+    return { error: 'Invalid member.' };
+  const saved = saveAssignment(project, email, team, tags);
+  if (!saved.ok) return { error: saved.error };
+  revalidatePath(`/projects/${project}/team`);
+  return { message: 'Saved.' };
 }
