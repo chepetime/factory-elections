@@ -304,6 +304,7 @@ test('revision reruns the coder with the human note and requires a new approval'
   });
   await driver.run('demo', task.id, { maxAttempts: 1 });
   const first = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: first.headSha });
   const revised = await driver.revise('demo', task.id, 'make it louder', { maxAttempts: 1 });
   assert.equal(revised.stage, 'awaiting-approval');
   assert.equal(revised.approval, undefined);
@@ -414,4 +415,43 @@ test('classification persists the verdict and attempt in one write', async () =>
   assert.equal(writes, 1);
   assert.equal(classified.verdict?.readiness, 'ready');
   assert.equal(classified.attempts?.[0]?.step, 'classifier');
+});
+
+test('verification cannot pass for a commit changed by the check command', async () => {
+  const { driver, task, store } = await setup(
+    { classifier: [ready], coder: [writeFeature] },
+    'test -f feature.txt && git -c user.name=test -c user.email=test@example.com commit --allow-empty -qm changed-during-check',
+  );
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'verification-failed');
+  assert.equal(stored.verification?.passed, false);
+  assert.match(stored.verification!.output_tail, /commit changed during verification/);
+});
+
+test('revision preflight failure leaves neither approval nor an approved stage', async () => {
+  const { driver, task, runner, store } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  const calls = runner.calls.length;
+  const broken = new Driver({
+    ...driver.deps,
+    readProfile: async () => {
+      throw new Error('profile unavailable');
+    },
+  });
+  await assert.rejects(
+    broken.revise('demo', task.id, 'change it', { maxAttempts: 1 }),
+    /profile unavailable/,
+  );
+  const failed = await store.read('demo', task.id);
+  assert.equal(failed.stage, 'failed');
+  assert.equal(failed.approval, undefined);
+  assert.equal(runner.calls.length, calls);
+  await assert.rejects(driver.openPr('demo', task.id), /approved/);
 });

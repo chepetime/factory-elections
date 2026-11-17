@@ -95,6 +95,7 @@ export async function startBackend(options: ServerOptions) {
         const t = service.target(request);
         return { json: JSON.stringify(await service.tasks.read(t.project, t.id)) };
       },
+      GetTaskControls: async (request) => ({ json: JSON.stringify(await service.controls(request)) }),
       GetGate: async (request) => {
         const t = service.target(request);
         const gate = await service.driver().gate(t.project, t.id);

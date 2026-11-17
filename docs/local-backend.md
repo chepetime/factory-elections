@@ -14,9 +14,11 @@ pnpm web           # production build, backend and Next.js
 
 `packages/backend/src/compose.ts` supplies the same driver and adapters to the CLI and service. Domain rules and exact-head approval checks remain in the driver/core. The async driver is not rewritten: Effect 3 provides server execution fibers, the single-worker semaphore and nested tracing spans around task operations, RPCs and model calls. This partially supersedes ADR 0002's deferral of Effect without introducing Effect into the pure core.
 
-Run/revision acceptance is persisted before returning. Up to 32 runs may be accepted (including the active run); one executes at a time. A task's exclusive command lock is held while queued and running. Approval/rejection/PR commands also take that lock. Client disconnects do not cancel accepted work. There is no automatic model retry on transport failure.
+Run/revision acceptance is persisted before returning. Up to 32 runs may be accepted (including the active run); one executes at a time. A task's exclusive command lock is held while queued, running and finalizing evidence. Approval/rejection/PR commands also take that lock. Client disconnects do not cancel accepted work. There is no automatic model retry on transport failure.
 
 While `backend.lock` exists, the CLI forwards `task run`, `revise`, `approve`, `reject` and `open-pr` to the server. `run`/`revise` wait and print log updates; Ctrl-C stops the waiting CLI without killing the server-owned run. Read commands remain available against authoritative task snapshots. Individual mutating step commands require the backend to be stopped. With no backend ownership lock, the CLI retains its original standalone behavior.
+
+`factory task actions --project <name> --id <uuid>`, gRPC `GetTaskControls`, and `GET /api/projects/<name>/tasks/<uuid>/state` return validated action availability. This is an advisory snapshot, not a reservation. See [the state-machine inventory](state-machines.md) for phase semantics, guards and agent guidance.
 
 ## Logs, spans and costs
 

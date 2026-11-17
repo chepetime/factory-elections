@@ -13,7 +13,7 @@ A unit of work requested for one repository.
 _Avoid_: job, ticket
 
 **Task file**:
-The authoritative record of one task.
+The authoritative record of one task: JSON in file mode, validated JSONB in configured Postgres storage.
 _Avoid_: hub item, mirror
 
 **Intake id**:
@@ -21,7 +21,7 @@ The identifier assigned to a task when it is submitted.
 _Avoid_: temporary id
 
 **Stage**:
-Where a task is in its run.
+Durable workflow progress on a task, independent of live run ownership.
 _Avoid_: phase, status
 
 **Profile**:
@@ -59,3 +59,5 @@ _Avoid_: sign-off, merge
 **Revision**:
 A human request for changes that sends an awaiting task back through coder, verification and review.
 _Avoid_: retry, rework
+
+See [runtime terminology](GLOSSARY.md) for run, execution phase, action availability and finalization.

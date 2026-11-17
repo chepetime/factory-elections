@@ -1,13 +1,15 @@
 // A small real-gRPC smoke suite. Models are scripted; git uses an isolated local repository.
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
-import type { ModelRunner } from '@factory/core';
+import { TaskControls, type ModelRunner } from '@factory/core';
 import { backendCall, closeBackendClient } from '../src/client.ts';
+import { Evidence } from '../src/evidence.ts';
 import { startBackend } from '../src/server.ts';
 
 const token = 'factory-test-credential-with-at-least-32-characters';
@@ -86,6 +88,26 @@ test('gRPC authenticates, validates input, reads records and reports health', as
     backendCall('GetTask', { project: '../escape', id }),
     (error: unknown) => (error as { code: number }).code === 3,
   );
+  const controls = TaskControls.parse(
+    JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json),
+  );
+  const cli = await promisify(execFile)(
+    process.execPath,
+    [
+      new URL('../../../apps/cli/src/main.ts', import.meta.url).pathname,
+      'task',
+      'actions',
+      '--project',
+      'demo',
+      '--id',
+      id,
+    ],
+    { env: process.env },
+  );
+  assert.deepEqual(TaskControls.parse(JSON.parse(cli.stdout)), controls);
+  assert.equal(controls.execution, 'idle');
+  assert.equal(controls.actions.find((a) => a.action === 'run')?.allowed, true);
+  assert.equal(controls.actions.find((a) => a.action === 'revise')?.blockers[0]?.code, 'worktree-required');
   process.env.FACTORY_BACKEND_TOKEN = 'wrong-token';
   await assert.rejects(
     backendCall('ListProjects', {}),
@@ -215,6 +237,11 @@ test('duplicate starts are excluded, model failures preserve unknown costs and r
   });
   const accepted = JSON.parse((await backendCall('StartRun', { project: 'demo', id, action: 'run' })).json);
   await enteredPromise;
+  const controls = TaskControls.parse(
+    JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json),
+  );
+  assert.equal(controls.execution, 'running');
+  assert.ok(controls.actions.every((a) => !a.allowed && a.blockers[0]?.code === 'busy'));
   await assert.rejects(backendCall('StartRun', { project: 'demo', id, action: 'run' }), /locked/);
   await assert.rejects(
     backendCall('ExecuteTask', { project: 'demo', id, action: 'reject', note: 'no' }),
@@ -287,6 +314,7 @@ test('one worker drains queued runs and a restart reports interrupted evidence w
     process.env.FACTORY_BACKEND_ADDRESS = `127.0.0.1:${restarted.port}`;
     const recovered = JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json);
     assert.equal(recovered.state, 'interrupted');
+    assert.equal(recovered.phase, 'interrupted');
     assert.equal(recovered.running, false);
     assert.equal(calls, 2);
   } finally {
@@ -332,4 +360,76 @@ test('diagnostics and team reads/assignments are owned by the backend', async (t
     backendCall('SaveAssignment', { project: 'demo', email: 'test@example.com', tags: [] }),
   );
   assert.equal(await readFile(join(root, 'demo', 'team.json'), 'utf8'), 'not JSON');
+});
+
+test('a terminal workflow stays busy until evidence closes; failed finalization is never completed', async (t) => {
+  let release!: () => void;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  let entered!: () => void;
+  const closing = new Promise<void>((done) => {
+    entered = done;
+  });
+  t.after(() => release());
+  const originalClose = Evidence.prototype.close;
+  t.mock.method(Evidence.prototype, 'close', async function (this: Evidence) {
+    if (this.path.endsWith('/events.jsonl')) {
+      entered();
+      await hold;
+      await originalClose.call(this);
+      throw new Error('scripted evidence failure');
+    }
+    await originalClose.call(this);
+  });
+  const { id } = await fixture(t, {
+    async run(request) {
+      return {
+        text: '',
+        costUsd: 0,
+        structured: {
+          intake_id: /"id": "([^"]+)"/.exec(request.prompt)![1],
+          kind: 'code',
+          loe: 'S',
+          readiness: 'needs-clarification',
+          blockers: [{ kind: 'clarification', question: 'Which file?' }],
+        },
+      };
+    },
+  });
+  await backendCall('StartRun', { project: 'demo', id, action: 'run' });
+  await closing;
+  const pending = JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json);
+  assert.equal(pending.state, 'completed');
+  assert.equal(pending.running, true);
+  assert.equal(pending.phase, 'finalizing');
+  const controls = TaskControls.parse(
+    JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json),
+  );
+  assert.equal(controls.execution, 'finalizing');
+  assert.ok(controls.actions.every((a) => !a.allowed));
+  await assert.rejects(backendCall('StartRun', { project: 'demo', id, action: 'run' }), /locked/);
+  release();
+  const failed = await finished(id);
+  assert.equal(failed.phase, 'failed');
+  assert.equal(failed.state, 'failed');
+  assert.match(failed.error, /finalization failed: scripted evidence failure/);
+});
+
+test('invalid persisted execution metadata fails closed in action discovery', async (t) => {
+  const { server, id } = await fixture(t);
+  const runId = '11111111-2222-4333-8444-555555555555';
+  const taskDir = dirname(server.service.tasks.taskPath('demo', id));
+  await server.service.storage.writeDocuments([
+    [join(taskDir, 'latest-run.json'), { id: runId }],
+    [
+      join(taskDir, 'runs', runId, 'run.json'),
+      { id: runId, project: 'demo', task_id: id, state: 'invented' },
+    ],
+  ]);
+  const controls = TaskControls.parse(
+    JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json),
+  );
+  assert.equal(controls.execution, 'unavailable');
+  assert.ok(controls.actions.every((a) => !a.allowed && a.blockers[0]?.code === 'unavailable'));
 });

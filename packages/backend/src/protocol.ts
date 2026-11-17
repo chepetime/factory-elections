@@ -1,3 +1,4 @@
+import type { ExecutionPhase } from '@factory/core';
 import { fromJSON } from '@grpc/proto-loader';
 import type { ServiceDefinition } from '@grpc/grpc-js';
 import descriptor from './descriptor.json' with { type: 'json' };
@@ -21,6 +22,7 @@ export interface Command extends Target {
 }
 export interface BackgroundRun {
   running: boolean;
+  phase?: ExecutionPhase;
   label?: string;
   logTail?: string;
   runId?: string;
@@ -35,6 +37,7 @@ export interface Methods {
   ListProjects: [{}, { json: string }];
   ListTasks: [Target, { json: string }];
   GetTask: [Target, { json: string }];
+  GetTaskControls: [Target, { json: string }];
   GetGate: [Target, { json: string }];
   GetDiff: [Target, { text: string }];
   SubmitTask: [{ project: string; prompt: string }, { text: string }];

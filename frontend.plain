@@ -86,22 +86,30 @@ The project task view shows the classifier readiness and blockers of each task t
 
 # new-task
 The project task view has a `New task` form with the task text and a `Start the run now` checkbox, checked by default.
-- Submitting calls SubmitTask; when the box is checked it then calls StartRun as in `background-run`, and opens the new task's page. An empty prompt or a backend failure shows the error and creates nothing further.
+- Submitting calls SubmitTask; when the box is checked it then calls StartRun as in `background-run`, and opens the new task's page. An empty prompt or creation failure shows the error. If creation succeeds but scheduling fails, redirect to that task with a saved-but-not-started notice and an explicit run retry; do not invite duplicate intake.
 
 # task-page
-`GET /projects/<project>/tasks/<id>` shows one task from GetTask, and from GetGate and GetDiff when it has a worktree.
+`GET /projects/<project>/tasks/<id>` reads GetTaskControls for the task, execution and current gates; GetDiff supplies the diff when a valid worktree is present.
 - It shows the prompt, stage, id and total model cost (`unknown` when any attempt's cost is unknown, `—` with no attempts); the classifier kind, size, readiness and blockers; the branch, head commit, worktree path, diff summary and an expandable full diff; verification result and output; reviewer verdict, summary and findings by severity; the pull request link; model attempts with model, effort, outcome and cost; and the event timeline.
 - An invalid project or id returns not-found. A task that cannot be read shows `Task unavailable` with the backend's error, with the data root path replaced by `<data root>`.
 
 # background-run
 `Run task` and `Revise` call StartRun to schedule backend-owned work, with the note for revisions.
-- The backend persists acceptance before replying, holds a per-task command lock, and executes one run at a time. The page reads GetBackground asynchronously and refreshes every three seconds while a run is queued/running. Failed or interrupted evidence is shown honestly; output tails are bounded and dismissed without deleting the log artifacts.
+- The backend persists acceptance before replying, holds a per-task command lock, and executes one run at a time. The page reads GetBackground asynchronously and refreshes every three seconds while execution is queued, running or finalizing. Task stage alone never proves live ownership. Interrupted coding/reviewing shows an inspection/recovery notice without perpetual polling. Unavailable execution disables commands until refreshed. Failed or interrupted evidence is shown honestly; output tails are bounded and dismissed without deleting the log artifacts.
 
 # task-actions
-The task page offers the human gate actions only in the stages where :FactoryCli: allows them, and each calls the matching backend operation using the shared driver checks.
+The task page reads GetTaskControls and uses the pure core action policy. It offers the human gate actions only in the stages where :FactoryCli: allows them, and each calls the matching backend operation using the shared driver checks.
 - `awaiting-approval`: `Approve <head>` sends the head commit displayed on the page as `--head`, with an optional note, and offers `--accept-blocking` as a checkbox only when there are blocking findings; it is replaced by the gate's reasons when the gate reports blockers. `Reject` requires a note.
 - `Revise` requires a note and is offered when the task has a worktree and no pull request in stages `awaiting-approval`, `verification-failed`, `failed`, `rejected` or `approved`.
-- `approved`: `Push and open pull request` calls ExecuteTask with action open-pr, with `--draft` checked by default, and shows the pull request URL or the backend's error.
+- `approved`: the current commit must pass verification, review and approval gates before offering `Push and open pull request`; otherwise show blocker reasons. The action calls ExecuteTask with action open-pr, with `--draft` checked by default, and shows the pull request URL or the backend's error.
 
 # configured-storage-health
 The health response may report telemetry_database as available or unavailable when Postgres is configured, and artifact_store as available or unavailable for the S3 service. File-mode roots retain telemetry_database not_configured and may omit artifact_store. The health view and settings show the returned states rather than fixed unconfigured labels.
+
+# task-action-discovery
+`GET /api/projects/{project}/tasks/{id}/state` validates the target and returns the core TaskControls snapshot from GetTaskControls.
+- Invalid targets return 400 with invalid_target; unavailable/invalid backend snapshots return 503 with task_source_unavailable. No model calls or mutations are made.
+- Snapshot actions have stable blocker codes/messages, allowed state, and required inputs. Execution phase distinguishes idle, queued, running, finalizing, completed, failed, interrupted and unavailable. Snapshots are advisory; every command locks and rechecks.
+
+# team-assignment-state
+Optimistic edits are scoped to one member and correlated to their request. Different members may save concurrently; the same member is disabled while saving. Failure rolls back only that member and shows an error; stale responses cannot undo a retry. Date formatting is stable across server/client locale.

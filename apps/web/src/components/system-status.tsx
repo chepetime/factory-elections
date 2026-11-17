@@ -94,13 +94,17 @@ export function SystemStatus() {
 
   const checks = report?.checks ?? [];
   const sum = summarize(checks);
-  const tone = TONE[sum.status];
+  const tone = TONE[error ? 'fail' : sum.status];
   const Icon = running && !report ? LoaderCircle : tone.icon;
-  const headline = !report
-    ? 'Running checks…'
-    : sum.status === 'ok'
-      ? 'All systems go'
-      : `${sum.failing + sum.warning} check${sum.failing + sum.warning === 1 ? '' : 's'} need${sum.failing + sum.warning === 1 ? 's' : ''} attention`;
+  const headline = error
+    ? report
+      ? 'Checks unavailable — showing last results'
+      : 'Checks unavailable'
+    : !report
+      ? 'Running checks…'
+      : sum.status === 'ok'
+        ? 'All systems go'
+        : `${sum.failing + sum.warning} check${sum.failing + sum.warning === 1 ? '' : 's'} need${sum.failing + sum.warning === 1 ? 's' : ''} attention`;
 
   return (
     <LazyMotion features={domAnimation}>

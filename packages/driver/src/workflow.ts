@@ -19,6 +19,7 @@ import {
   prBody,
   prTitle,
   taskTitle,
+  taskCommandBlockers,
   readinessDecision,
   withEvent,
   withStage,
@@ -210,6 +211,7 @@ export class Driver {
     const task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
     const { path, base } = await this.checkedWorktree(task);
+    const startingHead = await this.deps.git.headSha(path);
     let output = '';
     const onOutput = (chunk: string) => {
       output = tail(output + chunk);
@@ -240,7 +242,12 @@ export class Driver {
       output += `\n[the change commits generated files: ${generated.join(', ')}. Remove them from the change and add them to .gitignore.]\n`;
       return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
     }
-    return { passed: true, output, headSha: await this.deps.git.headSha(path) };
+    const headSha = await this.deps.git.headSha(path);
+    if (headSha !== startingHead) {
+      output += '\n[the commit changed during verification; rerun checks against one unchanged commit.]\n';
+      return { passed: false, output: tail(output), headSha };
+    }
+    return { passed: true, output, headSha };
   }
 
   private async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
@@ -603,8 +610,8 @@ export class Driver {
   /** Runs every automated step and stops at the human approval gate. Never pushes. */
   async run(project: string, id: string, options: { maxAttempts: number }): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
-    if (task.pr || ['awaiting-approval', 'approved', 'rejected', 'pr-opened'].includes(task.stage))
-      throw new DriverError(`task stage "${task.stage}" cannot be run; use revise for requested changes`);
+    const blockers = taskCommandBlockers(task, 'run');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
     if (!task.verdict) task = await this.classify(project, id);
     const decision = readinessDecision(task.verdict!);
     if (decision.action !== 'continue') {
@@ -650,8 +657,8 @@ export class Driver {
     options: { head: string; note?: string; acceptBlocking?: boolean },
   ): Promise<TaskRecord> {
     const { task, headSha, blockers } = await this.gate(project, id);
-    if (task.stage !== 'awaiting-approval')
-      throw new DriverError(`task stage is "${task.stage}", not "awaiting-approval"`);
+    const commandBlockers = taskCommandBlockers(task, 'approve');
+    if (commandBlockers.length) throw new DriverError(commandBlockers.map((b) => b.message).join('; '));
     if (blockers.length) throw new DriverError(`cannot approve: ${blockers.join('; ')}`);
     if (options.head.length < 7 || !headSha.startsWith(options.head))
       throw new DriverError(
@@ -680,7 +687,8 @@ export class Driver {
 
   async reject(project: string, id: string, note: string): Promise<TaskRecord> {
     const { task, headSha } = await this.gate(project, id);
-    if (task.pr) throw new DriverError('a pull request is already open for this task');
+    const blockers = taskCommandBlockers(task, 'reject');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
     const approval = { decision: 'rejected' as const, head_sha: headSha, at: this.deps.now(), note };
     const updated = withStage({ ...task, approval }, this.deps.now(), 'rejected', `Rejected: ${note}`);
     await this.deps.tasks.write(updated);
@@ -695,12 +703,8 @@ export class Driver {
     options: { maxAttempts: number },
   ): Promise<TaskRecord> {
     const task = await this.deps.tasks.read(project, id);
-    if (task.pr) throw new DriverError('a pull request is already open for this task');
-    if (
-      !['awaiting-approval', 'verification-failed', 'failed', 'rejected'].includes(task.stage) ||
-      !task.worktree
-    )
-      throw new DriverError(`task stage "${task.stage}" cannot be revised`);
+    const blockers = taskCommandBlockers(task, 'revise');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
     const updated = withEvent(
       {
         ...task,
@@ -712,8 +716,22 @@ export class Driver {
       note,
     );
     await this.deps.tasks.write(updated);
-    await this.codeUntilVerified(project, id, options.maxAttempts);
-    return this.review(project, id);
+    try {
+      await this.codeUntilVerified(project, id, options.maxAttempts);
+      return await this.review(project, id);
+    } catch (error) {
+      const current = await this.deps.tasks.read(project, id);
+      if (!['failed', 'verification-failed'].includes(current.stage))
+        await this.deps.tasks.write(
+          withStage(
+            current,
+            this.deps.now(),
+            'failed',
+            `Revision failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      throw error;
+    }
   }
 
   async openPr(project: string, id: string, options: { draft?: boolean } = {}): Promise<TaskRecord> {

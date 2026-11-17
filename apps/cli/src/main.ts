@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
   ClassifierVerdict,
+  TaskControls,
   currentPrDraft,
   describeIssues,
   readinessDecision,
@@ -31,6 +32,7 @@ Setup
 
 Workflow
   intake --project <name> [--repo <abs-path>] <prompt>   Submit a task; prints its id
+  task actions --project <p> --id <id>               JSON action availability from the running backend
   task run --project <p> --id <id> [--max-attempts N]    Classify, code, verify and review; stops at approval
   task gate --project <p> --id <id> [--json]             Show what awaits your approval
   task diff --project <p> --id <id>                      Print the full diff against the base branch
@@ -354,6 +356,19 @@ async function taskCommand(
   };
   const show = (task: TaskRecord) => out(task);
   switch (sub) {
+    case 'actions': {
+      const { backendCall, closeBackendClient } = await import('@factory/backend/client');
+      try {
+        out(
+          TaskControls.parse(
+            JSON.parse((await backendCall('GetTaskControls', { project: project(), id: id() })).json),
+          ),
+        );
+        return 0;
+      } finally {
+        closeBackendClient();
+      }
+    }
     case 'show':
       return (show(await tasks.read(project(), id())), 0);
     case 'list':

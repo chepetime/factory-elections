@@ -234,3 +234,11 @@ A root with a valid private storage.json uses the Postgres/S3 storage adapter fo
 - Immutable artifact chunks are uploaded before their size/checksum/index record is committed. Tail reads verify bytes against SHA-256. Model costs and Effect trace metadata are indexed in Postgres, with complete logs/JSONL in S3. Unknown costs remain null.
 - Migration is explicit and refuses an active backend/task owner. It validates and compares source/target records, copies and verifies artifact bytes, and activates the configuration only on success. Original files, profiles and worktrees are preserved. Originals are not dual-written after activation.
 - Missing data services fail explicitly, without reading stale source task files. Shutdown drains work and evidence. This does not add automatic crash recovery or a distributed transaction between Postgres and S3.
+
+
+# task-control-policy
+The pure core owns structural run/revise/approve/reject/open-pr eligibility. Driver and scheduler share run/revision guards; revision is permitted after approval before publication and clears previous approval before coding.
+- Verification cannot pass if HEAD changes while profile commands execute. Existing clean-worktree, generated-file and exact-head gates still apply.
+- GetTaskControls and `factory task actions --project <p> --id <id>` expose validated task/phase/action snapshots with blockers and required human inputs. The CLI discovery command requires a running backend; it never guesses live ownership offline.
+- Persisted run records retain queued/running/completed/failed and are runtime-validated on read. Derived phase adds idle/finalizing/interrupted/unavailable. A terminal record remains busy while owned; evidence-close failure persists failed outcome. Invalid run metadata makes discovery unavailable, not idle.
+- Task and run JSON formats remain compatible. No automatic run replay, model spend, lock removal or PR retry is added by discovery.

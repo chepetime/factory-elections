@@ -5,7 +5,14 @@ import type { Command } from '@factory/backend/protocol';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { NAME_PATTERN, Project, TaskRecord } from '@factory/core';
+import {
+  NAME_PATTERN,
+  Project,
+  TaskRecord,
+  TaskControls,
+  ExecutionPhase,
+  executionPhase,
+} from '@factory/core';
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -34,7 +41,7 @@ export function backendError(error: unknown): string {
 }
 
 async function readJson<T extends z.ZodType>(
-  method: 'ListProjects' | 'ListTasks' | 'GetTask' | 'GetGate',
+  method: 'ListProjects' | 'ListTasks' | 'GetTask' | 'GetGate' | 'GetTaskControls',
   target: { project: string; id?: string },
   schema: T,
 ): Promise<Result<z.infer<T>>> {
@@ -57,6 +64,9 @@ export function listTasks(project: string): Promise<Result<TaskRecord[]>> {
 }
 export function showTask(project: string, id: string): Promise<Result<TaskRecord>> {
   return readJson('GetTask', { project, id }, TaskRecord);
+}
+export function readTaskControls(project: string, id: string): Promise<Result<TaskControls>> {
+  return readJson('GetTaskControls', { project, id }, TaskControls);
 }
 export const Gate = z.object({
   task: TaskRecord,
@@ -103,6 +113,7 @@ export async function startTask(request: Command): Promise<Result<string>> {
 
 const Background = z.object({
   running: z.boolean(),
+  phase: ExecutionPhase.optional(),
   label: z.string().optional(),
   logTail: z.string().optional(),
   runId: z.string().optional(),
@@ -113,10 +124,16 @@ export type BackgroundRun = z.infer<typeof Background>;
 export async function backgroundRun(project: string, id: string): Promise<BackgroundRun> {
   try {
     const run = Background.parse(JSON.parse((await backendCall('GetBackground', { project, id })).json));
+    run.phase ??= executionPhase(run.state, run.running);
     if (run.error) run.logTail = [run.error, run.logTail].filter(Boolean).join('\n');
     return run;
   } catch (error) {
-    return { running: false, label: 'Backend unavailable', logTail: backendError(error) };
+    return {
+      running: false,
+      phase: 'unavailable',
+      label: 'Backend unavailable',
+      logTail: backendError(error),
+    };
   }
 }
 export async function clearBackgroundLog(project: string, id: string): Promise<void> {

@@ -4,10 +4,11 @@
 // (https://www.affectui.com/screens/crm); original implementation, no Affect UI source or assets.
 import { Popover } from '@base-ui/react/popover';
 import { Check, Plus, Search, Users, X } from 'lucide-react';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import { assignMember } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { teamEdits } from '@/lib/team-edits';
 import type { TeamMember } from '@/lib/team';
 import { cn } from '@/lib/utils';
 
@@ -35,7 +36,12 @@ function initials(name: string): string {
 }
 
 function date(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 const popup =
@@ -78,7 +84,10 @@ function FilterButton({
 }
 
 export function TeamTable({ project, initial }: { project: string; initial: TeamMember[] }) {
-  const [members, setMembers] = useState(initial);
+  const [edits, dispatch] = useReducer(teamEdits, { members: initial, pending: {} });
+  const { members, error } = edits;
+  const inFlight = useRef(new Set<string>());
+  const sequence = useRef(0);
   const [filter, setFilter] = useState<
     { kind: 'all' } | { kind: 'team'; team: string } | { kind: 'tag'; tag: string }
   >({
@@ -86,7 +95,6 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
   });
   const [query, setQuery] = useState('');
   const [grouped, setGrouped] = useState(true);
-  const [error, setError] = useState<string>();
   const [, startTransition] = useTransition();
 
   const teams = useMemo(
@@ -99,14 +107,18 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
   );
 
   const update = (email: string, team: string | undefined, nextTags: string[]) => {
-    const before = members;
-    setMembers((ms) => ms.map((m) => (m.email === email ? { ...m, team, tags: nextTags } : m)));
-    setError(undefined);
+    if (inFlight.current.has(email)) return;
+    inFlight.current.add(email);
+    const requestId = ++sequence.current;
+    dispatch({ type: 'start', email, requestId, team, tags: nextTags });
     startTransition(async () => {
-      const result = await assignMember(project, email, team, nextTags);
-      if (result.error) {
-        setMembers(before);
-        setError(result.error);
+      try {
+        const result = await assignMember(project, email, team, nextTags);
+        dispatch({ type: 'settle', email, requestId, error: result.error });
+      } catch {
+        dispatch({ type: 'settle', email, requestId, error: 'Could not save this member. Try again.' });
+      } finally {
+        inFlight.current.delete(email);
       }
     });
   };
@@ -259,7 +271,11 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                     </tr>
                   )}
                   {ms.map((m) => (
-                    <tr key={m.email} className="border-b last:border-b-0 hover:bg-muted/30">
+                    <tr
+                      key={m.email}
+                      aria-busy={Boolean(edits.pending[m.email])}
+                      className="border-b last:border-b-0 hover:bg-muted/30"
+                    >
                       <td className="px-5 py-2">
                         <div className="flex items-center gap-3">
                           <span
@@ -275,18 +291,33 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                         </div>
                       </td>
                       <td className="px-3 py-2">
-                        <TeamPicker
-                          member={m}
-                          teams={teams}
-                          onChange={(team) => update(m.email, team, m.tags)}
-                        />
+                        <fieldset
+                          disabled={Boolean(edits.pending[m.email])}
+                          aria-label={`Team for ${m.name}`}
+                        >
+                          <TeamPicker
+                            member={m}
+                            teams={teams}
+                            onChange={(team) => update(m.email, team, m.tags)}
+                          />
+                        </fieldset>
                       </td>
                       <td className="px-3 py-2">
-                        <TagEditor
-                          member={m}
-                          known={tags}
-                          onChange={(next) => update(m.email, m.team, next)}
-                        />
+                        <fieldset
+                          disabled={Boolean(edits.pending[m.email])}
+                          aria-label={`Tags for ${m.name}`}
+                        >
+                          <TagEditor
+                            member={m}
+                            known={tags}
+                            onChange={(next) => update(m.email, m.team, next)}
+                          />
+                        </fieldset>
+                        {edits.pending[m.email] && (
+                          <span role="status" className="text-xs text-muted-foreground">
+                            Saving…
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{m.commits}</td>
                       <td className="px-5 py-2 text-right whitespace-nowrap text-muted-foreground">
@@ -404,6 +435,7 @@ function TagEditor({
   const add = (tag: string) => {
     if (tag && !member.tags.includes(tag)) onChange([...member.tags, tag]);
     setText('');
+    setOpen(false);
   };
   const suggestions = known.filter(
     (t) => !member.tags.includes(t) && t.toLowerCase().includes(typed.toLowerCase()),

@@ -32,6 +32,7 @@ service Factory {
   rpc ListProjects(Empty) returns (Snapshot);
   rpc ListTasks(Target) returns (Snapshot);
   rpc GetTask(Target) returns (Snapshot);
+  rpc GetTaskControls(Target) returns (Snapshot);
   rpc GetGate(Target) returns (Snapshot);
   rpc GetDiff(Target) returns (Text);
   rpc SubmitTask(Submission) returns (Text);

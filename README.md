@@ -177,6 +177,8 @@ factory task approve --project "$FACTORY_PROJECT" --id "$TASK_ID" --head "$REVIE
 factory task open-pr --project "$FACTORY_PROJECT" --id "$TASK_ID" --draft
 ```
 
+With the backend running, `factory task actions --project "$FACTORY_PROJECT" --id "$TASK_ID"` returns JSON action availability, blockers and required inputs.
+
 For changes, use `factory task revise --project "$FACTORY_PROJECT" --id "$TASK_ID" --note "What to change"`. Use `factory --help` for the full command list. Opening a PR is a separate explicit action after approval.
 
 ## Restart, update, and recover
@@ -208,4 +210,5 @@ pnpm lint
 
 - [Docker storage, migration, and backups](docs/docker-storage.md)
 - [Backend operation and interruption recovery](docs/local-backend.md)
+- [State machines and agent action discovery](docs/state-machines.md)
 - [Storybook](docs/storybook.md) for component development

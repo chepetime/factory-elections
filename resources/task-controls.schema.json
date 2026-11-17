@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "task": { "$ref": "./task-record.schema.json" },
+    "execution": {
+      "type": "string",
+      "enum": ["idle", "queued", "running", "finalizing", "completed", "failed", "interrupted", "unavailable"]
+    },
+    "head_sha": { "type": "string" },
+    "diff_stat": { "type": "string" },
+    "gate_error": { "type": "string" },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["run", "revise", "approve", "reject", "open-pr"] },
+          "allowed": { "type": "boolean" },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "pr-open",
+                    "stage",
+                    "worktree-required",
+                    "head-unavailable",
+                    "gate",
+                    "busy",
+                    "unavailable"
+                  ]
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["code", "message"],
+              "additionalProperties": false
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["note", "head", "accept_blocking"] }
+          }
+        },
+        "required": ["action", "allowed", "blockers", "requires"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["task", "execution", "actions"],
+  "additionalProperties": false
+}

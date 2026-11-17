@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Factory task read API
-  version: 1.0.0
+  version: 1.1.0
 paths:
   /api/projects/{project}/tasks:
     get:
@@ -43,4 +43,42 @@ paths:
                 properties:
                   error:
                     const: task_source_unavailable
+                additionalProperties: false
+  /api/projects/{project}/tasks/{id}/state:
+    get:
+      operationId: getTaskControls
+      description: Advisory action availability; commands lock and recheck before execution. Makes no model calls.
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]+$' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Task, observed execution phase, commit gates and available actions
+          content:
+            application/json:
+              schema:
+                $ref: './task-controls.schema.json'
+        '400':
+          description: Invalid project or task ID
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties: { error: { const: invalid_target } }
+                additionalProperties: false
+        '503':
+          description: Task source unavailable or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties: { error: { const: task_source_unavailable } }
                 additionalProperties: false

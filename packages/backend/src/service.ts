@@ -3,7 +3,17 @@ import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Cause, Effect, Fiber } from 'effect';
 import { z } from 'zod';
-import { ProjectName, TaskId, withStage, type ModelRunner } from '@factory/core';
+import {
+  ProjectName,
+  TaskId,
+  TaskCommand,
+  executionPhase,
+  taskActions,
+  taskCommandBlockers,
+  withStage,
+  type ModelRunner,
+  type TaskControls,
+} from '@factory/core';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
 import { composeDriver } from './compose.ts';
@@ -15,26 +25,27 @@ import type { BackgroundRun, Command, Target } from './protocol.ts';
 
 const TargetSchema = z.object({ project: ProjectName, id: TaskId });
 const CommandSchema = TargetSchema.extend({
-  action: z.enum(['run', 'revise', 'approve', 'reject', 'open-pr']),
+  action: TaskCommand,
   note: z.string().max(20_000).optional().default(''),
   head: z.string().max(64).optional().default(''),
   accept_blocking: z.boolean().optional().default(false),
   draft: z.boolean().optional().default(false),
   max_attempts: z.number().int().min(0).max(10).optional().default(0),
 });
-interface RunRecord {
-  id: string;
-  project: string;
-  task_id: string;
-  action: string;
-  command: Command;
-  label: string;
-  state: 'queued' | 'running' | 'completed' | 'failed';
-  created_at: string;
-  finished_at?: string;
-  error?: string;
-  dismissed?: boolean;
-}
+const RunRecord = z.object({
+  id: TaskId,
+  project: ProjectName,
+  task_id: TaskId,
+  action: TaskCommand,
+  command: CommandSchema,
+  label: z.string(),
+  state: z.enum(['queued', 'running', 'completed', 'failed']),
+  created_at: z.string(),
+  finished_at: z.string().optional(),
+  error: z.string().optional(),
+  dismissed: z.boolean().optional(),
+});
+type RunRecord = z.infer<typeof RunRecord>;
 export class Conflict extends Error {}
 
 export class BackendService {
@@ -146,18 +157,8 @@ export class BackendService {
     try {
       release = await this.tasks.acquireLock(command.project, command.id);
       const task = await this.tasks.read(command.project, command.id);
-      if (
-        task.pr ||
-        (command.action === 'run' &&
-          ['awaiting-approval', 'approved', 'rejected', 'pr-opened'].includes(task.stage))
-      )
-        throw new Conflict(`Task at ${task.stage} cannot be run`);
-      if (
-        command.action === 'revise' &&
-        (!task.worktree ||
-          !['awaiting-approval', 'verification-failed', 'failed', 'rejected'].includes(task.stage))
-      )
-        throw new Conflict(`Task at ${task.stage} cannot be revised`);
+      const blockers = taskCommandBlockers(task, command.action);
+      if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
       await readProfile(this.root, command.project);
       const record: RunRecord = {
         id: randomUUID(),
@@ -249,9 +250,21 @@ export class BackendService {
     } finally {
       record.finished_at = new Date().toISOString();
       try {
+        try {
+          await this.storage.writeDocument(join(dir, 'run.json'), record);
+        } finally {
+          await evidence?.close();
+        }
+      } catch (error) {
+        // Evidence durability is part of completion, even if the workflow itself succeeded.
+        record.state = 'failed';
+        record.error = [
+          record.error,
+          `Run finalization failed: ${error instanceof Error ? error.message : String(error)}`,
+        ]
+          .filter(Boolean)
+          .join('\n');
         await this.storage.writeDocument(join(dir, 'run.json'), record);
-      } finally {
-        await evidence?.close();
       }
     }
   }
@@ -267,23 +280,23 @@ export class BackendService {
     }
     const runId = TaskId.parse(pointer.id);
     const dir = join(taskDir, 'runs', runId);
-    const record = (await this.storage.readDocument(join(dir, 'run.json'))) as RunRecord;
+    const record = RunRecord.parse(await this.storage.readDocument(join(dir, 'run.json')));
     if (record.project !== project || record.task_id !== id || record.id !== runId)
       throw new Error('Run identity mismatch');
     return { record, dir };
   }
-  async background(target: Target): Promise<BackgroundRun> {
+  async background(target: Target, includeLog = true): Promise<BackgroundRun> {
     const latest = await this.latest(target);
-    if (!latest) return { running: false };
+    if (!latest) return { running: false, phase: 'idle' };
     const { record, dir } = latest;
     const unfinished = ['queued', 'running'].includes(record.state);
     const running = this.active.has(record.id);
     let logTail: string | undefined;
-    if (!record.dismissed && this.storage.config) {
+    if (includeLog && !record.dismissed && this.storage.config) {
       const tail = await this.storage.artifactTail(join(dir, 'run.log'));
       logTail = tail && `${tail.length > 8000 ? '…' : ''}${tail.slice(-8000)}`;
     }
-    if (!record.dismissed && !this.storage.config) {
+    if (includeLog && !record.dismissed && !this.storage.config) {
       const file = await open(join(dir, 'run.log'), 'r').catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return undefined;
         throw error;
@@ -302,6 +315,7 @@ export class BackendService {
     }
     return {
       running,
+      phase: executionPhase(record.state, running),
       runId: record.id,
       label: record.label,
       logTail,
@@ -310,6 +324,37 @@ export class BackendService {
         unfinished && !running
           ? 'Run interrupted; inspect evidence and stale command lock before recovery.'
           : record.error,
+    };
+  }
+  async controls(target: Target): Promise<TaskControls> {
+    const { project, id } = this.target(target);
+    let task = await this.tasks.read(project, id);
+    let head_sha: string | undefined;
+    let gate_error: string | undefined;
+    let diff_stat: string | undefined;
+    let execution: TaskControls['execution'];
+    try {
+      execution = (await this.background(target, false)).phase ?? 'unavailable';
+    } catch {
+      execution = 'unavailable';
+    }
+    if (task.worktree) {
+      try {
+        const gate = await this.driver().gate(project, id);
+        task = gate.task;
+        head_sha = gate.headSha;
+        diff_stat = gate.diffStat;
+      } catch (error) {
+        gate_error = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return {
+      task,
+      execution,
+      head_sha,
+      diff_stat,
+      gate_error,
+      actions: taskActions(task, execution, head_sha),
     };
   }
   async clearLog(target: Target): Promise<void> {

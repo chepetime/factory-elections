@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend/client';
 import { submitTask, reviseTask, approveTask, assignMember } from '@/app/actions';
+import { backgroundRun } from '@/lib/factory';
 import { saveAssignment, teamMembers } from '@/lib/team';
 import { systemStatus } from '@/lib/status';
 
@@ -92,4 +93,20 @@ describe('web/backend reintegration', () => {
     expect(rpc).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledWith('GetDiagnostics', {}, 30_000);
   });
+});
+
+it('keeps a created task when scheduling fails, instead of inviting a duplicate submission', async () => {
+  rpc.mockResolvedValueOnce({ text: id });
+  rpc.mockRejectedValueOnce(new Error('queue full'));
+  await expect(submitTask({}, form({ project: 'demo', prompt: 'Do it', start: 'on' }))).rejects.toThrow(
+    `redirect:/projects/demo/tasks/${id}?start=failed`,
+  );
+  expect(rpc.mock.calls.map(([method]) => method)).toEqual(['SubmitTask', 'StartRun']);
+});
+
+it('distinguishes unavailable execution from idle and preserves legacy background responses', async () => {
+  rpc.mockRejectedValueOnce(new Error('offline'));
+  expect((await backgroundRun('demo', id)).phase).toBe('unavailable');
+  rpc.mockResolvedValueOnce({ json: JSON.stringify({ running: true, state: 'completed' }) });
+  expect((await backgroundRun('demo', id)).phase).toBe('finalizing');
 });

@@ -2,7 +2,13 @@ import { Bot } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { blockingFindings, type TaskRecord } from '@factory/core';
+import {
+  approvalBlockers,
+  blockingFindings,
+  executionBusy,
+  taskActions,
+  type TaskRecord,
+} from '@factory/core';
 import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
@@ -15,8 +21,7 @@ import {
   isProjectName,
   isTaskId,
   readDiff,
-  readGate,
-  showTask,
+  readTaskControls,
   type BackgroundRun,
   type Gate,
 } from '@/lib/factory';
@@ -200,10 +205,17 @@ function RunningTurn({ run }: { run: BackgroundRun }) {
 
 /* ---------- Page ---------- */
 
-export default async function TaskPage({ params }: { params: Promise<{ project: string; id: string }> }) {
+export default async function TaskPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ project: string; id: string }>;
+  searchParams?: Promise<{ start?: string }>;
+}) {
+  const startFailed = (await searchParams)?.start === 'failed';
   const { project, id } = await params;
   if (!isProjectName(project) || !isTaskId(id)) notFound();
-  const shown = await showTask(project, id);
+  const shown = await readTaskControls(project, id);
   if (!shown.ok) {
     return (
       <div className="px-6 py-6">
@@ -211,29 +223,38 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
       </div>
     );
   }
-  let task = shown.value;
-  let gate: Gate | undefined;
-  let gateError: string | undefined;
-  let diff: string | undefined;
-  if (task.worktree) {
-    const g = await readGate(project, id);
-    if (g.ok) {
-      gate = g.value;
-      task = gate.task;
-      const d = await readDiff(project, id);
-      diff = d.ok ? d.value : undefined;
-    } else gateError = g.error;
-  }
+  const controls = shown.value;
+  const task = controls.task;
+  const gate: Gate | undefined =
+    controls.head_sha && controls.diff_stat !== undefined
+      ? {
+          task,
+          head_sha: controls.head_sha,
+          diff_stat: controls.diff_stat,
+          blockers: approvalBlockers(task, controls.head_sha),
+        }
+      : undefined;
+  const gateError = controls.gate_error;
+  const diffResult = gate ? await readDiff(project, id) : undefined;
+  const diff = diffResult?.ok ? diffResult.value : undefined;
   const run = await backgroundRun(project, id);
-  const busy = run.running || task.stage === 'coding' || task.stage === 'reviewing';
+  // A failed observation must never unlock a command or pretend a worker is alive.
+  const phase =
+    controls.execution === 'unavailable' || run.phase === 'unavailable'
+      ? 'unavailable'
+      : executionBusy(controls.execution)
+        ? controls.execution
+        : (run.phase ?? controls.execution);
+  const busy = executionBusy(phase);
+  const actions = taskActions(task, phase, controls.head_sha);
+  const allowed = (action: string) => actions.some((a) => a.action === action && a.allowed);
   const hidden = { project, id };
   const blocking = blockingFindings(task);
-  const canRevise =
-    Boolean(task.worktree) &&
-    !task.pr &&
-    !busy &&
-    ['awaiting-approval', 'verification-failed', 'failed', 'rejected', 'approved'].includes(task.stage);
-  const canRun = !task.worktree && !busy && task.stage !== 'blocked';
+  const canRevise = allowed('revise');
+  const canRun = allowed('run') && !canRevise && task.stage !== 'blocked';
+  const interrupted =
+    phase === 'interrupted' ||
+    (!busy && phase !== 'unavailable' && (task.stage === 'coding' || task.stage === 'reviewing'));
 
   const conversation = taskConversation(task);
   const reviewAt = lastStepId(conversation, 'stage:awaiting-approval');
@@ -260,15 +281,17 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
     <TaskChatComposer
       mode="locked"
       reason={
-        busy
-          ? 'The factory is working. You can ask for changes when this run finishes.'
-          : task.pr
-            ? 'The pull request is open. This task is finished.'
-            : task.stage === 'blocked'
-              ? 'Blocked before any code. Start a new task that answers the questions above.'
-              : canRun
-                ? 'Run the task to start the conversation.'
-                : `Nothing to send while the task is ${task.stage}.`
+        phase === 'unavailable'
+          ? 'Execution status is unavailable. Refresh before acting.'
+          : busy
+            ? 'The factory is working. You can ask for changes when this run finishes.'
+            : task.pr
+              ? 'The pull request is open. This task is finished.'
+              : task.stage === 'blocked'
+                ? 'Blocked before any code. Start a new task that answers the questions above.'
+                : canRun
+                  ? 'Run the task to start the conversation.'
+                  : `Nothing to send while the task is ${task.stage}.`
       }
     />
   );
@@ -286,6 +309,11 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
         </header>
 
         <ChatScroll>
+          {startFailed && (
+            <p role="status" className="text-sm text-destructive">
+              Task saved, but the run could not start. Use Run task to retry without creating another task.
+            </p>
+          )}
           {conversation.map((entry) =>
             entry.role === 'user' ? (
               <UserMessage key={entry.id} entry={entry} />
@@ -296,20 +324,44 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
             ),
           )}
 
-          {run.running && <RunningTurn run={run} />}
+          {busy && (
+            <RunningTurn
+              run={{
+                ...run,
+                label:
+                  phase === 'queued'
+                    ? 'Queued for the worker'
+                    : phase === 'finalizing'
+                      ? 'Saving evidence and releasing the task'
+                      : run.label,
+              }}
+            />
+          )}
+          {phase === 'unavailable' && (
+            <p role="alert" className="text-sm text-destructive">
+              Execution status is unavailable. Refresh before acting.
+            </p>
+          )}
+          {interrupted && (
+            <p role="status" className="text-sm text-destructive">
+              This run has no live owner. Inspect the last output and command lock before explicitly running
+              recovery. It will not restart automatically.
+            </p>
+          )}
 
           {canRun && (
             <AgentMessage>
               <ActionForm action={runTask} hidden={hidden} submit="Run task" pendingLabel="Starting…">
                 <p className="text-sm">
-                  Ready when you are. I&apos;ll classify the task, code it in a new worktree, verify and
-                  review it, then stop for your approval. Nothing is pushed.
+                  {task.worktree
+                    ? 'Explicitly reruns coding, verification and review in the existing worktree, then stops for approval. Inspect interrupted work before proceeding. Nothing is pushed.'
+                    : "Ready when you are. I'll classify the task, code it in a new worktree, verify and review it, then stop for your approval. Nothing is pushed."}
                 </p>
               </ActionForm>
             </AgentMessage>
           )}
 
-          {!busy && task.stage === 'awaiting-approval' && (
+          {phase !== 'unavailable' && !busy && task.stage === 'awaiting-approval' && (
             <AgentMessage>
               <p className="text-sm">
                 Waiting for your decision. Approve or reject in the panel, or reply below to ask for changes.
@@ -374,7 +426,7 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
           </Section>
         )}
 
-        {gate && task.stage === 'awaiting-approval' && !busy && (
+        {gate && task.stage === 'awaiting-approval' && !busy && phase !== 'unavailable' && (
           <Section title="Your decision">
             {gate.blockers.length > 0 ? (
               <p className="text-sm text-destructive">Not ready for approval: {gate.blockers.join('; ')}</p>
@@ -411,7 +463,17 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
           </Section>
         )}
 
-        {task.stage === 'approved' && !task.pr && !busy && (
+        {task.stage === 'approved' && !allowed('open-pr') && (
+          <Section title="Pull request gate">
+            <p className="text-sm text-destructive">
+              {actions
+                .find((a) => a.action === 'open-pr')
+                ?.blockers.map((b) => b.message)
+                .join('; ')}
+            </p>
+          </Section>
+        )}
+        {allowed('open-pr') && (
           <Section title="Open the pull request">
             <ActionForm
               action={openPullRequest}

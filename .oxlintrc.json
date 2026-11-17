@@ -8,31 +8,22 @@
     "apps/web/storybook-static/**",
     "apps/web/test-results/**"
   ],
-  "rules": {
-    "no-restricted-imports": [
-      "error",
-      {
-        "patterns": [
-          {
-            "group": ["node:*", "@anthropic-ai/*", "@factory/adapters-*", "@factory/driver"],
-            "message": "packages/core must stay pure"
-          }
-        ]
-      }
-    ]
-  },
+  "rules": {},
   "overrides": [
     {
-      "files": [
-        "packages/adapters-*/**",
-        "packages/driver/**",
-        "packages/backend/**",
-        "apps/**",
-        "packages/*/test/**",
-        "scripts/**"
-      ],
+      "files": ["packages/core/src/**"],
       "rules": {
-        "no-restricted-imports": "off"
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:*", "@anthropic-ai/*", "@factory/adapters-*", "@factory/driver"],
+                "message": "packages/core must stay pure"
+              }
+            ]
+          }
+        ]
       }
     }
   ]

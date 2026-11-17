@@ -134,6 +134,10 @@
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },
+                "GetTaskControls": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "GetGate": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

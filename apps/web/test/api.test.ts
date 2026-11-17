@@ -1,6 +1,8 @@
 // Route handlers validate backend snapshots; transport behavior is exercised by backend smoke tests.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend/client';
+import { taskActions, TaskRecord } from '@factory/core';
+import { GET as getState } from '@/app/api/projects/[project]/tasks/[id]/state/route';
 import { GET as getProjects } from '@/app/api/projects/route';
 import { GET as getTasks } from '@/app/api/projects/[project]/tasks/route';
 
@@ -53,4 +55,33 @@ describe('project and task read APIs', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: 'task_source_unavailable' });
   });
+});
+
+it('exposes validated action discovery without executing work', async () => {
+  const current = TaskRecord.parse(task);
+  const state = { task: current, execution: 'idle', actions: taskActions(current, 'idle') };
+  rpc.mockResolvedValueOnce({ json: JSON.stringify(state) });
+  const response = await getState(new Request('http://localhost'), {
+    params: Promise.resolve({ project: 'demo', id: task.id }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(state);
+  expect(rpc).toHaveBeenCalledWith('GetTaskControls', { project: 'demo', id: task.id });
+  rpc.mockClear();
+  expect(
+    (
+      await getState(new Request('http://localhost'), {
+        params: Promise.resolve({ project: 'demo', id: '../escape' }),
+      })
+    ).status,
+  ).toBe(400);
+  expect(rpc).not.toHaveBeenCalled();
+  rpc.mockResolvedValueOnce({ json: JSON.stringify({ task, execution: 'invented', actions: [] }) });
+  expect(
+    (
+      await getState(new Request('http://localhost'), {
+        params: Promise.resolve({ project: 'demo', id: task.id }),
+      })
+    ).status,
+  ).toBe(503);
 });

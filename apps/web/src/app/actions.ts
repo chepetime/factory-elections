@@ -44,7 +44,11 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
   const id = created.value;
   if (form.get('start') === 'on') {
     const started = await startTask({ project, id, action: 'run' });
-    if (!started.ok) return { error: started.error };
+    if (!started.ok) {
+      // Creation succeeded. Navigate to that durable task instead of inviting duplicate submission.
+      refresh(project, id);
+      redirect(`/projects/${project}/tasks/${id}?start=failed`);
+    }
   }
   refresh(project, id);
   redirect(`/projects/${project}/tasks/${id}`);
