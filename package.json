@@ -21,16 +21,29 @@
     "web": "node scripts/web.mjs",
     "storybook": "pnpm --filter @factory/web storybook",
     "storybook:build": "pnpm --filter @factory/web storybook:build",
-    "storybook:test": "pnpm --filter @factory/web storybook:test"
+    "storybook:test": "pnpm --filter @factory/web storybook:test",
+    "backend": "node apps/backend/src/main.ts",
+    "rpc:generate": "node scripts/generate-rpc.mjs",
+    "data:up": "node scripts/data.mjs up",
+    "data:down": "node scripts/data.mjs down",
+    "data:status": "node scripts/data.mjs status",
+    "data:migrate": "node scripts/data.mjs migrate",
+    "data:test": "node scripts/data.mjs test"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
     "oxlint": "^1.93.0",
     "prettier": "^3.10.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.323",
+    "@aws-sdk/client-s3": "^3.1169.0",
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
+    "effect": "^3.22.4",
+    "pg": "^8.23.1",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   }

@@ -1,0 +1,172 @@
+{
+  "nested": {
+    "factory": {
+      "nested": {
+        "v1": {
+          "nested": {
+            "Empty": {
+              "fields": {}
+            },
+            "Target": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "id": {
+                  "type": "string",
+                  "id": 2
+                }
+              }
+            },
+            "Snapshot": {
+              "fields": {
+                "json": {
+                  "type": "string",
+                  "id": 1
+                }
+              }
+            },
+            "Text": {
+              "fields": {
+                "text": {
+                  "type": "string",
+                  "id": 1
+                }
+              }
+            },
+            "Submission": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "prompt": {
+                  "type": "string",
+                  "id": 2
+                }
+              }
+            },
+            "Command": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "id": {
+                  "type": "string",
+                  "id": 2
+                },
+                "action": {
+                  "type": "string",
+                  "id": 3
+                },
+                "note": {
+                  "type": "string",
+                  "id": 4
+                },
+                "head": {
+                  "type": "string",
+                  "id": 5
+                },
+                "acceptBlocking": {
+                  "type": "bool",
+                  "id": 6
+                },
+                "draft": {
+                  "type": "bool",
+                  "id": 7
+                },
+                "maxAttempts": {
+                  "type": "uint32",
+                  "id": 8
+                }
+              }
+            },
+            "Assignment": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "email": {
+                  "type": "string",
+                  "id": 2
+                },
+                "team": {
+                  "type": "string",
+                  "id": 3
+                },
+                "tags": {
+                  "rule": "repeated",
+                  "type": "string",
+                  "id": 4
+                }
+              }
+            },
+            "Factory": {
+              "methods": {
+                "GetDiagnostics": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "GetTeam": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetGitUser": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                },
+                "SaveAssignment": {
+                  "requestType": "Assignment",
+                  "responseType": "Text"
+                },
+                "ListProjects": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "ListTasks": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetTask": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetGate": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetDiff": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                },
+                "SubmitTask": {
+                  "requestType": "Submission",
+                  "responseType": "Text"
+                },
+                "ExecuteTask": {
+                  "requestType": "Command",
+                  "responseType": "Text"
+                },
+                "StartRun": {
+                  "requestType": "Command",
+                  "responseType": "Snapshot"
+                },
+                "GetBackground": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "ClearLog": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

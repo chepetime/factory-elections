@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { SystemStatus } from '@/components/system-status';
-import { cliScript, dataRoot } from '@/lib/factory';
+import { dataRoot } from '@/lib/factory';
 
 export const metadata: Metadata = { title: 'Settings · Software Factory' };
 export const dynamic = 'force-dynamic';
@@ -8,9 +8,12 @@ export const dynamic = 'force-dynamic';
 export default function SettingsPage() {
   const rows = [
     ['Data root', dataRoot()],
-    ['Factory CLI', cliScript() ?? 'Not configured'],
+    [
+      'Backend',
+      process.env.FACTORY_BACKEND_ADDRESS ?? `127.0.0.1:${process.env.FACTORY_BACKEND_PORT ?? 4319}`,
+    ],
     ['Web app', 'http://localhost:3000 (local only)'],
-    ['Engine health', 'http://127.0.0.1:4318/health'],
+    ['Engine health', `http://127.0.0.1:${process.env.FACTORY_HEALTH_PORT ?? 4318}/health`],
   ] as const;
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">

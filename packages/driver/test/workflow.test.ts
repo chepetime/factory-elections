@@ -358,3 +358,60 @@ test('verification fails when the change commits generated files', async () => {
   assert.equal(stored.stage, 'verification-failed');
   assert.match(stored.verification!.output_tail, /generated files: tsconfig\.tsbuildinfo/);
 });
+
+test('verification retains only the output tail while forwarding the complete log', async () => {
+  const { driver, task } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  let streamed = 0;
+  driver.deps.log = (chunk) => {
+    streamed += chunk.length;
+  };
+  driver.deps.shell.runShell = async (_command, options) => {
+    assert.equal(options.captureLimit, 0);
+    for (let i = 0; i < 1000; i++) options.onOutput?.('x'.repeat(1000));
+    options.onOutput?.('failure-end');
+    return { code: 1, stdout: '', stderr: '' };
+  };
+  const result = await driver.verify('demo', task.id);
+  assert.equal(result.passed, false);
+  assert.ok(streamed > 1_000_000);
+  assert.ok(result.output.length <= 6001);
+  assert.match(result.output, /failure-end/);
+});
+
+test('running an already reviewed or approved task cannot spend on more model calls', async () => {
+  const { driver, task, runner } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const calls = runner.calls.length;
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /cannot be run/);
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /cannot be run/);
+  assert.equal(runner.calls.length, calls);
+});
+
+test('classification persists the verdict and attempt in one write', async () => {
+  const { driver, task, store } = await setup({ classifier: [ready] });
+  let writes = 0;
+  driver.deps.tasks = {
+    read: store.read.bind(store),
+    worktreePath: store.worktreePath.bind(store),
+    write: async (record) => {
+      writes++;
+      await store.write(record);
+    },
+  };
+  const classified = await driver.classify('demo', task.id);
+  assert.equal(writes, 1);
+  assert.equal(classified.verdict?.readiness, 'ready');
+  assert.equal(classified.attempts?.[0]?.step, 'classifier');
+});

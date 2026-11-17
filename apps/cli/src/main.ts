@@ -1,6 +1,6 @@
 // `factory` command line: composes the filesystem, git, GitHub and Claude adapters with the driver.
+import { resolve, join } from 'node:path';
 import { access } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
@@ -11,20 +11,11 @@ import {
   type TaskRecord,
 } from '@factory/core';
 import * as fsAdapter from '@factory/adapters-fs';
-import * as git from '@factory/adapters-git';
-import * as github from '@factory/adapters-github';
-import { runShell } from '@factory/adapters-process';
-import { ClaudeAgentRunner } from '@factory/adapters-claude';
-import { Driver, DriverError, type DriverDeps, type StepPaths } from '@factory/driver';
+import { storageFor } from '@factory/adapters-data';
+import { Driver, DriverError, type StepPaths } from '@factory/driver';
+import { composeDriver as createDriver } from '@factory/backend/compose';
 import { serveHealth } from './serve.ts';
 import { doctor } from './doctor.ts';
-import { draftProfile } from './profile-draft.ts';
-
-const DEFINITIONS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'definitions');
-const step = (name: string): StepPaths => ({
-  step: join(DEFINITIONS, 'steps', `${name}.yaml`),
-  ladder: join(DEFINITIONS, 'ladders', `${name}.yaml`),
-});
 
 export const HELP = `Usage: factory [options] <command>
 
@@ -53,7 +44,7 @@ Individual steps
   classifier run --request <path>
   verdict check <path>
   definition check-step | check-ladder | check-loop <path>
-  serve [--port 4318]                             Local engine health API on 127.0.0.1
+  serve [--port 4318]                             Local backend (gRPC :4319, health :4318)
 
 Options
   -h, --help                                      Show this help
@@ -93,36 +84,9 @@ function out(value: unknown): void {
 }
 
 export function composeDriver(root: string, quiet = false): Driver {
-  const tasks = new fsAdapter.TaskStore(root);
-  const log = (line: string) => {
+  return createDriver(root, (line) => {
     if (!quiet) process.stderr.write(`${line}\n`);
-  };
-  const deps: DriverDeps = {
-    tasks,
-    readProfile: (project) => fsAdapter.readProfile(root, project),
-    git,
-    shell: { runShell: (command, options) => runShell(command, options) },
-    github,
-    runner: new ClaudeAgentRunner({ onProgress: log }),
-    definitions: {
-      readStep: fsAdapter.readStepDefinition,
-      readLadder: fsAdapter.readLadder,
-      exists: (path) =>
-        access(path).then(
-          () => true,
-          () => false,
-        ),
-    },
-    steps: {
-      classifier: step('classifier'),
-      coder: step('coder'),
-      reviewer: step('reviewer'),
-      prWriter: step('pr-writer'),
-    },
-    now: () => new Date().toISOString(),
-    log,
-  };
-  return new Driver(deps);
+  });
 }
 
 function maxAttempts(value: string | undefined): number {
@@ -191,8 +155,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   const root = fsAdapter.dataRoot();
   const driver = composeDriver(root, v.quiet);
-  const tasks = new fsAdapter.TaskStore(root);
-  const projects = new fsAdapter.ProjectStore(root);
+  const { tasks, projects } = storageFor(root);
   const project = () => fsAdapter.checkProjectName(required(v.project, 'project'));
   const id = () => fsAdapter.checkTaskId(required(v.id, 'id'));
 
@@ -223,6 +186,7 @@ export async function main(argv: string[]): Promise<number> {
           return 0;
         }
         if (sub === 'init') {
+          const { draftProfile } = await import('./profile-draft.ts');
           const name = project();
           const repo = v.repo ?? (await projects.read(name)).repo;
           const path = await fsAdapter.writeProfileDraft(root, name, await draftProfile(name, repo));
@@ -259,7 +223,7 @@ export async function main(argv: string[]): Promise<number> {
         }
         break;
       case 'serve': {
-        const port = v.port === undefined ? 4318 : Number(v.port);
+        const port = v.port === undefined ? Number(process.env.FACTORY_HEALTH_PORT ?? 4318) : Number(v.port);
         if (!Number.isInteger(port) || port < 1 || port > 65535)
           throw new UsageError(`invalid port: ${v.port}`);
         await serveHealth(root, port);
@@ -267,8 +231,34 @@ export async function main(argv: string[]): Promise<number> {
       }
       case 'doctor':
         return (await doctor(root)) ? 0 : 1;
-      case 'task':
-        return await taskCommand(sub, { driver, tasks, project, id, v, root });
+      case 'task': {
+        const execute = () => taskCommand(sub, { driver, tasks, project, id, v, root });
+        const exclusive = new Set([
+          'record-verdict',
+          'classify',
+          'prepare-worktree',
+          'verify',
+          'review',
+          'draft-pr',
+          'run',
+          'approve',
+          'reject',
+          'revise',
+          'open-pr',
+        ]);
+        if (exclusive.has(sub ?? '')) {
+          const serving = await access(join(root, 'backend.lock')).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return false;
+              throw error;
+            },
+          );
+          if (serving) return await taskViaBackend(sub!, project(), id(), v, driver);
+          return await tasks.withLock(project(), id(), execute);
+        }
+        return await execute();
+      }
     }
     throw new UsageError(`unknown command: ${[command, sub].filter(Boolean).join(' ')}`);
   } catch (error) {
@@ -276,6 +266,70 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`error: ${message}\n`);
     if (error instanceof UsageError) process.stderr.write('Run `factory --help` for usage.\n');
     return error instanceof UsageError ? 2 : 1;
+  }
+}
+
+async function taskViaBackend(
+  action: string,
+  project: string,
+  id: string,
+  values: Record<string, string | boolean | undefined>,
+  driver: Driver,
+): Promise<number> {
+  if (!['run', 'revise', 'approve', 'reject', 'open-pr'].includes(action))
+    throw new DriverError(
+      'This individual step requires the backend to be stopped. Use run or revise while it is serving.',
+    );
+  const { backendCall } = await import('@factory/backend/client');
+  const { closeBackendClient } = await import('@factory/backend/client');
+  const text = (key: string) => (typeof values[key] === 'string' ? (values[key] as string) : undefined);
+  const request = {
+    project,
+    id,
+    action,
+    head: text('head'),
+    note: text('note'),
+    draft: Boolean(values.draft),
+    accept_blocking: Boolean(values['accept-blocking']),
+    max_attempts: maxAttempts(text('max-attempts')),
+  };
+  try {
+    if (action === 'approve') required(request.head, 'head');
+    if (action === 'revise' || action === 'reject') required(request.note, 'note');
+    if (action !== 'run' && action !== 'revise') {
+      out((await backendCall('ExecuteTask', request, 300_000)).text);
+      return 0;
+    }
+    const accepted = JSON.parse((await backendCall('StartRun', request)).json) as { id: string };
+    let previous = '';
+    for (;;) {
+      const run = JSON.parse((await backendCall('GetBackground', { project, id })).json) as {
+        runId: string;
+        running: boolean;
+        logTail?: string;
+        state: string;
+        error?: string;
+      };
+      if (run.runId !== accepted.id)
+        throw new DriverError('The latest run changed; inspect the task evidence');
+      if (run.logTail && run.logTail !== previous && !values.quiet) {
+        process.stderr.write(
+          run.logTail.startsWith(previous) ? run.logTail.slice(previous.length) : `\n${run.logTail}`,
+        );
+        previous = run.logTail;
+      }
+      if (!run.running) {
+        if (run.state !== 'completed') throw new DriverError(run.error ?? `Run ${run.state}`);
+        const task = await driver.deps.tasks.read(project, id);
+        out(task.stage);
+        if (task.stage === 'blocked') return 3;
+        process.stderr.write(`\n${gateText(await driver.gate(project, id))}\n`);
+        return 0;
+      }
+      await new Promise((done) => setTimeout(done, 500));
+    }
+  } finally {
+    closeBackendClient();
   }
 }
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Factory engine health API
-  version: 1.0.0
+  version: 1.1.0
 paths:
   /health:
     get:
@@ -20,7 +20,9 @@ paths:
                   task_store:
                     enum: [available, not_initialized, unavailable]
                   telemetry_database:
-                    const: not_configured
+                    enum: [not_configured, available, unavailable]
+                  artifact_store:
+                    enum: [available, unavailable]
                   integrations:
                     type: array
                     maxItems: 0

@@ -1,0 +1,42 @@
+syntax = "proto3";
+package factory.v1;
+
+// Canonical record snapshots remain validated by @factory/core's Zod schemas.
+// The envelope avoids a second, lossy copy of the task-file schema in protobuf.
+message Empty {}
+message Target { string project = 1; string id = 2; }
+message Snapshot { string json = 1; }
+message Text { string text = 1; }
+message Submission { string project = 1; string prompt = 2; }
+message Command {
+  string project = 1;
+  string id = 2;
+  string action = 3;
+  string note = 4;
+  string head = 5;
+  bool accept_blocking = 6;
+  bool draft = 7;
+  uint32 max_attempts = 8;
+}
+message Assignment {
+  string project = 1;
+  string email = 2;
+  string team = 3;
+  repeated string tags = 4;
+}
+service Factory {
+  rpc GetDiagnostics(Empty) returns (Snapshot);
+  rpc GetTeam(Target) returns (Snapshot);
+  rpc GetGitUser(Target) returns (Text);
+  rpc SaveAssignment(Assignment) returns (Text);
+  rpc ListProjects(Empty) returns (Snapshot);
+  rpc ListTasks(Target) returns (Snapshot);
+  rpc GetTask(Target) returns (Snapshot);
+  rpc GetGate(Target) returns (Snapshot);
+  rpc GetDiff(Target) returns (Text);
+  rpc SubmitTask(Submission) returns (Text);
+  rpc ExecuteTask(Command) returns (Text);
+  rpc StartRun(Command) returns (Snapshot);
+  rpc GetBackground(Target) returns (Snapshot);
+  rpc ClearLog(Target) returns (Text);
+}

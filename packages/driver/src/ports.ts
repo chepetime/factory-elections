@@ -30,7 +30,7 @@ export interface GitPort {
 export interface ShellPort {
   runShell(
     command: string,
-    options: { cwd: string; onOutput?: (chunk: string) => void },
+    options: { cwd: string; captureLimit?: number; onOutput?: (chunk: string) => void },
   ): Promise<{ code: number; stdout: string; stderr: string }>;
 }
 

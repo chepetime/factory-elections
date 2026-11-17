@@ -13,6 +13,8 @@
     "@factory/adapters-process": "workspace:*",
     "@factory/core": "workspace:*",
     "@factory/driver": "workspace:*",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@factory/backend": "workspace:*",
+    "@factory/adapters-data": "workspace:*"
   }
 }

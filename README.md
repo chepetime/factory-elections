@@ -1,240 +1,211 @@
-# factory-elections
+# Software Factory
 
-A personal software factory that runs on your Mac. You give it a task for a git repository. It classifies the task, writes the change in an isolated git worktree, runs the repository's checks, and has a second model review the diff. Then it **stops and waits for you**. Nothing is pushed and no pull request is opened until you approve the exact commit you reviewed.
+Run a coding task against a local Git repository: classify it, implement it in an isolated worktree, run checks, and review the diff. The workflow stops for approval of the exact reviewed commit before pushing or opening a pull request.
 
-```
-intake → classify → worktree → code → verify ─┬→ review → YOUR APPROVAL → push + pull request
-                       │                  ↑    │
-                       └ unclear: stops   └────┘ verification failed: retry on a stronger model
-```
-
-It is a command-line tool (`factory`). It descends from the ideas in the sibling `devin-factory` repository; see [the feature inventory](docs/feature-inventory.md) for the long-term plan.
+Each computer is an independent installation. Clone this repository and your target project on the new machine, then follow the setup below. Projects, task history, credentials, and storage are local to that computer; no synchronization is required.
 
 ## Requirements
 
-- macOS (tested on macOS 27; Linux should work but is untested)
-- Node.js 26 or later (26.13.1 LTS tested), and pnpm 12 (the repository pins pnpm 12.18.0 in `packageManager`)
-- git
-- GitHub CLI (`gh`), signed in to an account that can push to your repositories and open pull requests
-- Access to Claude models: either a signed-in Claude Code installation (`claude`), or an `ANTHROPIC_API_KEY`
+This guide targets **macOS**. Linux and Windows are not verified installation targets.
 
-Model calls are billed to whichever Claude account or API key is active. A small task costs roughly $0.10–$0.50 with the default ladders.
+- **Node.js 26** (`.node-version`) and **pnpm 12.18.0** (`package.json`). [Node installation](https://nodejs.org/en/download).
+- **Git**, with a commit name/email configured, and **GitHub CLI** (`gh`).
+- **Docker with Compose**, supplied by Docker Desktop or OrbStack. Start its engine before setup.
+- **Claude access**: a signed-in Claude Code installation, or an `ANTHROPIC_API_KEY` available to the backend process. [Claude setup](https://code.claude.com/docs/en/setup).
 
-## Install
+GitHub authentication must allow access to the target repository and, when requested, pushing a branch and creating a PR. Model calls use the active Claude account or API key and incur charges.
+
+## 1. Install and authenticate
+
+Install Node 26 and your Docker runtime first. With Homebrew available, the remaining tools can be installed with:
 
 ```sh
-# Prerequisites, if you don't have them (pick your own Node manager if you prefer)
-brew install node pnpm gh git
+brew install git gh
+brew install --cask claude-code
+npm install -g pnpm@12.18.0
+```
+
+Verify the tools and authenticate on **this machine**:
+
+```sh
+node --version          # v26.x
+pnpm --version          # 12.18.0
+docker info             # must connect to the engine
+docker compose version
 gh auth login
-claude            # sign in once, or: export ANTHROPIC_API_KEY=...
-
-# The factory
-git clone <this repository> factory-elections
-cd factory-elections
-pnpm run setup
+gh auth setup-git
+claude                  # complete sign-in, then exit the interactive session
 ```
 
-`pnpm run setup` (or `npm run setup`) does three things. It installs dependencies, links `factory` into `~/.local/bin` (set `FACTORY_BIN_DIR` to use another directory), and runs `factory doctor`. If that directory isn't on your `PATH`, it prints the line to add to `~/.zshrc`. It's safe to rerun. Note that `pnpm setup` without `run` is pnpm's own built-in command, so it won't run this script.
+For API-key authentication, supply `ANTHROPIC_API_KEY` securely in the terminal/environment used to start the backend. Do not put it in this repository. An agent should report an authentication step that needs the owner rather than inventing credentials.
 
-`doctor` checks Node, git, the GitHub CLI sign-in, Claude access and the data directory, and tells you how to fix anything that fails.
-
-There is no build step. Node runs the TypeScript sources directly. After `git pull`, run `pnpm install` again.
-
-## Configure a repository
-
-The factory works on **registered projects**. Each project has a **profile** that you approve. The profile holds the commands that verify a change and the paths and commands the coder must never touch.
+Clone the factory and install it:
 
 ```sh
-factory project add --name myapp --repo /Users/me/code/myapp
-factory profile init --project myapp      # prints the path of a drafted profile.yaml
+mkdir -p "$HOME/code"
+git clone https://github.com/chepetime/factory-elections.git "$HOME/code/factory-elections"
+cd "$HOME/code/factory-elections"
+
+export PATH="$HOME/.local/bin:$PATH"
+pnpm run setup
+factory doctor
 ```
 
-Open the drafted file (by default `~/.local/share/factory/myapp/profile.yaml`), check every value, then set `approved_at`:
+`pnpm run setup` installs locked dependencies, links `factory` into `~/.local/bin`, and runs the environment checks. Use `pnpm run setup`, not pnpm's unrelated `pnpm setup` command. Add the PATH export to your shell configuration for future terminals. If setup reports a failed check, resolve that check and rerun `factory doctor`.
+
+The backend and CLI run TypeScript directly with Node. The web app builds when started with `pnpm web`.
+
+## 2. Initialize local data storage
+
+Run these commands from the **factory checkout**, before starting the backend:
+
+```sh
+export FACTORY_ROOT="$HOME/.local/share/factory"
+mkdir -p "$FACTORY_ROOT"
+
+pnpm data:up
+pnpm data:migrate
+pnpm data:status
+```
+
+`data:up` starts **Postgres and SeaweedFS/S3 only**, each with a persistent Docker volume. Next.js, the backend, workers, repositories, and worktrees stay on macOS.
+
+`data:migrate` initializes and activates storage even on an empty installation. With existing file-based records it imports and verifies them, preserving their source files. With the same storage already active, it leaves current database state intact. It requires exclusive access during a first import, so stop the backend and any standalone task workers beforehand.
+
+Two private configuration files are generated:
+
+| File | Purpose |
+| --- | --- |
+| `.factory-data.env` in the factory checkout | Docker database/S3 credentials and host ports |
+| `$FACTORY_ROOT/storage.json` | Backend/CLI connections to those services |
+
+Keep these files on this machine. On another computer, generate new credentials and volumes through the same setup flow. Existing local volumes must continue using their original credentials. Use the same `FACTORY_ROOT` for all CLI and app commands; the default is the path shown above.
+
+## 3. Register the target project
+
+Clone the repository you want the factory to work on, or use an existing local checkout. Substitute its **absolute path** and a local project name:
+
+```sh
+export TARGET_REPO="/absolute/path/to/your/project"
+export FACTORY_PROJECT="my-app"
+
+git -C "$TARGET_REPO" remote get-url origin
+git -C "$TARGET_REPO" status --short
+git -C "$TARGET_REPO" config user.name
+git -C "$TARGET_REPO" config user.email
+
+factory project add --name "$FACTORY_PROJECT" --repo "$TARGET_REPO"
+factory profile init --project "$FACTORY_PROJECT"
+```
+
+Project names contain only letters, numbers, hyphens, and underscores. The repository needs a GitHub `origin`, an existing local base branch, and a clean working tree before running a task. Configure a Git commit name/email if the checks above return empty values.
+
+The last command prints the drafted profile path, normally `$FACTORY_ROOT/my-app/profile.yaml`. Review it against the target repository:
+
+- `repo.base_branch.value` must name the branch to start from and target with PRs.
+- `commands.test` must install dependencies with the repository's lockfile and run its tests in a fresh worktree.
+- `commands.full_check` must run the remaining required checks.
+- `confirmed.forbidden_paths` and `confirmed.forbidden_commands` define the coder's limits.
+- Set `approved_at` to the review date as a quoted string, such as `'2026-11-17'`, after reviewing the profile.
+
+For a pnpm repository, commands might be:
 
 ```yaml
-project: myapp
-approved_at: '2026-11-13' # the factory refuses to work until this is set
-repo:
-  base_branch:
-    value: main # PRs target this branch; worktrees start from it
-    source: origin/HEAD
 commands:
-  test: pnpm install --frozen-lockfile && pnpm run test # runs first, in the task worktree
-  full_check: pnpm run lint # runs second
-confirmed:
-  forbidden_paths: [.env, .github/workflows/, infra/] # exact path, "dir/" prefix, or * glob
-  forbidden_commands: [terraform apply, npm publish] # substrings the coder may not run
-design_sources: []
-qa_targets: []
+  test: pnpm install --frozen-lockfile && pnpm run test
+  full_check: pnpm run lint
 ```
+
+Use the target project's actual commands. The profile draft is evidence-based but may need changes; placeholder or missing verification commands must be resolved before running work.
 
 ```sh
-factory profile check --project myapp     # "Profile valid: myapp"
+factory profile check --project "$FACTORY_PROJECT"
+factory project list
+factory task list --project "$FACTORY_PROJECT"
 ```
 
-Both commands run with `/bin/sh -c` in a fresh worktree, so `test` must install dependencies first. Verification fails if the commands leave uncommitted, non-ignored files, so use lockfile-respecting installs.
+Profile validation should pass, the project should appear, and a new project's task list should be `[]`.
 
-The repository needs a GitHub `origin` remote, and the local base branch must exist. The working tree must be clean when a task starts: the factory never touches your checkout, but it creates the task branch from it.
+## 4. Start and verify
 
-### Where data lives
-
-| What                         | Where                                                                       |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| Data root                    | `$FACTORY_ROOT`, default `~/.local/share/factory`                           |
-| Project record               | `<root>/<project>/project.json`                                             |
-| Profile                      | `<root>/<project>/profile.yaml`                                             |
-| Task record (the one source) | `<root>/<project>/tasks/<id>/task.json`                                     |
-| Task worktree                | `<root>/<project>/worktrees/<id>` on branch `factory/<id>`                  |
-| Models, prompts, loop        | `definitions/` in this repository (edit the YAML and prompts to tune steps) |
-
-## Run a task
+From the factory checkout, with Docker running:
 
 ```sh
-ID=$(factory intake --project myapp "Add a --verbose flag to the export command, with a test.")
-factory task run --project myapp --id "$ID"
+pnpm data:up
+pnpm web -- --dev
 ```
 
-`task run` does every automated step and prints the approval gate:
+Open **http://localhost:3000**. Keep this terminal running. The launcher starts or reuses the authenticated backend. For production mode, use `pnpm web`, which builds the web app first.
 
-```
-Task 71d452ef-… — stage: awaiting-approval
-Branch factory/71d452ef-… → main, head 7f4fed4364a3
- src/export.ts      | 12 ++++++++++--
- src/export.test.ts | 18 ++++++++++++++++++
-Verification: passed at 7f4fed4364a3
-Review (7f4fed4364a3): approve — Adds the flag and a test …
-  [nit] src/export.ts: …
-Pull request draft: Add a --verbose flag to the export command
-    ## Summary …
-Model attempts: 4, estimated cost: $0.29
-
-Next, after reading `factory task diff`:
-  approve:  factory task approve --project myapp --id 71d452ef-… --head 7f4fed4364a3
-  revise:   factory task revise --project myapp --id 71d452ef-… --note "<what to change>"
-  reject:   factory task reject --project myapp --id 71d452ef-… --note "<why>"
-```
-
-Read the change with `factory task diff …`, or open the worktree in your editor. Then choose one:
+In another terminal, verify the installation without spending model credits:
 
 ```sh
-factory task revise  --project myapp --id "$ID" --note "Also document the flag in README"   # coder → verify → review again
-factory task approve --project myapp --id "$ID" --head 7f4fed4364a3 [--note "..."]
-factory task open-pr --project myapp --id "$ID" [--draft]    # pushes factory/<id> and prints the PR URL
+curl --fail http://127.0.0.1:4318/health
+curl --fail http://localhost:3000/api/projects
 ```
 
-The pull request title and description are drafted after review and shown at the gate, so you approve them together with the code. `factory task draft-pr` redrafts them for the current commit.
+Health should report `engine: running` and `task_store`, `telemetry_database`, and `artifact_store` as `available`. The project API and sidebar should show your registered project. The Settings page shows environment, profile, and storage checks. **Setup is complete at this point; a paid task is not required to verify it.**
 
-`approve` needs the commit you reviewed (`--head`). If anything changes after you look, approval is refused and you review again. `open-pr` re-checks every gate before pushing.
+Default ports:
 
-If the classifier finds the task unclear, too large for one PR, or in need of research, `task run` stops before writing any code. It exits with status 3 and prints the questions; submit a clearer task.
+| Service | Local address |
+| --- | --- |
+| Web app | `http://localhost:3000` |
+| Backend gRPC | `127.0.0.1:4319` |
+| Health | `http://127.0.0.1:4318/health` |
+| Postgres | `127.0.0.1:15432` |
+| S3 file storage | `http://127.0.0.1:18333` |
 
-## Web app
+For backend-only use, run `pnpm backend` or `factory serve`. The web app calls the backend over gRPC; common CLI task actions also use it while it is running. REST currently exposes project/task lists and system status, not complete CRUD for every entity.
+
+## Run work when requested
+
+Use the web app's New task form, or:
 
 ```sh
-pnpm web          # builds, then serves http://127.0.0.1:4317 and the health API on :4318
-pnpm web -- --dev # development mode with hot reload, no build step
+TASK_ID=$(factory intake --project "$FACTORY_PROJECT" "Describe the requested change and its acceptance criteria")
+factory task run --project "$FACTORY_PROJECT" --id "$TASK_ID"
+factory task diff --project "$FACTORY_PROJECT" --id "$TASK_ID"
+factory task gate --project "$FACTORY_PROJECT" --id "$TASK_ID"
 ```
 
-Open <http://localhost:3000>. Ctrl-C stops both servers. The app reads and acts only through the `factory` CLI and keeps no state of its own, so the CLI and the web app always agree. It uses the same data root (`FACTORY_ROOT`), so `FACTORY_ROOT=/tmp/factory-demo pnpm web` shows the demo data.
-
-### Component library and Storybook
-
-The in-app gallery is at `/components`. It includes the free affectUI catalog and the original factory components.
+After reviewing the diff, checks, findings, and drafted PR text, approve the actual head shown by the gate:
 
 ```sh
-pnpm storybook        # isolated component workshop at http://127.0.0.1:6006
-pnpm storybook:build  # static build in apps/web/storybook-static
-pnpm storybook:test   # browser interaction and accessibility checks, light and dark
+REVIEWED_HEAD="paste-the-reviewed-commit-sha"
+factory task approve --project "$FACTORY_PROJECT" --id "$TASK_ID" --head "$REVIEWED_HEAD"
+factory task open-pr --project "$FACTORY_PROJECT" --id "$TASK_ID" --draft
 ```
 
-For a fresh checkout, run `pnpm --filter @factory/web exec playwright install chromium` before the browser tests. Regular `pnpm test` keeps running the unit/CLI suite without launching a browser.
+For changes, use `factory task revise --project "$FACTORY_PROJECT" --id "$TASK_ID" --note "What to change"`. Use `factory --help` for the full command list. Opening a PR is a separate explicit action after approval.
 
-See [Storybook workflow](docs/storybook.md), [component patterns](docs/frontend-component-patterns.md), and the [MIT source inventory](resources/affect-ui-free-components.json).
+## Restart, update, and recover
 
+- **Later startup:** start Docker, enter the factory checkout, run `pnpm data:up`, then `pnpm web -- --dev` or `pnpm web`.
+- **Stop apps:** Ctrl-C stops the launcher-owned web/backend processes. The backend drains accepted work, so shutdown may wait for an active run. A backend the launcher reused is left running.
+- **Stop storage:** after the apps stop, `pnpm data:down` stops the services and preserves their volumes.
+- **Update:** stop the apps, update this checkout, run `pnpm install --frozen-lockfile`, then start data services and apps again. Existing project registration and storage remain local.
 
-- **Home:** your projects, engine health, and placeholders for planned views.
-- **Project page:** submit a task (by default it starts the run straight away) and see every task with its stage, readiness and blockers.
-- **Task page:**
-  - the diff, verification output, review findings, model attempts with cost, and the timeline;
-  - **Approve**, which sends the exact commit shown on the page;
-  - **Revise** with a note, **Reject**, and **Open pull request** (draft by default).
-  - Runs and revisions continue in the background. The page shows their log and refreshes until they finish.
+| Problem | Action |
+| --- | --- |
+| `factory: command not found` | Add `~/.local/bin` to PATH or use `node bin/factory` from this checkout. |
+| Backend/projects unavailable | Verify Docker with `docker info`, run `pnpm data:up`, and start the apps with `pnpm web -- --dev`. Confirm every process uses the same `FACTORY_ROOT`. |
+| Port already occupied | Identify the existing listener. Reuse the correct installation or stop your old instance; do not start a second owner of the same data root. |
+| Profile invalid | Review the printed profile path, actual commands, base branch, and `approved_at`; rerun `factory profile check`. |
+| Ownership lock after an abrupt exit | Confirm the old process and its child workers stopped before removing a stale lock. See the recovery guide below. |
+| A check needs downloads outside npm | The coder sandbox currently permits `registry.npmjs.org`. Additional hosts require an intentional sandbox change. |
 
-The app accepts requests only for `127.0.0.1` or `localhost`, and accepts form submissions only from its own pages. Every action runs the same CLI command you would type, so the approval rules are identical.
+Automatic recovery of interrupted steps, worktree cleanup, and rebasing are not implemented. Back up the database, artifact storage, host profiles, and repositories together as described in the storage guide.
 
-## What works today
-
-| Area                | Status                                                                                                                                                                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Intake and records  | Works. `intake`, `task show`, `task list`; one JSON task file holds stage, verdict, attempts, costs, verification, review, approval, PR and an event timeline.                                                                         |
-| Projects, profiles  | Works. `project add/list`, `profile init/check`. You approve profiles by editing `approved_at`.                                                                                                                                         |
-| Classification      | Works (Claude Haiku). States kind, size, readiness and blockers. Blocked tasks stop before any code.                                                                                                                                    |
-| Coding              | Works (Claude Sonnet, climbing to Opus). Runs in its own worktree and branch. The factory commits; the coder cannot push, use `gh`, switch branches, run forbidden commands, edit forbidden paths, or use files outside the worktree. |
-| Verification        | Works. Runs the profile's `test` and `full_check`. Failures feed the output to the next, stronger attempt (default up to 3 attempts).                                                                                                    |
-| Review              | Works (Claude Sonnet, read-only). Findings are graded blocking, major, minor or nit. Blocking findings need `--accept-blocking` to approve.                                                                                              |
-| Human gate          | Works. `gate`, `diff`, `approve`, `revise`, `reject`. Approval is bound to the reviewed commit.                                                                                                                                        |
-| Pull request        | Works through `gh pr create`, after approval only. A pr-writer step (Claude Sonnet, read-only) drafts the title and a Summary / Evidence / Merge Danger description after review; the factory appends its record in a collapsed footer. |
-| Health API          | `factory serve` serves `GET http://127.0.0.1:4318/health`.                                                                                                                                                                             |
-| Definition checks   | `definition check-step/check-ladder/check-loop`, `verdict check`, `classifier run`, and the individual step commands in `factory --help`.                                                                                             |
-| Web app             | Works locally (`pnpm web`). Projects, tasks, task detail with diff, verification, review, cost and timeline; submit, run, revise, approve, reject and open PR. Placeholder cards remain for planned views.                          |
-| Everything else     | Not built: dispatcher/queue, PR tending, slicing, research route, QA step, telemetry store, retros, inbox. See [the feature inventory](docs/feature-inventory.md).                                                                             |
-
-## Limitations
-
-- **One task at a time, on demand.** There is no queue or background service. `task run` runs in the foreground and takes minutes.
-- **Shell sandboxing is a first guardrail.** The coder's Bash calls are screened for forbidden command substrings, and they run in the Agent SDK's macOS sandbox. Commands can write only inside the worktree and the pnpm/npm caches, and can reach only `registry.npmjs.org`. They can still *read* most of your home directory. Commands that need other hosts (other registries, `git fetch`, downloads) fail inside the sandbox; widen `sandboxFor` in `packages/adapters-claude` if a repository needs them. If the sandbox can't start, the coder step fails instead of running unsandboxed. Use the factory only on repositories and prompts you trust.
-- **No break-glass rung yet.** The Fable rung in `definitions/ladders/coder.yaml` is marked `requires_human_approval`, and nothing in the CLI grants that approval yet, so it is never used.
-- **The PR body is generated from the task record**, not written by a model.
-- **Worktrees and branches are not cleaned up.** Remove them yourself when a task is finished (see Troubleshooting).
-- **Costs are estimates** reported by the Agent SDK. "unknown" means the SDK reported none; it is not zero.
-- **No resume of an interrupted step.** If `task run` is killed while coding, the task stays in `coding`. Use `task revise` to try again on the same worktree.
-- Rebasing onto a moved base branch is not automatic. The PR shows conflicts, and you resolve them yourself.
-
-## Troubleshooting
-
-| Symptom                                                                    | Fix                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doctor` says Claude is not signed in                                      | Run `claude` and sign in, or `export ANTHROPIC_API_KEY=…` in the shell that runs `factory`.                                                                                                        |
-| `model run failed: …` (authentication, rate limit, overloaded)            | Check `claude auth status`, wait, then `factory task revise … --note "retry"` (if a worktree exists) or rerun `task run`.                                                                         |
-| `invalid profile: approved_at: …`                                          | Review `profile.yaml` and set `approved_at` to a date string.                                                                                                                                       |
-| `task repository has uncommitted changes`                                  | Commit or stash in your own checkout. The factory needs a clean repository to branch from.                                                                                                          |
-| `worktree path already exists` / `branch already exists`                   | A previous attempt left them. Remove both (below) or submit a new task.                                                                                                                             |
-| `the change commits generated files: …`                                     | The coder committed build output or caches (`*.tsbuildinfo`, `.next/`, `node_modules/`, `coverage/`, `.DS_Store`, …). Add them to the repository's `.gitignore` and revise the task so it removes them from the change.                       |
-| `verification left uncommitted changes: …`                                 | Your test command writes files git doesn't ignore (lockfiles, build output). Use `npm ci` / `pnpm install --frozen-lockfile`, or add the outputs to `.gitignore`.                                  |
-| `verification still failing after N coder attempt(s)`                      | Read `factory task show … ` (`verification.output_tail`). Fix the profile commands if they are wrong, or `task revise` with guidance.                                                              |
-| `cannot approve: … older commit` or `--head must be …`                     | The branch changed after you looked. Run `factory task gate …` and approve the head it shows.                                                                                                     |
-| `gh pr create failed: … known GitHub host`                                 | `origin` must point at GitHub, and `gh auth status` must succeed. Fix it, then rerun `task open-pr`. The task stays `approved`, and pushing again is safe.                                         |
-| `node: … ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` or similar                     | Node is older than 26. Check `node --version`.                                                                                                                                                      |
-| `Cannot find package '@factory/…'` or `'zod'`                              | Run `pnpm install` in the repository.                                                                                                                                                               |
-| Web page says `Engine unavailable`                                         | Start the app with `pnpm web`, which also runs `factory serve`, or run `factory serve` yourself.                                                                                                    |
-| Web page says `Projects unavailable` or `Tasks unavailable`               | Check that `factory project list` works in a terminal. If you start Next.js yourself, set `FACTORY_CLI_SCRIPT` to the absolute path of `bin/factory`.                                               |
-| `Forbidden` (403) in the browser                                           | Open `http://localhost:3000`. Other host names are refused on purpose.                                                                                                   |
-| `EADDRINUSE` on 3000                                                       | Another copy is running. Stop it, or find it with `lsof -i :3000`.                                                                                                                                  |
-
-To clean up a finished task's worktree and branch (run in your repository):
+## Development and reference
 
 ```sh
-git worktree remove ~/.local/share/factory/<project>/worktrees/<id>
-git branch -D factory/<id>
+pnpm test          # scripted models; no paid calls; storage tests skipped
+pnpm data:test     # real Postgres/S3 tests in isolated schemas; requires data:up
+pnpm typecheck
+pnpm lint
 ```
 
-## Development
-
-```sh
-pnpm test           # CLI tests (scripted model, temp git repos, fake GitHub) and web tests (fake CLI); no network or model calls
-pnpm check          # prettier, oxlint (warnings denied), tsc, tests
-```
-
-| Path                       | Contents                                                                                     |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `packages/core`            | Pure domain: schemas, readiness, gates, PR text. Lint forbids I/O imports.                   |
-| `packages/adapters-*`      | Filesystem store, git, GitHub CLI, process spawning, Claude Agent SDK runner.                |
-| `packages/driver`          | The workflow (classify → … → open PR) over injected ports.                                   |
-| `apps/cli`                 | `factory` command, `serve`, `doctor`, profile drafting.                                      |
-| `apps/web`                 | Next.js web app (App Router, shadcn/ui) over the CLI; `pnpm web` starts it.                  |
-| `definitions/`             | Step, ladder and loop YAML and step prompts.                                                 |
-| `factory.plain`            | Specification of the CLI behaviour; `frontend.plain` specifies the web app.        |
-| `resources/`               | JSON Schema and OpenAPI contracts referenced by the specs.                                   |
-| `docs/adr/`                | Decisions. [ADR 0002](docs/adr/0002-hand-written-v1.md) explains why v1 is hand-written.     |
-
-The `.plain` files are the specification. Change them along with the code. They were written for the turri renderer, which is not available on this machine. `test_scripts/` and `scripts/setup-agent-env.mjs` are turri pulse helpers and aren't needed to run or test the factory. See [the handoff](docs/HANDOFF.md) for project status.
+- [Docker storage, migration, and backups](docs/docker-storage.md)
+- [Backend operation and interruption recovery](docs/local-backend.md)
+- [Storybook](docs/storybook.md) for component development

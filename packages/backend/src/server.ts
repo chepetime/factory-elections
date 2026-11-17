@@ -1,0 +1,197 @@
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Server, ServerCredentials, status, type handleUnaryCall, type ServiceError } from '@grpc/grpc-js';
+import { z } from 'zod';
+import { ProjectName, type ModelRunner } from '@factory/core';
+import { isReadableDirectory } from '@factory/adapters-fs';
+import { DriverError } from '@factory/driver';
+import { BackendService, Conflict } from './service.ts';
+import { Evidence } from './evidence.ts';
+import type { Check } from './diagnostics.ts';
+import { definition, type Command, type Methods, type Target } from './protocol.ts';
+
+export interface ServerOptions {
+  root: string;
+  port?: number;
+  healthPort?: number;
+  token?: string;
+  runner?: ModelRunner;
+  environment?: () => Promise<Check[]>;
+}
+export async function startBackend(options: ServerOptions) {
+  const { root } = options;
+  await mkdir(root, { recursive: true });
+  const owner = join(root, 'backend.lock');
+  await writeFile(owner, `${JSON.stringify({ pid: process.pid })}\n`, { flag: 'wx', mode: 0o600 }).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EEXIST')
+        throw new Error(
+          `Backend ownership lock exists: ${owner}. Confirm the previous backend and its workers stopped before removing it.`,
+        );
+      throw error;
+    },
+  );
+  const rpc = new Server({
+    'grpc.max_receive_message_length': 1024 * 1024,
+    'grpc.max_send_message_length': 16 * 1024 * 1024,
+  });
+  const service = new BackendService(root, options.runner, options.environment);
+  const health = createServer(async (request, response) => {
+    if (request.method !== 'GET' || request.url !== '/health') {
+      response.writeHead(404).end();
+      return;
+    }
+    try {
+      response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      const storageHealth = service.storage.config ? await service.storage.health() : undefined;
+      response.end(
+        JSON.stringify({
+          engine: 'running',
+          task_store: storageHealth?.postgres ?? (await isReadableDirectory(root)),
+          telemetry_database: storageHealth?.postgres ?? 'not_configured',
+          ...(storageHealth ? { artifact_store: storageHealth.artifacts } : {}),
+          integrations: [],
+        }),
+      );
+    } catch {
+      response.destroy();
+    }
+  });
+  const requests = new Set<Promise<unknown>>();
+  let evidence: Evidence | undefined;
+  try {
+    await service.storage.check();
+    let token = options.token ?? process.env.FACTORY_BACKEND_TOKEN;
+    if (!token) {
+      const path = join(root, 'backend-token');
+      try {
+        await writeFile(path, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      token = (await readFile(path, 'utf8')).trim();
+    }
+    if (token.length < 32) throw new Error('Backend token must contain at least 32 characters');
+    const expected = Buffer.from(`Bearer ${token}`);
+    const instance = randomUUID();
+    await mkdir(join(root, 'logs'), { recursive: true });
+    evidence = new Evidence(join(root, 'logs', `${instance}.jsonl`), instance, service.storage);
+    const trace = evidence;
+    const handlers: { [K in keyof Methods]: (request: Methods[K][0]) => Promise<Methods[K][1]> } = {
+      GetDiagnostics: async () => ({ json: JSON.stringify(await service.diagnostics()) }),
+      GetTeam: async (request) => ({ json: JSON.stringify(await service.team.members(request.project)) }),
+      GetGitUser: async (request) => ({ text: await service.team.userName(request.project) }),
+      SaveAssignment: async (request) => {
+        await service.team.assign(request);
+        return { text: 'Saved' };
+      },
+      ListProjects: async () => ({ json: JSON.stringify(await service.projects.list()) }),
+      ListTasks: async (request) => ({
+        json: JSON.stringify(await service.tasks.list(ProjectName.parse(request.project))),
+      }),
+      GetTask: async (request) => {
+        const t = service.target(request);
+        return { json: JSON.stringify(await service.tasks.read(t.project, t.id)) };
+      },
+      GetGate: async (request) => {
+        const t = service.target(request);
+        const gate = await service.driver().gate(t.project, t.id);
+        return {
+          json: JSON.stringify({
+            task: gate.task,
+            head_sha: gate.headSha,
+            diff_stat: gate.diffStat,
+            blockers: gate.blockers,
+          }),
+        };
+      },
+      GetDiff: async (request) => {
+        const t = service.target(request);
+        return { text: await service.driver().diff(t.project, t.id) };
+      },
+      SubmitTask: async (request) => ({ text: await service.submit(request) }),
+      ExecuteTask: async (request: Command) => ({ text: await service.execute(request) }),
+      StartRun: async (request: Command) => ({ json: JSON.stringify(await service.start(request)) }),
+      GetBackground: async (request: Target) => ({ json: JSON.stringify(await service.background(request)) }),
+      ClearLog: async (request: Target) => {
+        await service.clearLog(request);
+        return { text: 'Dismissed' };
+      },
+    };
+    const implementation: Record<string, handleUnaryCall<unknown, unknown>> = {};
+    for (const name of Object.keys(handlers) as (keyof Methods)[]) {
+      implementation[name] = (call, callback) => {
+        const provided = Buffer.from(String(call.metadata.get('authorization')[0] ?? ''));
+        if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+          callback({ code: status.UNAUTHENTICATED, message: 'Invalid backend credential' });
+          return;
+        }
+        // Inputs are checked by the application services, rather than trusting protobuf defaults.
+        const handler = handlers[name] as (request: unknown) => Promise<unknown>;
+        const execution = trace.span(`rpc.${name}`, { method: name }, () => handler(call.request));
+        requests.add(execution);
+        execution
+          .then(
+            (result) => callback(null, result),
+            (error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              const code =
+                error instanceof z.ZodError
+                  ? status.INVALID_ARGUMENT
+                  : error instanceof Conflict || /locked by another command/.test(message)
+                    ? status.FAILED_PRECONDITION
+                    : error instanceof DriverError
+                      ? status.FAILED_PRECONDITION
+                      : status.INTERNAL;
+              callback({
+                code,
+                message: error instanceof z.ZodError ? 'Invalid request' : message,
+              } as ServiceError);
+            },
+          )
+          .finally(() => requests.delete(execution));
+      };
+    }
+    rpc.addService(definition, implementation);
+    await new Promise<void>((done, reject) => {
+      health.once('error', reject);
+      health.listen(options.healthPort ?? 4318, '127.0.0.1', done);
+    });
+    const port = await new Promise<number>((done, reject) =>
+      rpc.bindAsync(`127.0.0.1:${options.port ?? 4319}`, ServerCredentials.createInsecure(), (error, port) =>
+        error ? reject(error) : done(port),
+      ),
+    );
+    trace.record('server.started', { port, effect: true });
+    let closing: Promise<void> | undefined;
+    return {
+      port,
+      healthPort: (health.address() as { port: number }).port,
+      service,
+      close: () =>
+        (closing ??= (async () => {
+          // Stop acceptance and drain paid work. Client disconnects never cancel a run.
+          await Promise.all([
+            service.drain(),
+            new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),
+            new Promise<void>((done, reject) => health.close((error) => (error ? reject(error) : done()))),
+          ]);
+          // Timed-out RPCs may still be finishing diagnostics; preserve their traces.
+          await Promise.allSettled(requests);
+          trace.record('server.stopped');
+          await trace.close();
+          await service.storage.close();
+          await rm(owner);
+        })()),
+    };
+  } catch (error) {
+    rpc.forceShutdown();
+    health.close();
+    await evidence?.close();
+    await service.storage.close();
+    await rm(owner, { force: true });
+    throw error;
+  }
+}

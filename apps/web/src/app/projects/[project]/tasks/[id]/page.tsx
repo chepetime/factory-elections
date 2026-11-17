@@ -224,7 +224,7 @@ export default async function TaskPage({ params }: { params: Promise<{ project: 
       diff = d.ok ? d.value : undefined;
     } else gateError = g.error;
   }
-  const run = backgroundRun(project, id);
+  const run = await backgroundRun(project, id);
   const busy = run.running || task.stage === 'coding' || task.stage === 'reviewing';
   const hidden = { project, id };
   const blocking = blockingFindings(task);

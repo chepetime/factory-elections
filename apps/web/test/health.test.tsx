@@ -30,6 +30,16 @@ async function render(fetchImpl: HealthSeam['fetch']) {
 afterEach(() => vi.useRealTimers());
 
 describe('engine health panel', () => {
+  it.each(['available', 'unavailable'])(
+    'shows configured Postgres and artifact storage as %s',
+    async (state) => {
+      const body = { ...valid('available'), telemetry_database: state, artifact_store: state };
+      const html = await render(() => json(body));
+      expect(html).toContain('Artifact storage');
+      expect(html).toContain(state === 'available' ? 'Available' : 'Unavailable');
+      expect(html).not.toContain('Not configured');
+    },
+  );
   it.each([
     ['available', 'Available'],
     ['not_initialized', 'Not initialized'],

@@ -131,22 +131,36 @@ test('doctor pnpm check reports the version or an install hint', async () => {
   assert.match(missing.fix ?? '', /brew install pnpm/);
 });
 
-test('serve reports health on 127.0.0.1', async () => {
+test('serve starts the full backend and reports health on 127.0.0.1', async () => {
   const { root } = await env();
-  const child = spawn(BIN, ['serve', '--port', '43187'], { env: { ...process.env, FACTORY_ROOT: root } });
+  const child = spawn(BIN, ['serve', '--port', '43187'], {
+    env: { ...process.env, FACTORY_ROOT: root, FACTORY_BACKEND_PORT: '43189' },
+  });
   try {
-    await new Promise<void>((ok) =>
-      child.stderr.on('data', (d: Buffer) => d.toString().includes('Engine health') && ok()),
-    );
+    await new Promise<void>((ok, reject) => {
+      const timer = setTimeout(() => reject(new Error('Backend readiness timeout')), 5000);
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Backend exited ${code}`));
+      });
+      child.stderr.on('data', (d: Buffer) => {
+        if (d.toString().includes('Factory backend:')) {
+          clearTimeout(timer);
+          ok();
+        }
+      });
+    });
     const body = await (await fetch('http://127.0.0.1:43187/health')).json();
     assert.deepEqual(body, {
       engine: 'running',
-      task_store: 'not_initialized',
+      task_store: 'available',
       telemetry_database: 'not_configured',
       integrations: [],
     });
   } finally {
+    const exited = new Promise((done) => child.once('exit', done));
     child.kill('SIGTERM');
+    await exited;
   }
 });
 

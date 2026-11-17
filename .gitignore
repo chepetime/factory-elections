@@ -18,3 +18,6 @@ apps/web/src/stories/__screenshots__/
 storybook-static/
 test-results/
 .DS_Store
+
+# Local Docker data-service credentials (generated with mode 0600).
+.factory-data.env

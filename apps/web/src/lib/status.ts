@@ -1,93 +1,78 @@
-// Server-only: runs every settings-page check. Environment checks come from `factory doctor`;
-// the engine checks read the health server; each project gets `factory profile check`.
+// The backend owns environment/profile checks; Next.js renders their validated results.
 import 'server-only';
-import { cliScript, listProjects, runCli } from '@/lib/factory';
+import { z } from 'zod';
+import { backendCall } from '@factory/backend/client';
+import { backendError } from '@/lib/factory';
 import { readEngineHealth } from '@/lib/health';
-import { parseDoctor, type StatusCheck, type StatusReport } from '@/lib/status-checks';
+import type { StatusCheck, StatusReport } from '@/lib/status-checks';
 
-function firstLine(text: string): string {
-  return (
-    text
-      .split('\n')
-      .map((l) => l.trim().replace(/^error:\s*/, ''))
-      .find(Boolean) ?? ''
-  );
-}
-
-async function environment(): Promise<StatusCheck[]> {
-  const out = await runCli(['doctor'], 30_000);
-  if (!out)
-    return [
-      {
-        id: 'env-cli',
-        group: 'Environment',
-        name: 'Factory CLI',
-        status: 'fail',
-        detail: 'Not configured',
-        fix: 'Set FACTORY_CLI_SCRIPT to the absolute path of bin/factory, or start the app with `pnpm web`.',
+const Diagnostics = z.object({
+  checked_at: z.string(),
+  data_root: z.string(),
+  environment: z.array(
+    z.object({ name: z.string(), ok: z.boolean(), detail: z.string(), fix: z.string().optional() }),
+  ),
+  profiles: z.array(
+    z.object({ name: z.string(), repo: z.string(), approved: z.boolean(), error: z.string().optional() }),
+  ),
+});
+export async function systemStatus(): Promise<StatusReport> {
+  const [health, diagnostics] = await Promise.all([
+    readEngineHealth(),
+    backendCall('GetDiagnostics', {}, 30_000).then(
+      (reply) => {
+        try {
+          return { ok: true as const, value: Diagnostics.parse(JSON.parse(reply.json)) };
+        } catch (error) {
+          return { ok: false as const, error: backendError(error) };
+        }
       },
-    ];
-  const checks = parseDoctor(out.stdout);
-  if (checks.length === 0)
-    return [
-      {
-        id: 'env-doctor',
-        group: 'Environment',
-        name: 'factory doctor',
-        status: 'fail',
-        detail: firstLine(out.stderr) || `Exited with code ${out.code}`,
-      },
-    ];
-  return checks;
-}
-
-async function engine(): Promise<StatusCheck[]> {
-  const health = await readEngineHealth();
+      (error) => ({ ok: false as const, error: backendError(error) }),
+    ),
+  ]);
   const checks: StatusCheck[] = [
     {
-      id: 'engine-cli',
+      id: 'engine-backend',
       group: 'Engine',
-      name: 'Web app → CLI',
-      status: cliScript() ? 'ok' : 'fail',
-      detail: cliScript()
-        ? 'The web app can run factory commands'
-        : 'FACTORY_CLI_SCRIPT is not an absolute path',
+      name: 'Web app → backend (gRPC)',
+      status: diagnostics.ok ? 'ok' : 'fail',
+      detail: diagnostics.ok ? 'Authenticated local connection' : diagnostics.error,
     },
   ];
-  if (health.status === 'unavailable') {
+  checks.push({
+    id: 'engine-health',
+    group: 'Engine',
+    name: 'Health server',
+    status: health.status === 'ok' ? 'ok' : 'fail',
+    detail: health.status === 'ok' ? 'Running' : 'Unavailable',
+    fix: health.status === 'ok' ? undefined : 'Start `pnpm backend` or `pnpm web`.',
+  });
+  if (health.status === 'ok') {
+    const store = health.health.task_store;
+    if (health.health.telemetry_database !== 'not_configured')
+      checks.push({
+        id: 'engine-postgres',
+        group: 'Engine',
+        name: 'Postgres',
+        status: health.health.telemetry_database === 'available' ? 'ok' : 'fail',
+        detail: health.health.telemetry_database,
+      });
+    if (health.health.artifact_store)
+      checks.push({
+        id: 'engine-artifacts',
+        group: 'Engine',
+        name: 'S3 artifact storage',
+        status: health.health.artifact_store === 'available' ? 'ok' : 'fail',
+        detail: health.health.artifact_store,
+      });
     checks.push({
-      id: 'engine-health',
-      group: 'Engine',
-      name: 'Health server',
-      status: 'fail',
-      detail: 'Not reachable on 127.0.0.1:4318',
-      fix: 'Start it with `factory serve`, or run the app with `pnpm web`.',
-    });
-    return checks;
-  }
-  const store = health.health.task_store;
-  checks.push(
-    {
-      id: 'engine-health',
-      group: 'Engine',
-      name: 'Health server',
-      status: 'ok',
-      detail: 'Running on 127.0.0.1:4318',
-    },
-    {
       id: 'engine-store',
       group: 'Engine',
       name: 'Task store',
       status: store === 'available' ? 'ok' : store === 'not_initialized' ? 'warn' : 'fail',
-      detail:
-        store === 'available'
-          ? 'Available'
-          : store === 'not_initialized'
-            ? 'Not initialized yet'
-            : 'Unavailable',
-      fix: store === 'available' ? undefined : 'Register a project with `factory project add`.',
-    },
-    {
+      detail: store,
+    });
+    checks.push({
       id: 'engine-integrations',
       group: 'Engine',
       name: 'Integrations',
@@ -95,45 +80,38 @@ async function engine(): Promise<StatusCheck[]> {
       detail: health.health.integrations.length
         ? `${health.health.integrations.length} configured`
         : 'None configured',
-    },
-  );
-  return checks;
-}
-
-async function projects(): Promise<StatusCheck[]> {
-  const list = await listProjects();
-  if (!list.ok)
-    return [{ id: 'projects', group: 'Projects', name: 'Projects', status: 'fail', detail: list.error }];
-  if (list.value.length === 0)
-    return [
-      {
+    });
+  }
+  if (diagnostics.ok) {
+    checks.push(
+      ...diagnostics.value.environment.map((c): StatusCheck => ({
+        id: `env-${c.name.toLowerCase().replace(/\W+/g, '-')}`,
+        group: 'Environment',
+        name: c.name,
+        status: c.ok ? 'ok' : 'fail',
+        detail: c.detail,
+        fix: c.ok ? undefined : c.fix,
+      })),
+    );
+    checks.push(
+      ...diagnostics.value.profiles.map((p): StatusCheck => ({
+        id: `project-${p.name}`,
+        group: 'Projects',
+        name: p.name,
+        status: p.approved ? 'ok' : 'fail',
+        detail: p.approved ? `Profile approved · ${p.repo}` : (p.error ?? 'Profile check failed'),
+        fix: p.approved ? undefined : `Review and approve the profile for ${p.name}.`,
+      })),
+    );
+    if (!diagnostics.value.profiles.length)
+      checks.push({
         id: 'projects',
         group: 'Projects',
         name: 'Projects',
         status: 'warn',
         detail: 'No projects registered',
         fix: 'Register one with `factory project add --name <name> --repo <path>`.',
-      },
-    ];
-  return Promise.all(
-    list.value.map(async (p): Promise<StatusCheck> => {
-      const out = await runCli(['profile', 'check', '--project', p.name], 30_000);
-      const ok = out?.code === 0;
-      return {
-        id: `project-${p.name}`,
-        group: 'Projects',
-        name: p.name,
-        status: ok ? 'ok' : 'fail',
-        detail: ok ? `Profile approved · ${p.repo}` : firstLine(out?.stderr ?? '') || 'Profile check failed',
-        fix: ok
-          ? undefined
-          : `Run \`factory profile init --project ${p.name}\`, review the draft, then approve it.`,
-      };
-    }),
-  );
-}
-
-export async function systemStatus(): Promise<StatusReport> {
-  const groups = await Promise.all([environment(), engine(), projects()]);
-  return { checkedAt: new Date().toISOString(), checks: groups.flat() };
+      });
+  }
+  return { checkedAt: diagnostics.ok ? diagnostics.value.checked_at : new Date().toISOString(), checks };
 }

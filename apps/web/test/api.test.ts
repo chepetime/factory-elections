@@ -1,20 +1,11 @@
-// Route handlers against a fake factory CLI script: no real data root, model or network.
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+// Route handlers validate backend snapshots; transport behavior is exercised by backend smoke tests.
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { backendCall } from '@factory/backend/client';
 import { GET as getProjects } from '@/app/api/projects/route';
 import { GET as getTasks } from '@/app/api/projects/[project]/tasks/route';
 
-const dir = mkdtempSync(join(tmpdir(), 'factory-web-'));
-
-function fakeCli(body: string): string {
-  const path = join(dir, `cli-${Math.random().toString(36).slice(2)}.mjs`);
-  writeFileSync(path, body);
-  chmodSync(path, 0o755);
-  return path;
-}
-
+vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+const rpc = vi.mocked(backendCall);
 const task = {
   id: '11111111-2222-4333-8444-555555555555',
   project: 'demo',
@@ -22,58 +13,42 @@ const task = {
   prompt: 'Do it',
   stage: 'queued',
 };
-
-afterEach(() => {
-  delete process.env.FACTORY_CLI_SCRIPT;
-});
-
 const params = (project: string) => ({ params: Promise.resolve({ project }) });
+afterEach(() => vi.resetAllMocks());
 
 describe('project and task read APIs', () => {
-  it('returns validated projects from `project list`', async () => {
-    process.env.FACTORY_CLI_SCRIPT = fakeCli(
-      `if (process.argv.slice(2).join(' ') !== 'project list') process.exit(9);\nconsole.log(JSON.stringify([{ name: 'demo', repo: '/r' }]));`,
-    );
+  it('returns validated project snapshots over the backend bridge', async () => {
+    rpc.mockResolvedValue({ json: JSON.stringify([{ name: 'demo', repo: '/r' }]) });
     const res = await getProjects();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([{ name: 'demo', repo: '/r' }]);
+    expect(rpc).toHaveBeenCalledWith('ListProjects', { project: '' });
   });
-
-  it.each([
-    ['relative script', 'relative/cli.mjs'],
-    ['failing CLI', 'FAIL'],
-    ['invalid JSON', 'BAD'],
-    ['invalid records', 'INVALID'],
-  ])('reports unavailable for a %s without leaking details', async (_name, kind) => {
-    process.env.FACTORY_CLI_SCRIPT =
-      kind === 'relative/cli.mjs'
-        ? kind
-        : fakeCli(
-            kind === 'FAIL'
-              ? `console.error('error: secret /Users/x path'); process.exit(1);`
-              : kind === 'BAD'
-                ? `console.log('nope')`
-                : `console.log(JSON.stringify([{ name: 'bad name!' }]))`,
-          );
-    const res = await getProjects();
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: 'project_source_unavailable' });
-  });
-
-  it('returns validated tasks and rejects invalid project names', async () => {
-    process.env.FACTORY_CLI_SCRIPT = fakeCli(
-      `if (process.argv.slice(2).join(' ') !== 'task list --project demo') process.exit(9);\nconsole.log(JSON.stringify([${JSON.stringify(task)}]));`,
-    );
+  it.each(['unavailable', 'invalid JSON', 'invalid records'])(
+    'reports unavailable for %s without leaking details',
+    async (kind) => {
+      if (kind === 'unavailable') rpc.mockRejectedValue(new Error('secret /Users/x path'));
+      else
+        rpc.mockResolvedValue({
+          json: kind === 'invalid JSON' ? 'nope' : JSON.stringify([{ name: 'bad name!' }]),
+        });
+      const res = await getProjects();
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: 'project_source_unavailable' });
+    },
+  );
+  it('returns validated tasks and rejects invalid project names before calling the backend', async () => {
+    rpc.mockResolvedValue({ json: JSON.stringify([task]) });
     const ok = await getTasks(new Request('http://127.0.0.1/'), params('demo'));
     expect(ok.status).toBe(200);
     expect((await ok.json())[0].id).toBe(task.id);
+    rpc.mockClear();
     const bad = await getTasks(new Request('http://127.0.0.1/'), params('bad name'));
     expect(bad.status).toBe(400);
-    expect(await bad.json()).toEqual({ error: 'invalid_project' });
+    expect(rpc).not.toHaveBeenCalled();
   });
-
-  it('reports task source unavailable on CLI failure', async () => {
-    process.env.FACTORY_CLI_SCRIPT = fakeCli(`process.exit(1)`);
+  it('reports task source unavailable on backend failure', async () => {
+    rpc.mockRejectedValue(new Error('backend down'));
     const res = await getTasks(new Request('http://127.0.0.1/'), params('demo'));
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: 'task_source_unavailable' });

@@ -63,6 +63,11 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 - `project` is a nonempty name containing only ASCII letters, digits, hyphens and underscores; `repo` is an existing absolute directory; `prompt` is nonempty after trimming. Invalid input exits nonzero without creating a :Task:.
 - `--repo` may be omitted when the project is registered; the registered :Project: repository is used.
 
+# exclusive-task-commands
+CLI commands that mutate a task record or worktree (record-verdict, classify, prepare-worktree, verify, review, draft-pr, run, approve, reject, revise and open-pr) acquire `<task-directory>/command.lock` exclusively before acting.
+- The lock contains the CLI PID and is removed on completion or a handled failure. Another command for that task exits nonzero while the lock exists. Read commands remain available.
+- A hard kill may leave a lock. Confirm its owner and child processes have stopped before removing a stale lock; locks are never automatically stolen by age.
+
 # show-task
 `factory task show --project <project> --id <id>` reads the :TaskFile: at `<data-root>/<project>/tasks/<id>/task.json`, prints it as one JSON value followed by a newline, and exits 0.
 - The data root and project name follow `submit-task`; `id` is a UUID. The record conforms to :TaskFile: and its `project` and `id` match the arguments.
@@ -123,7 +128,7 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 # verify-task-worktree
 `factory task verify --project <project> --id <id>` runs the approved profile's `commands.test` and then `commands.full_check` in the task's dedicated worktree.
 - The task and profile are validated as in `show-task` and `check-profile`. The worktree at `<data-root>/<project>/worktrees/<id>` must belong to the task's repository and be on branch `factory/<id>`; the command never falls back to the original repository.
-- Each command runs with `/bin/sh -c`, with its output forwarded to standard error. A nonzero exit stops verification before the next command.
+- Each command runs with `/bin/sh -c`, with its complete output forwarded to standard error. The driver retains only the last 6000 characters (plus a truncation marker) for verification evidence; the process adapter does not duplicate the captured output. A nonzero exit stops verification before the next command.
 - Verification fails when the commands leave uncommitted or untracked, non-ignored files in the worktree.
 - Verification fails when the change adds or modifies generated files: anything under a `node_modules`, `.next`, `.turbo`, `coverage`, `storybook-static` or `test-results` directory, `*.tsbuildinfo`, or `.DS_Store`. Deleting such a file is allowed.
 - If both commands succeed, the command prints `Verification passed: <id>` followed by a newline and exits 0. Invalid input, a missing or mismatched worktree, or a failed command exits nonzero with an error on standard error and no standard output. Verification does not update the :TaskFile: or commit changes.
@@ -143,15 +148,15 @@ Running `factory --help` prints `Usage: factory [options]` and exits with status
 # classify-task
 `factory task classify --project <project> --id <id> --step <path> --ladder <path>` prepares the classifier request, runs it and records its verdict as in `prepare-classifier-run`, `run-classifier-request` and `record-classifier-verdict`.
 - Success prints `Verdict recorded: <id>` followed by a newline and exits 0.
-- The classifier attempt, with its model, effort and reported cost, is appended to `attempts`.
+- The classifier verdict and its attempt, with model, effort and reported cost, are persisted together in one atomic write.
 - A preparation, model, verdict validation or persistence failure exits nonzero with an error on standard error, prints nothing on standard output, and leaves the :TaskFile: unchanged. The command selects no loop and starts no coding.
 - When `--step` and `--ladder` are omitted, `definitions/steps/classifier.yaml` and `definitions/ladders/classifier.yaml` are used.
 
 # serve-engine-health
-`factory serve --port <port>` starts a local HTTP server bound to `127.0.0.1` that serves :EngineHealthApi:; the port defaults to 4318 when omitted.
+`factory serve --port <port>` starts the complete local backend with gRPC on `FACTORY_BACKEND_PORT` (default 4319) and an HTTP :EngineHealthApi: on the selected port (default 4318), both bound to 127.0.0.1. It uses the same lifecycle as `pnpm backend`.
 - `GET /health` reports `engine` as `running`, `telemetry_database` as `not_configured` and `integrations` as an empty array. This reports the server process, not classifier readiness.
 - `task_store` is `available` when the data root from `submit-task` is a readable directory, `not_initialized` when it does not exist, and `unavailable` otherwise. The check changes no files and makes no model calls.
-- Invalid ports or a bind failure exit nonzero with an error on standard error. SIGINT and SIGTERM stop the server.
+- Starting the backend initializes its data root and local credential; health reports the resulting store availability. Invalid ports or bind/ownership failure exit nonzero with an error on standard error. SIGINT and SIGTERM stop acceptance and drain work before stopping both servers.
 
 # add-project
 `factory project add --name <name> --repo <absolute-path>` creates a :Project: and prints `Project added: <name>` followed by a newline, then exits 0.
@@ -190,7 +195,7 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 
 # run-task
 `factory task run --project <project> --id <id> [--max-attempts <n>]` classifies an unclassified task, stops with `stage` `blocked` and exit status 3 unless the readiness action is `continue`, prepares the worktree, runs coder and verification as in `code-task`, then reviews as in `review-task`.
-- It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request.
+- It prints the final stage followed by a newline and writes the approval gate summary to standard error. It never pushes or opens a pull request. A task awaiting approval, approved, rejected or with an opened pull request cannot be run again; use revise for requested changes.
 
 # approval-gate
 `factory task gate --project <project> --id <id>` prints the task prompt, branch, head commit, diff summary, verification and review results, the pull request draft for the current head, estimated cost and the next available actions. `factory task diff` prints the full diff against the base branch. With `--json`, `task gate` prints one JSON object with `task`, `head_sha`, `diff_stat` and `blockers`. Neither changes the task.
@@ -207,3 +212,25 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 - With a `pr_draft` for the current head, the title and body are the draft's. Without one, the title is the prompt's first line without trailing punctuation, and the body is the prompt (truncated to 1200 characters) and the reviewer summary.
 - Either body ends with a collapsed factory record: task id, classifier kind and size, verification result, review verdict and findings, and the approval note.
 - A failed push or pull request creation exits nonzero and leaves `stage` `approved`, so the command can be retried.
+
+# local-backend
+`pnpm backend` starts a loopback gRPC service on port 4319 and the existing health contract on 4318, using the same data root and shared driver composition as the CLI.
+- Effect 3 owns server run fibers, the one-worker semaphore and nested RPC/task/model spans; the core remains pure and the existing async driver is reused.
+- The protobuf service contract is `packages/backend/factory.proto`; canonical task/project JSON snapshots are validated using the core schemas. Every RPC requires the local data root's generated mode-0600 bearer credential or the shared `FACTORY_BACKEND_TOKEN`.
+- Run/revision acceptance persists the command and run state before acknowledging it. At most 32 runs may be queued/active; only one executes. The task command lock is held from acceptance through completion. Client disconnects do not cancel work; shutdown drains accepted runs.
+- Run directories preserve run records, full plain logs and append-only JSONL events, including ordered log entries, Effect trace/span IDs and every model call's reported cost. Unknown costs remain null. SDK-reported failed-result costs are retained in trace events.
+- While the backend ownership lock exists, common CLI mutations (run, revise, approve, reject, open-pr) are forwarded to it; individual mutating steps require the backend to stop. Standalone behavior remains available with no backend lock. Read commands remain available.
+- A new backend reports unfinished evidence as interrupted and never automatically replays it. Hard-killed owners and their children must be confirmed stopped before removing stale backend/task locks and repairing a task stage for recovery. No automatic process-tree cancellation or GitHub retry reconciliation is added.
+
+# backend-diagnostics-and-team
+The backend exposes GetDiagnostics for environment checks and approved project profiles, GetTeam and GetGitUser for repository contributors/name, and SaveAssignment for a member's team and tags.
+- Environment checks use the same collection logic as factory doctor, execute independently in parallel with bounded output and a ten-second process timeout, and make no model calls. They check Claude CLI sign-in only when no API key is set.
+- Team reads use the registered repository and validate project names. Assignment updates validate the project, member email, team and tags; serialize read-modify-write operations within the backend; and persist atomically. Missing team files start empty; invalid existing files fail without overwriting data.
+
+# configured-postgres-and-file-storage
+A root with a valid private storage.json uses the Postgres/S3 storage adapter for task/project records, run/team metadata, full logs/artifacts and trace/cost evidence. All application processes and git worktrees stay on the host; Docker Compose runs only Postgres and the S3-compatible file service with persistent volumes.
+- The CLI and backend select the same configured adapter. Existing core schemas, stage rules, approval head checks and driver ports still apply. Roots without a configuration retain file-mode behavior for isolated tests.
+- Postgres holds JSONB task snapshots with project/stage indexes and validates identities. Run acceptance and its latest pointer are committed together. Per-task command ownership uses a dedicated-session advisory lock.
+- Immutable artifact chunks are uploaded before their size/checksum/index record is committed. Tail reads verify bytes against SHA-256. Model costs and Effect trace metadata are indexed in Postgres, with complete logs/JSONL in S3. Unknown costs remain null.
+- Migration is explicit and refuses an active backend/task owner. It validates and compares source/target records, copies and verifies artifact bytes, and activates the configuration only on success. Original files, profiles and worktrees are preserved. Originals are not dual-written after activation.
+- Missing data services fail explicitly, without reading stale source task files. Shutdown drains work and evidence. This does not add automatic crash recovery or a distributed transaction between Postgres and S3.

@@ -1,10 +1,9 @@
-// Server-only bridge to the factory CLI. The web app keeps no state of its own: every read and
-// every action runs `factory` with Node, without a shell, and validates what comes back.
+// Server-only gRPC bridge. Task state, execution and evidence belong to the local backend.
 import 'server-only';
-import { execFile, spawn } from 'node:child_process';
-import { mkdirSync, openSync, readFileSync, writeFileSync, closeSync, rmSync } from 'node:fs';
+import { backendCall } from '@factory/backend/client';
+import type { Command } from '@factory/backend/protocol';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { NAME_PATTERN, Project, TaskRecord } from '@factory/core';
 
@@ -20,84 +19,45 @@ export function isTaskId(id: string): boolean {
   return UUID.test(id);
 }
 
-/** Absolute path of the factory CLI script, or undefined when it is not configured correctly. */
-export function cliScript(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const script = env.FACTORY_CLI_SCRIPT;
-  if (script === undefined) return resolve(process.cwd(), '..', '..', 'bin', 'factory');
-  return isAbsolute(script) ? script : undefined;
-}
-
 export function dataRoot(env: NodeJS.ProcessEnv = process.env): string {
   return env.FACTORY_ROOT ? resolve(env.FACTORY_ROOT) : join(homedir(), '.local', 'share', 'factory');
 }
 
-function childEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  // Next's own variables must not leak into a CLI child process.
-  delete env.NODE_OPTIONS;
-  delete env.__NEXT_PRIVATE_ORIGIN;
-  return env;
+export function backendError(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  if (code === 14 || (error as NodeJS.ErrnoException)?.code === 'ENOENT')
+    return 'Backend unavailable. Start it with `pnpm backend` or `pnpm web`.';
+  const message =
+    (error as { details?: string })?.details ??
+    (error instanceof Error ? error.message : 'Backend request failed.');
+  return message.replaceAll(dataRoot(), '<data root>');
 }
 
-interface CliOutput {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export function runCli(args: string[], timeoutMs = 60_000): Promise<CliOutput | undefined> {
-  const script = cliScript();
-  if (!script) return Promise.resolve(undefined);
-  return new Promise((done) => {
-    execFile(
-      process.execPath,
-      [script, ...args],
-      { env: childEnv(), timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
-        done({ code, stdout, stderr });
-      },
-    );
-  });
-}
-
-/** The CLI's own error line, without "error: " and with the data root path removed. */
-function cliError(out: CliOutput | undefined, fallback: string): string {
-  if (!out) return 'The factory CLI is not configured (FACTORY_CLI_SCRIPT must be an absolute path).';
-  const line = out.stderr
-    .split('\n')
-    .map((l) => l.trim())
-    .find((l) => l.startsWith('error:'));
-  return (line ? line.replace(/^error:\s*/, '') : fallback).replaceAll(dataRoot(), '<data root>');
-}
-
-async function readJson<T extends z.ZodType>(args: string[], schema: T): Promise<Result<z.infer<T>>> {
-  const out = await runCli(args);
-  if (!out || out.code !== 0) return { ok: false, error: cliError(out, 'The factory CLI failed.') };
-  let parsed: unknown;
+async function readJson<T extends z.ZodType>(
+  method: 'ListProjects' | 'ListTasks' | 'GetTask' | 'GetGate',
+  target: { project: string; id?: string },
+  schema: T,
+): Promise<Result<z.infer<T>>> {
   try {
-    parsed = JSON.parse(out.stdout);
-  } catch {
-    return { ok: false, error: 'The factory CLI returned invalid JSON.' };
+    const response = await backendCall(method, target);
+    const checked = schema.safeParse(JSON.parse(response.json));
+    return checked.success
+      ? { ok: true, value: checked.data }
+      : { ok: false, error: 'The backend returned an invalid record.' };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
   }
-  const checked = schema.safeParse(parsed);
-  return checked.success
-    ? { ok: true, value: checked.data }
-    : { ok: false, error: 'The factory CLI returned an invalid record.' };
 }
 
 export function listProjects(): Promise<Result<Project[]>> {
-  return readJson(['project', 'list'], z.array(Project));
+  return readJson('ListProjects', { project: '' }, z.array(Project));
 }
-
 export function listTasks(project: string): Promise<Result<TaskRecord[]>> {
-  return readJson(['task', 'list', '--project', project], z.array(TaskRecord));
+  return readJson('ListTasks', { project }, z.array(TaskRecord));
 }
-
 export function showTask(project: string, id: string): Promise<Result<TaskRecord>> {
-  return readJson(['task', 'show', '--project', project, '--id', id], TaskRecord);
+  return readJson('GetTask', { project, id }, TaskRecord);
 }
-
 export const Gate = z.object({
   task: TaskRecord,
   head_sha: z.string().min(1),
@@ -105,95 +65,60 @@ export const Gate = z.object({
   blockers: z.array(z.string()),
 });
 export type Gate = z.infer<typeof Gate>;
-
 export function readGate(project: string, id: string): Promise<Result<Gate>> {
-  return readJson(['task', 'gate', '--project', project, '--id', id, '--json'], Gate);
+  return readJson('GetGate', { project, id }, Gate);
 }
-
 export async function readDiff(project: string, id: string): Promise<Result<string>> {
-  const out = await runCli(['task', 'diff', '--project', project, '--id', id]);
-  return out && out.code === 0
-    ? { ok: true, value: out.stdout }
-    : { ok: false, error: cliError(out, 'Diff unavailable.') };
-}
-
-/** Runs a short CLI command and returns its first standard-output line. */
-export async function command(args: string[], timeoutMs = 120_000): Promise<Result<string>> {
-  const out = await runCli(args, timeoutMs);
-  if (!out || out.code !== 0) return { ok: false, error: cliError(out, 'The command failed.') };
-  return { ok: true, value: out.stdout.trim().split('\n')[0] ?? '' };
-}
-
-// ---------- long-running work in the background ----------
-
-function taskDir(project: string, id: string): string {
-  return join(dataRoot(), project, 'tasks', id);
-}
-
-function alive(pid: number): boolean {
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    return { ok: true, value: (await backendCall('GetDiff', { project, id })).text };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
   }
 }
 
-export interface BackgroundRun {
-  running: boolean;
-  label?: string;
-  logTail?: string;
-}
-
-/** Whether a web-started `task run` or `task revise` is still running, with the end of its log. */
-export function backgroundRun(project: string, id: string): BackgroundRun {
-  const dir = taskDir(project, id);
-  let running = false;
-  let label: string | undefined;
+export async function submitTaskRequest(project: string, prompt: string): Promise<Result<string>> {
   try {
-    const lock = JSON.parse(readFileSync(join(dir, 'web-run.json'), 'utf8')) as {
-      pid: number;
-      label: string;
-    };
-    running = alive(lock.pid);
-    label = lock.label;
-  } catch {
-    // No run started from the web app.
+    return { ok: true, value: (await backendCall('SubmitTask', { project, prompt })).text };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
   }
-  let logTail: string | undefined;
-  try {
-    const log = readFileSync(join(dir, 'web-run.log'), 'utf8');
-    logTail = log.length > 8000 ? `…${log.slice(-8000)}` : log;
-  } catch {
-    logTail = undefined;
-  }
-  return { running, label, logTail };
 }
-
-/** Starts `factory task <args>` detached, logging to the task directory. One run per task at a time. */
-export function startBackground(project: string, id: string, label: string, args: string[]): Result<string> {
-  const script = cliScript();
-  if (!script) return { ok: false, error: 'The factory CLI is not configured.' };
-  if (backgroundRun(project, id).running)
-    return { ok: false, error: 'A run is already in progress for this task.' };
-  const dir = taskDir(project, id);
-  mkdirSync(dir, { recursive: true });
-  const log = openSync(join(dir, 'web-run.log'), 'w');
+export async function executeTask(request: Command, timeoutMs = 120_000): Promise<Result<string>> {
   try {
-    const child = spawn(process.execPath, [script, 'task', ...args], {
-      detached: true,
-      stdio: ['ignore', log, log],
-      env: childEnv(),
-    });
-    if (!child.pid) return { ok: false, error: 'Could not start the factory CLI.' };
-    writeFileSync(join(dir, 'web-run.json'), JSON.stringify({ pid: child.pid, label }));
-    child.unref();
-    return { ok: true, value: label };
-  } finally {
-    closeSync(log);
+    return { ok: true, value: (await backendCall('ExecuteTask', request, timeoutMs)).text };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
+  }
+}
+export async function startTask(request: Command): Promise<Result<string>> {
+  try {
+    const accepted = z
+      .object({ id: z.uuid() })
+      .parse(JSON.parse((await backendCall('StartRun', request)).json));
+    return { ok: true, value: accepted.id };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
   }
 }
 
-export function clearBackgroundLog(project: string, id: string): void {
-  rmSync(join(taskDir(project, id), 'web-run.log'), { force: true });
+const Background = z.object({
+  running: z.boolean(),
+  label: z.string().optional(),
+  logTail: z.string().optional(),
+  runId: z.string().optional(),
+  state: z.enum(['queued', 'running', 'completed', 'failed', 'interrupted']).optional(),
+  error: z.string().optional(),
+});
+export type BackgroundRun = z.infer<typeof Background>;
+export async function backgroundRun(project: string, id: string): Promise<BackgroundRun> {
+  try {
+    const run = Background.parse(JSON.parse((await backendCall('GetBackground', { project, id })).json));
+    if (run.error) run.logTail = [run.error, run.logTail].filter(Boolean).join('\n');
+    return run;
+  } catch (error) {
+    return { running: false, label: 'Backend unavailable', logTail: backendError(error) };
+  }
+}
+export async function clearBackgroundLog(project: string, id: string): Promise<void> {
+  await backendCall('ClearLog', { project, id });
 }

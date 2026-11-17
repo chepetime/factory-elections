@@ -1,0 +1,9 @@
+{
+  "name": "@factory/backend-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@factory/backend": "workspace:*",
+    "@factory/adapters-fs": "workspace:*"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@factory/backend",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts",
+    "./client": "./src/client.ts",
+    "./compose": "./src/compose.ts",
+    "./protocol": "./src/protocol.ts",
+    "./diagnostics": "./src/diagnostics.ts",
+    "./lifecycle": "./src/lifecycle.ts"
+  },
+  "dependencies": {
+    "@factory/core": "workspace:*",
+    "@factory/driver": "workspace:*",
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/adapters-git": "workspace:*",
+    "@factory/adapters-github": "workspace:*",
+    "@factory/adapters-process": "workspace:*",
+    "@factory/adapters-claude": "workspace:*",
+    "effect": "^3.22.4",
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
+    "zod": "^4.6.7",
+    "@factory/adapters-data": "workspace:*"
+  }
+}

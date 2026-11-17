@@ -44,7 +44,13 @@ export function sandboxFor(tools: ToolAccess, home: string = homedir()): Sandbox
   };
 }
 
-export class ModelRunError extends Error {}
+export class ModelRunError extends Error {
+  readonly costUsd: number | null;
+  constructor(message: string, costUsd: number | null = null) {
+    super(message);
+    this.costUsd = costUsd;
+  }
+}
 
 export interface ClaudeRunnerOptions {
   /** Receives one short line per assistant tool call, for progress output. */
@@ -106,7 +112,10 @@ export class ClaudeAgentRunner implements ModelRunner {
     if (!result) throw new ModelRunError('model run ended without a result');
     if (result.subtype !== 'success' || result.is_error) {
       const detail = result.subtype === 'success' ? result.result : result.errors.join('; ');
-      throw new ModelRunError(`model run failed (${result.subtype}): ${detail || 'no detail'}`);
+      throw new ModelRunError(
+        `model run failed (${result.subtype}): ${detail || 'no detail'}`,
+        result.total_cost_usd ?? null,
+      );
     }
     return {
       text: result.result,

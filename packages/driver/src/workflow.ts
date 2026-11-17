@@ -74,6 +74,7 @@ export class Driver {
     if (!parsed.success) throw new DriverError(`invalid classifier request: ${describeIssues(parsed.error)}`);
     const request = parsed.data;
     const result = await this.deps.runner.run({
+      step: 'classifier',
       model: request.model,
       effort: request.effort,
       tools: 'none',
@@ -121,7 +122,13 @@ export class Driver {
     this.deps.log(`Classifying with ${request.model} (${request.effort})…`);
     const started = this.deps.now();
     const { verdict, costUsd } = await this.runClassifier(request);
-    const recorded = await this.recordVerdict(project, id, verdict);
+    const task = await this.deps.tasks.read(project, id);
+    const recorded = withEvent(
+      { ...task, verdict },
+      this.deps.now(),
+      'verdict',
+      `Readiness: ${verdict.readiness}`,
+    );
     const attempt: StepAttempt = {
       step: 'classifier',
       rung: 'first',
@@ -186,7 +193,7 @@ export class Driver {
     const branch = `factory/${task.id}`;
     if (!(await this.deps.definitions.exists(path)))
       throw new DriverError(`task worktree does not exist: ${path}`);
-    const [worktreeRepo, taskRepo] = [await git.commonRepo(path), await git.commonRepo(task.repo)];
+    const [worktreeRepo, taskRepo] = await Promise.all([git.commonRepo(path), git.commonRepo(task.repo)]);
     if (!worktreeRepo || worktreeRepo !== taskRepo)
       throw new DriverError('task worktree does not belong to the task repository');
     if ((await git.currentBranch(path)) !== branch)
@@ -205,7 +212,7 @@ export class Driver {
     const { path, base } = await this.checkedWorktree(task);
     let output = '';
     const onOutput = (chunk: string) => {
-      output += chunk;
+      output = tail(output + chunk);
       this.deps.log(chunk.replace(/\n$/, ''));
     };
     for (const [label, command] of [
@@ -213,10 +220,10 @@ export class Driver {
       ['full_check', profile.commands.full_check],
     ] as const) {
       this.deps.log(`$ ${command}   # ${label}`);
-      const result = await this.deps.shell.runShell(command, { cwd: path, onOutput });
+      const result = await this.deps.shell.runShell(command, { cwd: path, captureLimit: 0, onOutput });
       if (result.code !== 0) {
         output += `\n[${label} exited with status ${result.code}]\n`;
-        return { passed: false, output, headSha: await this.deps.git.headSha(path) };
+        return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
       }
     }
     // Verification must not change the reviewed change: generated files that are not ignored
@@ -224,14 +231,14 @@ export class Driver {
     const dirty = await this.deps.git.dirtyFiles(path);
     if (dirty.length) {
       output += `\n[verification left uncommitted changes: ${dirty.join(', ')}. Commit them or add them to .gitignore.]\n`;
-      return { passed: false, output, headSha: await this.deps.git.headSha(path) };
+      return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
     }
     // Build output and caches do not belong in the change, even when the repository forgot to
     // ignore them (a committed tsconfig.tsbuildinfo once slipped through review this way).
     const generated = (await this.deps.git.addedOrModifiedSince(path, base)).filter(isGeneratedPath);
     if (generated.length) {
       output += `\n[the change commits generated files: ${generated.join(', ')}. Remove them from the change and add them to .gitignore.]\n`;
-      return { passed: false, output, headSha: await this.deps.git.headSha(path) };
+      return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
     }
     return { passed: true, output, headSha: await this.deps.git.headSha(path) };
   }
@@ -325,6 +332,7 @@ export class Driver {
     let costUsd: number | null = null;
     try {
       const result = await this.deps.runner.run({
+        step: 'coder',
         model: rung.model,
         effort: rung.effort,
         tools: 'edit',
@@ -431,6 +439,7 @@ export class Driver {
     let result;
     try {
       result = await this.deps.runner.run({
+        step: 'reviewer',
         model: rung.model,
         effort: rung.effort,
         tools: 'read-only',
@@ -594,6 +603,8 @@ export class Driver {
   /** Runs every automated step and stops at the human approval gate. Never pushes. */
   async run(project: string, id: string, options: { maxAttempts: number }): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
+    if (task.pr || ['awaiting-approval', 'approved', 'rejected', 'pr-opened'].includes(task.stage))
+      throw new DriverError(`task stage "${task.stage}" cannot be run; use revise for requested changes`);
     if (!task.verdict) task = await this.classify(project, id);
     const decision = readinessDecision(task.verdict!);
     if (decision.action !== 'continue') {

@@ -8,7 +8,8 @@ const EngineHealth = z
   .object({
     engine: z.literal('running'),
     task_store: z.enum(['available', 'not_initialized', 'unavailable']),
-    telemetry_database: z.literal('not_configured'),
+    telemetry_database: z.enum(['not_configured', 'available', 'unavailable']),
+    artifact_store: z.enum(['available', 'unavailable']).optional(),
     integrations: z.array(z.never()).max(0),
   })
   .strict();
@@ -39,7 +40,12 @@ export async function readEngineHealth(seam: HealthSeam = defaultSeam): Promise<
   });
   try {
     const request = (async () => {
-      const response = await seam.fetch(HEALTH_URL, { signal: controller.signal, cache: 'no-store' });
+      const response = await seam.fetch(
+        process.env.FACTORY_HEALTH_PORT
+          ? `http://127.0.0.1:${process.env.FACTORY_HEALTH_PORT}/health`
+          : HEALTH_URL,
+        { signal: controller.signal, cache: 'no-store' },
+      );
       if (!response.ok) return undefined;
       return EngineHealth.safeParse(await response.json());
     })();

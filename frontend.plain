@@ -20,7 +20,7 @@ description: Next.js frontend for the software factory.
 
 - :ReviewContract: describes reviewer output in [resources/review.schema.json](resources/review.schema.json).
 
-- :FactoryCli: is the `factory` command specified by factory.plain. The web app keeps no state: every read and every action runs :FactoryCli: with Node, without a shell.
+- :FactoryCli: is the `factory` command specified by factory.plain. Task reads and actions call the local backend over authenticated gRPC from the Next.js Node server. The backend shares the CLI driver and authoritative task files; environment/profile diagnostics and team repository/storage operations are also owned by the backend. Next.js sends structured RPC fields; it never constructs CLI argument lists or spawns CLI processes.
 
 ***implementation reqs***
 
@@ -28,7 +28,7 @@ description: Next.js frontend for the software factory.
 - :Implementation: is formatted with Prettier and linted with oxlint with warnings denied.
 
 - :Implementation: binds its development and production HTTP servers to `localhost` on port 3000.
-- :Implementation: lives in `apps/web`, is bundled with webpack (`--webpack`) so dependencies linked from pnpm's global virtual store resolve, loads no remote fonts, and is started with `pnpm web` (`scripts/web.mjs`), which also starts `factory serve` and sets `FACTORY_CLI_SCRIPT` to this repository's `bin/factory`. When `FACTORY_CLI_SCRIPT` is unset the app uses `../../bin/factory` relative to its working directory; a relative value is invalid.
+- :Implementation: lives in `apps/web`, is bundled with webpack (`--webpack`) so dependencies linked from pnpm's global virtual store resolve, loads no remote fonts, and is started with `pnpm web` (`scripts/web.mjs`), which starts or reuses the local gRPC backend using the same lifecycle as `factory serve`. Backend clients share FACTORY_ROOT and use FACTORY_BACKEND_ADDRESS or FACTORY_BACKEND_PORT; health honors FACTORY_HEALTH_PORT.
 - A request proxy rejects any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, and any non-GET request whose `Origin` is missing or differs from its `Host`.
 
 - Each original component inspired by Affect UI records its corresponding source URL from [resources/frontend-component-origins.json](resources/frontend-component-origins.json) in a comment in its source file; the URL is attribution, not a dependency. No Affect UI Pro source or assets are copied.
@@ -49,19 +49,19 @@ The home page displays a non-interactive placeholder card for each name in :Comp
 
 # component-navigation
 The home page's app shell has an accessible navigation region linking to its `Projects`, `Components` and `Data contracts` sections.
-- `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that lists the contracts in `resources/` and says every view reads and acts through the local factory CLI.
+- `Components` links to the placeholder card list. `Data contracts` links to a section headed `Data contracts` that lists the contracts in `resources/` and says task views read and act through the local backend.
 - Both links can be reached and activated with a keyboard.
 
 # engine-health-panel
 The home page shows an `Engine health` section from :EngineHealthContract: at `http://127.0.0.1:4318/health`.
-- On a valid response, it shows the engine and task-store states, the telemetry database state, and `No integrations configured` when the integrations list is empty.
+- On a valid response, it shows the engine and task-store states, the telemetry database and optional artifact-store availability, and `No integrations configured` when the integrations list is empty.
 - A non-success response, invalid response, connection failure or a request lasting more than two seconds shows `Engine unavailable`; it never presents missing information as healthy.
 - The request is made by the frontend server on each page request, without caching. Engine `running` describes the server process, not classifier readiness.
 
 # project-list-endpoint
 :ProjectReadApi: returns registered :ProjectContract: records through `GET /api/projects`.
-- The handler invokes :FactoryCli: (see implementation reqs for `FACTORY_CLI_SCRIPT`) using Node with arguments `project list` and without a shell. It forwards `FACTORY_ROOT` when set.
-- The handler validates CLI output as an array of :ProjectContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :ProjectReadApi: without exposing stderr or filesystem paths. The handler makes no model calls.
+- The handler calls the local backend ListProjects RPC; its server-side credential uses the shared FACTORY_ROOT or explicit backend token.
+- The handler validates backend snapshots as an array of :ProjectContract: before returning it. An unavailable or unauthenticated backend, invalid JSON or invalid records produces the unavailable response in :ProjectReadApi: without exposing stderr or filesystem paths. The handler makes no model calls.
 
 # project-selector
 The home page has a `Projects` section that reads projects from :ProjectReadApi: and lets a person select one.
@@ -70,8 +70,8 @@ The home page has a `Projects` section that reads projects from :ProjectReadApi:
 
 # task-list-endpoint
 :TaskReadApi: returns a project's :TaskRecordContract: records through `GET /api/projects/{project}/tasks`.
-- The handler invokes :FactoryCli: using Node with arguments `task list --project <project>` and without a shell. It forwards `FACTORY_ROOT` when set.
-- The handler validates CLI output against :TaskRecordContract: before returning it. A missing or relative `FACTORY_CLI_SCRIPT`, a CLI failure, invalid JSON or invalid records produces the unavailable response in :TaskReadApi: without exposing stderr or filesystem paths.
+- The handler calls the local backend ListTasks RPC with the validated project.
+- The handler validates backend snapshots against :TaskRecordContract: before returning it. An unavailable or unauthenticated backend, invalid JSON or invalid records produces the unavailable response in :TaskReadApi: without exposing stderr or filesystem paths.
 - An invalid project name produces the invalid-project response in :TaskReadApi:. The handler makes no model calls.
 
 # project-task-view
@@ -86,19 +86,22 @@ The project task view shows the classifier readiness and blockers of each task t
 
 # new-task
 The project task view has a `New task` form with the task text and a `Start the run now` checkbox, checked by default.
-- Submitting runs `factory intake --project <project> <prompt>`; when the box is checked it then starts `factory task run` in the background as in `background-run`, and opens the new task's page. An empty prompt or a CLI failure shows the error and creates nothing further.
+- Submitting calls SubmitTask; when the box is checked it then calls StartRun as in `background-run`, and opens the new task's page. An empty prompt or a backend failure shows the error and creates nothing further.
 
 # task-page
-`GET /projects/<project>/tasks/<id>` shows one task from `factory task show`, and from `factory task gate --json` and `factory task diff` when it has a worktree.
+`GET /projects/<project>/tasks/<id>` shows one task from GetTask, and from GetGate and GetDiff when it has a worktree.
 - It shows the prompt, stage, id and total model cost (`unknown` when any attempt's cost is unknown, `—` with no attempts); the classifier kind, size, readiness and blockers; the branch, head commit, worktree path, diff summary and an expandable full diff; verification result and output; reviewer verdict, summary and findings by severity; the pull request link; model attempts with model, effort, outcome and cost; and the event timeline.
-- An invalid project or id returns not-found. A task that cannot be read shows `Task unavailable` with the CLI's error, with the data root path replaced by `<data root>`.
+- An invalid project or id returns not-found. A task that cannot be read shows `Task unavailable` with the backend's error, with the data root path replaced by `<data root>`.
 
 # background-run
-`Run task` (shown for tasks without a worktree that are not blocked) and `Revise` start `factory task run` or `factory task revise --note <note>` as a detached process, writing its output to `web-run.log` and its process id to `web-run.json` in the task directory.
-- Only one web-started run per task may be alive; a second start is refused. While a run is alive, or the stage is `coding` or `reviewing`, the task page shows the log tail, hides the action forms and refreshes every three seconds. A finished run's log stays visible until dismissed.
+`Run task` and `Revise` call StartRun to schedule backend-owned work, with the note for revisions.
+- The backend persists acceptance before replying, holds a per-task command lock, and executes one run at a time. The page reads GetBackground asynchronously and refreshes every three seconds while a run is queued/running. Failed or interrupted evidence is shown honestly; output tails are bounded and dismissed without deleting the log artifacts.
 
 # task-actions
-The task page offers the human gate actions only in the stages where :FactoryCli: allows them, and each runs the matching CLI command so its checks apply unchanged.
+The task page offers the human gate actions only in the stages where :FactoryCli: allows them, and each calls the matching backend operation using the shared driver checks.
 - `awaiting-approval`: `Approve <head>` sends the head commit displayed on the page as `--head`, with an optional note, and offers `--accept-blocking` as a checkbox only when there are blocking findings; it is replaced by the gate's reasons when the gate reports blockers. `Reject` requires a note.
 - `Revise` requires a note and is offered when the task has a worktree and no pull request in stages `awaiting-approval`, `verification-failed`, `failed`, `rejected` or `approved`.
-- `approved`: `Push and open pull request` runs `factory task open-pr`, with `--draft` checked by default, and shows the pull request URL or the CLI's error.
+- `approved`: `Push and open pull request` calls ExecuteTask with action open-pr, with `--draft` checked by default, and shows the pull request URL or the backend's error.
+
+# configured-storage-health
+The health response may report telemetry_database as available or unavailable when Postgres is configured, and artifact_store as available or unavailable for the S3 service. File-mode roots retain telemetry_database not_configured and may omit artifact_store. The health view and settings show the returned states rather than fixed unconfigured labels.

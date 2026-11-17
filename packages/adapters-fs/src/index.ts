@@ -4,7 +4,6 @@ import { constants } from 'node:fs';
 import { access, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { parse as parseYaml } from 'yaml';
 import type { z } from 'zod';
 import {
   LoopDefinition,
@@ -72,7 +71,8 @@ async function readJson(path: string, what: string): Promise<unknown> {
 export async function readYamlFile(path: string, what: string): Promise<unknown> {
   const text = await readText(path, what);
   try {
-    return parseYaml(text);
+    const { parse } = await import('yaml');
+    return parse(text);
   } catch (error) {
     throw new FactoryError(`${what} is not valid YAML: ${path}: ${(error as Error).message}`);
   }
@@ -147,6 +147,32 @@ export class TaskStore {
   async write(task: TaskRecord): Promise<void> {
     const checked = validate(TaskRecord, task, 'task');
     await writeJsonAtomic(this.taskPath(checked.project, checked.id), checked);
+  }
+
+  /** Serializes CLI mutations across processes; readers continue to see atomic snapshots. */
+  async acquireLock(project: string, id: string): Promise<() => Promise<void>> {
+    // Validate existence before creating anything, including the lock's parent directory.
+    await this.read(project, id);
+    const lock = join(dirname(this.taskPath(project, id)), 'command.lock');
+    try {
+      await writeFile(lock, `${JSON.stringify({ pid: process.pid })}\n`, { flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        throw new FactoryError(
+          `task is locked by another command: ${lock}. If interrupted, confirm its owner has stopped before removing the lock.`,
+        );
+      throw error;
+    }
+    return () => rm(lock);
+  }
+
+  async withLock<T>(project: string, id: string, action: () => Promise<T>): Promise<T> {
+    const release = await this.acquireLock(project, id);
+    try {
+      return await action();
+    } finally {
+      await release();
+    }
   }
 
   async list(project: string): Promise<TaskRecord[]> {

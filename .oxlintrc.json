@@ -26,6 +26,7 @@
       "files": [
         "packages/adapters-*/**",
         "packages/driver/**",
+        "packages/backend/**",
         "apps/**",
         "packages/*/test/**",
         "scripts/**"

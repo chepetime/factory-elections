@@ -21,7 +21,17 @@ export function EngineHealthView({ state }: { state: HealthState }) {
           <dt className="text-muted-foreground">Task store</dt>
           <dd>{STORE[state.health.task_store]}</dd>
           <dt className="text-muted-foreground">Telemetry database</dt>
-          <dd>Not configured</dd>
+          <dd>
+            {state.health.telemetry_database === 'not_configured'
+              ? 'Not configured'
+              : STORE[state.health.telemetry_database]}
+          </dd>
+          {state.health.artifact_store && (
+            <>
+              <dt className="text-muted-foreground">Artifact storage</dt>
+              <dd>{STORE[state.health.artifact_store]}</dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Integrations</dt>
           <dd>No integrations configured</dd>
         </dl>

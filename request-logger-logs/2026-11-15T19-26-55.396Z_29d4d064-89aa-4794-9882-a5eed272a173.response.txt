@@ -1,0 +1,147 @@
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_011Ch5GGC9hvn46fzyghFzXM","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":64899,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":64899},"output_tokens":4,"service_tier":"standard","inference_geo":"global","speed":"standard"},"diagnostics":null,"context_management":null}             }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}        }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":50}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":null}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"CAQSxQgKEAgTGAI4AUIIdGhpbmtpbmcSDEykF1uQ1x1ZljxE0hoMXiWuel8m1wfG3l0KIjBjoMw35Cvbc15W9VQKIERknaGIVOs9YEoimbUXT7mD/GIE0vv47miZIMs7osmwjhQq4gcf/R0qOWE9lEXSO1fcDddH2Tt2vsFZa4b+s/GGScncvJ5RBxJJtMX8VCseE2SmmEp8slzX7RLPg1c+Lc/UpI2qXHld7zP94TRx6LSme7EHKmFUhi/QsD8CJQ99niaWOJmWMYRKpNskQWbJEhFVOQbvghAIElYA6oTkxOKQlaRkP76RyxO3bQjqyLRUfo2pvofAKB7cqmhmTVQXiqMhGcj5pJHvOnZ4tfoHKjvNgXVBTzoJmjmhgjBpBjQjaqr/UED8wXj3jgGcvSuxXyT0tpA5gY4DtX4clemC2WyJK62LTO1CCHULsDXbkcClAmkd6eiQS1RW4ebAP+4q4LiSBCUtwZ2zPXI/y7id6+dd4Pzxrqq6d4/TXLMgmjyft4e4JL41t3ZnS6Y9Jh8Ie1LeNsnylp/ibX7uMH678kHuPZYo8gIvvAWOfgt6bzYNpEgd0TfKz7mvjQ9XhA4CEXYIPmC8u4Trog+LmE8qHEHq/Z7PZwizG26EE3zTVjxhmkDKE/B/cDoNeSI4HTO1YU9Hj0ZX8khxKT9M2WMLS5Zn37RqWkZsPLmsuAOGGI2OyppRRtm03GgKg9USjDaEucs2qsRCwOjy9CuCb1ttp1C9Twcv/ILtv7AFutApMe70jfZGmFK9J/w4z4JikAhHKQu642VeTvZdaSCZtltgqh/XbmaaFLaDoFho4S9E1FBp/dzJg7wwZQhE4oJsiVk9OoEB+hOBMn89lFSWeC8DaAJTYOtffFxCfPngAZjkNvTKOzBH84g4zEsti8U6Oh3Z5813+eIoeyA6FwWf96gz7P2I6loN9Cst7i3jnhQPT2D/DByqA/HzZJScLSAi0P/w9zvTO2JWAG42ENjR2iNZfA3LQQ6+6RAqfVuppcxJ+S+KZm535yKcQBk96BTcrdqVclZAmzCucj5cfthzWz+CF3K6D/GGj/IT3tQiFA0/0iiVPOAfVenqQSNRAxKuH7XBChlyPDU7LlKySTUn8/QK4QvyIoBjMeEgMK/AWB5jTpXwxaltFm8mvlK0q2lVuiETM85aOFuomFwBnaxl6yOlzm7lHy45QCHMmG+RcvWEQZAFxoiJd/S2IQ4h2WA/iR1f5c97Vs0HSNROq4RLg42UeAFivs/e9t5SH1xgZG10KPCMTyEDi/ATnR0bY098j7+5b4lNn2JPgplxi8VQAAPRyNyfl9FB+h2orHw4yzG1L/wd0pPIAPWmmnzaTKj/N4thQo1xqm6J1bnVUDx4VZe1yQKaxXGdRZSDwdB27iD6SyjbOZy2X4r5o6cZx9gN1Ns665DeBvcXuzWECyorbgQiDnZ6X7mqHHrsGAE="}              }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0 }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"H"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"i! It"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" looks like the conn"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ector changes went"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" through:"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" r"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ea, cua-driver and"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" the Google conn"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ectors have"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" all d"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ropped out of this session."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\n**"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Claude Docs**"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" dis"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"connected too, though. You"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" used it 28 times in the"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" last 30 days, so if"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" you did"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"n't mean to turn it"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" off, tur"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"n it back on with"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" `/mcp`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" or in claude.ai under"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Settings → Connectors"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":". The `easel` plug"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"in's"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" ch"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"art tool also went"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" away, which is fine if you"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" don"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"'t use it.\n\nTo check the"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" savings, start a new session with"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" the request logger running and"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" send \"hello\". Then share"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" the capture and I'll comp"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"are it"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" with the 47,347 t"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"okens from before."}      }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1             }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null,"safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{}}}]},"usage":{"input_tokens":2,"cache_creation_input_tokens":64899,"cache_read_input_tokens":0,"output_tokens":312,"output_tokens_details":{"thinking_tokens":117},"iterations":[{"input_tokens":2,"output_tokens":312,"cache_read_input_tokens":0,"cache_creation_input_tokens":64899,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":64899},"type":"message"}]},"context_management":{"applied_edits":[]}           }
+
+event: message_stop
+data: {"type":"message_stop"         }
+

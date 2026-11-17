@@ -11,6 +11,10 @@ export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   input?: string;
+  /** Retain only this many UTF-16 characters per stream. Streaming output stays complete. */
+  captureLimit?: number;
+  /** Optional process deadline for diagnostic commands. */
+  timeoutMs?: number;
   /** Called with each output chunk, for streaming progress to the user. */
   onOutput?: (chunk: string) => void;
 }
@@ -20,21 +24,39 @@ export function run(
   args: readonly string[],
   options: RunOptions = {},
 ): Promise<ProcessResult> {
+  if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1))
+    throw new RangeError('timeoutMs must be a positive safe integer');
+  const limit = options.captureLimit;
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0))
+    throw new RangeError('captureLimit must be a nonnegative safe integer');
+  const capture = (previous: string, chunk: string) => {
+    if (limit === 0) return '';
+    const next = previous + chunk;
+    return limit === undefined || next.length <= limit ? next : next.slice(-limit);
+  };
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
+      timeout: options.timeoutMs,
       env: options.env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (d: Buffer) => {
-      stdout += d.toString();
-      options.onOutput?.(d.toString());
+    // Decode across chunk boundaries so split UTF-8 characters survive streaming and capture.
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout = capture(stdout, chunk);
+      options.onOutput?.(chunk);
     });
-    child.stderr.on('data', (d: Buffer) => {
-      stderr += d.toString();
-      options.onOutput?.(d.toString());
+    child.stderr.on('data', (chunk: string) => {
+      stderr = capture(stderr, chunk);
+      options.onOutput?.(chunk);
+    });
+    // A child may exit before consuming input; EPIPE must not crash the parent.
+    child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EPIPE') stderr = capture(stderr, error.message);
     });
     child.on('error', (error) => resolvePromise({ code: 127, stdout, stderr: `${stderr}${error.message}` }));
     child.on('close', (code, signal) => resolvePromise({ code: code ?? (signal ? 128 : 1), stdout, stderr }));
