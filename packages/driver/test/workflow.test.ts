@@ -279,6 +279,27 @@ test('unclear tasks stop before any code', async () => {
   assert.equal(runner.calls.length, 1);
 });
 
+test('ready research tasks stop before creating a worktree or coding', async () => {
+  const research: Script = (r) => ({
+    text: '',
+    structured: {
+      intake_id: /"id": "([^"]+)"/.exec(r.prompt)![1],
+      kind: 'research',
+      loe: 'S',
+      readiness: 'ready',
+      blockers: [],
+    },
+    costUsd: 0,
+  });
+  const { driver, task, runner } = await setup({ classifier: [research] });
+  const result = await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.equal(result.stage, 'blocked');
+  assert.equal(result.worktree, undefined);
+  assert.match(result.events!.at(-1)!.message, /Research workflow is not available/);
+  assert.equal(runner.calls.length, 1);
+  await assert.rejects(driver.prepareWorktree('demo', task.id), /not ready to code/);
+});
+
 test('coder changes to forbidden paths fail and are not committed', async () => {
   const bad: Script = async (r) => {
     execFileSync('mkdir', ['-p', join(r.cwd!, 'secrets')]);

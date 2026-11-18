@@ -6,7 +6,7 @@ export function readinessDecision(verdict: ClassifierVerdict): ReadinessDecision
   if (verdict.kind === 'unsupported') return { action: 'unsupported' };
   switch (verdict.readiness) {
     case 'ready':
-      return { action: 'continue' };
+      return { action: verdict.kind === 'research' ? 'research' : 'continue' };
     case 'needs-research':
       return { action: 'research' };
     case 'needs-clarification':

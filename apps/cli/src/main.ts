@@ -414,6 +414,11 @@ async function taskCommand(
       const task = await driver.run(project(), id(), { maxAttempts: maxAttempts(str('max-attempts')) });
       if (task.stage === 'blocked') {
         const decision = readinessDecision(task.verdict!);
+        if (task.verdict?.kind === 'research' && task.verdict.readiness === 'ready') {
+          process.stderr.write('Research workflow is not available yet; no code was run.\n');
+          out(task.stage);
+          return 3;
+        }
         process.stderr.write(`Task is not ready (${decision.action}). Blockers:\n`);
         for (const b of task.verdict!.blockers) process.stderr.write(`  [${b.kind}] ${b.question}\n`);
         process.stderr.write('Submit a clearer task with `factory intake`.\n');

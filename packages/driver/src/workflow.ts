@@ -523,6 +523,8 @@ export class Driver {
   /** One coder attempt on one rung, followed by a driver-owned commit. */
   async code(project: string, id: string, rung: Rung, feedback?: string): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
+    if (task.verdict?.kind === 'research')
+      throw new DriverError('Research workflow is not available yet; no code was run.');
     const profile = await this.deps.readProfile(project);
     const { path, branch } = await this.checkedWorktree(task);
     const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(this.deps.steps.coder.step);
@@ -896,7 +898,14 @@ export class Driver {
     if (!task.verdict) task = await this.classify(project, id);
     const decision = readinessDecision(task.verdict!);
     if (decision.action !== 'continue') {
-      task = withStage(task, this.deps.now(), 'blocked', `Readiness action: ${decision.action}`);
+      task = withStage(
+        task,
+        this.deps.now(),
+        'blocked',
+        task.verdict!.kind === 'research' && task.verdict!.readiness === 'ready'
+          ? 'Research workflow is not available yet; no code was run.'
+          : `Readiness action: ${decision.action}`,
+      );
       await this.deps.tasks.write(task);
       return task;
     }
