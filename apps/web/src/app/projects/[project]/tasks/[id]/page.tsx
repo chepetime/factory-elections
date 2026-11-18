@@ -14,6 +14,8 @@ import { CodeBlock } from '@factory/affect-ui/components/code-block-clean';
 import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
+import { AgentCheckpoints, type Checkpoint } from '@/components/agent-checkpoints';
+import { AgentFindings } from '@/components/agent-findings';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { LocalTime } from '@/components/local-time';
 import { StageBadge } from '@/components/stage-badge';
@@ -172,6 +174,26 @@ function ReviewCard({ review }: { review: NonNullable<TaskRecord['review']> }) {
       <p>
         <span className="font-medium">Review: {review.verdict}</span> — {review.summary}
       </p>
+      {review.findings.length > 0 && (
+        <AgentFindings
+          title="Review findings"
+          agents={[{ id: 'reviewer', name: 'Reviewer', done: 1, total: 1, status: 'done' }]}
+          rows={review.findings.length}
+          findings={review.findings.map((finding, index) => ({
+            id: String(index),
+            agentId: 'reviewer',
+            title: `${finding.severity}: ${finding.message}`,
+            severity:
+              finding.severity === 'blocking'
+                ? 'critical'
+                : finding.severity === 'major'
+                  ? 'warning'
+                  : 'note',
+            ...(finding.file ? { location: finding.file } : {}),
+            at: Date.parse(review.at) || 0,
+          }))}
+        />
+      )}
       {review.findings.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1.5">
           {review.findings.map((f, i) => (
@@ -426,6 +448,26 @@ export default async function TaskPage({
               {task.id}
             </dd>
           </dl>
+        </Section>
+
+        <Section title="Stage timeline">
+          <AgentCheckpoints
+            title="Stages"
+            mode="timeline"
+            checkpoints={(task.events ?? [])
+              .filter((event) => event.kind.startsWith('stage:'))
+              .map((event, index, events): Checkpoint => {
+                const start = Date.parse(events[0]!.at);
+                const at = Date.parse(event.at);
+                return {
+                  id: `stage-${index}`,
+                  ...(index ? { parent: `stage-${index - 1}` } : {}),
+                  title: event.message || event.kind.slice(6),
+                  status: /failed|blocked|rejected/.test(event.kind) ? 'failed' : 'done',
+                  ...(Number.isFinite(start) && Number.isFinite(at) ? { at: Math.max(0, at - start) } : {}),
+                };
+              })}
+          />
         </Section>
 
         {task.pr && (

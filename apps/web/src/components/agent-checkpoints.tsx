@@ -23,6 +23,7 @@ type AgentCheckpointsProps = {
   checkpoints: Checkpoint[];
   head?: string;
   title?: string;
+  mode?: 'checkpoints' | 'timeline';
   task?: string;
   onRewind?: (checkpoint: Checkpoint) => void;
   formatTime?: (ms: number) => string;
@@ -58,6 +59,7 @@ export function AgentCheckpoints({
   checkpoints,
   head = checkpoints.at(-1)?.id,
   title = 'Checkpoints',
+  mode = 'checkpoints',
   task,
   onRewind,
   formatTime = elapsed,
@@ -114,7 +116,7 @@ export function AgentCheckpoints({
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
             <span aria-live="polite" aria-atomic="true">
-              {checkpoints.length} checkpoints
+              {checkpoints.length} {mode === 'timeline' ? 'stages' : 'checkpoints'}
             </span>
             {checkpoints.some((checkpoint) => checkpoint.cost !== undefined) && (
               <span className="border-l pl-3">{formatCost(totalCost)}</span>
@@ -124,7 +126,9 @@ export function AgentCheckpoints({
 
         {checkpoints.length === 0 ? (
           <p className="px-5 py-12 text-center text-sm text-muted-foreground">
-            Checkpoints will appear as the agent works.
+            {mode === 'timeline'
+              ? 'Stages will appear as the agent works.'
+              : 'Checkpoints will appear as the agent works.'}
           </p>
         ) : (
           <div ref={scrollRef} className="max-h-[1008px] overflow-auto overscroll-contain py-3">
@@ -159,7 +163,10 @@ export function AgentCheckpoints({
                   );
                 })}
               </svg>
-              <ol aria-label="Run checkpoints" className="relative">
+              <ol
+                aria-label={mode === 'timeline' ? 'Stage timeline' : 'Run checkpoints'}
+                className="relative"
+              >
                 {checkpoints.map((checkpoint, index) => {
                   const node = nodes.get(checkpoint.id)!;
                   const isActive = active.has(checkpoint.id);
@@ -229,15 +236,20 @@ export function AgentCheckpoints({
                             <span className="truncate text-sm font-medium">{checkpoint.title}</span>
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>Attempt {node.lane + 1}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>
-                              {isHead
-                                ? 'Current checkpoint'
-                                : !isActive
-                                  ? 'Previous attempt'
-                                  : 'Saved checkpoint'}
-                            </span>
+                            {mode === 'checkpoints' && (
+                              <>
+                                <span>Attempt {node.lane + 1}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>
+                                  {isHead
+                                    ? 'Current checkpoint'
+                                    : !isActive
+                                      ? 'Previous attempt'
+                                      : 'Saved checkpoint'}
+                                </span>
+                              </>
+                            )}
+                            {mode === 'timeline' && <span>{isHead ? 'Latest stage' : 'Earlier stage'}</span>}
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">

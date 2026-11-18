@@ -161,5 +161,34 @@ it('shows the approval diff in a copyable code view and reports read errors', as
   expect(page).toContain('Copy code');
   vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
   expect(await html()).toContain('Could not load the diff: unavailable');
+});
 
+it('renders review findings and stage events through the shared components', async () => {
+  observe('completed');
+  const reviewed = {
+    ...task,
+    stage: 'awaiting-approval' as const,
+    events: [
+      { kind: 'stage:queued', message: 'Task submitted', at: '2026-01-01T00:00:00Z' },
+      { kind: 'stage:awaiting-approval', message: 'Review ready', at: '2026-01-01T00:01:00Z' },
+    ],
+    review: {
+      verdict: 'request-changes' as const,
+      summary: 'Please fix',
+      head_sha: 'abc',
+      at: '2026-01-01T00:01:00Z',
+      findings: [{ severity: 'blocking' as const, message: 'Missing check', file: 'src/a.ts' }],
+    },
+  };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: reviewed, execution: 'completed', actions: taskActions(reviewed, 'completed') },
+  });
+  const page = await html();
+  expect(page).toContain('Stage timeline');
+  expect(page).toContain('Latest stage');
+  expect(page).toContain('Review findings');
+  expect(page).toContain('Missing check');
+  expect(page).toContain('src/a.ts');
+  expect(page).not.toContain('Saved checkpoint');
 });
