@@ -44,9 +44,14 @@ const DEFINITIONS = resolve(
   'definitions',
   'features',
 );
-/** The model for feature steps; the critique uses a second provider when one is configured. */
-export const FEATURE_MODEL = process.env.FACTORY_FEATURE_MODEL ?? 'claude-opus-5-5';
-export const CRITIQUE_MODEL = process.env.FACTORY_CRITIQUE_MODEL ?? 'claude-sonnet-5-5';
+/** Per-step overrides take precedence over the legacy shared feature model. */
+export const FEATURE_MODELS = {
+  grill: process.env.FACTORY_GRILL_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
+  spec: process.env.FACTORY_SPEC_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-opus-5-5',
+  critique: process.env.FACTORY_CRITIQUE_MODEL ?? 'claude-sonnet-5-5',
+  tickets: process.env.FACTORY_TICKETS_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
+  qa: process.env.FACTORY_QA_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
+} as const;
 const STEP_BUDGET_USD = 3;
 const STEP_TIMEOUT_MS = 30 * 60_000;
 const TICK_MS = 20_000;
@@ -367,7 +372,7 @@ export class FeatureService {
     const { repo } = await this.deps.projects.read(project);
     return this.deps.runner(project, id).run({
       step: `feature:${step}`,
-      model: FEATURE_MODEL,
+      model: FEATURE_MODELS[step],
       effort: 'high',
       tools: 'read-only',
       cwd: repo,
@@ -457,7 +462,6 @@ export class FeatureService {
     try {
       // A second model reads the spec as its builder and verifier would.
       const result = await this.call(project, id, 'critique', {
-        model: CRITIQUE_MODEL,
         effort: 'medium',
         prompt: `<spec>\n${spec.text}\n</spec>`,
       });

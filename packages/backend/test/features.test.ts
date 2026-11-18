@@ -114,6 +114,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
     /agent step is running/,
   );
   await features.idle();
+  assert.equal(calls[0]!.model, 'claude-sonnet-5-5');
   assert.match(calls[0]!.systemPrompt, /ask exactly one question/i);
   assert.match(
     calls[0]!.systemPrompt,
@@ -137,6 +138,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   await features.idle();
   const withSpec = await features.detail({ project: 'app', id: feature.id });
   assert.match(withSpec.spec!, /## Problem/);
+  assert.equal(calls.find((c) => c.step === 'feature:spec')!.model, 'claude-opus-5-5');
   assert.match(withSpec.critique!, /no error state/);
   assert.equal(
     calls.find((c) => c.step === 'feature:critique')!.model,
@@ -213,6 +215,8 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   const done = await features.detail({ project: 'app', id: feature.id });
   assert.equal(done.stage, 'qa');
   assert.match(done.qa!, /Open the screen/);
+  assert.equal(calls.find((c) => c.step === 'feature:tickets')!.model, 'claude-sonnet-5-5');
+  assert.equal(calls.find((c) => c.step === 'feature:qa')!.model, 'claude-sonnet-5-5');
   assert.match(calls.at(-1)!.prompt, /T1 Add the model: done, PR https:\/\/github\.com\/o\/r\/pull\/41/);
   assert.equal(Number(done.cost_usd.toFixed(2)), 1.4);
   assert.equal(done.total_cost_usd, done.cost_usd + done.tickets_cost_usd);
