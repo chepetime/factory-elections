@@ -54,6 +54,13 @@ export function sandboxFor(tools: ToolAccess, home: string = homedir()): Sandbox
     allowUnsandboxedCommands: false,
     network: { allowedDomains: SANDBOX_ALLOWED_DOMAINS },
     filesystem: {
+      denyRead: [
+        join(home, '.ssh'),
+        join(home, '.npmrc'),
+        join(home, '.aws'),
+        join(home, '.config', 'gh'),
+        join(home, 'Library', 'Keychains'),
+      ],
       allowWrite: [
         join(home, 'Library', 'pnpm'),
         join(home, 'Library', 'Caches', 'pnpm'),

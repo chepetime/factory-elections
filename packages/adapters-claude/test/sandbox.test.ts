@@ -14,5 +14,12 @@ test('the coder runs Bash in a sandbox it cannot leave and that keeps the guard 
   assert.equal(sandbox?.autoAllowBashIfSandboxed, false);
   assert.equal(sandbox?.allowUnsandboxedCommands, false);
   assert.deepEqual(sandbox?.network?.allowedDomains, ['registry.npmjs.org']);
+  assert.deepEqual(sandbox?.filesystem?.denyRead, [
+    '/home/me/.ssh',
+    '/home/me/.npmrc',
+    '/home/me/.aws',
+    '/home/me/.config/gh',
+    '/home/me/Library/Keychains',
+  ]);
   for (const path of sandbox?.filesystem?.allowWrite ?? []) assert.ok(path.startsWith('/home/me/'));
 });
