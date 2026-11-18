@@ -125,3 +125,22 @@ test('metrics count runs, first passes, climbs, call grading, PRs, gates and rel
   assert.deepEqual([m.reviews.turns, m.reviews.cost_usd], [1, 2]);
   assert.equal(m.by_type.model!.spans, 5);
 });
+
+test('cache hit rate by step is token-weighted and respects the time range', () => {
+  const spans = [
+    span({ type: 'model', step: 'coder', tokens: { input: 100, output: 0, cache_read: 80 } }),
+    span({ type: 'model', step: 'coder', tokens: { input: 300, output: 0, cache_read: 20 } }),
+    span({ type: 'model', step: 'reviewer', tokens: { input: 200, output: 0, cache_read: 100 } }),
+    span({ type: 'model', step: 'empty' }),
+    span({
+      type: 'model',
+      step: 'coder',
+      ended_at: '2026-10-01T00:00:00.000Z',
+      tokens: { input: 100, output: 0, cache_read: 100 },
+    }),
+  ];
+  const metrics = metricsSummary(spans, '2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z');
+  assert.equal(metrics.by_step.coder!.cache_hit_rate, 0.25);
+  assert.equal(metrics.by_step.reviewer!.cache_hit_rate, 0.5);
+  assert.equal(metrics.by_step.empty!.cache_hit_rate, undefined);
+});

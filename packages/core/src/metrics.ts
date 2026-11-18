@@ -105,7 +105,8 @@ export interface MetricsSummary {
   by_provider: Record<string, CostSum>;
   by_model: Record<string, CostSum>;
   by_type: Record<string, CostSum & { spans: number }>;
-  by_step: Record<string, CostSum>;
+  /** Token-weighted cache-read fraction per step; absent when no input tokens were reported. */
+  by_step: Record<string, CostSum & { cache_hit_rate?: number }>;
   by_project: Record<string, CostSum>;
   by_feature: Record<string, CostSum>;
   runs: {
@@ -198,6 +199,8 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
     else byTrace.set(span.trace_id, [span]);
   }
   total.cache_hit_rate = rate(total.tokens.cache_read, total.tokens.input);
+  for (const step of Object.values(summary.by_step))
+    step.cache_hit_rate = rate(step.tokens.cache_read, step.tokens.input);
   summary.days = [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
   summary.gates.median_wait_ms = median(
     inRange.filter((s) => s.type === 'gate').map((s) => s.duration_ms ?? 0),
