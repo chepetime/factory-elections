@@ -22,6 +22,34 @@ const token = 'e2e-token-0123456789abcdef0123456789';
 
 const runner: ModelRunner = {
   async run(request) {
+    if (request.step === 'feature:grill')
+      return {
+        text: '',
+        costUsd: 0,
+        structured: { message: 'Decided.', decisions: ['Use a simple file.'], done: true },
+      };
+    if (request.step === 'feature:spec') return { text: '# Feature spec\n\nAdd a feature file.', costUsd: 0 };
+    if (request.step === 'feature:critique') return { text: 'No gaps.', costUsd: 0 };
+    if (request.step === 'feature:board-critique')
+      return { text: '', structured: { issues: [] }, costUsd: 0 };
+    if (request.step === 'feature:tickets')
+      return {
+        text: '',
+        costUsd: 0,
+        structured: {
+          tickets: [
+            {
+              id: 'T1',
+              title: 'Add feature file',
+              description: 'Add feature.txt',
+              acceptance: ['File exists'],
+              blocked_by: [],
+              size: 'S',
+            },
+          ],
+        },
+      };
+    if (request.step === 'feature:qa') return { text: '# QA plan\n\n- [ ] Check the feature.', costUsd: 0 };
     if (request.step === 'classifier')
       return {
         text: '',
@@ -184,5 +212,49 @@ test('project settings show the task manager and the list-tickets command', asyn
   const p = await page('/projects/demo/settings');
   await p.getByText('List tickets').first().waitFor();
   assert.ok((await p.content()).includes('acli jira workitem search'), 'the saved command is shown');
+  await p.close();
+});
+
+test('feature moves from grill through spec and board gates to QA', async () => {
+  const call = async (id: string, action: string, extra: Record<string, unknown> = {}) =>
+    backendCall('FeatureAction', { project: 'demo', json: JSON.stringify({ id, action, ...extra }) });
+  const created = JSON.parse(
+    (
+      await backendCall('CreateFeature', {
+        project: 'demo',
+        json: JSON.stringify({ title: 'Seeded feature', idea: 'Add a feature file' }),
+      })
+    ).json,
+  );
+  const id = created.id as string;
+  const detail = async () => JSON.parse((await backendCall('GetFeature', { project: 'demo', id })).json);
+  const settled = async (stage: string) =>
+    waitFor(stage, async () => {
+      const f = await detail();
+      if (f.error) throw new Error(f.error);
+      return f.stage === stage && !f.working ? f : undefined;
+    });
+  await call(id, 'grill');
+  await settled('spec');
+  await call(id, 'write-spec');
+  await waitFor('spec', async () => {
+    const f = await detail();
+    return f.spec && !f.working ? f : undefined;
+  });
+  const p = await page(`/projects/demo/features/${id}`);
+  await p.getByText('Add a feature file.', { exact: false }).first().waitFor();
+  await p.getByRole('button', { name: 'Approve specification' }).click();
+  await settled('spec-approved');
+  await p.getByRole('button', { name: 'Plan board' }).waitFor();
+  await p.getByRole('button', { name: 'Plan board' }).click();
+  await settled('board');
+  await p.reload();
+  await p.getByText('T1: Add feature file', { exact: false }).waitFor();
+  await p.getByRole('button', { name: 'Approve board and start work' }).click();
+  await settled('implementing');
+  // QA is explicitly requested while the isolated ticket workflow runs; no external PR is opened.
+  await call(id, 'write-qa');
+  const qa = await settled('qa');
+  assert.match(qa.qa, /Check the feature/);
   await p.close();
 });

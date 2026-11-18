@@ -25,7 +25,9 @@ export function FeatureGate({
           <input type="checkbox" name="mirror" /> Create tickets in task manager
         </label>
       )}
-      <Button disabled={pending}>{pending ? 'Working…' : label}</Button>
+      <Button type="submit" disabled={pending}>
+        {pending ? 'Working…' : label}
+      </Button>
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
           {state.error}
