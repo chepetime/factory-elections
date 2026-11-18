@@ -204,6 +204,8 @@ export const TaskRecord = z.looseObject({
       output_tail: z.string(),
       /** The runtime check's verdict, when the profile has one. */
       runtime: RuntimeVerdict.optional(),
+      /** Checks that refused the change as too broad for this machine; CI must run them. */
+      not_run_locally: z.array(NonEmpty).optional(),
     })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),

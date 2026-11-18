@@ -594,6 +594,12 @@ export default async function TaskPage({
               {task.verification.passed ? 'Passed' : 'Failed'} at{' '}
               <span className="font-mono">{task.verification.head_sha.slice(0, 12)}</span>
             </p>
+            {task.verification.not_run_locally?.length ? (
+              <p role="note" className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                Not run locally: {task.verification.not_run_locally.join(', ')}. The change is too broad for
+                this machine, so CI must pass before you merge.
+              </p>
+            ) : null}
             {task.verification.runtime && (
               <p
                 className={cn(

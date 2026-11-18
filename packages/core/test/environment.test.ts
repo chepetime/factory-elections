@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { environmentFailure } from '../src/index.ts';
+import { environmentFailure, prBody, TaskRecord, tooBroadForLocalCheck } from '../src/index.ts';
 
 test('known machine faults in check output are environment failures', () => {
   const cases: [string, RegExp][] = [
@@ -40,4 +40,33 @@ test('a profile can add its own environment patterns', () => {
   const found = environmentFailure('mdm sandbox is down for maintenance', ['sandbox is down']);
   assert.equal(found?.reason, 'the output matches the profile pattern /sandbox is down/');
   assert.equal(environmentFailure('all good', ['sandbox is down']), undefined);
+});
+
+test('a check that refuses a change as too broad is found by its line', () => {
+  assert.equal(
+    tooBroadForLocalCheck('ok\ntest:changed: 80 workspaces (limit 6), too broad to run on this machine.\n'),
+    'test:changed: 80 workspaces (limit 6), too broad to run on this machine.',
+  );
+  assert.equal(tooBroadForLocalCheck('AssertionError: expected 2 to equal 3'), undefined);
+});
+
+test('the pull request record names the checks that CI must run', () => {
+  const task = TaskRecord.parse({
+    id: '11111111-2222-4333-8444-555555555555',
+    project: 'demo',
+    repo: '/r',
+    prompt: 'Update dependencies',
+    stage: 'awaiting-approval',
+    verification: {
+      passed: true,
+      head_sha: 'abc123abc123abc',
+      at: '2026-11-18T00:00:00.000Z',
+      output_tail: '',
+      not_run_locally: ['test', 'full_check'],
+    },
+  });
+  assert.match(
+    prBody(task, 'abc123abc123abc'),
+    /Verification: passed at `abc123abc123`; not run locally \(too broad for the workstation\): test, full_check\. CI must pass before merge\./,
+  );
 });

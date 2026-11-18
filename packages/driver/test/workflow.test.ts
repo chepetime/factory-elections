@@ -764,6 +764,38 @@ test('an environment failure in verification stops the ladder instead of trying 
   assert.match(message, /ECONNREFUSED 127\.0\.0\.1:5432/);
 });
 
+test('a check that refuses the change as too broad is left to CI, and the task says so', async () => {
+  const { driver, task, runner } = await setup(
+    { classifier: [ready], coder: [writeFeature], reviewer: [approveReview] },
+    "echo 'test:changed: this diff affects 80 workspaces (limit 6), too broad to run on this machine.' && exit 1",
+  );
+  const reviewed = await driver.run('demo', task.id, { maxAttempts: 3 });
+  assert.equal(reviewed.stage, 'awaiting-approval');
+  assert.equal(reviewed.verification?.passed, true);
+  assert.deepEqual(reviewed.verification?.not_run_locally, ['test']);
+  assert.match(
+    reviewed.verification!.output_tail,
+    /\[test not run locally: .*too broad.* CI must pass before merge\.\]/,
+  );
+  assert.ok(reviewed.events!.some((e) => /not run locally: test \(CI must pass\)/.test(e.message)));
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 1, 'no second coder attempt');
+});
+
+test('a real failure in a later check still fails verification after a too-broad check', async () => {
+  const { driver, task } = await setup(
+    { classifier: [ready], coder: [writeFeature] },
+    "echo 'too broad to run on this machine.' && exit 1",
+  );
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, full_check: "echo 'lint: 2 errors' && exit 1" },
+  }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }));
+  const verdict = await driver.verify('demo', task.id);
+  assert.equal(verdict.passed, false);
+  assert.match(verdict.output, /\[full_check exited with status 1\]/);
+});
+
 test('a profile environment pattern also stops the ladder', async () => {
   const { driver, task, runner } = await setup(
     { classifier: [ready], coder: [writeFeature, writeFeature] },

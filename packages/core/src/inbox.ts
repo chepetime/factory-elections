@@ -92,6 +92,7 @@ export function inboxItems(input: InboxInput): InboxItem[] {
     const base = { project, task_id: task.id, title: firstLine(task.prompt), since };
     if (task.stage === 'awaiting-approval') {
       const runtime = task.verification?.runtime;
+      const notRun = task.verification?.not_run_locally ?? [];
       out.push(
         item({
           ...base,
@@ -99,7 +100,9 @@ export function inboxItems(input: InboxInput): InboxItem[] {
           action: 'Review the diff, then approve, ask for a revision or reject',
           ...(runtime && runtime !== 'yes'
             ? { detail: `The runtime check says "${runtime}": check the app by hand.` }
-            : {}),
+            : notRun.length
+              ? { detail: `Not checked locally (${notRun.join(', ')}): CI must pass before merge.` }
+              : {}),
         }),
       );
     } else if (task.stage === 'blocked')

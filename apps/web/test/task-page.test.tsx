@@ -259,3 +259,22 @@ it('a silent command shows its elapsed time and a notice that it is still runnin
   expect(page).toMatch(/15m[\s\S]*no output for 14m/);
   expect(page).toMatch(/role="status"[^>]*>[\s\S]*No output for 14m/);
 });
+it('says which checks did not run locally and that CI must pass', async () => {
+  const current = TaskRecord.parse({
+    ...task,
+    stage: 'awaiting-approval',
+    verification: {
+      passed: true,
+      head_sha: 'abc123abc123abc',
+      at: '2026-11-18T00:00:00.000Z',
+      output_tail: '',
+      not_run_locally: ['test', 'full_check'],
+    },
+  });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: current, execution: 'completed', actions: taskActions(current, 'completed') },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
+  expect(await html()).toMatch(/Not run locally: test, full_check\.[\s\S]*CI must pass before you merge/);
+});

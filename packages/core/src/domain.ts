@@ -155,7 +155,10 @@ export function prBody(task: TaskRecord, headSha: string): string {
   );
   if (task.verification)
     lines.push(
-      `- Verification: ${task.verification.passed ? 'passed' : 'failed'} at \`${task.verification.head_sha.slice(0, 12)}\``,
+      `- Verification: ${task.verification.passed ? 'passed' : 'failed'} at \`${task.verification.head_sha.slice(0, 12)}\`` +
+        (task.verification.not_run_locally?.length
+          ? `; not run locally (too broad for the workstation): ${task.verification.not_run_locally.join(', ')}. CI must pass before merge.`
+          : ''),
     );
   if (task.review) {
     lines.push(`- Automated review: ${task.review.verdict}, ${task.review.findings.length} finding(s)`);

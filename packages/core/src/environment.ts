@@ -8,6 +8,8 @@ export interface EnvironmentFailure {
   line: string;
 }
 
+const TOO_BROAD = /too broad to run on this machine/;
+
 const KNOWN: [RegExp, string][] = [
   [/\b(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET)\b|tunnel error/, 'a network service is not reachable'],
   [
@@ -16,8 +18,20 @@ const KNOWN: [RegExp, string][] = [
   ],
   [/Cannot connect to the Docker daemon|docker daemon is not running/i, 'Docker is not running'],
   [/\bENOSPC\b|no space left on device/i, 'the disk is full'],
-  [/too broad to run on this machine/, 'the check command refused this change as too broad for this machine'],
+  [TOO_BROAD, 'the check command refused this change as too broad for this machine'],
 ];
+
+/**
+ * The output line where a check refused the change as too broad to run on this machine (a
+ * catalog or root lockfile change touches every workspace). Verification does not fail for it:
+ * the check is left to CI, and the task says so.
+ */
+export function tooBroadForLocalCheck(output: string): string | undefined {
+  return output
+    .split('\n')
+    .find((line) => TOO_BROAD.test(line))
+    ?.trim();
+}
 
 /** Lockfiles whose contents decide when setup must run again, when the profile names none. */
 export const DEFAULT_SETUP_INPUTS = [

@@ -12,6 +12,7 @@ import {
   DEFAULT_STEP_LIMITS,
   DEFAULT_TASK_LIMITS,
   environmentFailure,
+  tooBroadForLocalCheck,
   ReviewOutput,
   approvalBlockers,
   blockingFindings,
@@ -584,7 +585,13 @@ export class Driver {
   async verify(
     project: string,
     id: string,
-  ): Promise<{ passed: boolean; output: string; headSha: string; runtime?: RuntimeVerdict }> {
+  ): Promise<{
+    passed: boolean;
+    output: string;
+    headSha: string;
+    runtime?: RuntimeVerdict;
+    notRunLocally?: string[];
+  }> {
     const task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
     const { path, base } = await this.checkedWorktree(task);
@@ -603,15 +610,19 @@ export class Driver {
       };
     const limits = checkLimits(profile);
     let output = '';
+    let commandOutput = '';
     const onOutput = (chunk: string) => {
       output = tail(output + chunk);
+      commandOutput = tail(commandOutput + chunk);
       this.deps.log(chunk.replace(/\n$/, ''));
     };
+    const notRunLocally: string[] = [];
     for (const [label, command] of [
       ['test', profile.commands.test],
       ['full_check', profile.commands.full_check],
     ] as const) {
       this.deps.log(`$ ${command}   # ${label}`);
+      commandOutput = '';
       const result = await this.deps.shell.runShell(command, {
         cwd: path,
         captureLimit: 0,
@@ -626,6 +637,13 @@ export class Driver {
       if (result.stopped) {
         output += `\n[${label} ${limits.why(result.stopped)} and was stopped]\n`;
         return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
+      }
+      const tooBroad = result.code !== 0 ? tooBroadForLocalCheck(commandOutput) : undefined;
+      if (tooBroad) {
+        // The repository refuses to run this check on a workstation. CI runs it on the pull request.
+        output += `\n[${label} not run locally: ${tooBroad} CI must pass before merge.]\n`;
+        notRunLocally.push(label);
+        continue;
       }
       if (result.code !== 0) {
         output += `\n[${label} exited with status ${result.code}]\n`;
@@ -694,13 +712,19 @@ export class Driver {
       output += '\n[the commit changed during verification; rerun checks against one unchanged commit.]\n';
       return { passed: false, output: tail(output), headSha };
     }
-    return { passed: true, output, headSha, ...(runtime ? { runtime } : {}) };
+    return {
+      passed: true,
+      output,
+      headSha,
+      ...(runtime ? { runtime } : {}),
+      ...(notRunLocally.length ? { notRunLocally } : {}),
+    };
   }
 
   private async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
     // The coder may have changed a lockfile: install again, and send a failure back as feedback.
     const setupFailure = await this.refreshSetup(project, id, await this.deps.readProfile(project));
-    const result = setupFailure
+    const result: Awaited<ReturnType<Driver['verify']>> = setupFailure
       ? {
           passed: false,
           output: `${setupFailure}\n[setup failed after the change; fix the dependency files (package.json, lockfile)]\n`,
@@ -717,9 +741,17 @@ export class Driver {
       at: now,
       output_tail: tail(result.output),
       ...(result.runtime ? { runtime: result.runtime } : {}),
+      ...(result.notRunLocally ? { not_run_locally: result.notRunLocally } : {}),
     };
     const updated = result.passed
-      ? withEvent({ ...task, verification }, now, 'verification', 'Verification passed')
+      ? withEvent(
+          { ...task, verification },
+          now,
+          'verification',
+          result.notRunLocally
+            ? `Verification passed; not run locally: ${result.notRunLocally.join(', ')} (CI must pass)`
+            : 'Verification passed',
+        )
       : withStage({ ...task, verification }, now, 'verification-failed', 'Verification failed');
     await this.deps.tasks.write(updated);
     return updated;
