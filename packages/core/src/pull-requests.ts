@@ -422,6 +422,14 @@ export const ProjectSettings = z.object({
    * (`{ "default": 150000, "codex": 120000, "claude-opus-5-5": 180000 }`). The factory warns at 80%.
    */
   context_tokens: ContextLimits.optional(),
+  /**
+   * PR tending: every 10 minutes the factory keeps this project's open factory PRs moving. It
+   * reruns failed checks once, fixes failing CI, merges the base in on conflicts, and (with
+   * `answer_threads`) answers review threads. It never force-pushes and never merges. Off by default.
+   */
+  tending: z
+    .object({ enabled: z.boolean().default(false), answer_threads: z.boolean().default(false) })
+    .default({ enabled: false, answer_threads: false }),
   updated_at: z.string().optional(),
 });
 export type ProjectSettings = z.infer<typeof ProjectSettings>;

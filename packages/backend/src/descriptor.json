@@ -283,6 +283,26 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "GetTrace": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "GetMetrics": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "GetInbox": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "DismissInboxItem": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Text"
+                },
+                "TendPullRequests": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "ListTickets": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

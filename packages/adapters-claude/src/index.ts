@@ -357,7 +357,11 @@ export class ClaudeAgentRunner implements ModelRunner {
       ...((result.usage as typeof result.usage | undefined)
         ? {
             usage: {
-              inputTokens: result.usage.input_tokens,
+              // Anthropic counts cache reads and writes apart from input_tokens; the shared shape includes them.
+              inputTokens:
+                result.usage.input_tokens +
+                (result.usage.cache_read_input_tokens ?? 0) +
+                (result.usage.cache_creation_input_tokens ?? 0),
               outputTokens: result.usage.output_tokens,
               cachedInputTokens: result.usage.cache_read_input_tokens ?? 0,
             },

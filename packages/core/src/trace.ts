@@ -27,6 +27,8 @@ export const SpanType = z.enum([
   'loop-judge',
   /** Time a task waited for the human at the approval gate. */
   'gate',
+  /** A task's PR opened: links the task's traces to the PR. */
+  'pr',
 ]);
 export type SpanType = z.infer<typeof SpanType>;
 

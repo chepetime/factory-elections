@@ -31,6 +31,7 @@ import {
   ToolSpans,
   type AgentEvent,
   type ContextStatus,
+  type ReviewWaiting,
   triagePullRequests,
   type AgentCli,
   type HeadlessTurn,
@@ -334,6 +335,26 @@ export class ReviewService {
       }
     }
     return stopped;
+  }
+
+  /** Each review of the project whose latest turn ended, for the inbox. */
+  async waiting(project: string): Promise<ReviewWaiting[]> {
+    const out: ReviewWaiting[] = [];
+    for (const number of await this.reviewNumbers(project)) {
+      const record = await this.readRun(project, number).catch(() => undefined);
+      if (!record) continue;
+      const status = await this.status(project, record, false);
+      if (!status.state || ['running', 'preparing'].includes(status.state)) continue;
+      out.push({
+        number,
+        url: record.url,
+        ...(record.title ? { title: record.title } : {}),
+        state: status.state,
+        finished_at: status.finished_at ?? record.turns.at(-1)!.at,
+        ...(status.decision ? { decision: status.decision } : {}),
+      });
+    }
+    return out;
   }
 
   /** Gives memory each finished turn once: its digest, and which tools it was offered and used. */

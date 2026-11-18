@@ -142,6 +142,14 @@ export class FeatureService {
     return readFile(join(this.dir(project, id), file), 'utf8').catch(() => undefined);
   }
 
+  /** Every feature of a project, whole; `working` only while a step really runs. */
+  async all(project: string): Promise<Feature[]> {
+    const ids = await readdir(join(this.deps.root, project, 'features')).catch(() => [] as string[]);
+    const features = await Promise.all(ids.map((id) => this.read(project, id).catch(() => undefined)));
+    return features
+      .filter((f): f is Feature => f !== undefined)
+      .map((f) => (this.busy.has(`${project}/${f.id}`) ? f : { ...f, working: undefined }));
+  }
   async list(rawProject: unknown) {
     const project = ProjectName.parse(rawProject);
     const ids = await readdir(join(this.deps.root, project, 'features')).catch(() => [] as string[]);

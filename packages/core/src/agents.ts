@@ -91,8 +91,10 @@ export function missingCapabilities(provider: ProviderId, needs: readonly Capabi
 
 /** Token counts, for providers that report usage but not cost. */
 export interface Usage {
+  /** Every input token, cache reads and writes included, the same for each provider. */
   inputTokens: number;
   outputTokens: number;
+  /** The part of `inputTokens` read from the prompt cache. */
   cachedInputTokens?: number;
 }
 

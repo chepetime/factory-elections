@@ -35,7 +35,7 @@ test('Claude stream-json becomes the shared events, marking subagent output', ()
       text: 'Approve',
       costUsd: 2,
       sessionId: 's1',
-      usage: { inputTokens: 10, outputTokens: 3, cachedInputTokens: 4 },
+      usage: { inputTokens: 14, outputTokens: 3, cachedInputTokens: 4 },
     },
   ]);
 });

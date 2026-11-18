@@ -180,6 +180,11 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
     backendCall('ExecuteTask', { project: 'demo', id, action: 'approve', head: '0000000' }),
     /--head/,
   );
+  const inbox = JSON.parse((await backendCall('GetInbox', {})).json);
+  assert.deepEqual(
+    inbox.items.map((i: { kind: string; task_id: string }) => [i.kind, i.task_id]),
+    [['gate', id]],
+  );
   const gate = JSON.parse((await backendCall('GetGate', { project: 'demo', id })).json);
   await backendCall('ExecuteTask', { project: 'demo', id, action: 'approve', head: gate.head_sha });
   assert.equal(JSON.parse((await backendCall('GetTask', { project: 'demo', id })).json).stage, 'approved');
@@ -205,6 +210,19 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
   const gateSpan = ledger.find((s) => s.type === 'gate')!;
   assert.equal(gateSpan.attributes!.decision, 'approved');
   assert.ok(gateSpan.duration_ms! >= 0);
+  const tree = JSON.parse(
+    (await backendCall('GetTrace', { project: 'demo', json: JSON.stringify({ task_id: id }) })).json,
+  );
+  const runNode = tree.roots.find((r: { span: { type: string } }) => r.span.type === 'run');
+  assert.equal(runNode.children.length, 4);
+  assert.ok(Math.abs(runNode.total.cost_usd - 0.171) < 0.000001);
+  const metrics = JSON.parse((await backendCall('GetMetrics', { project: '', json: '{}' })).json);
+  assert.deepEqual([metrics.runs.count, metrics.runs.first_pass_rate, metrics.gates.count], [1, 1, 1]);
+  assert.equal(
+    JSON.parse((await backendCall('GetInbox', {})).json).items.length,
+    0,
+    'the gate left the inbox',
+  );
   await backendCall('ClearLog', { project: 'demo', id });
   assert.equal(
     JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json).logTail,

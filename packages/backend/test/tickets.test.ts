@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { storageFor } from '@factory/adapters-data';
 import { TicketService } from '../src/tickets.ts';
-import type { TaskManager } from '@factory/core';
+import { ProjectSettings, type TaskManager } from '@factory/core';
 
 test('ticket listing uses the registered repository and configured command, with setup and failure states', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'factory-tickets-'));
@@ -19,7 +19,7 @@ test('ticket listing uses the registered repository and configured command, with
   let stdout = 'APP-1 Fix login\n';
   const service = new TicketService(
     storage.projects,
-    async () => ({ task_manager: manager }),
+    async () => ProjectSettings.parse({ task_manager: manager }),
     async (command, options) => {
       calls++;
       assert.equal(command, 'tracker list --project APP');

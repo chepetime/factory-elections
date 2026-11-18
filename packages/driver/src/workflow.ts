@@ -92,6 +92,32 @@ function freePort(): Promise<number> {
   });
 }
 
+/** Keeps an editing agent inside its worktree, off forbidden paths and forbidden commands. */
+export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard {
+  const root = resolve(worktree);
+  return {
+    check(toolName, input) {
+      if (toolName === 'Bash') {
+        const command = String(input.command ?? '');
+        const forbidden = isForbiddenCommand(command, profile);
+        return forbidden ? `The command "${forbidden}" is not allowed for the coder.` : undefined;
+      }
+      const raw = input.file_path ?? input.path ?? input.notebook_path;
+      if (raw === undefined) return undefined;
+      const target = resolve(root, String(raw));
+      const rel = relative(root, target);
+      if (rel.startsWith('..') || isAbsolute(rel) || rel === '..' || target.split(sep).includes('.git'))
+        return `Only files inside the task worktree (${root}) may be used.`;
+      if (
+        (toolName === 'Edit' || toolName === 'Write') &&
+        isForbiddenPath(rel, profile.confirmed.forbidden_paths)
+      )
+        return `The path "${rel}" is forbidden by the repository profile.`;
+      return undefined;
+    },
+  };
+}
+
 export class Driver {
   readonly deps: DriverDeps;
   constructor(deps: DriverDeps) {
@@ -489,28 +515,7 @@ export class Driver {
   // ---------- coding ----------
 
   private coderGuard(worktree: string, profile: RepoProfile): ToolGuard {
-    const root = resolve(worktree);
-    return {
-      check(toolName, input) {
-        if (toolName === 'Bash') {
-          const command = String(input.command ?? '');
-          const forbidden = isForbiddenCommand(command, profile);
-          return forbidden ? `The command "${forbidden}" is not allowed for the coder.` : undefined;
-        }
-        const raw = input.file_path ?? input.path ?? input.notebook_path;
-        if (raw === undefined) return undefined;
-        const target = resolve(root, String(raw));
-        const rel = relative(root, target);
-        if (rel.startsWith('..') || isAbsolute(rel) || rel === '..' || target.split(sep).includes('.git'))
-          return `Only files inside the task worktree (${root}) may be used.`;
-        if (
-          (toolName === 'Edit' || toolName === 'Write') &&
-          isForbiddenPath(rel, profile.confirmed.forbidden_paths)
-        )
-          return `The path "${rel}" is forbidden by the repository profile.`;
-        return undefined;
-      },
-    };
+    return worktreeGuard(worktree, profile);
   }
 
   /** One coder attempt on one rung, followed by a driver-owned commit. */

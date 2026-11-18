@@ -165,7 +165,10 @@ test('payloads parse leniently and settings default to no task manager', () => {
   });
   assert.equal(payload.meta.decision, 'Comment');
   assert.deepEqual(ReviewPayload.parse({ meta: {} }).findings, []);
-  assert.deepEqual(ProjectSettings.parse({}), { task_manager: { kind: 'none' } });
+  assert.deepEqual(ProjectSettings.parse({}), {
+    task_manager: { kind: 'none' },
+    tending: { enabled: false, answer_threads: false },
+  });
   assert.throws(() => ProjectSettings.parse({ icon: 'way too long icon' }));
 });
 

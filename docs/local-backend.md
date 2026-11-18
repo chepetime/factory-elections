@@ -132,6 +132,55 @@ Rules:
 - **Timing.** Tool calls of a detached review turn have no timings in the log, so their spans have no `duration_ms`.
 - **Old evidence.** The per-run `events.jsonl` (below) stays as the run's own log. The ledger is the cross-run record.
 
+## Traces, metrics and the inbox (RPCs)
+
+- **`GetTrace`** (`project`, `json: { task_id | trace_id | feature_id }`) returns `{ spans, roots }`: trees of spans in start order. Each node has `total`, which is its own cost plus the cost of everything under it, with `unknown_cost_spans` kept apart.
+- **`GetMetrics`** (`project`, or empty for every project; `json: { from?, to? }`, default the last 7 days) returns the Weekly numbers from `metricsSummary` (`packages/core/src/metrics.ts`):
+  - spend and tokens per day, with spend by provider for each day
+  - totals by provider, model, span type, step, project and feature, and the cache-hit rate
+  - runs: their count, failure rate, first-pass rate (the run reached the human with one coder call), climb rate (the coder used more than one model) and median time
+  - reliability: stalls, repeat loops (loop-judge spans that found the agent stuck) and failed tool calls
+  - PRs: cost and agent time per task with a PR (a `pr` span is written when the PR opens)
+  - gates: their count and the wait time
+  - review turns and their cost
+  - **call grading**, one row per task class and first coder model:
+    - `right`: the first model passes first time in 80% or more of runs
+    - `too-weak`: the task moves to another model in more than 30% of runs
+    - `try-cheaper`: every run passes first time over 5 or more runs
+    - `too-few`: fewer than 3 runs
+    - `mixed`: none of the above
+- **`GetInbox`** returns everything that waits on you, across projects. One rule decides it (`packages/core/src/inbox.ts`): an item waits on you when its next step needs your decision and no agent works on it. The kinds:
+  - `gate`: a task at the approval gate. A runtime verdict other than `yes` is shown on it.
+  - `blocked`: the classifier needs an answer.
+  - `failed`: a failed task, feature step or ticket.
+  - `question`: a grill question.
+  - `approve-spec` and `approve-board`.
+  - `merge`: a ticket with several blockers, which waits for their PRs to merge.
+  - `qa`: the QA plan is ready.
+  - `review`: a finished PR review.
+  - `tending`: tending stopped on a PR.
+- **`DismissInboxItem`** (`json: { id }`) hides an item until it waits again for a new reason. The item ID includes the time the item began to wait.
+
+## PR tending
+
+Tending is off by default. Turn it on in the project settings with `"tending": { "enabled": true, "answer_threads": false }`. Every 10 minutes the backend checks each task in `pr-opened` and does one action (`nextTendAction` in `packages/core/src/tending.ts`), in this order:
+
+1. **The PR is merged or closed:** tending ends for that PR.
+2. **The PR conflicts with its base:** tending merges the base in. An agent resolves the conflicts, and the merge is committed.
+3. **Review threads wait for an answer:** this happens only with `answer_threads` on. An agent replies to each thread and changes code where it agrees with the comment. A thread is resolved only when its code change was pushed.
+4. **Checks failed:** tending reruns the failed jobs once for each head commit. If they fail again, an agent fixes the cause from the failed logs.
+5. **Otherwise:** tending waits.
+
+Safety rules:
+
+- Agents run with the coder's worktree guard and cannot commit, push or post.
+- The backend first fast-forwards to the PR head and refuses a branch that has diverged.
+- The backend pushes only new commits on top of the head, and only after the profile's `test` command passes. A failed fix is reset.
+- Tending never force-pushes and never merges the PR.
+- After 3 fixes without a green PR, tending stops and the PR goes to the inbox. `TendPullRequests` (`project`, `id`) tends one PR now and resumes a stopped one. With an empty `id`, it runs one pass over all PRs.
+
+Each tending model call is a `model` span with step `tend:<action>`, under the task's ID and PR. The state of each PR is in `<project>/tasks/<id>/tending.json`.
+
 ## Communication and configuration
 
 The versioned contract is `packages/backend/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.

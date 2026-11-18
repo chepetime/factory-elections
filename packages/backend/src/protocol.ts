@@ -64,6 +64,16 @@ export interface Methods {
   CreateFeature: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ id, action, … }`, see FeatureAction in packages/backend/src/features.ts. */
   FeatureAction: [{ project: string; json: string }, { json: string }];
+  /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
+  GetTrace: [{ project: string; json: string }, { json: string }];
+  /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */
+  GetMetrics: [{ project: string; json: string }, { json: string }];
+  /** Everything that waits on the human, across projects: `{ items, dismissed }`. */
+  GetInbox: [{}, { json: string }];
+  /** `json`: `{ id }`; `project` is unused. */
+  DismissInboxItem: [{ project: string; json: string }, { text: string }];
+  /** Tends task `id`'s PR now (and resumes a stopped one); empty `id`: one pass over every tended PR. */
+  TendPullRequests: [Target, { json: string }];
   ListTickets: [Target, { json: string }];
   ListTasks: [Target, { json: string }];
   GetTask: [Target, { json: string }];

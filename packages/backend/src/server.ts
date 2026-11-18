@@ -133,6 +133,20 @@ export async function startBackend(options: ServerOptions) {
           await service.features.act({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      GetTrace: async (request) => ({
+        json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
+      }),
+      GetMetrics: async (request) => ({
+        json: JSON.stringify(
+          await service.metrics({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      GetInbox: async () => ({ json: JSON.stringify(await service.inbox()) }),
+      DismissInboxItem: async (request) => {
+        await service.dismissInbox(jsonObject(request.json));
+        return { text: 'dismissed' };
+      },
+      TendPullRequests: async (request) => ({ json: JSON.stringify(await service.tendNow(request)) }),
       RestoreTools: async (request) => {
         await service.memory.restoreTools(ProjectName.parse(request.project));
         return { text: 'restored' };
@@ -235,6 +249,7 @@ export async function startBackend(options: ServerOptions) {
     const recovered = await service.recover();
     service.reviews.startSweeping();
     service.features.startTicking();
+    service.tending.startTicking();
     trace.record('server.recovered', recovered);
     const delegation = await service.delegation.start();
     trace.record('server.delegation', { url: delegation });
@@ -250,6 +265,7 @@ export async function startBackend(options: ServerOptions) {
             service.drain(),
             Promise.resolve(service.reviews.stopSweeping()),
             Promise.resolve(service.features.stopTicking()),
+            Promise.resolve(service.tending.stopTicking()),
             new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),
             new Promise<void>((done, reject) => health.close((error) => (error ? reject(error) : done()))),
           ]);

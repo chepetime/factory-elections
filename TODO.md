@@ -34,13 +34,13 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 
 ## Later (plan phase 2)
 
-- [ ] **Trace page and metrics RPCs:** read the span ledger (`TraceLog.read`) for a trace tree per run, and counts across runs (build step 3).
+- [ ] **UI for the new RPCs (UI agent):** a trace page (`GetTrace`), a Weekly page (`GetMetrics`), one Inbox (`GetInbox`, `DismissInboxItem`), and a tending toggle in project settings. The settings form must keep the `tending` field, or a save turns tending off.
+- [ ] **Tending gaps:** a stale `pr-opened` worktree that was removed stops tending with an error; thread replies post as the signed-in `gh` account.
 - [ ] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database yet.
 - [ ] **Human time in review:** gate spans record the wait, not the time spent. Record time spent when the in-app review exists.
 - [ ] **Outcome records:** merged, reverted and incident records that join spans on `task_id` and `pr`.
 - [ ] **Tool timings for review turns:** detached turns log no tool timings; add them with a hook, or read timestamps if the CLI adds them.
 
-- [ ] PR tending: follow review comments and CI on opened PRs.
 - [ ] **Codex review turns:** they need deny rules that hold for wrapped commands. Options: a Codex rules file plus no network, or prefetched PR data.
 - [ ] **Loop guard and context warnings for review turns and Codex:** they need tool hooks (a `--settings` hook command for detached Claude turns).
 - [ ] **Resume a model step after a restart:** steps return a session id now; keep sessions (`persistSession`) and pass `resume` when a run continues.

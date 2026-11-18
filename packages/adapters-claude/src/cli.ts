@@ -122,7 +122,11 @@ export function claudeMessageEvents(e: Record<string, unknown>): AgentEvent[] {
       ...(usage && typeof usage.input_tokens === 'number'
         ? {
             usage: {
-              inputTokens: usage.input_tokens,
+              // Anthropic counts cache reads and writes apart from input_tokens; the shared shape includes them.
+              inputTokens:
+                usage.input_tokens +
+                Number(usage.cache_read_input_tokens ?? 0) +
+                Number(usage.cache_creation_input_tokens ?? 0),
               outputTokens: Number(usage.output_tokens ?? 0),
               cachedInputTokens: Number(usage.cache_read_input_tokens ?? 0),
             },

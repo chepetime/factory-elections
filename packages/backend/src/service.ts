@@ -15,6 +15,10 @@ import {
   newSpanId,
   newTraceId,
   taskClass,
+  traceTree,
+  inboxItems,
+  type InboxItem,
+  metricsSummary,
   type ModelRunner,
   type RepoProfile,
   type TaskControls,
@@ -28,6 +32,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { TraceLog } from './traces.ts';
+import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
@@ -117,6 +122,8 @@ export class BackendService {
   readonly features: FeatureService;
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
+  /** Keeps open factory PRs moving, for projects that turn it on. */
+  readonly tending: TendingService;
   constructor(
     root: string,
     runner?: ModelRunner,
@@ -180,6 +187,84 @@ export class BackendService {
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.tending = new TendingService({
+      projects: this.projects,
+      tasks: this.tasks,
+      settings: (p) => this.settings.get(p),
+      profile: (p) => readProfile(this.root, p),
+      runner: (task) =>
+        this.memory.recording(
+          task.project,
+          'tending',
+          this.traces.runner(base, () => ({
+            trace_id: newTraceId(),
+            project: task.project,
+            task_id: task.id,
+            ...(task.pr ? { pr: { url: task.pr.url } } : {}),
+            ...(taskClass(task.verdict) ? { task_class: taskClass(task.verdict) } : {}),
+          })),
+        ),
+      slot: () => this.tryAgentSlot(),
+      storage: this.storage,
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
+  }
+  private inboxPath(): string {
+    return join(this.root, 'inbox', 'dismissed.json');
+  }
+  private async dismissed(): Promise<Record<string, string>> {
+    try {
+      return (await this.storage.readDocument(this.inboxPath())) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+  /** Everything that waits on the human, across projects, oldest first. */
+  async inbox(): Promise<{ items: InboxItem[]; dismissed: number }> {
+    const dismissed = await this.dismissed();
+    const items: InboxItem[] = [];
+    for (const { name } of await this.projects.list()) {
+      const [tasks, features, reviews] = await Promise.all([
+        this.tasks.list(name).catch(() => []),
+        this.features.all(name).catch(() => []),
+        this.reviews.waiting(name).catch(() => []),
+      ]);
+      const tending = await this.tending.waiting(name, tasks).catch(() => []);
+      items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
+    }
+    const open = items.filter((i) => !dismissed[i.id]);
+    return {
+      items: open.sort((a, b) => a.since.localeCompare(b.since)),
+      dismissed: items.length - open.length,
+    };
+  }
+  /** Hides an inbox item until it waits again for a new reason. */
+  async dismissInbox(raw: unknown): Promise<void> {
+    const { id } = z.object({ id: z.string().min(1).max(400) }).parse(raw);
+    if (!this.storage.config) await mkdir(join(this.root, 'inbox'), { recursive: true });
+    await this.storage.writeDocument(this.inboxPath(), {
+      ...(await this.dismissed()),
+      [id]: new Date().toISOString(),
+    });
+  }
+  /** Tends one task's PR now (or every tended PR), and lets a stopped PR be tended again. */
+  async tendNow(raw: unknown) {
+    const { project, id } = z
+      .object({ project: ProjectName, id: z.union([TaskId, z.literal('')]) })
+      .parse(raw);
+    if (!id) {
+      await this.tending.tick();
+      return { tended: 'all' };
+    }
+    const task = await this.tasks.read(project, id);
+    await this.tending.resume(task);
+    // Asking for it by hand tends the PR even when the project's ticker is off.
+    const settings = await this.settings.get(project);
+    const action = await this.tending.tend(task, {
+      ...settings,
+      tending: { ...settings.tending, enabled: true },
+    });
+    return { action: action ?? null, record: (await this.tending.record(task)) ?? null };
   }
   async diagnostics() {
     const [environment, projects] = await Promise.all([this.environment(), this.projects.list()]);
@@ -275,6 +360,8 @@ export class BackendService {
             ),
           )
           .then(async (result) => {
+            if (command.action === 'open-pr')
+              await this.tracePr(command.project, command.id).catch(() => undefined);
             if (before && ['approve', 'reject'].includes(command.action))
               await this.traceGate(before, command.action === 'approve' ? 'approved' : 'rejected').catch(
                 () => undefined,
@@ -508,6 +595,47 @@ export class BackendService {
       },
     );
     await this.traces.flush();
+  }
+  /** Marks the moment a task's PR opened, so the task's traces join to the PR. */
+  private async tracePr(project: string, id: string): Promise<void> {
+    const task = await this.tasks.read(project, id);
+    if (!task.pr) return;
+    const at = new Date().toISOString();
+    this.traces.append(
+      { trace_id: newTraceId(), project, task_id: id, ...(await this.traceLinks(task)) },
+      { type: 'pr', name: 'PR opened', started_at: at, ended_at: at, duration_ms: 0, outcome: 'completed' },
+    );
+    await this.traces.flush();
+  }
+  /** Spans of one task, trace or feature, as trees with rolled-up cost. */
+  async trace(raw: unknown) {
+    const q = z
+      .object({
+        project: ProjectName,
+        task_id: z.string().max(100).optional(),
+        trace_id: z.string().max(100).optional(),
+        feature_id: z.string().max(100).optional(),
+      })
+      .refine((x) => x.task_id || x.trace_id || x.feature_id, 'Name a task_id, trace_id or feature_id')
+      .parse(raw);
+    const { project, ...filter } = q;
+    const spans = await this.traces.read(project, filter);
+    return { spans: spans.length, roots: traceTree(spans) };
+  }
+  /** Counts across runs for one project, or every project, over `[from, to)` (default: 7 days). */
+  async metrics(raw: unknown) {
+    const q = z
+      .object({
+        project: z.union([ProjectName, z.literal('')]).optional(),
+        from: z.iso.datetime().optional(),
+        to: z.iso.datetime().optional(),
+      })
+      .parse(raw);
+    const to = q.to ?? new Date(Date.now() + 1000).toISOString();
+    const from = q.from ?? new Date(Date.parse(to) - 7 * 86_400_000).toISOString();
+    const projects = q.project ? [q.project] : (await this.projects.list()).map((p) => p.name);
+    const spans = (await Promise.all(projects.map((p) => this.traces.read(p, { since: from })))).flat();
+    return metricsSummary(spans, from, to);
   }
   /** The time a task waited at the approval gate, as a span, when the human acts on it. */
   private async traceGate(task: TaskRecord, decision: string): Promise<void> {
