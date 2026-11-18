@@ -102,9 +102,16 @@ export async function readDiff(project: string, id: string): Promise<Result<stri
   }
 }
 
-export async function submitTaskRequest(project: string, prompt: string): Promise<Result<string>> {
+export async function submitTaskRequest(
+  project: string,
+  prompt: string,
+  jiraKey?: string,
+): Promise<Result<string>> {
   try {
-    return { ok: true, value: (await backendCall('SubmitTask', { project, prompt })).text };
+    return {
+      ok: true,
+      value: (await backendCall('SubmitTask', { project, prompt, jiraKey })).text,
+    };
   } catch (error) {
     return { ok: false, error: backendError(error) };
   }

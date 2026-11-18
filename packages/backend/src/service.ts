@@ -312,12 +312,16 @@ export class BackendService {
     return this.projects.add(name, repo);
   }
   async submit(raw: unknown): Promise<string> {
-    const { project, prompt } = z
-      .object({ project: ProjectName, prompt: z.string().trim().min(1).max(100_000) })
+    const { project, prompt, jiraKey } = z
+      .object({
+        project: ProjectName,
+        prompt: z.string().trim().min(1).max(100_000),
+        jiraKey: z.string().trim().max(100).optional(),
+      })
       .parse(raw);
     if (!this.accepting) throw new Conflict('Backend is shutting down');
     const registered = await this.projects.read(project);
-    return (await this.tasks.create(project, registered.repo, prompt, new Date().toISOString())).id;
+    return (await this.tasks.create(project, registered.repo, prompt, new Date().toISOString(), jiraKey)).id;
   }
   private async perform(command: z.infer<typeof CommandSchema>, driver: Driver): Promise<string> {
     const { project, id, action } = command;
@@ -553,7 +557,9 @@ export class BackendService {
     return {
       ...(task.ticket
         ? { feature_id: task.ticket.feature, ticket: { id: task.ticket.id, ...(key ? { key } : {}) } }
-        : {}),
+        : task.jira_key
+          ? { ticket: { key: task.jira_key } }
+          : {}),
       ...(task.pr ? { pr: { url: task.pr.url, ...(Number.isFinite(number) ? { number } : {}) } } : {}),
       ...(cls ? { task_class: cls } : {}),
     };

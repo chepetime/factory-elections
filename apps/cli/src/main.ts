@@ -32,7 +32,7 @@ Setup
   doctor                                          Check Node, git, pnpm, gh and Claude sign-in
 
 Workflow
-  intake --project <name> [--repo <abs-path>] <prompt>   Submit a task; prints its id
+  intake --project <name> [--repo <abs-path>] [--jira-key <key>] <prompt>   Submit a task; prints its id
   task actions --project <p> --id <id>               JSON action availability from the running backend
   task run --project <p> --id <id> [--max-attempts N]    Classify, code, verify and review; stops at approval
   task gate --project <p> --id <id> [--json]             Show what awaits your approval
@@ -58,6 +58,7 @@ Data root: $FACTORY_ROOT, or ~/.local/share/factory.
 const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
   project: { type: 'string' },
+  'jira-key': { type: 'string' },
   repo: { type: 'string' },
   id: { type: 'string' },
   name: { type: 'string' },
@@ -170,7 +171,13 @@ export async function main(argv: string[]): Promise<number> {
         const repo = v.repo ?? (await projects.read(name).catch(() => undefined))?.repo;
         if (!repo)
           throw new UsageError('missing --repo (or register the project with `factory project add`)');
-        const task = await tasks.create(name, repo, prompt, new Date().toISOString());
+        const task = await tasks.create(
+          name,
+          repo,
+          prompt,
+          new Date().toISOString(),
+          v['jira-key']?.trim() || undefined,
+        );
         out(task.id);
         return 0;
       }

@@ -44,6 +44,10 @@
                 "prompt": {
                   "type": "string",
                   "id": 2
+                },
+                "jiraKey": {
+                  "type": "string",
+                  "id": 3
                 }
               }
             },

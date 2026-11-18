@@ -143,6 +143,17 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' }>) {
         </div>
       )}
 
+      {isNew && type === 'work' && (
+        <label className="text-sm text-muted-foreground">
+          Jira issue key (optional)
+          <input
+            name="jira_key"
+            maxLength={100}
+            className="ml-2 rounded border px-2 py-1 text-foreground"
+            placeholder="PROJECT-123"
+          />
+        </label>
+      )}
       <div className="rounded-2xl border bg-background shadow-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
         <label htmlFor="chat-input" className="sr-only">
           {isNew ? 'New task' : 'Message the agent'}

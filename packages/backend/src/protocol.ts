@@ -80,7 +80,7 @@ export interface Methods {
   GetTaskControls: [Target, { json: string }];
   GetGate: [Target, { json: string }];
   GetDiff: [Target, { text: string }];
-  SubmitTask: [{ project: string; prompt: string }, { text: string }];
+  SubmitTask: [{ project: string; prompt: string; jiraKey?: string }, { text: string }];
   ExecuteTask: [Command, { text: string }];
   StartRun: [Command, { json: string }];
   GetBackground: [Target, { json: string }];

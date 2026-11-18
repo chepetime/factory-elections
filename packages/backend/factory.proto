@@ -7,7 +7,7 @@ message Empty {}
 message Target { string project = 1; string id = 2; }
 message Snapshot { string json = 1; }
 message Text { string text = 1; }
-message Submission { string project = 1; string prompt = 2; }
+message Submission { string project = 1; string prompt = 2; string jira_key = 3; }
 message ProjectRegistration { string name = 1; string repo = 2; }
 message PullRequestQuery { string project = 1; bool drafts = 2; bool approved = 3; }
 message ReviewTarget { string project = 1; uint32 number = 2; }

@@ -63,7 +63,7 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
   const prompt = field(form, 'prompt');
   if (!isProjectName(project)) return { error: 'Invalid project.' };
   if (!prompt) return { error: 'Describe the task.' };
-  const created = await submitTaskRequest(project, prompt);
+  const created = await submitTaskRequest(project, prompt, field(form, 'jira_key') || undefined);
   if (!created.ok) return { error: created.error };
   const id = created.value;
   if (form.get('start') === 'on') {

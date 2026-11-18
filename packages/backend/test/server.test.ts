@@ -65,7 +65,9 @@ qa_targets: []
     }
     await rm(base, { recursive: true, force: true });
   });
-  const id = (await backendCall('SubmitTask', { project: 'demo', prompt: 'Add feature.txt' })).text;
+  const id = (
+    await backendCall('SubmitTask', { project: 'demo', prompt: 'Add feature.txt', jiraKey: 'DEMO-42' })
+  ).text;
   return { root, server, id };
 }
 async function finished(id: string) {
@@ -192,6 +194,8 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
   const ledger = await server.service.traces.read('demo', { task_id: id });
   const run = ledger.find((s) => s.type === 'run')!;
   assert.equal(run.task_class, 'code/S');
+  assert.equal(task.jira_key, 'DEMO-42');
+  assert.deepEqual(run.ticket, { key: 'DEMO-42' });
   assert.equal(run.replay!.prompt, task.prompt);
   assert.match(run.replay!.base_sha!, /^[0-9a-f]{40}$/);
   assert.ok(run.replay!.verification.length > 0);

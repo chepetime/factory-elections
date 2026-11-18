@@ -105,7 +105,13 @@ export class TaskStore {
     return join(this.root, project, 'worktrees', id);
   }
 
-  async create(project: string, repo: string, prompt: string, now: string): Promise<TaskRecord> {
+  async create(
+    project: string,
+    repo: string,
+    prompt: string,
+    now: string,
+    jiraKey?: string,
+  ): Promise<TaskRecord> {
     checkProjectName(project);
     await checkRepoDirectory(repo);
     if (prompt.trim().length === 0) throw new FactoryError('prompt must not be empty');
@@ -117,6 +123,7 @@ export class TaskStore {
         project,
         repo,
         prompt,
+        ...(jiraKey ? { jira_key: jiraKey } : {}),
         stage: 'queued',
         created_at: now,
         updated_at: now,

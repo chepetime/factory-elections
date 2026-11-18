@@ -189,6 +189,8 @@ export const TaskRecord = z.looseObject({
     .optional(),
   /** A local branch to start from instead of the profile's base: the branch of a blocking ticket. */
   stack_on: NonEmpty.optional(),
+  /** Jira issue explicitly supplied when this task was submitted. */
+  jira_key: NonEmpty.optional(),
   /** The feature ticket this task implements. */
   ticket: z.looseObject({ feature: NonEmpty, id: NonEmpty }).optional(),
   attempts: z.array(StepAttempt).optional(),
