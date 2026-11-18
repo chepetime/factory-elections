@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const PrReviewRecord = z.object({
   id: z.uuid(),
   pr_number: z.number().int().positive(),
+  /** Stable source identifier for idempotent imports. */
+  source_id: z.string().min(1).max(500).optional(),
   reviewer: z.object({ kind: z.enum(['human', 'agent']), identity: z.string().trim().min(1).max(200) }),
   verdict: z.string().trim().min(1).max(100),
   findings: z
@@ -13,6 +15,7 @@ export const PrReviewRecord = z.object({
         path: z.string().trim().min(1).max(2000).optional(),
         line: z.number().int().positive().optional(),
         severity: z.string().trim().min(1).max(100).optional(),
+        evidence: z.array(z.string().max(10000)).max(100).optional(),
       }),
     )
     .max(500),

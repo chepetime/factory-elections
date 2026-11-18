@@ -286,3 +286,21 @@ test('a finished review turn writes one review span with its cost and PR link', 
   );
   assert.ok(spans[0]!.duration_ms! >= 0);
 });
+
+test('completed agent review is recorded once with verdict, findings and timing', async (t) => {
+  const { root, reviews } = await fixture(t);
+  const { DataStorage } = await import('@factory/adapters-data');
+  const { PrReviewStore } = await import('../src/pr-review-records.ts');
+  reviews.reviewRecords = new PrReviewStore(root, new DataStorage(root));
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  await settle(reviews, 7);
+  await reviews.sweep();
+  await reviews.sweep();
+  const records = await reviews.reviewRecords.list('app');
+  assert.equal(records.length, 1);
+  assert.equal(records[0]!.pr_number, 7);
+  assert.deepEqual(records[0]!.reviewer, { kind: 'agent', identity: 'claude' });
+  assert.equal(records[0]!.verdict, 'Comment');
+  assert.equal(records[0]!.findings[0]!.text, 'Edge case');
+  assert.ok(records[0]!.duration_ms >= 0);
+});

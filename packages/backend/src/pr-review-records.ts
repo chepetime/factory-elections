@@ -33,6 +33,8 @@ export class PrReviewStore {
         Effect.promise(async () => {
           const record = PrReviewRecord.parse({ ...parsed, id: randomUUID() });
           const records = await this.list(project);
+          const existing = parsed.source_id && records.find((item) => item.source_id === parsed.source_id);
+          if (existing) return existing;
           await this.storage.writeDocument(join(this.root, ProjectName.parse(project), 'pr-reviews.json'), [
             ...records,
             record,

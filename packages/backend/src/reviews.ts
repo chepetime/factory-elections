@@ -1,3 +1,4 @@
+import type { PrReviewStore } from './pr-review-records.ts';
 // PR reviews: the `elections review` workflow, owned by the backend. Each review is a chat with a
 // headless Claude Code session in a dedicated worktree. The factory's copy of the senior-pr-review
 // skill (definitions/skills/senior-pr-review) is appended to the system prompt on every turn, and
@@ -279,6 +280,7 @@ export class ReviewService {
   memory?: MemoryService;
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
+  reviewRecords?: PrReviewStore;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, Grant>();
   constructor(
@@ -359,7 +361,7 @@ export class ReviewService {
 
   /** Gives memory each finished turn once: its digest, and which tools it was offered and used. */
   async learn(project: string, record: RunFile): Promise<void> {
-    if (!this.memory && !this.traces) return;
+    if (!this.memory && !this.traces && !this.reviewRecords) return;
     const dir = this.dir(project, record.number);
     for (let k = 0; k < record.turns.length; k++) {
       const marker = join(dir, `turn-${k}.learned`);
@@ -370,6 +372,40 @@ export class ReviewService {
       const events = lines.flatMap((l) => this.deps.agent.parse(l));
       const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
       await this.traceTurn(project, record, k, events).catch(() => undefined);
+      if (k === 0 && this.reviewRecords && !record.turns[k]!.stopped) {
+        const exitPath = join(dir, `turn-${k}.exit`);
+        const exit = await readFile(exitPath, 'utf8').catch(() => '');
+        const completed = await stat(exitPath).catch(() => undefined);
+        const payloadFile = await stat(join(dir, 'payload.json')).catch(() => undefined);
+        const payload = (await this.readPayload(project, record.number)).payload;
+        const turn = record.turns[k]!;
+        if (
+          exit.trim() === '0' &&
+          completed &&
+          payloadFile &&
+          payloadFile.mtimeMs >= Date.parse(turn.at) - 1000 &&
+          payload?.meta.decision?.trim()
+        ) {
+          await this.reviewRecords.add(project, {
+            source_id: `review:${record.number}:${turn.trace_id ?? turn.at}`,
+            pr_number: record.number,
+            reviewer: { kind: 'agent', identity: this.deps.agent.id },
+            verdict: payload.meta.decision,
+            findings: payload.findings.map((finding) => ({
+              text:
+                finding.comment?.trim() ||
+                finding.title?.trim() ||
+                finding.explanation?.trim() ||
+                'Review finding',
+              ...(finding.file?.trim() ? { path: finding.file.trim() } : {}),
+              ...(finding.severity?.trim() ? { severity: finding.severity.trim() } : {}),
+              ...(finding.evidence?.length ? { evidence: finding.evidence } : {}),
+            })),
+            reviewed_at: completed.mtime.toISOString(),
+            duration_ms: Math.max(0, Math.round(completed.mtimeMs - Date.parse(turn.at))),
+          });
+        }
+      }
       if (events.length && this.memory) {
         await this.memory.record(
           project,

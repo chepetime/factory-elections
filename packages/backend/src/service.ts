@@ -172,6 +172,7 @@ export class BackendService {
     );
     this.reviews.memory = this.memory;
     this.reviews.traces = this.traces;
+    this.reviews.reviewRecords = this.prReviewRecords;
     this.features = new FeatureService({
       root,
       projects: this.projects,
