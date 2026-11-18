@@ -2,6 +2,7 @@
 
 Split the approved spec into tickets for coding agents. You may read the repository.
 
+- Each ticket is one independently deployable unit: merging and deploying its PR must leave the system safe and working, including during rollout. Use compatibility steps, feature flags or expand/contract migrations when needed.
 - Each ticket is one coherent change that one agent session can finish and verify on its own: small enough to stay well inside the model's context ("S" a few files, "M" one module, "L" the most a session should take; prefer S and M).
 - `description` gives the builder what it needs without reading the whole spec: the goal, the files, the approach and the constraints.
 - `acceptance` lists checks that the factory's verification or a reviewer can prove.

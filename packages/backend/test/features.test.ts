@@ -26,6 +26,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   const started: string[] = [];
   const reviewed: number[] = [];
   let grillReplies = 0;
+  let rejectBoard = true;
   const runner = {
     run: async (r: ModelRun) => {
       calls.push(r);
@@ -49,6 +50,14 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
           return { text: '# Spec\n\n## Problem\nx', costUsd: 0.5 };
         case 'feature:critique':
           return { text: '- Gap: no error state.', costUsd: 0.2 };
+        case 'feature:board-critique':
+          return {
+            text: '',
+            structured: {
+              issues: rejectBoard ? [{ ticket: 'T1', reason: 'Requires T2 before deploy' }] : [],
+            },
+            costUsd: 0,
+          };
         case 'feature:tickets':
           return {
             text: '',
@@ -153,6 +162,12 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   await features.act({ project: 'app', id: feature.id, action: 'plan' });
   await features.idle();
   feature = await features.read('app', feature.id);
+  assert.equal(feature.stage, 'spec-approved');
+  assert.match(feature.error!, /T1: Requires T2 before deploy/);
+  rejectBoard = false;
+  await features.act({ project: 'app', id: feature.id, action: 'plan' });
+  await features.idle();
+  feature = await features.read('app', feature.id);
   assert.equal(feature.stage, 'board');
   await assert.rejects(
     features.act({
@@ -218,7 +233,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   assert.equal(calls.find((c) => c.step === 'feature:tickets')!.model, 'claude-sonnet-5-5');
   assert.equal(calls.find((c) => c.step === 'feature:qa')!.model, 'claude-sonnet-5-5');
   assert.match(calls.at(-1)!.prompt, /T1 Add the model: done, PR https:\/\/github\.com\/o\/r\/pull\/41/);
-  assert.equal(Number(done.cost_usd.toFixed(2)), 1.4);
+  assert.equal(Number(done.cost_usd.toFixed(2)), 1.7);
   assert.equal(done.total_cost_usd, done.cost_usd + done.tickets_cost_usd);
   assert.equal(slots, 3, 'every step returned its agent slot');
   await features.act({ project: 'app', id: feature.id, action: 'complete' });

@@ -49,6 +49,7 @@ export const FEATURE_MODELS = {
   grill: process.env.FACTORY_GRILL_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
   spec: process.env.FACTORY_SPEC_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-opus-5-5',
   critique: process.env.FACTORY_CRITIQUE_MODEL ?? 'claude-sonnet-5-5',
+  'board-critique': process.env.FACTORY_CRITIQUE_MODEL ?? 'claude-sonnet-5-5',
   tickets: process.env.FACTORY_TICKETS_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
   qa: process.env.FACTORY_QA_MODEL ?? process.env.FACTORY_FEATURE_MODEL ?? 'claude-sonnet-5-5',
 } as const;
@@ -61,10 +62,11 @@ const REPO_SKILLS: Record<StepName, string[]> = {
   grill: ['grill-with-docs', 'grill-me', 'grilling'],
   spec: ['write-spec', 'spec'],
   critique: ['spec-critique'],
+  'board-critique': [],
   tickets: ['create-tickets', 'to-issues', 'split-tickets'],
   qa: ['test-plan', 'qa-plan'],
 };
-type StepName = 'grill' | 'spec' | 'critique' | 'tickets' | 'qa';
+type StepName = 'grill' | 'spec' | 'critique' | 'board-critique' | 'tickets' | 'qa';
 
 export interface FeatureDeps {
   root: string;
@@ -490,8 +492,23 @@ export class FeatureService {
     const planned = PlannedTickets.parse(result.structured);
     const tickets = planned.tickets.map((t) => Ticket.parse({ ...t, state: 'waiting' }));
     const problems = boardProblems(tickets);
+    await this.addCost(project, id, result.costUsd);
     if (problems.length) throw new Error(`The planner returned an invalid board: ${problems.join('; ')}`);
-    await this.addCost(project, id, result.costUsd, (f) => ({ ...f, tickets, stage: 'board' }));
+    const reviewSchema = z.object({
+      issues: z.array(z.object({ ticket: z.string().min(1), reason: z.string().min(1) })),
+    });
+    const review = await this.call(project, id, 'board-critique', {
+      effort: 'medium',
+      prompt: `<spec>\n${spec}\n</spec>\n<tickets>\n${JSON.stringify(planned.tickets)}\n</tickets>`,
+      outputSchema: z.toJSONSchema(reviewSchema, { io: 'input', target: 'draft-7' }),
+    });
+    await this.addCost(project, id, review.costUsd);
+    const issues = reviewSchema.parse(review.structured).issues;
+    if (issues.length)
+      throw new Error(
+        `Tickets must each be deployable: ${issues.map((issue) => `${issue.ticket}: ${issue.reason}`).join('; ')}`,
+      );
+    await this.addCost(project, id, 0, (f) => ({ ...f, tickets, stage: 'board' }));
   }
 
   private async writeQa(project: string, id: string): Promise<void> {
