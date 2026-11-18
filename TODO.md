@@ -19,8 +19,8 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 - [ ] **LLM-generated task name:** the classifier should also return a short task name, stored on the task record and shown in the CLI and web app instead of the first line of the prompt or the UUID.
 - [ ] **`factory task cleanup`:** remove worktrees and branches of tasks that are pr-opened, rejected or failed.
 - [ ] **Rebase or refresh a task branch** when `main` moves on, so a PR doesn't start with conflicts (see bb64645e).
-- [ ] **Resume after a usage limit:** a model run that fails on "hit your limit" should leave the task resumable at the failed step (today a manual `factory task review` was needed), and could retry after the reset time.
-- [ ] **Cost guardrail:** a per-task budget that stops the ladder before it climbs past a set dollar amount (bb64645e reached $5.37).
+- [x] **Resume after a usage limit:** a usage-limit failure says to run the task again after the reset, and `run` continues at the reviewer when verification already passed. Still open: an automatic retry at the reset time.
+- [x] **Cost guardrail:** `limits.task_budget_usd` in the profile (default $15) stops the ladder before the next model call; each call also gets its step's `budget_usd`.
 
 ## Web app
 

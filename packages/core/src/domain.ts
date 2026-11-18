@@ -1,5 +1,6 @@
 // Pure task rules: readiness, gates and record updates. No I/O; time is passed in.
 import type { ClassifierVerdict, ReadinessDecision, RepoProfile, Stage, TaskRecord } from './schemas.ts';
+import type { ModelFailure } from './ports.ts';
 
 export function readinessDecision(verdict: ClassifierVerdict): ReadinessDecision {
   if (verdict.kind === 'unsupported') return { action: 'unsupported' };
@@ -164,4 +165,21 @@ export function prBody(task: TaskRecord, headSha: string): string {
 
 function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Dollars spent on a task so far. Unknown costs count as zero here; they stay null in the record. */
+export function taskSpend(task: TaskRecord): number {
+  return (task.attempts ?? []).reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
+}
+
+/**
+ * Reads a model error message as a failure kind. Rate limits and overload are short and worth a
+ * retry; a usage limit lasts until the plan resets, so the step stops and the task stays resumable.
+ */
+export function modelFailureKind(message: string): ModelFailure {
+  const m = message.toLowerCase();
+  if (/usage limit|hit your limit|limit will reset|credit balance/.test(m)) return 'usage-limit';
+  if (/\b429\b|rate.?limit|overloaded|\b529\b|too many requests/.test(m)) return 'rate-limited';
+  if (/max.?budget|budget exceeded|error_max_budget/.test(m)) return 'budget';
+  return 'error';
 }

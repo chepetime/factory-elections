@@ -8,6 +8,12 @@ message Target { string project = 1; string id = 2; }
 message Snapshot { string json = 1; }
 message Text { string text = 1; }
 message Submission { string project = 1; string prompt = 2; }
+message ProjectRegistration { string name = 1; string repo = 2; }
+message PullRequestQuery { string project = 1; bool drafts = 2; bool approved = 3; }
+message ReviewTarget { string project = 1; uint32 number = 2; }
+message ReviewStart { string project = 1; repeated uint32 numbers = 2; string mode = 3; }
+message ReviewMessage { string project = 1; uint32 number = 2; string text = 3; }
+message SettingsUpdate { string project = 1; string json = 2; }
 message Command {
   string project = 1;
   string id = 2;
@@ -30,6 +36,16 @@ service Factory {
   rpc GetGitUser(Target) returns (Text);
   rpc SaveAssignment(Assignment) returns (Text);
   rpc ListProjects(Empty) returns (Snapshot);
+  rpc AddProject(ProjectRegistration) returns (Snapshot);
+  rpc ListPullRequests(PullRequestQuery) returns (Snapshot);
+  rpc StartReviews(ReviewStart) returns (Snapshot);
+  rpc GetReview(ReviewTarget) returns (Snapshot);
+  rpc SendReviewMessage(ReviewMessage) returns (Text);
+  rpc StopReview(ReviewTarget) returns (Text);
+  rpc RemoveReview(ReviewTarget) returns (Text);
+  rpc GetProjectSettings(Target) returns (Snapshot);
+  rpc SaveProjectSettings(SettingsUpdate) returns (Snapshot);
+  rpc DetectProjectSettings(Target) returns (Snapshot);
   rpc ListTasks(Target) returns (Snapshot);
   rpc GetTask(Target) returns (Snapshot);
   rpc GetTaskControls(Target) returns (Snapshot);

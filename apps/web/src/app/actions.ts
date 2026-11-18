@@ -1,8 +1,10 @@
 'use server';
 // Task actions call the local backend, which shares the CLI driver and enforces every approval gate.
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
+  addProjectRequest,
   clearBackgroundLog,
   executeTask,
   isProjectName,
@@ -11,6 +13,14 @@ import {
   submitTaskRequest,
 } from '@/lib/factory';
 import { saveAssignment } from '@/lib/team';
+import {
+  isPrNumber,
+  removeReviewRun,
+  sendReviewMessageRun,
+  startReviewRuns,
+  stopReviewRun,
+} from '@/lib/reviews';
+import { detectProjectSettingsRun, saveProjectSettingsRun, type SettingsProposal } from '@/lib/settings';
 
 export interface ActionState {
   error?: string;
@@ -32,6 +42,20 @@ function target(form: FormData): { project: string; id: string } | { error: stri
 function refresh(project: string, id?: string) {
   revalidatePath(`/projects/${project}/tasks`);
   if (id) revalidatePath(`/projects/${project}/tasks/${id}`);
+}
+
+export async function addProject(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const name = field(form, 'name');
+  const repo = field(form, 'repo');
+  if (!isProjectName(name))
+    return { error: 'Use only letters, numbers, hyphens and underscores in the name.' };
+  if (!repo.startsWith('/')) return { error: 'Enter the absolute path of the repository.' };
+  const added = await addProjectRequest(name, repo);
+  if (!added.ok) return { error: added.error };
+  // The server-rendered home opens the remembered project; make that the new one.
+  (await cookies()).set('factory.lastProject', name, { path: '/', maxAge: 31_536_000, sameSite: 'lax' });
+  revalidatePath('/', 'layout');
+  redirect(`/projects/${name}/tasks/new`);
 }
 
 export async function submitTask(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -127,4 +151,67 @@ export async function assignMember(
   if (!saved.ok) return { error: saved.error };
   revalidatePath(`/projects/${project}/team`);
   return { message: 'Saved.' };
+}
+
+/** Starts a review (or re-review) of each selected PR. Called directly from the PR reviews table. */
+export async function startReviews(
+  project: string,
+  numbers: number[],
+  mode: 'review' | 'rereview',
+): Promise<ActionState & { failed?: { number: number; error: string }[] }> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  if (!Array.isArray(numbers) || numbers.length === 0 || numbers.length > 20 || !numbers.every(isPrNumber))
+    return { error: 'Select between 1 and 20 pull requests.' };
+  if (mode !== 'review' && mode !== 'rereview') return { error: 'Invalid review mode.' };
+  const started = await startReviewRuns(project, numbers, mode);
+  revalidatePath(`/projects/${project}/reviews`);
+  if (!started.ok) return { error: started.error };
+  const failed = started.value.flatMap((r) =>
+    r.ok ? [] : [{ number: r.number, error: r.error ?? 'Failed' }],
+  );
+  const count = started.value.length - failed.length;
+  return {
+    message: count ? `Started ${count} review${count === 1 ? '' : 's'}.` : undefined,
+    failed: failed.length ? failed : undefined,
+  };
+}
+
+export async function stopReview(project: string, number: number): Promise<ActionState> {
+  if (!isProjectName(project) || !isPrNumber(number)) return { error: 'Invalid pull request.' };
+  const stopped = await stopReviewRun(project, number);
+  revalidatePath(`/projects/${project}/reviews`);
+  return stopped.ok ? { message: `Stopped #${number}.` } : { error: stopped.error };
+}
+
+export async function removeReview(project: string, number: number): Promise<ActionState> {
+  if (!isProjectName(project) || !isPrNumber(number)) return { error: 'Invalid pull request.' };
+  const removed = await removeReviewRun(project, number);
+  revalidatePath(`/projects/${project}/reviews`);
+  return removed.ok ? { message: `Removed the review of #${number}.` } : { error: removed.error };
+}
+
+/** Sends a follow-up message to a PR review chat. */
+export async function sendReviewMessage(project: string, number: number, text: string): Promise<ActionState> {
+  if (!isProjectName(project) || !isPrNumber(number)) return { error: 'Invalid pull request.' };
+  if (typeof text !== 'string' || !text.trim()) return { error: 'Write a message.' };
+  const sent = await sendReviewMessageRun(project, number, text.trim());
+  revalidatePath(`/projects/${project}/reviews/${number}`);
+  return sent.ok ? { message: 'Sent.' } : { error: sent.error };
+}
+
+/** Saves the project settings form. Only the known fields are sent; the backend validates them. */
+export async function saveProjectSettings(project: string, settings: unknown): Promise<ActionState> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const saved = await saveProjectSettingsRun(project, settings);
+  revalidatePath('/', 'layout');
+  return saved.ok ? { message: 'Saved.' } : { error: saved.error };
+}
+
+/** Asks an agent to explore the repository and propose settings. Nothing is saved. */
+export async function detectProjectSettings(
+  project: string,
+): Promise<{ error?: string; proposal?: SettingsProposal }> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const detected = await detectProjectSettingsRun(project);
+  return detected.ok ? { proposal: detected.value } : { error: detected.error };
 }

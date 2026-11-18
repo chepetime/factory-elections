@@ -10,6 +10,7 @@ import {
   ChevronsUpDown,
   Copy,
   FolderGit2,
+  GitPullRequest,
   Home,
   ListTodo,
   Users,
@@ -18,6 +19,7 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  SlidersHorizontal,
   User,
   X,
 } from 'lucide-react';
@@ -30,6 +32,8 @@ import { cn } from '@/lib/utils';
 interface ProjectSummary {
   name: string;
   repo: string;
+  display_name?: string;
+  icon?: string;
 }
 interface TaskSummary {
   id: string;
@@ -120,8 +124,9 @@ async function getJson<T>(url: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-function useProjects(): Load<ProjectSummary[]> {
+function useProjects(pathname: string): Load<ProjectSummary[]> {
   const [state, setState] = useState<Load<ProjectSummary[]>>({ kind: 'loading' });
+  // Refetch on navigation so a newly added project shows up.
   useEffect(() => {
     let live = true;
     getJson<ProjectSummary[]>('/api/projects')
@@ -130,7 +135,7 @@ function useProjects(): Load<ProjectSummary[]> {
     return () => {
       live = false;
     };
-  }, []);
+  }, [pathname]);
   return state;
 }
 
@@ -158,9 +163,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const params = useParams<{ project?: string; id?: string }>();
   const pathname = usePathname();
   const router = useRouter();
-  const projects = useProjects();
+  const projects = useProjects(pathname);
   // Task chat screens own their columns and scrolling.
-  const fullBleed = pathname === '/' || /^\/projects\/[^/]+\/(tasks\/[^/]+|team)$/.test(pathname);
+  const fullBleed =
+    pathname === '/' || /^\/projects\/[^/]+\/(tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -279,12 +285,6 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
   const items = [
     { label: 'Home', href: '/', icon: Home, active: pathname === '/' },
     { label: 'Tasks', href: tasksHref, icon: ListTodo, active: /^\/projects\/[^/]+\/tasks/.test(pathname) },
-    {
-      label: 'Team',
-      href: project ? `/projects/${project}/team` : '/',
-      icon: Users,
-      active: /^\/projects\/[^/]+\/team/.test(pathname),
-    },
     { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
   ];
   return (
@@ -393,11 +393,11 @@ function Sidebar({
       <div className="flex items-center gap-1 p-2">
         <Menu.Root>
           <Menu.Trigger
-            disabled={projects.kind !== 'loaded' || projects.value.length === 0}
+            disabled={projects.kind !== 'loaded'}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-foreground/5"
           >
             <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold uppercase">
-              {project?.[0] ?? '·'}
+              {current?.icon || project?.[0] || '·'}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">
@@ -405,7 +405,7 @@ function Sidebar({
                   ? 'Loading projects'
                   : projects.kind === 'failed'
                     ? 'Projects unavailable'
-                    : (project ?? 'No projects')}
+                    : current?.display_name || project || 'No projects'}
               </span>
               {current && repoName(current.repo) !== current.name && (
                 <span className="block truncate text-xs text-muted-foreground">{repoName(current.repo)}</span>
@@ -422,16 +422,19 @@ function Sidebar({
                     <Menu.Item key={p.name} className={menuItem} onClick={() => onPick(p.name)}>
                       <FolderGit2 className="size-4 text-muted-foreground" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{p.name}</span>
+                        <span className="block truncate">
+                          {p.icon ? `${p.icon} ` : ''}
+                          {p.display_name || p.name}
+                        </span>
                         <span className="block truncate text-xs text-muted-foreground">{p.repo}</span>
                       </span>
                       {p.name === project && <Check className="size-4" />}
                     </Menu.Item>
                   ))}
                 <Menu.Separator className="my-1 h-px bg-border" />
-                <div className="px-2.5 py-1.5 text-xs text-muted-foreground">
-                  Add a project with <code>factory project add</code>
-                </div>
+                <Menu.Item className={menuItem} render={<Link href="/projects" />}>
+                  <Plus className="size-4" /> Add project
+                </Menu.Item>
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>
@@ -455,6 +458,12 @@ function Sidebar({
                       render={<Link href={`/projects/${current.name}/tasks/new`} />}
                     >
                       <Plus className="size-4" /> New task
+                    </Menu.Item>
+                    <Menu.Item
+                      className={menuItem}
+                      render={<Link href={`/projects/${current.name}/settings`} />}
+                    >
+                      <SlidersHorizontal className="size-4" /> Project settings
                     </Menu.Item>
                     <Menu.Item className={menuItem} onClick={onRefresh}>
                       <RefreshCw className="size-4" /> Refresh tasks
@@ -497,7 +506,28 @@ function Sidebar({
       </div>
 
       {project && (
-        <div className="px-2 pb-2">
+        <div className="flex flex-col gap-1 px-2 pb-2">
+          <Link
+            href={`/projects/${project}/team`}
+            aria-current={/^\/projects\/[^/]+\/team/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <Users className="size-4 text-muted-foreground" /> Team members
+          </Link>
+          <Link
+            href={`/projects/${project}/reviews`}
+            aria-current={/^\/projects\/[^/]+\/reviews/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <GitPullRequest className="size-4 text-muted-foreground" /> PR Reviews
+          </Link>
+          <Link
+            href={`/projects/${project}/settings`}
+            aria-current={/^\/projects\/[^/]+\/settings/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
+          </Link>
           <Link
             href={`/projects/${project}/tasks/new`}
             aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}

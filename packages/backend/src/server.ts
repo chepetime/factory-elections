@@ -8,6 +8,8 @@ import { ProjectName, type ModelRunner } from '@factory/core';
 import { isReadableDirectory } from '@factory/adapters-fs';
 import { DriverError } from '@factory/driver';
 import { BackendService, Conflict } from './service.ts';
+import type { ReviewDeps } from './reviews.ts';
+import type { SettingsDetector } from './settings.ts';
 import { Evidence } from './evidence.ts';
 import type { Check } from './diagnostics.ts';
 import { definition, type Command, type Methods, type Target } from './protocol.ts';
@@ -19,6 +21,8 @@ export interface ServerOptions {
   token?: string;
   runner?: ModelRunner;
   environment?: () => Promise<Check[]>;
+  reviews?: ReviewDeps;
+  detector?: SettingsDetector;
 }
 export async function startBackend(options: ServerOptions) {
   const { root } = options;
@@ -37,7 +41,13 @@ export async function startBackend(options: ServerOptions) {
     'grpc.max_receive_message_length': 1024 * 1024,
     'grpc.max_send_message_length': 16 * 1024 * 1024,
   });
-  const service = new BackendService(root, options.runner, options.environment);
+  const service = new BackendService(
+    root,
+    options.runner,
+    options.environment,
+    options.reviews,
+    options.detector,
+  );
   const health = createServer(async (request, response) => {
     if (request.method !== 'GET' || request.url !== '/health') {
       response.writeHead(404).end();
@@ -87,7 +97,32 @@ export async function startBackend(options: ServerOptions) {
         await service.team.assign(request);
         return { text: 'Saved' };
       },
-      ListProjects: async () => ({ json: JSON.stringify(await service.projects.list()) }),
+      ListProjects: async () => ({ json: JSON.stringify(await service.projectSummaries()) }),
+      GetProjectSettings: async (request) => ({
+        json: JSON.stringify(await service.settings.get(request.project)),
+      }),
+      SaveProjectSettings: async (request) => ({
+        json: JSON.stringify(await service.settings.save(request)),
+      }),
+      DetectProjectSettings: async (request) => ({
+        json: JSON.stringify(await service.settings.detect(request)),
+      }),
+      AddProject: async (request) => ({ json: JSON.stringify(await service.addProject(request)) }),
+      ListPullRequests: async (request) => ({ json: JSON.stringify(await service.reviews.list(request)) }),
+      StartReviews: async (request) => ({ json: JSON.stringify(await service.reviews.start(request)) }),
+      GetReview: async (request) => ({ json: JSON.stringify(await service.reviews.detail(request)) }),
+      SendReviewMessage: async (request) => {
+        await service.reviews.reply(request);
+        return { text: 'Sent' };
+      },
+      StopReview: async (request) => {
+        await service.reviews.stop(request);
+        return { text: 'Stopped' };
+      },
+      RemoveReview: async (request) => {
+        await service.reviews.remove(request);
+        return { text: 'Removed' };
+      },
       ListTasks: async (request) => ({
         json: JSON.stringify(await service.tasks.list(ProjectName.parse(request.project))),
       }),
@@ -166,6 +201,10 @@ export async function startBackend(options: ServerOptions) {
       ),
     );
     trace.record('server.started', { port, effect: true });
+    // This process owns the data root now, so runs left by a previous backend can be settled.
+    const recovered = await service.recover();
+    service.reviews.startSweeping();
+    trace.record('server.recovered', recovered);
     let closing: Promise<void> | undefined;
     return {
       port,
@@ -176,6 +215,7 @@ export async function startBackend(options: ServerOptions) {
           // Stop acceptance and drain paid work. Client disconnects never cancel a run.
           await Promise.all([
             service.drain(),
+            Promise.resolve(service.reviews.stopSweeping()),
             new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),
             new Promise<void>((done, reject) => health.close((error) => (error ? reject(error) : done()))),
           ]);

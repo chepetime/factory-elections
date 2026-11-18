@@ -60,4 +60,12 @@ _Avoid_: sign-off, merge
 A human request for changes that sends an awaiting task back through coder, verification and review.
 _Avoid_: retry, rework
 
+**PR review**:
+A chat with the senior-pr-review agent about one open pull request, in its own review worktree; its report is the payload the agent saves.
+_Avoid_: review task, review job
+
+**Project settings**:
+A project's display name, icon, task manager and review profile; editable, unlike the project id.
+_Avoid_: profile (that is the approved repository profile), config
+
 See [runtime terminology](GLOSSARY.md) for run, execution phase, action availability and finalization.

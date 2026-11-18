@@ -1,7 +1,8 @@
 import { Bot } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
+import { cache, type ReactNode } from 'react';
 import {
   approvalBlockers,
   blockingFindings,
@@ -13,6 +14,7 @@ import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-cl
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { LocalTime } from '@/components/local-time';
 import { StageBadge } from '@/components/stage-badge';
 import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
 import { Input } from '@/components/ui/input';
@@ -25,6 +27,7 @@ import {
   type BackgroundRun,
   type Gate,
 } from '@/lib/factory';
+import { clip, projectLabel, stageGlyph } from '@/lib/page-title';
 import { lastStepId, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
 
@@ -59,14 +62,6 @@ function money(task: TaskRecord): string {
   if (attempts.length === 0) return '—';
   if (attempts.some((a) => a.cost_usd === null)) return 'unknown';
   return `$${attempts.reduce((sum, a) => sum + (a.cost_usd ?? 0), 0).toFixed(2)}`;
-}
-
-function clock(at: string | undefined): string {
-  if (!at) return '';
-  const d = new Date(at);
-  return Number.isNaN(d.getTime())
-    ? ''
-    : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /* ---------- Right panel ---------- */
@@ -108,7 +103,7 @@ function UserMessage({ entry }: { entry: Extract<ChatEntry, { role: 'user' }> })
       </div>
       <p className="px-1 text-xs text-muted-foreground">
         {entry.label ? `${entry.label} · ` : ''}
-        {clock(entry.at)}
+        <LocalTime iso={entry.at} format="date-time" />
       </p>
     </div>
   );
@@ -121,7 +116,15 @@ function AgentMessage({ at, children }: { at?: string; children: ReactNode }) {
         <Bot className="size-4" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="mb-1 text-xs text-muted-foreground">Factory{at ? ` · ${clock(at)}` : ''}</p>
+        <p className="mb-1 text-xs text-muted-foreground">
+          Factory
+          {at && (
+            <>
+              {' '}
+              · <LocalTime iso={at} format="date-time" />
+            </>
+          )}
+        </p>
         {children}
       </div>
     </div>
@@ -153,9 +156,7 @@ function StepList({ steps, extra }: { steps: AgentStep[]; extra: (step: AgentSte
                 step.text
               )}
             </span>
-            <time dateTime={step.at} className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              {new Date(step.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </time>
+            <LocalTime iso={step.at} className="shrink-0 text-xs tabular-nums text-muted-foreground" />
           </div>
           {extra(step)}
         </li>
@@ -205,6 +206,22 @@ function RunningTurn({ run }: { run: BackgroundRun }) {
 
 /* ---------- Page ---------- */
 
+/** One backend read per request, shared by the tab title and the page. */
+const loadControls = cache((project: string, id: string) => readTaskControls(project, id));
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string; id: string }>;
+}): Promise<Metadata> {
+  const { project, id } = await params;
+  if (!isProjectName(project) || !isTaskId(id)) return { title: 'Task' };
+  const [shown, label] = await Promise.all([loadControls(project, id), projectLabel(project)]);
+  if (!shown.ok) return { title: `Task · ${label}` };
+  const task = shown.value.task;
+  return { title: `${stageGlyph(task.stage)} ${clip(task.prompt)} · ${label}` };
+}
+
 export default async function TaskPage({
   params,
   searchParams,
@@ -215,7 +232,7 @@ export default async function TaskPage({
   const startFailed = (await searchParams)?.start === 'failed';
   const { project, id } = await params;
   if (!isProjectName(project) || !isTaskId(id)) notFound();
-  const shown = await readTaskControls(project, id);
+  const shown = await loadControls(project, id);
   if (!shown.ok) {
     return (
       <div className="px-6 py-6">
@@ -402,7 +419,7 @@ export default async function TaskPage({
             <dt className="text-muted-foreground">Cost</dt>
             <dd>{money(task)}</dd>
             <dt className="text-muted-foreground">Created</dt>
-            <dd>{clock(task.created_at) || '—'}</dd>
+            <dd>{task.created_at ? <LocalTime iso={task.created_at} format="date-time" /> : '—'}</dd>
             <dt className="text-muted-foreground">ID</dt>
             <dd className="truncate font-mono text-xs leading-5" title={task.id}>
               {task.id}

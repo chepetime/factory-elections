@@ -5,6 +5,8 @@ export interface ProcessResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** Why the process was stopped early, when it was. */
+  stopped?: 'timeout' | 'aborted';
 }
 
 export interface RunOptions {
@@ -17,7 +19,17 @@ export interface RunOptions {
   timeoutMs?: number;
   /** Called with each output chunk, for streaming progress to the user. */
   onOutput?: (chunk: string) => void;
+  /** Stops the process when aborted. */
+  signal?: AbortSignal;
+  /**
+   * Run the command in its own process group and stop the whole group on a timeout or abort,
+   * so test runners and servers that a check started are stopped too.
+   */
+  group?: boolean;
 }
+
+/** How long a stopped process gets between SIGTERM and SIGKILL. */
+const KILL_GRACE_MS = 5000;
 
 export function run(
   command: string,
@@ -35,12 +47,43 @@ export function run(
     return limit === undefined || next.length <= limit ? next : next.slice(-limit);
   };
   return new Promise((resolvePromise) => {
+    const group = options.group === true;
     const child = spawn(command, args, {
       cwd: options.cwd,
-      timeout: options.timeoutMs,
       env: options.env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(group ? { detached: true } : {}),
     });
+    let stopped: ProcessResult['stopped'];
+    let closed = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const signalChild = (sig: NodeJS.Signals) => {
+      if (closed || child.pid === undefined) return;
+      try {
+        if (group) process.kill(-child.pid, sig);
+        else child.kill(sig);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+    };
+    const stop = (why: NonNullable<ProcessResult['stopped']>) => {
+      if (stopped || closed) return;
+      stopped = why;
+      signalChild('SIGTERM');
+      const force = setTimeout(() => signalChild('SIGKILL'), KILL_GRACE_MS);
+      force.unref();
+      timers.push(force);
+    };
+    if (options.timeoutMs !== undefined) timers.push(setTimeout(() => stop('timeout'), options.timeoutMs));
+    const onAbort = () => stop('aborted');
+    if (options.signal?.aborted) queueMicrotask(onAbort);
+    else options.signal?.addEventListener('abort', onAbort, { once: true });
+    const finish = (result: ProcessResult) => {
+      closed = true;
+      for (const t of timers) clearTimeout(t);
+      options.signal?.removeEventListener('abort', onAbort);
+      resolvePromise(stopped ? { ...result, stopped } : result);
+    };
     let stdout = '';
     let stderr = '';
     // Decode across chunk boundaries so split UTF-8 characters survive streaming and capture.
@@ -58,8 +101,12 @@ export function run(
     child.stdin.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code !== 'EPIPE') stderr = capture(stderr, error.message);
     });
-    child.on('error', (error) => resolvePromise({ code: 127, stdout, stderr: `${stderr}${error.message}` }));
-    child.on('close', (code, signal) => resolvePromise({ code: code ?? (signal ? 128 : 1), stdout, stderr }));
+    child.on('error', (error) => finish({ code: 127, stdout, stderr: `${stderr}${error.message}` }));
+    child.on('close', (code, signal) => {
+      // The shell may exit while processes it started still run: stop the rest of the group.
+      if (group && stopped) signalChild('SIGKILL');
+      finish({ code: code ?? (signal ? 128 : 1), stdout, stderr });
+    });
     child.stdin.end(options.input ?? '');
   });
 }
@@ -67,4 +114,49 @@ export function run(
 /** Runs a profile command through /bin/sh -c, as approved in the repository profile. */
 export function runShell(command: string, options: RunOptions = {}): Promise<ProcessResult> {
   return run('/bin/sh', ['-c', command], options);
+}
+
+export interface DetachedOptions {
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  /** Receives the command's stdout and stderr. */
+  logPath: string;
+  /** Receives the command's exit code when it ends on its own. */
+  exitPath: string;
+}
+
+/**
+ * Starts a command in its own process group that outlives this process. Output goes to
+ * `logPath`; the exit code is written to `exitPath`. Returns the process group id.
+ */
+export function spawnDetached(command: string, args: readonly string[], options: DetachedOptions): number {
+  const script = 'log=$1; done=$2; shift 2; "$@" >"$log" 2>&1 </dev/null; echo $? >"$done"';
+  const child = spawn('/bin/sh', ['-c', script, 'sh', options.logPath, options.exitPath, command, ...args], {
+    cwd: options.cwd,
+    env: options.env ?? process.env,
+    detached: true,
+    stdio: 'ignore',
+  });
+  if (child.pid === undefined) throw new Error(`could not start ${command}`);
+  child.unref();
+  return child.pid;
+}
+
+/** Whether a process (or group leader) with this id is alive. */
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** Sends SIGTERM to a process group started by `spawnDetached`. */
+export function stopGroup(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
 }

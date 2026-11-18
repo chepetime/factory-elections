@@ -19,6 +19,10 @@ import type { Driver } from '@factory/driver';
 import { composeDriver } from './compose.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
+import { Conflict } from './conflict.ts';
+import { MAX_AGENTS, ReviewService, type ReviewDeps } from './reviews.ts';
+import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
+export { Conflict };
 import { TeamService } from './team.ts';
 import { environmentChecks, type Check } from './diagnostics.ts';
 import type { BackgroundRun, Command, Target } from './protocol.ts';
@@ -39,28 +43,50 @@ const RunRecord = z.object({
   action: TaskCommand,
   command: CommandSchema,
   label: z.string(),
-  state: z.enum(['queued', 'running', 'completed', 'failed']),
+  state: z.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   created_at: z.string(),
   finished_at: z.string().optional(),
   error: z.string().optional(),
   dismissed: z.boolean().optional(),
 });
 type RunRecord = z.infer<typeof RunRecord>;
-export class Conflict extends Error {}
+
+/**
+ * Task runs that may execute at once. Each has its own worktree; the git adapter serializes the
+ * commands that change a repository's shared refs. Reviews and task runs together stay within
+ * MAX_AGENTS: a run waits in `queued` while the agents in use fill it.
+ */
+export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WORKERS ?? 3) || 1);
+const POOL_WAIT_MS = 2000;
+/** How long shutdown waits for the active runs before it stops them. */
+export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
+const INTERRUPTED =
+  'The backend stopped during this run. Run the task again to continue from the last saved step.';
 
 export class BackendService {
   readonly storage: DataStorage;
   readonly tasks: TaskStore;
   readonly team: TeamService;
+  readonly reviews: ReviewService;
+  readonly settings: ProjectSettingsService;
   private readonly environment: () => Promise<Check[]>;
   readonly projects: ProjectStore;
-  private readonly worker = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly worker = Effect.runSync(Effect.makeSemaphore(taskWorkers()));
   private readonly active = new Map<string, Promise<void>>();
+  /** Aborts each running run's model calls and checks, on shutdown after the grace period. */
+  private readonly controllers = new Map<string, AbortController>();
+  private executing = 0;
   private accepting = true;
   private reservations = 0;
   readonly root: string;
   private readonly runner?: ModelRunner;
-  constructor(root: string, runner?: ModelRunner, environment?: () => Promise<Check[]>) {
+  constructor(
+    root: string,
+    runner?: ModelRunner,
+    environment?: () => Promise<Check[]>,
+    reviewDeps?: ReviewDeps,
+    detector?: SettingsDetector,
+  ) {
     this.root = root;
     this.storage = storageFor(root);
     this.team = new TeamService(root);
@@ -68,6 +94,14 @@ export class BackendService {
     this.runner = runner;
     this.tasks = this.storage.tasks;
     this.projects = this.storage.projects;
+    this.settings = new ProjectSettingsService(root, this.storage, this.projects, detector);
+    this.reviews = new ReviewService(
+      root,
+      this.projects,
+      (p) => this.settings.get(p),
+      reviewDeps,
+      () => this.executing,
+    );
   }
   async diagnostics() {
     const [environment, projects] = await Promise.all([this.environment(), this.projects.list()]);
@@ -90,8 +124,26 @@ export class BackendService {
   target(target: Target): { project: string; id: string } {
     return TargetSchema.parse(target);
   }
-  driver(log: (line: string) => void = () => {}, runner = this.runner): Driver {
-    return composeDriver(this.root, log, runner);
+  driver(log: (line: string) => void = () => {}, runner = this.runner, signal?: AbortSignal): Driver {
+    return composeDriver(this.root, log, runner, signal);
+  }
+  /** Projects with their display name and icon from settings. */
+  async projectSummaries() {
+    const projects = await this.projects.list();
+    return Promise.all(
+      projects.map(async (p) => {
+        const s = await this.settings.get(p.name).catch(() => undefined);
+        return { ...p, display_name: s?.display_name, icon: s?.icon };
+      }),
+    );
+  }
+  /** Registers a repository. The store checks that the path is an existing absolute directory. */
+  async addProject(raw: unknown) {
+    const { name, repo } = z
+      .object({ name: ProjectName, repo: z.string().trim().min(1).max(4096) })
+      .parse(raw);
+    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    return this.projects.add(name, repo);
   }
   async submit(raw: unknown): Promise<string> {
     const { project, prompt } = z
@@ -180,7 +232,22 @@ export class BackendService {
         [join(dir, 'run.json'), record],
         [join(taskDir, 'latest-run.json'), { id: record.id }],
       ]);
-      const unlock = release;
+      this.schedule(command, record, dir, release);
+      return record;
+    } catch (error) {
+      this.reservations--;
+      await release?.();
+      throw error;
+    }
+  }
+  /** Queues an accepted run on the worker. Takes over the reservation and the task lock. */
+  private schedule(
+    command: z.infer<typeof CommandSchema>,
+    record: RunRecord,
+    dir: string,
+    unlock: () => Promise<void>,
+  ): void {
+    {
       const work = Effect.tryPromise(() => this.work(command, record, dir)).pipe(
         this.worker.withPermits(1),
         Effect.ensuring(
@@ -200,14 +267,13 @@ export class BackendService {
           process.stderr.write(`Run ${record.id} could not finalize: ${Cause.pretty(exit.cause)}\n`);
       });
       this.active.set(record.id, completion);
-      return record;
-    } catch (error) {
-      this.reservations--;
-      await release?.();
-      throw error;
     }
   }
   private async work(command: z.infer<typeof CommandSchema>, record: RunRecord, dir: string): Promise<void> {
+    // A run that had not started when shutdown began stays queued; the next start runs it.
+    if (!(await this.takeAgentSlot())) return;
+    const controller = new AbortController();
+    this.controllers.set(record.id, controller);
     let evidence: Evidence | undefined;
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
@@ -235,7 +301,7 @@ export class BackendService {
               return traced.run(request);
             },
           };
-          await this.perform(command, this.driver(log, checked));
+          await this.perform(command, this.driver(log, checked, controller.signal));
           if (logFailure) throw logFailure;
         },
       );
@@ -248,6 +314,8 @@ export class BackendService {
       if (['coding', 'reviewing'].includes(task.stage))
         await this.tasks.write(withStage(task, new Date().toISOString(), 'failed', record.error));
     } finally {
+      this.controllers.delete(record.id);
+      this.executing--;
       record.finished_at = new Date().toISOString();
       try {
         try {
@@ -365,13 +433,91 @@ export class BackendService {
         await this.storage.writeDocument(join(latest.dir, 'run.json'), { ...latest.record, dismissed: true });
     });
   }
-  async drain(): Promise<void> {
+  /**
+   * Stops acceptance, lets the active run finish for `graceMs`, then stops its model calls and
+   * checks. Queued runs that have not started stay queued for the next start.
+   */
+  /**
+   * Waits until reviews and task runs leave a free agent, then takes it. False when shutdown
+   * began first. The count and the increment happen with no await between them.
+   */
+  private async takeAgentSlot(): Promise<boolean> {
+    for (;;) {
+      if (!this.accepting) return false;
+      const reviews = await this.reviews.agentsInUse().catch(() => 0);
+      if (!this.accepting) return false;
+      if (this.executing + reviews < MAX_AGENTS) {
+        this.executing++;
+        return true;
+      }
+      await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
+    }
+  }
+  async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     this.accepting = false;
-    // Acceptance already in flight may be reserving a lock or writing its durable record.
-    while (this.reservations > 0) {
-      const pending = [...this.active.values()];
-      if (pending.length) await Promise.all(pending);
-      else await new Promise((done) => setTimeout(done, 10));
+    const deadline = setTimeout(() => {
+      for (const controller of this.controllers.values()) controller.abort();
+    }, graceMs);
+    try {
+      // Acceptance already in flight may be reserving a lock or writing its durable record.
+      while (this.reservations > 0) {
+        const pending = [...this.active.values()];
+        if (pending.length) await Promise.all(pending);
+        else await new Promise((done) => setTimeout(done, 10));
+      }
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
+
+  /**
+   * After a restart: a run that was running is marked interrupted and its task made resumable; a
+   * run that never started is queued again. Call once, while this service owns the data root.
+   */
+  async recover(): Promise<{ requeued: number; interrupted: number }> {
+    const counts = { requeued: 0, interrupted: 0 };
+    for (const project of await this.projects.list()) {
+      for (const task of await this.tasks.list(project.name).catch(() => [])) {
+        const target = { project: project.name, id: task.id };
+        const latest = await this.latest(target).catch(() => undefined);
+        if (!latest || this.active.has(latest.record.id)) continue;
+        const { record, dir } = latest;
+        if (record.state !== 'queued' && record.state !== 'running') continue;
+        await this.tasks.clearDeadLock(project.name, task.id);
+        if (record.state === 'queued' && (await this.requeue(record, dir))) {
+          counts.requeued++;
+          continue;
+        }
+        counts.interrupted++;
+        await this.storage.writeDocument(join(dir, 'run.json'), {
+          ...record,
+          state: 'interrupted',
+          error:
+            record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
+          finished_at: new Date().toISOString(),
+        });
+        const current = await this.tasks.read(project.name, task.id);
+        if (['coding', 'reviewing'].includes(current.stage))
+          await this.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
+      }
+    }
+    return counts;
+  }
+
+  private async requeue(record: RunRecord, dir: string): Promise<boolean> {
+    if (!this.accepting) return false;
+    this.reservations++;
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await this.tasks.acquireLock(record.project, record.task_id);
+      const task = await this.tasks.read(record.project, record.task_id);
+      if (taskCommandBlockers(task, record.action).length) throw new Error('blocked');
+      this.schedule(record.command, record, dir, release);
+      return true;
+    } catch {
+      this.reservations--;
+      await release?.();
+      return false;
     }
   }
 }

@@ -181,6 +181,12 @@ With the backend running, `factory task actions --project "$FACTORY_PROJECT" --i
 
 For changes, use `factory task revise --project "$FACTORY_PROJECT" --id "$TASK_ID" --note "What to change"`. Use `factory --help` for the full command list. Opening a PR is a separate explicit action after approval.
 
+## PR reviews and project settings
+
+**PR Reviews** (project sidebar) lists the repository's open pull requests, ordered by what needs you first, like the `elections review` picker. Select one or more PRs to review. Each review is a chat with Claude Opus. It runs in a worktree at `<repo parent>/reviews/<repo>-<branch>` on the local branch `review/<branch>`. The backend appends the factory's copy of the skill (`definitions/skills/senior-pr-review/SKILL.md`) to the agent's system prompt. The agent saves its report as JSON, and the review screen shows it in the **Report** tab. Ask follow-ups in the chat, or ask the agent to act (for example, post the comments). **Re-review** resets the worktree to the latest head and continues the same chat. Reviews run with `--dangerously-skip-permissions`, like the CLI, and use model credits. Chat records are stored under `$FACTORY_ROOT/<project>/reviews/<PR>/`.
+
+**Project settings** (project sidebar or project menu) holds the display name and icon, the task manager (kind, CLI, project key, command templates, usage docs and notes), and an optional senior-pr-review profile. **Fill from repository** runs a read-only Claude Sonnet agent in the repository to propose these fields (budget $2). Nothing is saved until you select **Save settings**. Review chats get the task-manager fields and the profile in their context.
+
 ## Restart, update, and recover
 
 - **Later startup:** start Docker, enter the factory checkout, run `pnpm data:up`, then `pnpm web -- --dev` or `pnpm web`.

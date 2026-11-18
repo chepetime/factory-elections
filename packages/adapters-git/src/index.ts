@@ -1,5 +1,5 @@
 // Bounded git operations used by the driver. Every call names its repository or worktree explicitly.
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { run } from '@factory/adapters-process';
 
 export class GitError extends Error {}
@@ -13,6 +13,27 @@ async function git(cwd: string, args: string[], input?: string): Promise<string>
   if (result.code !== 0)
     throw new GitError(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}`);
   return result.stdout;
+}
+
+/** The tail of each repository's queue of administrative git commands, by common git directory. */
+const repoQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs `action` alone among this process's administrative commands on the repository that `dir`
+ * belongs to. Parallel tasks and reviews share one repository's refs and worktree list, and git
+ * fails with "cannot lock ref" when two of these commands overlap.
+ */
+export async function exclusive<T>(dir: string, action: () => Promise<T>): Promise<T> {
+  const key = (await commonRepo(dir)) ?? dir;
+  const previous = repoQueues.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(action);
+  const tail = next.catch(() => undefined);
+  repoQueues.set(key, tail);
+  try {
+    return await next;
+  } finally {
+    if (repoQueues.get(key) === tail) repoQueues.delete(key);
+  }
 }
 
 async function gitOk(cwd: string, args: string[]): Promise<boolean> {
@@ -55,12 +76,14 @@ export async function headSha(dir: string): Promise<string> {
 }
 
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
-  await git(repo, ['worktree', 'add', '-b', branch, path, base]);
+  await exclusive(repo, () => git(repo, ['worktree', 'add', '-b', branch, path, base]));
 }
 
 export async function removeWorktree(repo: string, path: string, branch: string): Promise<void> {
-  await run('git', ['worktree', 'remove', '--force', path], { cwd: repo });
-  await run('git', ['branch', '-D', branch], { cwd: repo });
+  await exclusive(repo, async () => {
+    await run('git', ['worktree', 'remove', '--force', path], { cwd: repo });
+    await run('git', ['branch', '-D', branch], { cwd: repo });
+  });
 }
 
 /** Stages everything in the worktree and returns the repository-relative paths that changed. */
@@ -100,5 +123,53 @@ export async function remoteUrl(dir: string, remote = 'origin'): Promise<string 
 }
 
 export async function push(dir: string, branch: string, remote = 'origin'): Promise<void> {
-  await git(dir, ['push', '--set-upstream', remote, `${branch}:${branch}`]);
+  await exclusive(dir, () => git(dir, ['push', '--set-upstream', remote, `${branch}:${branch}`]));
+}
+
+/** `git fetch --all --prune`, retrying once after packing refs when a stale ref lock blocks it. */
+export async function fetchAllPrune(repo: string): Promise<void> {
+  await exclusive(repo, () => fetchAllPruneNow(repo));
+}
+
+async function fetchAllPruneNow(repo: string): Promise<void> {
+  const first = await run('git', ['fetch', '--all', '--prune'], { cwd: repo });
+  if (first.code === 0) return;
+  if (/cannot lock ref/.test(first.stderr)) {
+    await run('git', ['pack-refs', '--all'], { cwd: repo });
+    await git(repo, ['fetch', '--all', '--prune']);
+    return;
+  }
+  throw new GitError(`git fetch --all --prune failed: ${(first.stderr || first.stdout).trim()}`);
+}
+
+export async function remoteBranchExists(repo: string, branch: string, remote = 'origin'): Promise<boolean> {
+  return gitOk(repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`]);
+}
+
+/** Registered worktree paths of the repository, as git reports them. */
+export async function worktreePaths(repo: string): Promise<string[]> {
+  return (await git(repo, ['worktree', 'list', '--porcelain']))
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length));
+}
+
+/** Creates or resets `branch` at `base` and checks it out in a new worktree at `path`. */
+export async function addWorktreeAt(repo: string, path: string, branch: string, base: string): Promise<void> {
+  await exclusive(repo, () => git(repo, ['worktree', 'add', '-B', branch, path, base]));
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  return (await stat(path).catch(() => undefined))?.isDirectory() ?? false;
+}
+
+/** Aborts an in-progress merge, rebase or cherry-pick, then hard-resets the worktree to `ref`. */
+export async function resetWorktreeHard(dir: string, ref: string): Promise<void> {
+  const gitDir = (await git(dir, ['rev-parse', '--absolute-git-dir'])).trim();
+  const has = async (name: string) => gitOk(dir, ['rev-parse', '--verify', '--quiet', name]);
+  if (await has('MERGE_HEAD')) await git(dir, ['merge', '--abort']);
+  else if ((await isDirectory(`${gitDir}/rebase-merge`)) || (await isDirectory(`${gitDir}/rebase-apply`)))
+    await git(dir, ['rebase', '--abort']);
+  else if (await has('CHERRY_PICK_HEAD')) await git(dir, ['cherry-pick', '--abort']);
+  await git(dir, ['reset', '--hard', ref]);
 }

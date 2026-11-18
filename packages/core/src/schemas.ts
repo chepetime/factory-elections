@@ -193,8 +193,47 @@ export const RepoProfile = z.looseObject({
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   design_sources: z.array(z.string()),
   qa_targets: z.array(z.string()),
+  /** Spending and time limits for this repository. Absent values use DEFAULT_TASK_LIMITS. */
+  limits: z
+    .looseObject({
+      task_budget_usd: z.number().positive().max(1000).optional(),
+      check_timeout_minutes: z
+        .number()
+        .positive()
+        .max(24 * 60)
+        .optional(),
+    })
+    .optional(),
 });
 export type RepoProfile = z.infer<typeof RepoProfile>;
+
+export const StepLimits = z.looseObject({
+  /** Wall-clock limit for one call. */
+  timeout_minutes: z
+    .number()
+    .positive()
+    .max(24 * 60)
+    .optional(),
+  /** The call is stopped after this long with no message from the model. */
+  stall_minutes: z
+    .number()
+    .positive()
+    .max(24 * 60)
+    .optional(),
+  /** Most one call may spend. The task budget can lower it. */
+  budget_usd: z.number().positive().max(1000).optional(),
+});
+export type StepLimits = z.infer<typeof StepLimits>;
+
+/** Used when a step definition does not set its own limits. */
+export const DEFAULT_STEP_LIMITS = {
+  timeout_minutes: 60,
+  stall_minutes: 20,
+  budget_usd: 5,
+} as const satisfies Required<StepLimits>;
+
+/** Used when a repository profile does not set its own limits. */
+export const DEFAULT_TASK_LIMITS = { task_budget_usd: 15, check_timeout_minutes: 30 } as const;
 
 export const StepDefinition = z.looseObject({
   name: NonEmpty,
@@ -202,6 +241,8 @@ export const StepDefinition = z.looseObject({
   model: NonEmpty,
   inputs: z.array(NonEmpty),
   outputs: z.array(NonEmpty),
+  /** Bounds for one model call of this step. Absent values use DEFAULT_STEP_LIMITS. */
+  limits: StepLimits.optional(),
 });
 export type StepDefinition = z.infer<typeof StepDefinition>;
 

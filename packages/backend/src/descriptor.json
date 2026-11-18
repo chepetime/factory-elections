@@ -47,6 +47,91 @@
                 }
               }
             },
+            "ProjectRegistration": {
+              "fields": {
+                "name": {
+                  "type": "string",
+                  "id": 1
+                },
+                "repo": {
+                  "type": "string",
+                  "id": 2
+                }
+              }
+            },
+            "PullRequestQuery": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "drafts": {
+                  "type": "bool",
+                  "id": 2
+                },
+                "approved": {
+                  "type": "bool",
+                  "id": 3
+                }
+              }
+            },
+            "ReviewTarget": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "number": {
+                  "type": "uint32",
+                  "id": 2
+                }
+              }
+            },
+            "ReviewStart": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "numbers": {
+                  "rule": "repeated",
+                  "type": "uint32",
+                  "id": 2
+                },
+                "mode": {
+                  "type": "string",
+                  "id": 3
+                }
+              }
+            },
+            "ReviewMessage": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "number": {
+                  "type": "uint32",
+                  "id": 2
+                },
+                "text": {
+                  "type": "string",
+                  "id": 3
+                }
+              }
+            },
+            "SettingsUpdate": {
+              "fields": {
+                "project": {
+                  "type": "string",
+                  "id": 1
+                },
+                "json": {
+                  "type": "string",
+                  "id": 2
+                }
+              }
+            },
             "Command": {
               "fields": {
                 "project": {
@@ -124,6 +209,46 @@
                 },
                 "ListProjects": {
                   "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "AddProject": {
+                  "requestType": "ProjectRegistration",
+                  "responseType": "Snapshot"
+                },
+                "ListPullRequests": {
+                  "requestType": "PullRequestQuery",
+                  "responseType": "Snapshot"
+                },
+                "StartReviews": {
+                  "requestType": "ReviewStart",
+                  "responseType": "Snapshot"
+                },
+                "GetReview": {
+                  "requestType": "ReviewTarget",
+                  "responseType": "Snapshot"
+                },
+                "SendReviewMessage": {
+                  "requestType": "ReviewMessage",
+                  "responseType": "Text"
+                },
+                "StopReview": {
+                  "requestType": "ReviewTarget",
+                  "responseType": "Text"
+                },
+                "RemoveReview": {
+                  "requestType": "ReviewTarget",
+                  "responseType": "Text"
+                },
+                "GetProjectSettings": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "SaveProjectSettings": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "DetectProjectSettings": {
+                  "requestType": "Target",
                   "responseType": "Snapshot"
                 },
                 "ListTasks": {

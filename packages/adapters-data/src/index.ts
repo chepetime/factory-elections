@@ -383,6 +383,11 @@ class PgTasks extends fs.TaskStore {
       await this.storage.pool!.query('SELECT data FROM factory_tasks WHERE project=$1 ORDER BY id', [project])
     ).rows.map((row) => TaskRecord.parse(row.data));
   }
+  /** Advisory locks end with the session that held them, so there is never a dead lock to clear. */
+  override async clearDeadLock(): Promise<boolean> {
+    return false;
+  }
+
   override async acquireLock(project: string, id: string): Promise<() => Promise<void>> {
     await this.read(project, id);
     const connection = new Client({

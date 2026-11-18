@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { SystemStatus } from '@/components/system-status';
 import { dataRoot } from '@/lib/factory';
 
-export const metadata: Metadata = { title: 'Settings · Software Factory' };
+export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
 
 export default function SettingsPage() {

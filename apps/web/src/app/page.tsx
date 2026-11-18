@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { AddProjectForm } from '@/components/add-project-form';
 import { ProjectHome } from '@/components/project-home';
 import { listProjects, listTasks } from '@/lib/factory';
 import { gitUserName } from '@/lib/team';
@@ -11,11 +12,10 @@ export default async function Home() {
   if (!projects.ok) return <p className="p-6 text-destructive">Projects unavailable: {projects.error}</p>;
   if (projects.value.length === 0)
     return (
-      <div className="mx-auto max-w-xl px-6 pt-[20vh] text-center">
+      <div className="mx-auto w-full max-w-xl px-6 pt-[16vh]">
         <h1 className="text-2xl font-semibold">No projects yet</h1>
-        <p className="mt-2 text-muted-foreground">
-          Register a repository with <code>factory project add --name &lt;name&gt; --repo &lt;path&gt;</code>.
-        </p>
+        <p className="mt-2 mb-6 text-muted-foreground">Add a local repository to start.</p>
+        <AddProjectForm />
       </div>
     );
   const remembered = (await cookies()).get('factory.lastProject')?.value;

@@ -10,7 +10,7 @@ import { FreeComponentLibrary } from '@/components/free-component-library';
 import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
-  title: 'Components · Software Factory',
+  title: 'Components',
   description: 'An interactive gallery of components for the Software Factory.',
 };
 

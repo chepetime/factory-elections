@@ -4,8 +4,9 @@ import { AppShell } from '@/components/app-shell';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Software Factory',
+  title: { default: 'Software Factory', template: '%s · Software Factory' },
   description: 'Local task-to-pull-request factory',
+  applicationName: 'Software Factory',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

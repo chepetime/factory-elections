@@ -166,6 +166,30 @@ export class TaskStore {
     return () => rm(lock);
   }
 
+  /**
+   * Removes the task's command lock when the process that wrote it no longer exists, and says
+   * whether it did. A live PID may be a reused one, so a live PID always keeps the lock.
+   */
+  async clearDeadLock(project: string, id: string): Promise<boolean> {
+    const lock = join(dirname(this.taskPath(project, id)), 'command.lock');
+    let pid: unknown;
+    try {
+      pid = (JSON.parse(await readFile(lock, 'utf8')) as { pid?: unknown }).pid;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      return false;
+    }
+    if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false;
+    }
+    await rm(lock, { force: true });
+    return true;
+  }
+
   async withLock<T>(project: string, id: string, action: () => Promise<T>): Promise<T> {
     const release = await this.acquireLock(project, id);
     try {

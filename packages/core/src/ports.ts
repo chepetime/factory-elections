@@ -20,6 +20,14 @@ export interface ModelRun {
   guard?: ToolGuard;
   outputSchema?: Record<string, unknown>;
   maxTurns?: number;
+  /** Stops the call when aborted (shutdown, or the run's owner gave up). */
+  signal?: AbortSignal;
+  /** Wall-clock limit for the whole call. */
+  timeoutMs?: number;
+  /** Stops the call after this long with no message from the model. */
+  stallMs?: number;
+  /** Most this call may spend. */
+  maxBudgetUsd?: number;
 }
 
 export interface ModelResult {
@@ -27,6 +35,10 @@ export interface ModelResult {
   structured?: unknown;
   costUsd: number | null;
 }
+
+/** Why a model call failed, so the caller can decide to wait, resume or stop. */
+export type ModelFailure =
+  'aborted' | 'timeout' | 'stalled' | 'budget' | 'rate-limited' | 'usage-limit' | 'error';
 
 export interface ModelRunner {
   run(request: ModelRun): Promise<ModelResult>;

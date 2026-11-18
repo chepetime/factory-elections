@@ -56,8 +56,24 @@ async function readJson<T extends z.ZodType>(
   }
 }
 
-export function listProjects(): Promise<Result<Project[]>> {
-  return readJson('ListProjects', { project: '' }, z.array(Project));
+/** A registered project with its display name and icon from project settings. */
+export const ProjectSummary = Project.extend({
+  display_name: z.string().optional(),
+  icon: z.string().optional(),
+});
+export type ProjectSummary = z.infer<typeof ProjectSummary>;
+export function listProjects(): Promise<Result<ProjectSummary[]>> {
+  return readJson('ListProjects', { project: '' }, z.array(ProjectSummary));
+}
+export async function addProjectRequest(name: string, repo: string): Promise<Result<Project>> {
+  try {
+    const checked = Project.safeParse(JSON.parse((await backendCall('AddProject', { name, repo })).json));
+    return checked.success
+      ? { ok: true, value: checked.data }
+      : { ok: false, error: 'The backend returned an invalid record.' };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
+  }
 }
 export function listTasks(project: string): Promise<Result<TaskRecord[]>> {
   return readJson('ListTasks', { project }, z.array(TaskRecord));

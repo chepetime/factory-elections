@@ -11,6 +11,10 @@ export interface Target {
   project: string;
   id?: string;
 }
+export interface ReviewTarget {
+  project: string;
+  number: number;
+}
 export interface Command extends Target {
   id: string;
   action: string;
@@ -35,6 +39,16 @@ export interface Methods {
   GetGitUser: [Target, { text: string }];
   SaveAssignment: [{ project: string; email: string; team?: string; tags: string[] }, { text: string }];
   ListProjects: [{}, { json: string }];
+  AddProject: [{ name: string; repo: string }, { json: string }];
+  ListPullRequests: [{ project: string; drafts?: boolean; approved?: boolean }, { json: string }];
+  StartReviews: [{ project: string; numbers: number[]; mode: 'review' | 'rereview' }, { json: string }];
+  GetReview: [ReviewTarget, { json: string }];
+  SendReviewMessage: [ReviewTarget & { text: string }, { text: string }];
+  StopReview: [ReviewTarget, { text: string }];
+  RemoveReview: [ReviewTarget, { text: string }];
+  GetProjectSettings: [Target, { json: string }];
+  SaveProjectSettings: [{ project: string; json: string }, { json: string }];
+  DetectProjectSettings: [Target, { json: string }];
   ListTasks: [Target, { json: string }];
   GetTask: [Target, { json: string }];
   GetTaskControls: [Target, { json: string }];

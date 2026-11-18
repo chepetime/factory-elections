@@ -1,9 +1,19 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { StageBadge } from '@/components/stage-badge';
 import { TaskComposer } from '@/components/task-composer';
 import { isProjectName, listTasks } from '@/lib/factory';
+import { projectTitle } from '@/lib/page-title';
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}): Promise<Metadata> {
+  const { project } = await params;
+  return { title: isProjectName(project) ? await projectTitle(project, 'Tasks') : 'Tasks' };
+}
 export const dynamic = 'force-dynamic';
 
 export default async function ProjectTasks({ params }: { params: Promise<{ project: string }> }) {

@@ -19,6 +19,7 @@ export function composeDriver(
   root: string,
   log: (line: string) => void = () => {},
   runner?: ModelRunner,
+  signal?: AbortSignal,
 ): Driver {
   const tasks = storageFor(root).tasks;
   const deps: DriverDeps = {
@@ -50,6 +51,7 @@ export function composeDriver(
     },
     now: () => new Date().toISOString(),
     log,
+    ...(signal ? { signal } : {}),
   };
   return new Driver(deps);
 }

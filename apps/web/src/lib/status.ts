@@ -110,7 +110,7 @@ export async function systemStatus(): Promise<StatusReport> {
         name: 'Projects',
         status: 'warn',
         detail: 'No projects registered',
-        fix: 'Register one with `factory project add --name <name> --repo <path>`.',
+        fix: 'Add one on the Projects page (/projects) or with `factory project add`.',
       });
   }
   return { checkedAt: diagnostics.ok ? diagnostics.value.checked_at : new Date().toISOString(), checks };

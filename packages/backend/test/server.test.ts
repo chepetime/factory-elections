@@ -261,7 +261,9 @@ test('duplicate starts are excluded, model failures preserve unknown costs and r
   assert.equal(await server.service.tasks.withLock('demo', id, async () => 'released'), 'released');
 });
 
-test('one worker drains queued runs and a restart reports interrupted evidence without replay', async (t) => {
+test('shutdown finishes the active run, keeps queued runs for the next start, and a restart settles both', async (t) => {
+  process.env.FACTORY_TASK_WORKERS = '1';
+  t.after(() => delete process.env.FACTORY_TASK_WORKERS);
   let release!: () => void;
   const hold = new Promise<void>((done) => {
     release = done;
@@ -289,6 +291,7 @@ test('one worker drains queued runs and a restart reports interrupted evidence w
   const second = (await backendCall('SubmitTask', { project: 'demo', prompt: 'second task' })).text;
   const firstRun = JSON.parse((await backendCall('StartRun', { project: 'demo', id, action: 'run' })).json);
   await backendCall('StartRun', { project: 'demo', id: second, action: 'run' });
+  for (let i = 0; i < 200 && calls < 1; i++) await new Promise((done) => setTimeout(done, 10));
   assert.equal(calls, 1);
   assert.equal(
     JSON.parse((await backendCall('GetBackground', { project: 'demo', id: second })).json).state,
@@ -302,7 +305,8 @@ test('one worker drains queued runs and a restart reports interrupted evidence w
   assert.equal(stopped, false);
   release();
   await closing;
-  assert.equal(calls, 2);
+  // The second run never started, so it stays queued instead of running during shutdown.
+  assert.equal(calls, 1);
   const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', firstRun.id);
   const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
   assert.equal(record.state, 'completed');
@@ -316,6 +320,9 @@ test('one worker drains queued runs and a restart reports interrupted evidence w
     assert.equal(recovered.state, 'interrupted');
     assert.equal(recovered.phase, 'interrupted');
     assert.equal(recovered.running, false);
+    assert.match(recovered.error, /backend stopped during this run/);
+    // The run that never started is queued again and runs now.
+    for (let i = 0; i < 200 && calls < 2; i++) await new Promise((done) => setTimeout(done, 10));
     assert.equal(calls, 2);
   } finally {
     closeBackendClient();
@@ -432,4 +439,96 @@ test('invalid persisted execution metadata fails closed in action discovery', as
   );
   assert.equal(controls.execution, 'unavailable');
   assert.ok(controls.actions.every((a) => !a.allowed && a.blockers[0]?.code === 'unavailable'));
+});
+
+test('AddProject registers a repository and rejects invalid or duplicate registrations', async (t) => {
+  const { root } = await fixture(t);
+  const repo = await mkdtemp(join(tmpdir(), 'factory-added-'));
+  t.after(() => rm(repo, { recursive: true, force: true }));
+  const added = JSON.parse((await backendCall('AddProject', { name: 'second', repo })).json);
+  assert.deepEqual(added, { name: 'second', repo });
+  assert.deepEqual(
+    JSON.parse((await backendCall('ListProjects', {})).json).map((p: { name: string }) => p.name),
+    ['demo', 'second'],
+  );
+  assert.equal(JSON.parse(await readFile(join(root, 'second', 'project.json'), 'utf8')).repo, repo);
+  await assert.rejects(backendCall('AddProject', { name: 'second', repo }), /already exists/);
+  await assert.rejects(
+    backendCall('AddProject', { name: '../escape', repo }),
+    (error: unknown) => (error as { code: number }).code === 3,
+  );
+  await assert.rejects(backendCall('AddProject', { name: 'relative', repo: 'some/dir' }), /must be absolute/);
+  await assert.rejects(
+    backendCall('AddProject', { name: 'missing', repo: join(repo, 'nope') }),
+    /not an existing directory/,
+  );
+});
+
+test('shutdown stops a run that outlasts the grace period, and records why', async (t) => {
+  let signals = 0;
+  const runner: ModelRunner = {
+    run: (request) =>
+      new Promise((_, fail) => {
+        if (request.signal) signals++;
+        request.signal?.addEventListener('abort', () =>
+          fail(
+            Object.assign(new Error('model run stopped: the backend is shutting down'), { kind: 'aborted' }),
+          ),
+        );
+      }),
+  };
+  const { server, root, id } = await fixture(t, runner);
+  const run = JSON.parse((await backendCall('StartRun', { project: 'demo', id, action: 'run' })).json);
+  for (let i = 0; i < 200 && signals === 0; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(signals, 1);
+  const started = Date.now();
+  await server.service.drain(50);
+  assert.ok(Date.now() - started < 5000);
+  const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', run.id);
+  const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+  assert.equal(record.state, 'failed');
+  assert.match(record.error, /shutting down/);
+  assert.ok(root);
+});
+
+test('task runs execute in parallel, up to the worker count', async (t) => {
+  let release!: () => void;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  let running = 0;
+  let peak = 0;
+  const runner: ModelRunner = {
+    async run(request) {
+      peak = Math.max(peak, ++running);
+      await hold;
+      running--;
+      return {
+        text: '',
+        costUsd: null,
+        structured: {
+          intake_id: /"id": "([^"]+)"/.exec(request.prompt)![1],
+          kind: 'code',
+          loe: 'S',
+          readiness: 'needs-clarification',
+          blockers: [{ kind: 'clarification', question: 'Which file?' }],
+        },
+      };
+    },
+  };
+  t.after(() => release());
+  process.env.FACTORY_TASK_WORKERS = '2';
+  t.after(() => delete process.env.FACTORY_TASK_WORKERS);
+  const { id } = await fixture(t, runner);
+  const ids = [id];
+  for (const prompt of ['second', 'third'])
+    ids.push((await backendCall('SubmitTask', { project: 'demo', prompt })).text);
+  for (const task of ids) await backendCall('StartRun', { project: 'demo', id: task, action: 'run' });
+  for (let i = 0; i < 200 && running < 2; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(running, 2);
+  const third = JSON.parse((await backendCall('GetBackground', { project: 'demo', id: ids[2] })).json);
+  assert.equal(third.state, 'queued');
+  release();
+  for (const task of ids) assert.equal((await finished(task)).state, 'completed');
+  assert.equal(peak, 2);
 });

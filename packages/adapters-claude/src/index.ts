@@ -8,12 +8,21 @@ import {
   type SandboxSettings,
   type SDKResultMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { ModelResult, ModelRun, ModelRunner, ToolAccess } from '@factory/core';
+import {
+  modelFailureKind,
+  type ModelFailure,
+  type ModelResult,
+  type ModelRun,
+  type ModelRunner,
+  type ToolAccess,
+} from '@factory/core';
 
 const TOOLS: Record<ToolAccess, string[]> = {
   none: [],
   'read-only': ['Read', 'Grep', 'Glob'],
-  edit: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash'],
+  // Agent lets the coder hand parts of a task to subagents. Their tool calls reach canUseTool too
+  // (with an agentID), so the step guard, the sandbox and the call's budget cover them.
+  edit: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash', 'Agent'],
 };
 
 /** Package registries a sandboxed coder may reach, so it can update a lockfile. */
@@ -46,15 +55,53 @@ export function sandboxFor(tools: ToolAccess, home: string = homedir()): Sandbox
 
 export class ModelRunError extends Error {
   readonly costUsd: number | null;
-  constructor(message: string, costUsd: number | null = null) {
+  readonly kind: ModelFailure;
+  constructor(
+    message: string,
+    costUsd: number | null = null,
+    kind: ModelFailure = modelFailureKind(message),
+  ) {
     super(message);
     this.costUsd = costUsd;
+    this.kind = kind;
   }
 }
+
+/** Waits before each retry of a rate-limited call that had not spent anything yet. */
+export const RATE_LIMIT_RETRY_MS = [30_000, 120_000];
 
 export interface ClaudeRunnerOptions {
   /** Receives one short line per assistant tool call, for progress output. */
   onProgress?: (line: string) => void;
+  /** The SDK's query function; tests pass a fake. */
+  query?: typeof query;
+  retryDelaysMs?: readonly number[];
+  /** How often the stall check looks at the last message time. */
+  stallCheckMs?: number;
+}
+
+const LIMIT_REASONS = ['aborted', 'timeout', 'stalled'] as const;
+type LimitReason = (typeof LIMIT_REASONS)[number];
+const LIMIT_TEXT: Record<LimitReason, string> = {
+  aborted: 'model run stopped: the backend is shutting down or the run was cancelled',
+  timeout: 'model run stopped: it reached its time limit',
+  stalled: 'model run stopped: no message from the model within the stall limit',
+};
+
+/** Resolves after `ms`, or rejects at once when the signal aborts. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((done, fail) => {
+    if (signal?.aborted) return fail(new ModelRunError(LIMIT_TEXT.aborted, null, 'aborted'));
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      done();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      fail(new ModelRunError(LIMIT_TEXT.aborted, null, 'aborted'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export class ClaudeAgentRunner implements ModelRunner {
@@ -63,7 +110,65 @@ export class ClaudeAgentRunner implements ModelRunner {
     this.options = options;
   }
 
+  /**
+   * One call, retried only when the provider rate-limited it before anything was spent: then the
+   * model did no work, so a retry cannot repeat a side effect or pay twice.
+   */
   async run(request: ModelRun): Promise<ModelResult> {
+    const delays = this.options.retryDelaysMs ?? RATE_LIMIT_RETRY_MS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.runOnce(request);
+      } catch (error) {
+        const retry =
+          error instanceof ModelRunError &&
+          error.kind === 'rate-limited' &&
+          !error.costUsd &&
+          attempt < delays.length;
+        if (!retry) throw error;
+        this.options.onProgress?.(`  · rate limited; retrying in ${Math.round(delays[attempt]! / 1000)}s`);
+        await pause(delays[attempt]!, request.signal);
+      }
+    }
+  }
+
+  private async runOnce(request: ModelRun): Promise<ModelResult> {
+    if (request.signal?.aborted) throw new ModelRunError(LIMIT_TEXT.aborted, null, 'aborted');
+    const controller = new AbortController();
+    let reason: LimitReason | undefined;
+    const stop = (why: LimitReason) => {
+      reason ??= why;
+      controller.abort();
+    };
+    const onAbort = () => stop('aborted');
+    request.signal?.addEventListener('abort', onAbort, { once: true });
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (request.timeoutMs) timers.push(setTimeout(() => stop('timeout'), request.timeoutMs));
+    let lastMessage = Date.now();
+    if (request.stallMs) {
+      const every = this.options.stallCheckMs ?? Math.min(30_000, Math.max(10, request.stallMs / 4));
+      timers.push(
+        setInterval(() => {
+          if (Date.now() - lastMessage >= request.stallMs!) stop('stalled');
+        }, every),
+      );
+    }
+    try {
+      return await this.call(request, controller, () => (lastMessage = Date.now()));
+    } catch (error) {
+      if (reason) throw new ModelRunError(LIMIT_TEXT[reason], null, reason);
+      throw error;
+    } finally {
+      for (const t of timers) clearTimeout(t);
+      request.signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  private async call(
+    request: ModelRun,
+    controller: AbortController,
+    heard: () => void,
+  ): Promise<ModelResult> {
     const tools = TOOLS[request.tools];
     const guard = request.guard;
     const sandbox = sandboxFor(request.tools);
@@ -87,6 +192,8 @@ export class ClaudeAgentRunner implements ModelRunner {
           ? request.systemPrompt
           : { type: 'preset', preset: 'claude_code', append: request.systemPrompt },
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0' },
+      abortController: controller,
+      ...(request.maxBudgetUsd ? { maxBudgetUsd: request.maxBudgetUsd } : {}),
       ...(sandbox ? { sandbox } : {}),
       ...(request.cwd ? { cwd: request.cwd } : {}),
       ...(request.maxTurns ? { maxTurns: request.maxTurns } : {}),
@@ -97,7 +204,8 @@ export class ClaudeAgentRunner implements ModelRunner {
 
     let result: SDKResultMessage | undefined;
     try {
-      for await (const message of query({ prompt: request.prompt, options })) {
+      for await (const message of (this.options.query ?? query)({ prompt: request.prompt, options })) {
+        heard();
         if (message.type === 'result') result = message;
         else if (message.type === 'assistant' && this.options.onProgress) {
           for (const block of message.message.content) {
@@ -112,9 +220,11 @@ export class ClaudeAgentRunner implements ModelRunner {
     if (!result) throw new ModelRunError('model run ended without a result');
     if (result.subtype !== 'success' || result.is_error) {
       const detail = result.subtype === 'success' ? result.result : result.errors.join('; ');
+      const message = `model run failed (${result.subtype}): ${detail || 'no detail'}`;
       throw new ModelRunError(
-        `model run failed (${result.subtype}): ${detail || 'no detail'}`,
+        message,
         result.total_cost_usd ?? null,
+        result.subtype === 'error_max_budget_usd' ? 'budget' : modelFailureKind(message),
       );
     }
     return {

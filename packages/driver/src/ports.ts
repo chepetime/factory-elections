@@ -30,11 +30,21 @@ export interface GitPort {
 export interface ShellPort {
   runShell(
     command: string,
-    options: { cwd: string; captureLimit?: number; onOutput?: (chunk: string) => void },
-  ): Promise<{ code: number; stdout: string; stderr: string }>;
+    options: {
+      cwd: string;
+      captureLimit?: number;
+      onOutput?: (chunk: string) => void;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      /** Run in its own process group, and stop the whole group on timeout or abort. */
+      group?: boolean;
+    },
+  ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' }>;
 }
 
 export interface GitHubPort {
+  /** The URL of an open pull request whose head is `head`, if one exists. */
+  findOpenPullRequest?(options: { cwd: string; head: string }): Promise<string | undefined>;
   createPullRequest(options: {
     cwd: string;
     base: string;
@@ -69,6 +79,8 @@ export interface DriverDeps {
   now(): string;
   /** Progress for the human, written to standard error by the CLI. */
   log(line: string): void;
+  /** Aborted when the run must stop (backend shutdown). Model calls and checks stop with it. */
+  signal?: AbortSignal;
 }
 
 export class DriverError extends Error {}

@@ -1,8 +1,18 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { TeamTable } from '@/components/team-table';
 import { isProjectName } from '@/lib/factory';
 import { teamMembers } from '@/lib/team';
+import { projectTitle } from '@/lib/page-title';
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}): Promise<Metadata> {
+  const { project } = await params;
+  return { title: isProjectName(project) ? await projectTitle(project, 'Team') : 'Team' };
+}
 export const dynamic = 'force-dynamic';
 
 export default async function TeamPage({ params }: { params: Promise<{ project: string }> }) {

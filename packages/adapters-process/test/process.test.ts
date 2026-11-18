@@ -58,3 +58,25 @@ test('spawn failure and a child closing stdin do not crash the caller', async ()
   const result = await run(process.execPath, ['-e', 'process.exit(0)'], { input: 'x'.repeat(2_000_000) });
   assert.equal(result.code, 0);
 });
+
+test('a group run stops the shell and the processes it started on a timeout', async () => {
+  // The shell starts a long sleep in the background and waits; killing only /bin/sh would leave it.
+  const started = Date.now();
+  const result = await run('/bin/sh', ['-c', 'sleep 30 & echo $! ; wait'], { timeoutMs: 300, group: true });
+  assert.equal(result.stopped, 'timeout');
+  assert.ok(Date.now() - started < 10_000);
+  const child = Number(result.stdout.trim());
+  assert.ok(child > 0);
+  await new Promise((done) => setTimeout(done, 100));
+  assert.throws(() => process.kill(child, 0), { code: 'ESRCH' });
+});
+
+test('an aborted run stops at once and says why', async () => {
+  const controller = new AbortController();
+  const running = run('/bin/sh', ['-c', 'sleep 30'], { signal: controller.signal, group: true });
+  setTimeout(() => controller.abort(), 50);
+  const result = await running;
+  assert.equal(result.stopped, 'aborted');
+  const already = await run('/bin/sh', ['-c', 'sleep 30'], { signal: AbortSignal.abort(), group: true });
+  assert.equal(already.stopped, 'aborted');
+});

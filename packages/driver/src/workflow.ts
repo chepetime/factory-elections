@@ -8,6 +8,8 @@ import {
   PR_DRAFT_SCHEMA,
   PrDraft,
   REVIEW_OUTPUT_SCHEMA,
+  DEFAULT_STEP_LIMITS,
+  DEFAULT_TASK_LIMITS,
   ReviewOutput,
   approvalBlockers,
   blockingFindings,
@@ -21,12 +23,16 @@ import {
   taskTitle,
   taskCommandBlockers,
   readinessDecision,
+  taskSpend,
   withEvent,
   withStage,
   type ModelLadder,
+  type ModelFailure,
+  type ModelRun,
   type RepoProfile,
   type Rung,
   type StepAttempt,
+  type StepDefinition,
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
@@ -41,10 +47,72 @@ function tail(text: string, size = OUTPUT_TAIL): string {
   return text.length > size ? `…${text.slice(-size)}` : text;
 }
 
+const MINUTE = 60_000;
+
+/** The cost a failed model call reported, when it reported one. */
+function errorCost(error: unknown): number | null {
+  const cost = (error as { costUsd?: unknown } | null)?.costUsd;
+  return typeof cost === 'number' ? cost : null;
+}
+
+function errorKind(error: unknown): ModelFailure | undefined {
+  return (error as { kind?: ModelFailure } | null)?.kind;
+}
+
+/** A failure message that tells the human what to do next. */
+function failureText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  switch (errorKind(error)) {
+    case 'usage-limit':
+      return `${message}. The plan's usage limit was reached; run the task again after it resets.`;
+    case 'aborted':
+      return `${message}. Run the task again to continue from the last saved step.`;
+    case 'timeout':
+    case 'stalled':
+      return `${message}. Run the task again to retry this step.`;
+    default:
+      return message;
+  }
+}
+
 export class Driver {
   readonly deps: DriverDeps;
   constructor(deps: DriverDeps) {
     this.deps = deps;
+  }
+
+  // ---------- limits ----------
+
+  /** Time and spending bounds for one model call of a step, within what the task has left. */
+  private async callLimits(
+    task: TaskRecord,
+    step: StepDefinition,
+  ): Promise<Pick<ModelRun, 'signal' | 'timeoutMs' | 'stallMs' | 'maxBudgetUsd'>> {
+    const limits = { ...DEFAULT_STEP_LIMITS, ...step.limits };
+    const left = await this.budgetLeft(task);
+    return {
+      signal: this.deps.signal,
+      timeoutMs: limits.timeout_minutes * MINUTE,
+      stallMs: limits.stall_minutes * MINUTE,
+      maxBudgetUsd: Math.max(0.01, Math.min(limits.budget_usd, left)),
+    };
+  }
+
+  private async budgetLeft(task: TaskRecord): Promise<number> {
+    const profile = await this.deps.readProfile(task.project);
+    const budget = profile.limits?.task_budget_usd ?? DEFAULT_TASK_LIMITS.task_budget_usd;
+    return budget - taskSpend(task);
+  }
+
+  /** Stops the task before a model call when its budget is spent. */
+  private async requireBudget(project: string, id: string, step: string): Promise<void> {
+    const task = await this.deps.tasks.read(project, id);
+    const left = await this.budgetLeft(task);
+    if (left > 0) return;
+    const spent = taskSpend(task).toFixed(2);
+    const message = `Task budget reached ($${spent} spent) before the ${step} step. Raise limits.task_budget_usd in the profile to continue.`;
+    await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
+    throw new DriverError(message);
   }
 
   // ---------- classification ----------
@@ -70,11 +138,15 @@ export class Driver {
     return (await this.runClassifier(raw)).verdict;
   }
 
-  private async runClassifier(raw: unknown): Promise<{ verdict: ClassifierVerdict; costUsd: number | null }> {
+  private async runClassifier(
+    raw: unknown,
+    limits: Partial<ModelRun> = { signal: this.deps.signal },
+  ): Promise<{ verdict: ClassifierVerdict; costUsd: number | null }> {
     const parsed = ClassifierRequest.safeParse(raw);
     if (!parsed.success) throw new DriverError(`invalid classifier request: ${describeIssues(parsed.error)}`);
     const request = parsed.data;
     const result = await this.deps.runner.run({
+      ...limits,
       step: 'classifier',
       model: request.model,
       effort: request.effort,
@@ -120,9 +192,11 @@ export class Driver {
 
   async classify(project: string, id: string, paths?: StepPaths): Promise<TaskRecord> {
     const request = await this.prepareClassifierRequest(project, id, paths);
+    await this.requireBudget(project, id, 'classifier');
+    const { step } = await this.deps.definitions.readStep((paths ?? this.deps.steps.classifier).step);
     this.deps.log(`Classifying with ${request.model} (${request.effort})…`);
     const started = this.deps.now();
-    const { verdict, costUsd } = await this.runClassifier(request);
+    const { verdict, costUsd } = await this.runClassifier(request, await this.callLimits(request.task, step));
     const task = await this.deps.tasks.read(project, id);
     const recorded = withEvent(
       { ...task, verdict },
@@ -212,6 +286,7 @@ export class Driver {
     const profile = await this.deps.readProfile(project);
     const { path, base } = await this.checkedWorktree(task);
     const startingHead = await this.deps.git.headSha(path);
+    const checkMinutes = profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes;
     let output = '';
     const onOutput = (chunk: string) => {
       output = tail(output + chunk);
@@ -222,7 +297,20 @@ export class Driver {
       ['full_check', profile.commands.full_check],
     ] as const) {
       this.deps.log(`$ ${command}   # ${label}`);
-      const result = await this.deps.shell.runShell(command, { cwd: path, captureLimit: 0, onOutput });
+      const result = await this.deps.shell.runShell(command, {
+        cwd: path,
+        captureLimit: 0,
+        onOutput,
+        timeoutMs: checkMinutes * MINUTE,
+        signal: this.deps.signal,
+        group: true,
+      });
+      if (result.stopped === 'aborted')
+        throw new DriverError(`${label} was stopped because the run was cancelled`);
+      if (result.stopped === 'timeout') {
+        output += `\n[${label} did not finish within ${checkMinutes} minutes and was stopped]\n`;
+        return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
+      }
       if (result.code !== 0) {
         output += `\n[${label} exited with status ${result.code}]\n`;
         return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
@@ -299,7 +387,10 @@ export class Driver {
     let task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
     const { path, branch } = await this.checkedWorktree(task);
-    const { prompt: systemPrompt } = await this.deps.definitions.readStep(this.deps.steps.coder.step);
+    const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(this.deps.steps.coder.step);
+    await this.requireBudget(project, id, 'coder');
+    task = await this.deps.tasks.read(project, id);
+    const limits = await this.callLimits(task, step);
     task = withStage(task, this.deps.now(), 'coding', `Coder on ${rung.name}`);
     await this.deps.tasks.write(task);
 
@@ -339,6 +430,7 @@ export class Driver {
     let costUsd: number | null = null;
     try {
       const result = await this.deps.runner.run({
+        ...limits,
         step: 'coder',
         model: rung.model,
         effort: rung.effort,
@@ -352,7 +444,8 @@ export class Driver {
       costUsd = result.costUsd;
     } catch (e) {
       outcome = 'failed';
-      error = (e as Error).message;
+      error = failureText(e);
+      costUsd = errorCost(e);
     }
 
     let commitMessage: string | undefined;
@@ -433,7 +526,12 @@ export class Driver {
     const head = await this.deps.git.headSha(path);
     if (!task.verification?.passed || task.verification.head_sha !== head)
       throw new DriverError('verification has not passed for the current commit');
-    const { prompt: systemPrompt } = await this.deps.definitions.readStep(this.deps.steps.reviewer.step);
+    const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(
+      this.deps.steps.reviewer.step,
+    );
+    await this.requireBudget(project, id, 'reviewer');
+    task = await this.deps.tasks.read(project, id);
+    const limits = await this.callLimits(task, step);
     const ladder: ModelLadder = await this.deps.definitions.readLadder(this.deps.steps.reviewer.ladder);
     const rung = ladder.rungs[0]!;
     let diff = await this.deps.git.diffSince(path, base);
@@ -446,6 +544,7 @@ export class Driver {
     let result;
     try {
       result = await this.deps.runner.run({
+        ...limits,
         step: 'reviewer',
         model: rung.model,
         effort: rung.effort,
@@ -471,8 +570,24 @@ export class Driver {
       });
     } catch (e) {
       task = await this.deps.tasks.read(project, id);
+      const attempt: StepAttempt = {
+        step: 'reviewer',
+        rung: rung.name,
+        model: rung.model,
+        effort: rung.effort,
+        started_at: started,
+        finished_at: this.deps.now(),
+        outcome: 'failed',
+        cost_usd: errorCost(e),
+        error: failureText(e),
+      };
       await this.deps.tasks.write(
-        withStage(task, this.deps.now(), 'failed', `Reviewer failed: ${(e as Error).message}`),
+        withStage(
+          { ...task, attempts: [...(task.attempts ?? []), attempt] },
+          this.deps.now(),
+          'failed',
+          `Reviewer failed: ${failureText(e)}`,
+        ),
       );
       throw e;
     }
@@ -529,7 +644,9 @@ export class Driver {
     const head = await this.deps.git.headSha(path);
     if (!task.review || task.review.head_sha !== head)
       throw new DriverError('the current commit has not been reviewed');
-    const { prompt: systemPrompt } = await this.deps.definitions.readStep(paths.step);
+    const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(paths.step);
+    const limits = await this.callLimits(task, step);
+    if ((await this.budgetLeft(task)) <= 0) throw new DriverError('the task budget is spent');
     const rung = (await this.deps.definitions.readLadder(paths.ladder)).rungs[0]!;
     let diff = await this.deps.git.diffSince(path, base);
     if (diff.length > MAX_PR_DIFF_CHARS)
@@ -539,8 +656,10 @@ export class Driver {
     const started = this.deps.now();
     let result;
     let parsed;
+    let failure: unknown;
     try {
       result = await this.deps.runner.run({
+        ...limits,
         step: 'pr-writer',
         model: rung.model,
         effort: rung.effort,
@@ -578,6 +697,9 @@ export class Driver {
         maxTurns: 30,
       });
       parsed = PrDraft.safeParse(result.structured ?? parseJsonText(result.text));
+    } catch (e) {
+      failure = e;
+      throw e;
     } finally {
       task = await this.deps.tasks.read(project, id);
       const attempt: StepAttempt = {
@@ -588,7 +710,7 @@ export class Driver {
         started_at: started,
         finished_at: this.deps.now(),
         outcome: parsed?.success ? 'completed' : 'failed',
-        cost_usd: result?.costUsd ?? null,
+        cost_usd: result?.costUsd ?? errorCost(failure),
       };
       task = { ...task, attempts: [...(task.attempts ?? []), attempt] };
       await this.deps.tasks.write(task);
@@ -624,8 +746,31 @@ export class Driver {
       await this.deps.tasks.write(task);
     }
     if (!task.worktree) task = await this.prepareWorktree(project, id);
+    if (await this.verifiedAndUnchanged(task)) {
+      this.deps.log('Verification already passed for this commit; continuing at the reviewer.');
+      return this.review(project, id);
+    }
     await this.codeUntilVerified(project, id, options.maxAttempts);
     return this.review(project, id);
+  }
+
+  /**
+   * Whether the saved verification still covers the worktree: same commit, nothing uncommitted and
+   * no human note since. Then a rerun after a reviewer failure does not pay for the coder again.
+   */
+  private async verifiedAndUnchanged(task: TaskRecord): Promise<boolean> {
+    const verification = task.verification;
+    if (!verification?.passed) return false;
+    const notes = task.revision_notes ?? [];
+    if (notes.some((n) => n.at >= verification.at)) return false;
+    try {
+      const { path } = await this.checkedWorktree(task);
+      return (
+        (await this.deps.git.headSha(path)) === verification.head_sha && (await this.deps.git.isClean(path))
+      );
+    } catch {
+      return false;
+    }
   }
 
   // ---------- human gate ----------
@@ -746,15 +891,21 @@ export class Driver {
       throw new DriverError('the repository has no "origin" remote');
     this.deps.log(`Pushing ${branch}…`);
     await this.deps.git.push(path, branch);
-    this.deps.log('Opening pull request…');
-    const url = await this.deps.github.createPullRequest({
-      cwd: path,
-      base,
-      head: branch,
-      title: prTitle(task, head),
-      body: prBody(task, head),
-      draft: options.draft,
-    });
+    // A previous attempt may have opened the PR and then failed to record it: adopt that PR
+    // instead of opening a second one.
+    const existing = await this.deps.github.findOpenPullRequest?.({ cwd: path, head: branch });
+    if (existing) this.deps.log(`Pull request already open: ${existing}`);
+    else this.deps.log('Opening pull request…');
+    const url =
+      existing ??
+      (await this.deps.github.createPullRequest({
+        cwd: path,
+        base,
+        head: branch,
+        title: prTitle(task, head),
+        body: prBody(task, head),
+        draft: options.draft,
+      }));
     task = await this.deps.tasks.read(project, id);
     task = withStage(
       { ...task, pr: { url, branch, head_sha: head, at: this.deps.now() } },

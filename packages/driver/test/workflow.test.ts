@@ -455,3 +455,110 @@ test('revision preflight failure leaves neither approval nor an approved stage',
   assert.equal(runner.calls.length, calls);
   await assert.rejects(driver.openPr('demo', task.id), /approved/);
 });
+
+/** Gives the profile spending and time limits, as a repository owner would in profile.yaml. */
+function withLimits(driver: Driver, limits: Record<string, number>) {
+  const read = driver.deps.readProfile;
+  driver.deps.readProfile = async (p) => ({ ...(await read(p)), limits });
+}
+
+test('every model call gets the step limits, the task budget left and the run signal', async () => {
+  const { driver, task, runner } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  const controller = new AbortController();
+  driver.deps.signal = controller.signal;
+  withLimits(driver, { task_budget_usd: 3 });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  for (const call of runner.calls) {
+    assert.equal(call.signal, controller.signal);
+    assert.equal(call.timeoutMs, 60 * 60_000);
+    assert.equal(call.stallMs, 20 * 60_000);
+  }
+  // The classifier spent $0.001 of $3, so the coder may spend its own $5 limit only up to what is left.
+  assert.equal(runner.calls.find((c) => c.tools === 'edit')?.maxBudgetUsd, 3 - 0.001);
+});
+
+test('the ladder stops when the task budget is spent, and says how to continue', async () => {
+  const costly: Script = async (r) => (
+    await writeFile(join(r.cwd!, 'other.txt'), 'x\n'),
+    { text: 'ok', costUsd: 0.5 }
+  );
+  const { driver, store, task, runner } = await setup({
+    classifier: [ready],
+    coder: [costly, costly, costly],
+  });
+  withLimits(driver, { task_budget_usd: 0.6 });
+  await assert.rejects(
+    driver.run('demo', task.id, { maxAttempts: 3 }),
+    /Task budget reached \(\$1\.00 spent\)/,
+  );
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 2);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'failed');
+  assert.match(stored.events!.at(-1)!.message, /limits\.task_budget_usd/);
+});
+
+test('a failed model call keeps its reported cost, and a usage limit says when to run again', async () => {
+  const limited: Script = () => {
+    throw Object.assign(new Error("model run failed: You've hit your limit"), {
+      costUsd: 0.3,
+      kind: 'usage-limit',
+    });
+  };
+  const { driver, store, task } = await setup({ classifier: [ready], coder: [limited] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }));
+  const stored = await store.read('demo', task.id);
+  const coder = stored.attempts!.find((a) => a.step === 'coder')!;
+  assert.equal(coder.cost_usd, 0.3);
+  assert.match(coder.error!, /run the task again after it resets/);
+});
+
+test('after a reviewer failure, running again resumes at the reviewer without paying for the coder', async () => {
+  const broken: Script = () => {
+    throw new Error('model run failed: overloaded');
+  };
+  const { driver, task, runner } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [broken, approveReview],
+  });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /overloaded/);
+  const resumed = await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.equal(resumed.stage, 'awaiting-approval');
+  assert.deepEqual(
+    runner.calls.map((c) => c.step),
+    ['classifier', 'coder', 'reviewer', 'reviewer', 'pr-writer'],
+  );
+});
+
+test('opening a PR adopts one that a lost write already opened, instead of opening a second', async () => {
+  const { driver, task, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  const asked: string[] = [];
+  driver.deps.github.findOpenPullRequest = async ({ head }) => (
+    asked.push(head),
+    'https://github.com/example/demo/pull/9'
+  );
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  const opened = await driver.openPr('demo', task.id);
+  assert.equal(opened.pr?.url, 'https://github.com/example/demo/pull/9');
+  assert.deepEqual(asked, [`factory/${task.id}`]);
+  assert.equal(prs.length, 0);
+});
+
+test('a check that runs past its time limit is stopped and fails verification', async () => {
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] }, 'sleep 30');
+  withLimits(driver, { check_timeout_minutes: 0.005 });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /still failing/);
+  const failed = await driver.deps.tasks.read('demo', task.id);
+  assert.equal(failed.stage, 'verification-failed');
+  assert.match(failed.verification!.output_tail, /test did not finish within 0\.005 minutes/);
+});

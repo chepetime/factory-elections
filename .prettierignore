@@ -11,3 +11,6 @@ packages/affect-ui/upstream/
 packages/affect-ui/dist/
 apps/web/storybook-static/
 apps/web/test-results/
+
+# Generated codebase map (Floorplan); its page security breaks if reformatted.
+floorplan/
