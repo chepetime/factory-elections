@@ -1,9 +1,10 @@
 // Repository contributors and assignment storage belong to the backend, never the web process.
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Effect } from 'effect';
 import { z } from 'zod';
-import { aggregateLog, ProjectName, type Contributor } from '@factory/core';
+import { aggregateLog, ProjectName, TeamMember, TeamMemberInput, type Contributor } from '@factory/core';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 
 const Assignment = z.object({
@@ -20,6 +21,7 @@ const Email = z
 const TeamFile = z.object({
   members: z.record(z.string(), Assignment).default({}),
   aliases: z.record(z.string(), Email).default({}),
+  records: z.array(TeamMember).default([]),
 });
 type TeamFile = z.infer<typeof TeamFile>;
 const BulkUpdate = z.discriminatedUnion('kind', [
@@ -109,6 +111,38 @@ export class TeamService {
       this.read(project),
     ]);
     return rows(aggregateLog(log), file);
+  }
+  async records(project: string): Promise<TeamMember[]> {
+    await this.repo(project);
+    return (await this.read(project)).records;
+  }
+  async saveRecord(project: string, input: unknown): Promise<TeamMember> {
+    await this.repo(project);
+    const parsed = TeamMemberInput.parse(input);
+    const update = Effect.tryPromise({
+      try: async () => {
+        const file = await this.read(project);
+        if (parsed.id && !file.records.some((record) => record.id === parsed.id))
+          throw new Error('Team member not found');
+        if (
+          file.records.some(
+            (record) =>
+              record.id !== parsed.id &&
+              (record.jira_id === parsed.jira_id ||
+                record.github_login.toLowerCase() === parsed.github_login.toLowerCase()),
+          )
+        )
+          throw new Error('Jira or GitHub identity already belongs to a team member');
+        const member = TeamMember.parse({ ...parsed, id: parsed.id ?? randomUUID() });
+        file.records = [...file.records.filter((record) => record.id !== member.id), member];
+        await this.storage.writeDocument(join(this.root, project, 'team.json'), file);
+        return member;
+      },
+      catch: (error) => error,
+    }).pipe(this.updates.withPermits(1));
+    const result = await Effect.runPromise(Effect.either(update));
+    if (result._tag === 'Left') throw result.left;
+    return result.right;
   }
   /** Applies one atomic edit or identity merge, serialized with individual assignments. */
   async bulk(raw: unknown) {

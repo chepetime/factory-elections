@@ -91,6 +91,12 @@ export async function startBackend(options: ServerOptions) {
     const trace = evidence;
     const handlers: { [K in keyof Methods]: (request: Methods[K][0]) => Promise<Methods[K][1]> } = {
       GetDiagnostics: async () => ({ json: JSON.stringify(await service.diagnostics()) }),
+      ListTeamRecords: async (request) => ({
+        json: JSON.stringify(await service.team.records(request.project)),
+      }),
+      SaveTeamRecord: async (request) => ({
+        json: JSON.stringify(await service.team.saveRecord(request.project, jsonObject(request.json))),
+      }),
       GetTeam: async (request) => ({ json: JSON.stringify(await service.team.members(request.project)) }),
       GetGitUser: async (request) => ({ text: await service.team.userName(request.project) }),
       UpdateMembers: async (request) => ({ json: JSON.stringify(await service.team.bulk(request)) }),

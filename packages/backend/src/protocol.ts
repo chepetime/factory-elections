@@ -36,6 +36,8 @@ export interface BackgroundRun {
 export interface Methods {
   GetDiagnostics: [{}, { json: string }];
   GetTeam: [Target, { json: string }];
+  ListTeamRecords: [Target, { json: string }];
+  SaveTeamRecord: [{ project: string; json: string }, { json: string }];
   GetGitUser: [Target, { text: string }];
   UpdateMembers: [{ project: string; json: string }, { json: string }];
   SaveAssignment: [{ project: string; email: string; team?: string; tags: string[] }, { text: string }];

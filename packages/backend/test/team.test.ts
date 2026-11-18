@@ -115,3 +115,21 @@ test('bulk edits preserve untouched fields; identity merges persist and combine 
   await service.assign({ project: 'app', email: 'old@example.test', team: 'Resolved alias', tags: [] });
   assert.equal((await service.members('app'))[0]?.team, 'Resolved alias');
 });
+
+test('project member records persist and survive contributor assignment edits', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-team-records-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await storageFor(root).projects.add('app', root);
+  await storageFor(root).projects.add('other', root);
+  const service = new TeamService(root);
+  const member = await service.saveRecord('app', { name: 'Ada', jira_id: 'jira-1', github_login: 'ada' });
+  await service.assign({ project: 'app', email: 'ada@example.test', team: 'Platform', tags: [] });
+  const updated = await service.saveRecord('app', { ...member, name: 'Ada L' });
+  assert.deepEqual(await new TeamService(root).records('app'), [updated]);
+  assert.deepEqual(await service.records('other'), []);
+  await assert.rejects(
+    service.saveRecord('app', { name: 'Other', jira_id: 'jira-2', github_login: 'ADA' }),
+    /already belongs/,
+  );
+  await assert.rejects(service.saveRecord('app', { name: '', jira_id: 'j', github_login: 'g' }));
+});

@@ -203,6 +203,14 @@
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },
+                "ListTeamRecords": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "SaveTeamRecord": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "GetGitUser": {
                   "requestType": "Target",
                   "responseType": "Text"

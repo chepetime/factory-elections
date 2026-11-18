@@ -25,7 +25,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 ## Vision step 5: links and team import
 
 - [ ] **Run-to-ticket links:** every task run records its Jira ticket. Add the link where a task starts from a Jira issue, not only for feature tickets.
-- [ ] **Team member records:** name, Jira identity and GitHub identity, linked to a project.
+- [x] **Team member records:** name, Jira identity and GitHub identity, linked to a project.
 - [ ] **Jira import:** the team's tickets per project, with type, status, assignee, and the created and resolved dates.
 - [ ] **GitHub import:** the team's PRs, with author, state, opened and merged dates, review rounds and reverts.
 - [ ] **PR review records** from people and from agent runs, with reviewer, verdict, findings and time taken.

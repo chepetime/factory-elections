@@ -33,6 +33,8 @@ message Assignment {
 service Factory {
   rpc GetDiagnostics(Empty) returns (Snapshot);
   rpc GetTeam(Target) returns (Snapshot);
+  rpc ListTeamRecords(Target) returns (Snapshot);
+  rpc SaveTeamRecord(SettingsUpdate) returns (Snapshot);
   rpc GetGitUser(Target) returns (Text);
   rpc UpdateMembers(SettingsUpdate) returns (Snapshot);
   rpc SaveAssignment(Assignment) returns (Text);
