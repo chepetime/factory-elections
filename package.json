@@ -28,7 +28,11 @@
     "data:down": "node scripts/data.mjs down",
     "data:status": "node scripts/data.mjs status",
     "data:migrate": "node scripts/data.mjs migrate",
-    "data:test": "node scripts/data.mjs test"
+    "data:test": "node scripts/data.mjs test",
+    "worktree": "node scripts/worktree.mjs",
+    "ci:plan": "node scripts/ci-plan.mjs",
+    "ci:affected": "node scripts/ci-run.mjs",
+    "harness:stats": "node scripts/harness-stats.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -47,10 +47,13 @@ if (!(await reachable())) {
     closeBackendClient();
     throw new Error('Backend did not become ready; inspect its startup error above.');
   }
+} else if (env.FACTORY_REQUIRE_OWN_BACKEND === '1') {
+  closeBackendClient();
+  throw new Error('Backend port is already occupied; choose another worktree backend port.');
 } else console.log('Using the running local backend.');
 closeBackendClient();
 const app = spawn('pnpm', ['run', dev ? 'dev' : 'start'], { cwd: web, env, stdio: 'inherit' });
-console.log('\nSoftware Factory: http://localhost:3000  (Ctrl-C to stop)\n');
+console.log(`\nSoftware Factory: http://localhost:${env.PORT ?? 3000}  (Ctrl-C to stop)\n`);
 let stopping = false;
 const stop = () => {
   if (stopping) return;

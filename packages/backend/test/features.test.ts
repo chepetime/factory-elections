@@ -90,7 +90,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
     },
   };
   const settings = ProjectSettings.parse({
-    task_manager: { kind: 'jira', create_ticket: `printf 'Created VOTE-%s %s\\n' "$RANDOM" {summary}` },
+    task_manager: { kind: 'jira', create_ticket: `printf 'Created VOTE-123 %s\\n' {summary}` },
   });
   let slots = 3;
   const features = new FeatureService({
