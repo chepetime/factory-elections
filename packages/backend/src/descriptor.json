@@ -303,6 +303,14 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ListPrReviewRecords": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "AddPrReviewRecord": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "ListExperiments": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

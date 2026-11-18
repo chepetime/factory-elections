@@ -147,6 +147,16 @@ export async function startBackend(options: ServerOptions) {
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      ListPrReviewRecords: async (request) => {
+        await service.projects.read(request.project);
+        return { json: JSON.stringify(await service.prReviewRecords.list(request.project)) };
+      },
+      AddPrReviewRecord: async (request) => {
+        await service.projects.read(request.project);
+        return {
+          json: JSON.stringify(await service.prReviewRecords.add(request.project, jsonObject(request.json))),
+        };
+      },
       ListExperiments: async (request) => {
         await service.projects.read(request.project);
         return { json: JSON.stringify(await service.experiments.list(request.project)) };

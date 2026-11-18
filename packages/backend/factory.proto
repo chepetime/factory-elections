@@ -58,6 +58,8 @@ service Factory {
   rpc FeatureAction(SettingsUpdate) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
+  rpc ListPrReviewRecords(Target) returns (Snapshot);
+  rpc AddPrReviewRecord(SettingsUpdate) returns (Snapshot);
   rpc ListExperiments(Target) returns (Snapshot);
   rpc AddExperiment(SettingsUpdate) returns (Snapshot);
   rpc GetInbox(Empty) returns (Snapshot);
