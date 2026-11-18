@@ -208,6 +208,8 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 - [ ] **Use the new components across the app:** the affect-ui free components (`packages/affect-ui`) and shadcn/ui, following [docs/frontend-component-patterns.md](docs/frontend-component-patterns.md), instead of hand-rolled markup.
 - [x] **Render the approval gate's diff** with a proper code view (affect-ui `CodeBlock` / Tool Call Card patterns) instead of plain text.
 - [x] Show the task's cost and model attempts as a small breakdown.
+- [ ] **Better ticket UI:** improve how the app shows tickets.
+- [ ] **Loading states:** when I open a page such as PR Reviews or tickets, the page changes at once and shows a loading state until its data arrives.
 - [ ] Replace the remaining placeholder cards with real views.
 - [x] Tests for `layer-stack.tsx` once bb64645e lands (the reviewer's nit).
 

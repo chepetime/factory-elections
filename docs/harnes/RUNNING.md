@@ -1,6 +1,6 @@
 # Run this checkout
 
-Install with `pnpm install --frozen-lockfile`. For isolated fullstack run `node scripts/worktree.mjs run 3001 4320` with available web/backend ports; it assigns checkout-local data and refuses backend reuse. `pnpm web -- --dev` starts the backend and Next.js; `pnpm web` builds and serves production mode. `pnpm backend` runs only the service.
+Install with `pnpm install --frozen-lockfile`. For isolated fullstack run `node scripts/worktree.mjs run 3001 4320` with available web/backend ports; it assigns checkout-local data and refuses backend reuse. `pnpm web -- --dev` starts the backend and Next.js; `pnpm web` builds and serves production mode. `pnpm start` does the same from a cold machine: it removes a backend lock from before the last boot, starts OrbStack and the data services when storage is configured, then runs `pnpm web` (add `-- --dev` for dev mode). `pnpm backend` runs only the service.
 
 Before starting a concurrent stack, use [worktree setup](../worktrees.md) for isolated ports and data. The plain launcher reuses any authenticated backend at its configured address; a successful connection alone does not prove it runs this checkout's code. Never reuse a different agent's backend to validate backend edits.
 
