@@ -118,7 +118,7 @@ export interface MetricsSummary {
     /** Runs whose coder calls used more than one model. */
     climb_rate?: number;
     median_duration_ms?: number;
-    /** Runs above the 90th percentile of at least 20 earlier complete-cost runs of the same project and class. */
+    /** Runs above the 90th percentile of at least 20 earlier complete-cost runs of the same project and class in the last 90 days. */
     unusual: {
       trace_id: string;
       project: string;
@@ -148,6 +148,9 @@ function bucket<K extends string>(map: Record<K, CostSum>, key: K | undefined, s
   if (!key) return;
   addSpan((map[key] ??= emptySum()), span);
 }
+
+/** The baseline includes runs started in the 90 days before the reporting window. */
+export const UNUSUAL_LOOKBACK_MS = 90 * 86_400_000;
 
 /** The metrics of every span that ended in `[from, to)`. */
 export function metricsSummary(spans: readonly SpanRecord[], from: string, to: string): MetricsSummary {
@@ -219,7 +222,8 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
   // Use complete traces before the requested end for the baseline, including those before `from`.
   // Do not compare partial-cost runs or runs without a known class. A prior run must have finished
   // before the candidate started, so overlapping work cannot leak future information.
-  const history = spans.filter((s) => s.ended_at < to);
+  const historyStart = new Date(Date.parse(from) - UNUSUAL_LOOKBACK_MS).toISOString();
+  const history = spans.filter((s) => s.ended_at >= historyStart && s.ended_at < to);
   const traceGroups = new Map<string, SpanRecord[]>();
   for (const item of history) {
     const key = `${item.project}\0${item.trace_id}`;
@@ -228,7 +232,7 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
     traceGroups.set(key, group);
   }
   const candidates = history
-    .filter((s) => s.type === 'run' && s.task_class)
+    .filter((s) => s.type === 'run' && s.task_class && s.started_at >= historyStart)
     .map((run) => {
       const group = traceGroups.get(`${run.project}\0${run.trace_id}`) ?? [];
       const calls = group.filter((item) => item.type === 'model' || item.type === 'child');
@@ -237,30 +241,60 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
       return { run, cost: group.reduce((sum, item) => sum + (item.cost_usd ?? 0), 0) };
     })
     .filter((item): item is { run: SpanRecord; cost: number } => item !== undefined);
+  // Coordinate-compressed Fenwick counts give sliding-window percentiles in O(log n).
+  const classes = new Map<string, typeof candidates>();
   for (const candidate of candidates) {
-    const { run, cost } = candidate;
-    if (run.ended_at < from) continue;
-    const previous = candidates
-      .filter(
-        (item) =>
-          item.run.project === run.project &&
-          item.run.task_class === run.task_class &&
-          item.run.ended_at < run.started_at,
-      )
-      .map((item) => item.cost)
-      .sort((a, b) => a - b);
-    if (previous.length < 20) continue;
-    const threshold = previous[Math.ceil(previous.length * 0.9) - 1]!;
-    if (cost > threshold)
-      summary.runs.unusual.push({
-        trace_id: run.trace_id,
-        project: run.project,
-        ...(run.task_id ? { task_id: run.task_id } : {}),
-        task_class: run.task_class!,
-        cost_usd: cost,
-        threshold_usd: threshold,
-        baseline_runs: previous.length,
-      });
+    const key = `${candidate.run.project}\0${candidate.run.task_class}`;
+    const group = classes.get(key) ?? [];
+    group.push(candidate);
+    classes.set(key, group);
+  }
+  for (const group of classes.values()) {
+    const values = [...new Set(group.map((item) => item.cost))].sort((a, b) => a - b);
+    const indices = new Map(values.map((value, index) => [value, index + 1]));
+    const tree = Array<number>(values.length + 1).fill(0);
+    const update = (cost: number, delta: number) => {
+      for (let i = indices.get(cost)!; i < tree.length; i += i & -i) tree[i]! += delta;
+    };
+    const select = (rank: number) => {
+      let index = 0;
+      for (let bit = 2 ** Math.floor(Math.log2(values.length)); bit >= 1; bit /= 2) {
+        const next = index + bit;
+        if (next < tree.length && tree[next]! < rank) {
+          rank -= tree[next]!;
+          index = next;
+        }
+      }
+      return values[index]!;
+    };
+    const byEnd = [...group].sort((a, b) => a.run.ended_at.localeCompare(b.run.ended_at));
+    const byStart = [...group].sort((a, b) => a.run.started_at.localeCompare(b.run.started_at));
+    let added = 0;
+    let removed = 0;
+    let count = 0;
+    for (const { run, cost } of byStart) {
+      while (added < byEnd.length && byEnd[added]!.run.ended_at < run.started_at) {
+        update(byEnd[added++]!.cost, 1);
+        count++;
+      }
+      const cutoff = new Date(Date.parse(run.started_at) - UNUSUAL_LOOKBACK_MS).toISOString();
+      while (removed < added && byEnd[removed]!.run.ended_at < cutoff) {
+        update(byEnd[removed++]!.cost, -1);
+        count--;
+      }
+      if (run.ended_at < from || count < 20) continue;
+      const threshold = select(Math.ceil(count * 0.9));
+      if (cost > threshold)
+        summary.runs.unusual.push({
+          trace_id: run.trace_id,
+          project: run.project,
+          ...(run.task_id ? { task_id: run.task_id } : {}),
+          task_class: run.task_class!,
+          cost_usd: cost,
+          threshold_usd: threshold,
+          baseline_runs: count,
+        });
+    }
   }
 
   // Runs: the root span of each task trace, with the coder calls under it.

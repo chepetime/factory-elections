@@ -181,3 +181,34 @@ test('unusual costs compare against at least 20 earlier complete runs of the sam
     [],
   );
 });
+
+test('unusual cost baseline expires after 90 days', () => {
+  const runs: SpanRecord[] = [];
+  for (let i = 0; i < 20; i++) {
+    const trace_id = `old-${i}`;
+    runs.push(
+      span({
+        type: 'run',
+        trace_id,
+        task_class: 'code/S',
+        started_at: '2026-01-01T00:00:00.000Z',
+        ended_at: '2026-01-01T01:00:00.000Z',
+      }),
+      span({ type: 'model', trace_id, cost_usd: 1, ended_at: '2026-01-01T00:30:00.000Z' }),
+    );
+  }
+  runs.push(
+    span({
+      type: 'run',
+      trace_id: 'later',
+      task_class: 'code/S',
+      started_at: '2026-05-01T00:00:00.000Z',
+      ended_at: '2026-05-01T01:00:00.000Z',
+    }),
+    span({ type: 'model', trace_id: 'later', cost_usd: 10, ended_at: '2026-05-01T00:30:00.000Z' }),
+  );
+  assert.deepEqual(
+    metricsSummary(runs, '2026-04-30T00:00:00.000Z', '2026-05-02T00:00:00.000Z').runs.unusual,
+    [],
+  );
+});

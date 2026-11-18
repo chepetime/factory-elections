@@ -15,6 +15,7 @@ import {
   newSpanId,
   newTraceId,
   taskClass,
+  UNUSUAL_LOOKBACK_MS,
   traceTree,
   inboxItems,
   type InboxItem,
@@ -643,7 +644,10 @@ export class BackendService {
     const to = q.to ?? new Date(Date.now() + 1000).toISOString();
     const from = q.from ?? new Date(Date.parse(to) - 7 * 86_400_000).toISOString();
     const projects = q.project ? [q.project] : (await this.projects.list()).map((p) => p.name);
-    const spans = (await Promise.all(projects.map((p) => this.traces.read(p)))).flat();
+    const historyStart = new Date(Date.parse(from) - UNUSUAL_LOOKBACK_MS).toISOString();
+    const spans = (
+      await Promise.all(projects.map((p) => this.traces.read(p, { since: historyStart })))
+    ).flat();
     return metricsSummary(spans, from, to);
   }
   /** The time a task waited at the approval gate, as a span, when the human acts on it. */
