@@ -4,7 +4,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 
 ## Now
 
-- [ ] **Decide task bb64645e** (LayerStack component on the web homepage). It is at the approval gate at `5750b1ee1546`, with verification passed and the review approved with 3 minor findings. Check the animation in a browser, then approve and open the PR, revise it or reject it. Its branch predates the affect-ui commit on `main`, so expect a conflict, mostly in `pnpm-lock.yaml`.
+- [x] **Decide task bb64645e** (LayerStack component): merged to `main` directly. The home page it targeted is now the project start screen, so `apps/web/src/components/layer-stack.tsx` still needs a place.
 - [x] **Use the new components in the web app:** `AgentFindings` for review findings and `AgentCheckpoints` for the stage timeline on the task page. Wait until the component work in the other session settles.
 - [ ] **First paid run on a real project:** take one change-elections feature end to end (the profile is approved). Do not mirror to Jira or open a PR until the run is checked.
 - [ ] **Answer the open entity questions** in [docs/vision/entities.md](docs/vision/entities.md): ticket vs task, feature vs epic, human PR reviews, a team above members. Steps 5 and 6 depend on them.
@@ -189,7 +189,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 ## Safety
 
 - [ ] **Coder sandbox, next steps:** deny reads of secrets (`~/.ssh`, `~/.npmrc`, `~/.aws`, `~/.config/gh`, keychains) using `filesystem.denyRead` / `credentials`.
-- [ ] **Per-profile sandbox settings:** extra allowed hosts (other registries, `git fetch`) and write paths, declared in the repo profile rather than hard-coded in `sandboxFor`.
+- [x] **Per-profile sandbox settings:** extra allowed hosts (other registries, `git fetch`) and write paths, declared in the repo profile rather than hard-coded in `sandboxFor`. Applies to the Claude coder only; the Codex CLI has no per-domain network setting.
 - [x] **Generated-files check:** let a profile add its own generated paths, such as `dist/` for repos that don't commit build output.
 - [ ] Optionally sandbox the verification commands too. They currently run as your shell user.
 
