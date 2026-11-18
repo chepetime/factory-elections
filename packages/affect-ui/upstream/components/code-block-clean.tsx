@@ -35,7 +35,7 @@ export type CodeBlockProps = {
   style?: CSSProperties;
 };
 
-type Kind = "com" | "str" | "kw" | "num" | "lit" | "fn" | "key" | "var";
+type Kind = "add" | "del" | "com" | "str" | "kw" | "num" | "lit" | "fn" | "key" | "var";
 type Token = [Kind | null, string];
 
 export function CodeBlock({
@@ -55,7 +55,9 @@ export function CodeBlock({
   const source = typeof code === "string" ? code : code == null ? "" : String(code);
   const shown = source.replace(/\r\n?/g, "\n").replace(/\n$/, "");
   const lang = resolve(language);
-  const lines = useMemo(() => toLines(tokenize(shown, lang)), [shown, lang]);
+  const lines = useMemo(() => toLines(language?.toLowerCase() === "diff"
+    ? shown.split(/(?<=\n)/).map((line): Token => [line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : null, line])
+    : tokenize(shown, lang)), [shown, lang, language]);
   const marked = useMemo(() => new Set(Array.isArray(highlightLines) ? highlightLines : []), [highlightLines]);
   const label = filename || languageName(language);
 
@@ -462,6 +464,10 @@ const css = /* css */ `
   color: var(--ui-codec-muted);
 }
 
+.ui-codec__t-add { color: #15803d; }
+.ui-codec__t-del { color: #b91c1c; }
+:where(.dark, [data-theme="dark"]) .ui-codec__t-add { color: #4ade80; }
+:where(.dark, [data-theme="dark"]) .ui-codec__t-del { color: #f87171; }
 .ui-codec__t-com { color: var(--ui-codec-com); }
 .ui-codec__t-str { color: var(--ui-codec-str); }
 .ui-codec__t-kw { color: var(--ui-codec-kw); }

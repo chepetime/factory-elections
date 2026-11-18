@@ -148,11 +148,16 @@ it('shows the approval diff in a copyable code view and reports read errors', as
       diff_stat: 'file | 1 +',
     },
   });
-  vi.mocked(readDiff).mockResolvedValueOnce({ ok: true, value: 'diff --git a/a b/a\n+new line\n' });
+  vi.mocked(readDiff).mockResolvedValueOnce({
+    ok: true,
+    value: 'diff --git a/a b/a\n--- a/a\n+++ b/a\n-old line\n+new line\n',
+  });
   const page = await html();
   expect(page).toContain('Full diff');
   expect(page).toContain('Changes.diff');
   expect(page).toContain('+new line');
+  expect(page).toContain('ui-codec__t-add');
+  expect(page).toContain('ui-codec__t-del');
   expect(page).toContain('Copy code');
   vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
   expect(await html()).toContain('Could not load the diff: unavailable');
