@@ -12,4 +12,6 @@ export * from './metrics.ts';
 export * from './inbox.ts';
 export * from './tending.ts';
 export * from './tools.ts';
+export * from './tools.ts';
 export * from './review-candidate.ts';
+export * from './routing.ts';
