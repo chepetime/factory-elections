@@ -77,6 +77,7 @@ export function ProjectSettingsForm({
   const [icon, setIcon] = useState(initial.icon ?? '');
   const [tm, setTm] = useState<TaskManager>(initial.task_manager);
   const [docs, setDocs] = useState((initial.task_manager.docs ?? []).join('\n'));
+  const [tending, setTending] = useState(initial.tending);
   const [profile, setProfile] = useState(initial.review_profile ?? '');
   const [proposal, setProposal] = useState<SettingsProposal>();
   const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
@@ -116,6 +117,7 @@ export function ProjectSettingsForm({
             .filter(Boolean),
         },
         review_profile: profile,
+        tending,
       });
       setNotice(result.error ? { kind: 'error', text: result.error } : { kind: 'status', text: 'Saved.' });
       if (!result.error) router.refresh();
@@ -258,6 +260,17 @@ export function ProjectSettingsForm({
             </Field>
           </>
         )}
+      </Section>
+
+      <Section title="PR tending" description="Keep open factory pull requests moving by addressing failed checks and conflicts.">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={tending.enabled} onChange={(e) => setTending((t) => ({ ...t, enabled: e.target.checked }))} />
+          Enable PR tending
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={tending.answer_threads} onChange={(e) => setTending((t) => ({ ...t, answer_threads: e.target.checked }))} />
+          Answer review threads
+        </label>
       </Section>
 
       <Section
