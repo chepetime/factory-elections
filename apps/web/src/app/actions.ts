@@ -254,6 +254,5 @@ export async function dismissInboxItem(_prev: ActionState, form: FormData): Prom
     return { message: 'Dismissed.' };
   } catch {
     return { error: 'Could not dismiss this item. Try again.' };
-
   }
 }

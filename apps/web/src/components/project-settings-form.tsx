@@ -262,13 +262,24 @@ export function ProjectSettingsForm({
         )}
       </Section>
 
-      <Section title="PR tending" description="Keep open factory pull requests moving by addressing failed checks and conflicts.">
+      <Section
+        title="PR tending"
+        description="Keep open factory pull requests moving by addressing failed checks and conflicts."
+      >
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={tending.enabled} onChange={(e) => setTending((t) => ({ ...t, enabled: e.target.checked }))} />
+          <input
+            type="checkbox"
+            checked={tending.enabled}
+            onChange={(e) => setTending((t) => ({ ...t, enabled: e.target.checked }))}
+          />
           Enable PR tending
         </label>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={tending.answer_threads} onChange={(e) => setTending((t) => ({ ...t, answer_threads: e.target.checked }))} />
+          <input
+            type="checkbox"
+            checked={tending.answer_threads}
+            onChange={(e) => setTending((t) => ({ ...t, answer_threads: e.target.checked }))}
+          />
           Answer review threads
         </label>
       </Section>
