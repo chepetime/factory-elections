@@ -10,6 +10,7 @@ import {
   taskActions,
   type TaskRecord,
 } from '@factory/core';
+import { CodeBlock } from '@factory/affect-ui/components/code-block-clean';
 import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
@@ -535,25 +536,23 @@ export default async function TaskPage({
             <pre className="mt-3 overflow-auto rounded-lg bg-background p-3 text-xs">
               {gate.diff_stat || 'No changes yet.'}
             </pre>
+            {diffResult && !diffResult.ok && (
+              <p role="alert" className="mt-3 text-sm text-destructive">
+                Could not load the diff: {diffResult.error}
+              </p>
+            )}
             {diff && (
               <details className="mt-3">
                 <summary className="cursor-pointer text-sm font-medium">Full diff</summary>
-                <pre className="mt-2 max-h-[32rem] overflow-auto rounded-lg bg-background p-3 text-xs">
-                  {diff.split('\n').map((line, i) => (
-                    <span
-                      key={i}
-                      className={
-                        line.startsWith('+') && !line.startsWith('+++')
-                          ? 'block text-green-700 dark:text-green-400'
-                          : line.startsWith('-') && !line.startsWith('---')
-                            ? 'block text-red-700 dark:text-red-400'
-                            : 'block'
-                      }
-                    >
-                      {line || ' '}
-                    </span>
-                  ))}
-                </pre>
+                <div className="mt-2">
+                  <CodeBlock
+                    code={diff}
+                    language="diff"
+                    filename="Changes.diff"
+                    showLineNumbers
+                    maxHeight="32rem"
+                  />
+                </div>
               </details>
             )}
             <p className="mt-2 truncate text-xs text-muted-foreground" title={task.worktree?.path}>

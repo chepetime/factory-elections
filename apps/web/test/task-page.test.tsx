@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
 import { TaskRecord, taskActions, type ExecutionPhase } from '@factory/core';
 import TaskPage from '@/app/projects/[project]/tasks/[id]/page';
-import { backgroundRun, readTaskControls } from '@/lib/factory';
+import { backgroundRun, readDiff, readTaskControls } from '@/lib/factory';
 
 vi.mock('@/lib/factory', () => ({
   readTaskControls: vi.fn(),
@@ -133,4 +133,28 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
     value: { task: unknown, execution: 'completed', actions: taskActions(unknown, 'completed') },
   });
   expect(await html()).toContain('unknown');
+});
+
+it('shows the approval diff in a copyable code view and reports read errors', async () => {
+  observe('completed', 'awaiting-approval');
+  const current = { ...task, stage: 'awaiting-approval' as const };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: current,
+      execution: 'completed',
+      actions: taskActions(current, 'completed'),
+      head_sha: 'abcdef123456',
+      diff_stat: 'file | 1 +',
+    },
+  });
+  vi.mocked(readDiff).mockResolvedValueOnce({ ok: true, value: 'diff --git a/a b/a\n+new line\n' });
+  const page = await html();
+  expect(page).toContain('Full diff');
+  expect(page).toContain('Changes.diff');
+  expect(page).toContain('+new line');
+  expect(page).toContain('Copy code');
+  vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
+  expect(await html()).toContain('Could not load the diff: unavailable');
+
 });
