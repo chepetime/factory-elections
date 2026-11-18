@@ -49,6 +49,27 @@ export async function startBackend(options: ServerOptions) {
     options.reviews,
     options.detector,
   );
+  // Ledger scans can be expensive. Share one refresh across callers and cache it briefly.
+  let ledgerCache:
+    { at: number; value: Awaited<ReturnType<typeof service.traces.health>> | undefined } | undefined;
+  let ledgerRefresh: Promise<void> | undefined;
+  const ledgerHealth = async () => {
+    if (!ledgerCache || Date.now() - ledgerCache.at >= 60_000) {
+      ledgerRefresh ??= (async () => {
+        try {
+          const projects = await service.projects.list();
+          const value = await service.traces.health(projects.map((project) => project.name));
+          ledgerCache = { at: Date.now(), value };
+        } catch {
+          ledgerCache = { at: Date.now(), value: undefined };
+        }
+      })().finally(() => {
+        ledgerRefresh = undefined;
+      });
+      await ledgerRefresh;
+    }
+    return ledgerCache?.value;
+  };
   const health = createServer(async (request, response) => {
     if (request.method !== 'GET' || request.url !== '/health') {
       response.writeHead(404).end();
@@ -57,16 +78,14 @@ export async function startBackend(options: ServerOptions) {
     try {
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       const storageHealth = service.storage.config ? await service.storage.health() : undefined;
-      const ledgerHealth = await service.traces.health(
-        (await service.projects.list()).map((project) => project.name),
-      );
+      const ledger = await ledgerHealth();
       response.end(
         JSON.stringify({
           engine: 'running',
           task_store: storageHealth?.postgres ?? (await isReadableDirectory(root)),
           telemetry_database: storageHealth?.postgres ?? 'not_configured',
           ...(storageHealth ? { artifact_store: storageHealth.artifacts } : {}),
-          ledger: ledgerHealth,
+          ...(ledger ? { ledger } : {}),
           integrations: [],
         }),
       );
