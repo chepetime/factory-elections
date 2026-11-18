@@ -69,6 +69,8 @@ export const SpanRecord = z.object({
   error: z.string().max(2000).optional(),
   /** Null: the provider reported no cost. Absent: the span has no cost of its own (tools, gates). */
   cost_usd: z.number().nullable().optional(),
+  /** How the span cost was obtained; absent for spans without their own cost. */
+  cost_source: z.enum(['reported', 'computed', 'unknown']).optional(),
   tokens: SpanTokens.optional(),
   provider: z.string().optional(),
   model: z.string().optional(),

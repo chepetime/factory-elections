@@ -202,6 +202,7 @@ export class TraceLog {
               duration_ms: event.durationMs,
               outcome: 'completed',
               cost_usd: event.costUsd,
+              cost_source: event.costUsd === null ? 'unknown' : 'reported',
               attributes: { stuck: event.stuck, confidence: event.confidence },
             });
           }
@@ -226,6 +227,9 @@ export class TraceLog {
             outcome: 'completed',
             ...(result?.usage ? { tokens: spanTokens(result.usage) } : {}),
             ...body,
+            ...(body.cost_usd !== undefined
+              ? { cost_source: body.cost_usd === null ? 'unknown' : 'reported' }
+              : {}),
           } as SpanBody);
           this.append(own, ...tools.finish(), ...extra);
         };

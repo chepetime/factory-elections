@@ -144,7 +144,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 ### Cost tracing
 
 - [ ] **Price table** (versioned): input, output, cache write (5 min and 1 h), cache read and the batch discount per model. Compute the cost of Codex calls, and check the reported Claude costs.
-- [ ] **`cost_source` on spans:** `reported`, `computed` or `unknown`.
+- [x] **`cost_source` on spans:** `reported`, `computed` or `unknown`.
 - [ ] **Billing mode on spans:** `api` or `subscription`. For subscription calls, record the list-price cost and the quota share used.
 - [ ] **Cache writes as a token count** of their own (today `tokens.input` includes them).
 - [ ] **Other costs:** paid tool APIs, CI minutes when known, and my time at a rate I set. Cost per outcome adds them all.

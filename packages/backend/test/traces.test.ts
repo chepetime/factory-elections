@@ -68,6 +68,7 @@ test('a traced call writes its model span, tool spans, the loop judge and a chil
   assert.equal(model.parent_span_id, 'run1');
   assert.equal(model.provider, 'claude');
   assert.deepEqual(model.tokens, { input: 100, output: 20, cache_read: 80 });
+  assert.equal(model.cost_source, 'reported');
   assert.ok(Math.abs(model.cost_usd! - 0.5) < 1e-9, 'the judge cost moves to the judge span');
   const byType = (type: string) => spans.filter((s) => s.type === type);
   assert.equal(byType('tool')[0]!.parent_span_id, model.span_id);
@@ -77,6 +78,7 @@ test('a traced call writes its model span, tool spans, the loop judge and a chil
   assert.equal(child.parent_span_id, model.span_id, 'the child hangs under the call that started it');
   assert.equal(child.task_id, 'task1');
   assert.equal(child.provider, 'codex');
+  assert.equal(child.cost_source, 'unknown');
   assert.equal(child.cost_usd, null, 'a provider without cost reports a gap, not $0');
   assert.equal(traces.grantParent(grant.endpoint.token), undefined, 'the grant link ends with the call');
   const month = new Date().toISOString().slice(0, 7);
