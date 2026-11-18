@@ -78,10 +78,14 @@ export const GENERATED_DIRS = [
 export const GENERATED_FILES = ['.tsbuildinfo', '.DS_Store'];
 
 /** Whether a repository path is generated output that a change should not commit. */
-export function isGeneratedPath(path: string): boolean {
+export function isGeneratedPath(path: string, extraPaths: string[] = []): boolean {
   const parts = path.split('/');
   const name = parts.at(-1) ?? '';
   return (
+    extraPaths.some((entry) => {
+      const prefix = entry.replace(/^\.\//, '').replace(/\/+$/, '');
+      return prefix.length > 0 && (path === prefix || path.startsWith(`${prefix}/`));
+    }) ||
     parts.slice(0, -1).some((part) => GENERATED_DIRS.includes(part)) ||
     GENERATED_FILES.some((suffix) => name.endsWith(suffix))
   );

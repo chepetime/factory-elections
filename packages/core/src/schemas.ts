@@ -231,6 +231,8 @@ export const RepoProfile = z.looseObject({
     setup: NonEmpty.optional(),
   }),
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
+  /** Repository-relative files or directories whose generated output must not be committed. */
+  generated_paths: z.array(NonEmpty).optional(),
   design_sources: z.array(z.string()),
   qa_targets: z.array(z.string()),
   /** Spending and time limits for this repository. Absent values use DEFAULT_TASK_LIMITS. */

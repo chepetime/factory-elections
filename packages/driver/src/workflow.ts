@@ -481,7 +481,9 @@ export class Driver {
     }
     // Build output and caches do not belong in the change, even when the repository forgot to
     // ignore them (a committed tsconfig.tsbuildinfo once slipped through review this way).
-    const generated = (await this.deps.git.addedOrModifiedSince(path, base)).filter(isGeneratedPath);
+    const generated = (await this.deps.git.addedOrModifiedSince(path, base)).filter((file) =>
+      isGeneratedPath(file, profile.generated_paths),
+    );
     if (generated.length) {
       output += `\n[the change commits generated files: ${generated.join(', ')}. Remove them from the change and add them to .gitignore.]\n`;
       return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };

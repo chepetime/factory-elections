@@ -190,7 +190,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 - [ ] **Coder sandbox, next steps:** deny reads of secrets (`~/.ssh`, `~/.npmrc`, `~/.aws`, `~/.config/gh`, keychains) using `filesystem.denyRead` / `credentials`.
 - [ ] **Per-profile sandbox settings:** extra allowed hosts (other registries, `git fetch`) and write paths, declared in the repo profile rather than hard-coded in `sandboxFor`.
-- [ ] **Generated-files check:** let a profile add its own generated paths, such as `dist/` for repos that don't commit build output.
+- [x] **Generated-files check:** let a profile add its own generated paths, such as `dist/` for repos that don't commit build output.
 - [ ] Optionally sandbox the verification commands too. They currently run as your shell user.
 
 ## Workflow

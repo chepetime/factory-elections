@@ -130,3 +130,9 @@ test('generated output is recognised anywhere in the tree, deliberate files are 
   for (const path of ['src/next.ts', 'docs/coverage.md', 'packages/x/dist-notes.md', 'tsconfig.json'])
     assert.equal(isGeneratedPath(path), false, path);
 });
+
+test('profile generated paths match files and directory descendants only', () => {
+  assert.equal(isGeneratedPath('dist/app.js', ['dist/']), true);
+  assert.equal(isGeneratedPath('generated.ts', ['./generated.ts']), true);
+  assert.equal(isGeneratedPath('dist-other/app.js', ['dist/']), false);
+});

@@ -56,7 +56,11 @@ function sh(cwd: string, ...args: string[]) {
   });
 }
 
-async function setup(scripts: Record<string, Script[]>, testCommand = 'test -f feature.txt') {
+async function setup(
+  scripts: Record<string, Script[]>,
+  testCommand = 'test -f feature.txt',
+  generatedPaths = '[]',
+) {
   const base = await mkdtemp(join(tmpdir(), 'factory-wf-'));
   const root = join(base, 'data');
   const repo = join(base, 'repo');
@@ -82,6 +86,7 @@ async function setup(scripts: Record<string, Script[]>, testCommand = 'test -f f
       'repo: { base_branch: { value: main, source: test } }',
       `commands: { test: "${testCommand}", full_check: "true" }`,
       'confirmed: { forbidden_paths: [secrets/], forbidden_commands: [] }',
+      `generated_paths: ${generatedPaths}`,
       'design_sources: []',
       'qa_targets: []',
     ].join('\n'),
@@ -363,6 +368,20 @@ test('verification fails when the change commits generated files', async () => {
   const stored = await store.read('demo', task.id);
   assert.equal(stored.stage, 'verification-failed');
   assert.match(stored.verification!.output_tail, /generated files: tsconfig\.tsbuildinfo/);
+});
+
+test('verification rejects profile-defined generated output', async () => {
+  const writeOutput: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'bundle.js'), 'generated');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task, store } = await setup(
+    { classifier: [ready], coder: [writeOutput] },
+    'true',
+    '[bundle.js]',
+  );
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  assert.match((await store.read('demo', task.id)).verification!.output_tail, /generated files: bundle\.js/);
 });
 
 test('verification retains only the output tail while forwarding the complete log', async () => {
