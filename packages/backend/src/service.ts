@@ -643,7 +643,7 @@ export class BackendService {
     const to = q.to ?? new Date(Date.now() + 1000).toISOString();
     const from = q.from ?? new Date(Date.parse(to) - 7 * 86_400_000).toISOString();
     const projects = q.project ? [q.project] : (await this.projects.list()).map((p) => p.name);
-    const spans = (await Promise.all(projects.map((p) => this.traces.read(p, { since: from })))).flat();
+    const spans = (await Promise.all(projects.map((p) => this.traces.read(p)))).flat();
     return metricsSummary(spans, from, to);
   }
   /** The time a task waited at the approval gate, as a span, when the human acts on it. */

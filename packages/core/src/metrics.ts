@@ -118,6 +118,16 @@ export interface MetricsSummary {
     /** Runs whose coder calls used more than one model. */
     climb_rate?: number;
     median_duration_ms?: number;
+    /** Runs above the 90th percentile of at least 20 earlier complete-cost runs of the same project and class. */
+    unusual: {
+      trace_id: string;
+      project: string;
+      task_id?: string;
+      task_class: string;
+      cost_usd: number;
+      threshold_usd: number;
+      baseline_runs: number;
+    }[];
   };
   reliability: {
     /** Model and child calls stopped for silence. */
@@ -155,7 +165,7 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
     by_step: {},
     by_project: {},
     by_feature: {},
-    runs: { count: 0, failed: 0 },
+    runs: { count: 0, failed: 0, unusual: [] },
     reliability: { stalls: 0, repeat_loops: 0, failed_tool_calls: 0, tool_calls: 0 },
     prs: { count: 0, cost_usd: 0 },
     gates: { count: 0, total_wait_ms: 0 },
@@ -205,6 +215,53 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
   summary.gates.median_wait_ms = median(
     inRange.filter((s) => s.type === 'gate').map((s) => s.duration_ms ?? 0),
   );
+
+  // Use complete traces before the requested end for the baseline, including those before `from`.
+  // Do not compare partial-cost runs or runs without a known class. A prior run must have finished
+  // before the candidate started, so overlapping work cannot leak future information.
+  const history = spans.filter((s) => s.ended_at < to);
+  const traceGroups = new Map<string, SpanRecord[]>();
+  for (const item of history) {
+    const key = `${item.project}\0${item.trace_id}`;
+    const group = traceGroups.get(key) ?? [];
+    group.push(item);
+    traceGroups.set(key, group);
+  }
+  const candidates = history
+    .filter((s) => s.type === 'run' && s.task_class)
+    .map((run) => {
+      const group = traceGroups.get(`${run.project}\0${run.trace_id}`) ?? [];
+      const calls = group.filter((item) => item.type === 'model' || item.type === 'child');
+      if (!calls.length || calls.some((item) => item.cost_usd == null)) return undefined;
+      if (group.some((item) => item.cost_usd === null)) return undefined;
+      return { run, cost: group.reduce((sum, item) => sum + (item.cost_usd ?? 0), 0) };
+    })
+    .filter((item): item is { run: SpanRecord; cost: number } => item !== undefined);
+  for (const candidate of candidates) {
+    const { run, cost } = candidate;
+    if (run.ended_at < from) continue;
+    const previous = candidates
+      .filter(
+        (item) =>
+          item.run.project === run.project &&
+          item.run.task_class === run.task_class &&
+          item.run.ended_at < run.started_at,
+      )
+      .map((item) => item.cost)
+      .sort((a, b) => a - b);
+    if (previous.length < 20) continue;
+    const threshold = previous[Math.ceil(previous.length * 0.9) - 1]!;
+    if (cost > threshold)
+      summary.runs.unusual.push({
+        trace_id: run.trace_id,
+        project: run.project,
+        ...(run.task_id ? { task_id: run.task_id } : {}),
+        task_class: run.task_class!,
+        cost_usd: cost,
+        threshold_usd: threshold,
+        baseline_runs: previous.length,
+      });
+  }
 
   // Runs: the root span of each task trace, with the coder calls under it.
   const durations: number[] = [];

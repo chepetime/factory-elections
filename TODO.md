@@ -149,7 +149,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 - [x] **Cache writes as a token count** of their own (today `tokens.input` includes them).
 - [ ] **Other costs:** paid tool APIs, CI minutes when known, and my time at a rate I set. Cost per outcome adds them all.
 - [ ] **Spend limits:** daily and monthly, per project and in total. An inbox item at 80%; new runs wait at 100%.
-- [ ] **Unusual runs:** flag a run that costs more than the 90th percentile of its class.
+- [x] **Unusual runs:** flag a run that costs more than the 90th percentile of its class.
 - [ ] **Monthly reconcile** of the ledger with the provider's usage reports.
 - [ ] **Cost on the pages:** the cost per span in the trace page, and spend by provider, model, step and billing mode in the Weekly page.
 

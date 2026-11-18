@@ -144,3 +144,40 @@ test('cache hit rate by step is token-weighted and respects the time range', () 
   assert.equal(metrics.by_step.reviewer!.cache_hit_rate, 0.5);
   assert.equal(metrics.by_step.empty!.cache_hit_rate, undefined);
 });
+
+test('unusual costs compare against at least 20 earlier complete runs of the same project and class', () => {
+  const runs: SpanRecord[] = [];
+  for (let i = 0; i < 22; i++) {
+    const day = String(i + 1).padStart(2, '0');
+    const trace_id = `cost-${i}`;
+    runs.push(
+      span({
+        type: 'run',
+        trace_id,
+        task_class: 'code/S',
+        started_at: `2026-10-${day}T10:00:00.000Z`,
+        ended_at: `2026-10-${day}T11:00:00.000Z`,
+      }),
+      span({
+        type: 'model',
+        trace_id,
+        cost_usd: i === 20 ? 10 : i === 21 ? null : 1,
+        ended_at: `2026-10-${day}T10:30:00.000Z`,
+      }),
+    );
+  }
+  const m = metricsSummary(runs, '2026-10-21T00:00:00.000Z', '2026-11-01T00:00:00.000Z');
+  assert.deepEqual(
+    m.runs.unusual.map(({ trace_id, cost_usd, threshold_usd, baseline_runs }) => ({
+      trace_id,
+      cost_usd,
+      threshold_usd,
+      baseline_runs,
+    })),
+    [{ trace_id: 'cost-20', cost_usd: 10, threshold_usd: 1, baseline_runs: 20 }],
+  );
+  assert.deepEqual(
+    metricsSummary(runs.slice(0, 40), '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z').runs.unusual,
+    [],
+  );
+});
