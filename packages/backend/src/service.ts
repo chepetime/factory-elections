@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -11,8 +12,14 @@ import {
   taskActions,
   taskCommandBlockers,
   withStage,
+  newSpanId,
+  newTraceId,
+  taskClass,
   type ModelRunner,
+  type RepoProfile,
   type TaskControls,
+  type TaskRecord,
+  type TraceScope,
 } from '@factory/core';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
@@ -20,6 +27,7 @@ import { composeDriver } from './compose.ts';
 import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
+import { TraceLog } from './traces.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
@@ -64,6 +72,22 @@ export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WOR
 const POOL_WAIT_MS = 2000;
 /** How long shutdown waits for the active runs before it stops them. */
 export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
+/** The commit a branch points at, or undefined when git cannot tell. */
+const revParse = (repo: string, ref: string | undefined) =>
+  new Promise<string | undefined>((done) => {
+    if (!ref) return done(undefined);
+    execFile('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], (error, stdout) =>
+      done(error ? undefined : stdout.trim() || undefined),
+    );
+  });
+
+/** When a task at the approval gate reached it: its latest gate input. */
+const gateOpenedAt = (task: TaskRecord): string | undefined =>
+  [task.pr_draft?.at, task.review?.at, task.verification?.at, task.updated_at]
+    .filter((x): x is string => !!x)
+    .sort()
+    .at(-1);
+
 const INTERRUPTED =
   'The backend stopped during this run. Run the task again to continue from the last saved step.';
 
@@ -91,6 +115,8 @@ export class BackendService {
   readonly memory: MemoryService;
   /** Grill → spec → board → implement → QA. */
   readonly features: FeatureService;
+  /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
+  readonly traces: TraceLog;
   constructor(
     root: string,
     runner?: ModelRunner,
@@ -114,22 +140,38 @@ export class BackendService {
       reviewDeps,
       () => this.executing,
     );
+    this.traces = new TraceLog(root, this.storage);
+    const base: ModelRunner = {
+      run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request),
+    };
     this.delegation = new DelegationServer({
-      runner: { run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request) },
+      // Children of a traced call carry `traceParent`; other calls pass through untraced.
+      runner: this.traces.runner(base, () => undefined),
       slot: () => this.tryAgentSlot(),
+      traceParent: (token) => this.traces.grantParent(token),
     });
     this.reviews.delegation = this.delegation;
     this.memory = new MemoryService(
       root,
-      () => this.runner ?? composeDriver(this.root).deps.runner,
+      (project) => this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'memory-review'),
       (line) => process.stderr.write(`${line}\n`),
     );
     this.reviews.memory = this.memory;
+    this.reviews.traces = this.traces;
     this.features = new FeatureService({
       root,
       projects: this.projects,
-      runner: (project) =>
-        this.memory.recording(project, 'feature', this.runner ?? composeDriver(this.root).deps.runner),
+      runner: (project, feature) =>
+        this.memory.recording(
+          project,
+          'feature',
+          // Each step is its own trace, joined to the others by the feature id.
+          this.traces.runner(
+            base,
+            () => ({ trace_id: newTraceId(), project, feature_id: feature }),
+            'feature-step',
+          ),
+        ),
       slot: () => this.tryAgentSlot(),
       settings: (p) => this.settings.get(p),
       facts: (p) => this.memory.prompt(p),
@@ -220,19 +262,25 @@ export class BackendService {
     if (['run', 'revise'].includes(command.action)) throw new Error('Use StartRun for long-running work');
     if (!this.accepting) throw new Conflict('Backend is shutting down');
     return this.tasks.withLock(command.project, command.id, async () => {
+      const before = await this.tasks.read(command.project, command.id).catch(() => undefined);
       const dir = join(dirname(this.tasks.taskPath(command.project, command.id)), 'runs', randomUUID());
       if (!this.storage.config) await mkdir(dir, { recursive: true });
       const evidence = new Evidence(join(dir, 'events.jsonl'), dir.split('/').at(-1)!, this.storage);
       try {
-        return await evidence.span(
-          `task.${command.action}`,
-          { project: command.project, task_id: command.id },
-          () =>
+        return await evidence
+          .span(`task.${command.action}`, { project: command.project, task_id: command.id }, () =>
             this.perform(
               command,
               this.driver((line) => evidence.record('log', { message: line })),
             ),
-        );
+          )
+          .then(async (result) => {
+            if (before && ['approve', 'reject'].includes(command.action))
+              await this.traceGate(before, command.action === 'approve' ? 'approved' : 'rejected').catch(
+                () => undefined,
+              );
+            return result;
+          });
       } finally {
         await evidence.close();
       }
@@ -250,6 +298,7 @@ export class BackendService {
       const task = await this.tasks.read(command.project, command.id);
       const blockers = taskCommandBlockers(task, command.action);
       if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
+      if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
       await readProfile(this.root, command.project);
       const record: RunRecord = {
         id: randomUUID(),
@@ -314,6 +363,7 @@ export class BackendService {
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
     let evidence: Evidence | undefined;
+    const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
       record.state = 'running';
@@ -333,11 +383,17 @@ export class BackendService {
         { project: command.project, task_id: command.id },
         async (span) => {
           const base = this.runner ?? composeDriver(this.root, log).deps.runner;
-          const traced = this.memory.recording(command.project, record.id, sink.runner(base, span));
+          const ledger = trace ? this.traces.runner(base, () => trace.scope) : base;
+          const traced = this.memory.recording(command.project, record.id, sink.runner(ledger, span));
           const checked: ModelRunner = {
-            run(request) {
-              if (logFailure) return Promise.reject(logFailure);
-              return traced.run(request);
+            async run(request) {
+              if (logFailure) throw logFailure;
+              const result = await traced.run(request);
+              // Later spans of the run carry the class the classifier just gave the task.
+              if (trace && request.step === 'classifier')
+                trace.scope.task_class =
+                  taskClass(result.structured as { kind?: string; loe?: string }) ?? trace.scope.task_class;
+              return result;
             },
           };
           await this.perform(command, this.driver(log, checked, controller.signal));
@@ -356,6 +412,7 @@ export class BackendService {
       this.controllers.delete(record.id);
       this.executing--;
       record.finished_at = new Date().toISOString();
+      if (trace) await this.traceEnd(trace, command.action, record).catch(() => undefined);
       try {
         try {
           await this.storage.writeDocument(join(dir, 'run.json'), record);
@@ -374,6 +431,102 @@ export class BackendService {
         await this.storage.writeDocument(join(dir, 'run.json'), record);
       }
     }
+  }
+  /** The trace of one task run: its root span id and the fields its spans share. */
+  private async traceStart(project: string, id: string) {
+    const task = await this.tasks.read(project, id);
+    const profile = await readProfile(this.root, project).catch(() => undefined);
+    const base_branch = task.worktree?.base_branch ?? task.stack_on ?? profile?.repo.base_branch.value;
+    const runSpan = newSpanId();
+    const scope: TraceScope = {
+      trace_id: newTraceId(),
+      project,
+      task_id: id,
+      parent_span_id: runSpan,
+      ...(await this.traceLinks(task)),
+    };
+    return {
+      scope,
+      runSpan,
+      started: Date.now(),
+      task,
+      profile,
+      base_branch,
+      base_sha: await revParse(task.worktree?.path ?? task.repo, base_branch),
+    };
+  }
+  /** The ticket, feature, PR and class a task's spans carry. */
+  private async traceLinks(task: TaskRecord): Promise<Partial<TraceScope>> {
+    const feature = task.ticket
+      ? await this.features.read(task.project, task.ticket.feature).catch(() => undefined)
+      : undefined;
+    const key = feature?.tickets.find((t) => t.id === task.ticket?.id)?.external?.key;
+    const number = task.pr ? Number(/\/pull\/(\d+)/.exec(task.pr.url)?.[1]) : NaN;
+    const cls = taskClass(task.verdict);
+    return {
+      ...(task.ticket
+        ? { feature_id: task.ticket.feature, ticket: { id: task.ticket.id, ...(key ? { key } : {}) } }
+        : {}),
+      ...(task.pr ? { pr: { url: task.pr.url, ...(Number.isFinite(number) ? { number } : {}) } } : {}),
+      ...(cls ? { task_class: cls } : {}),
+    };
+  }
+  /** Writes the run's root span, with the inputs needed to replay it. */
+  private async traceEnd(
+    trace: NonNullable<Awaited<ReturnType<BackendService['traceStart']>>>,
+    action: string,
+    record: RunRecord,
+  ): Promise<void> {
+    const task = await this.tasks.read(trace.scope.project, trace.scope.task_id!).catch(() => trace.task);
+    const commands: RepoProfile['commands'] | undefined = trace.profile?.commands;
+    const { parent_span_id: _, ...shared } = trace.scope;
+    this.traces.append(
+      {
+        ...shared,
+        ...(await this.traceLinks(task)),
+        task_class: taskClass(task.verdict) ?? trace.scope.task_class,
+      },
+      {
+        span_id: trace.runSpan,
+        type: 'run',
+        name: `task.${action}`,
+        started_at: new Date(trace.started).toISOString(),
+        ended_at: new Date().toISOString(),
+        duration_ms: Date.now() - trace.started,
+        outcome: record.state === 'completed' ? 'completed' : 'failed',
+        ...(record.error ? { error: record.error } : {}),
+        replay: {
+          repo: task.repo,
+          ...(trace.base_branch ? { base_branch: trace.base_branch } : {}),
+          ...(trace.base_sha ? { base_sha: trace.base_sha } : {}),
+          prompt: task.prompt,
+          verification: commands
+            ? [commands.test, commands.full_check, commands.runtime_check].filter((c): c is string => !!c)
+            : [],
+        },
+        attributes: { run_id: record.id, stage: task.stage, attempts: task.attempts?.length ?? 0 },
+      },
+    );
+    await this.traces.flush();
+  }
+  /** The time a task waited at the approval gate, as a span, when the human acts on it. */
+  private async traceGate(task: TaskRecord, decision: string): Promise<void> {
+    if (task.stage !== 'awaiting-approval') return;
+    const opened = gateOpenedAt(task);
+    const ended = new Date().toISOString();
+    this.traces.append(
+      { trace_id: newTraceId(), project: task.project, task_id: task.id, ...(await this.traceLinks(task)) },
+      {
+        type: 'gate',
+        name: 'approval gate',
+        started_at: opened ?? ended,
+        ended_at: ended,
+        ...(opened ? { duration_ms: Math.max(0, Date.parse(ended) - Date.parse(opened)) } : {}),
+        outcome: 'completed',
+        attributes: { decision },
+      },
+    );
+    await this.traces.flush();
   }
   private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);

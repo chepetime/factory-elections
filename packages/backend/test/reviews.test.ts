@@ -269,3 +269,20 @@ test('a review turn with no output for the stall limit is stopped and says why',
   const stopped = await settle(reviews, 7);
   assert.deepEqual([stopped.state, stopped.stop_reason], ['stopped', 'stalled']);
 });
+
+test('a finished review turn writes one review span with its cost and PR link', async (t) => {
+  const { root, reviews } = await fixture(t);
+  const { TraceLog } = await import('../src/traces.ts');
+  reviews.traces = new TraceLog(root);
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  await settle(reviews, 7);
+  await reviews.sweep();
+  await reviews.sweep();
+  const spans = await reviews.traces.read('app');
+  assert.deepEqual(
+    spans.map((s) => [s.type, s.name, s.cost_usd, s.pr?.number, s.outcome]),
+    [['review', 'Review', 0.5, 7, 'completed']],
+    'each turn is traced once',
+  );
+  assert.ok(spans[0]!.duration_ms! >= 0);
+});

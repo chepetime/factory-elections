@@ -64,8 +64,8 @@ type StepName = 'grill' | 'spec' | 'critique' | 'tickets' | 'qa';
 export interface FeatureDeps {
   root: string;
   projects: ProjectStore;
-  /** The runner for a project's feature steps (recorded in that project's memory). */
-  runner(project: string): ModelRunner;
+  /** The runner for a feature's steps (recorded in the project's memory, traced under the feature). */
+  runner(project: string, feature: string): ModelRunner;
   /** Takes an agent slot at once, or undefined when every slot is busy. */
   slot(): Promise<(() => void) | undefined>;
   settings(project: string): Promise<ProjectSettings>;
@@ -341,9 +341,14 @@ export class FeatureService {
     return parts.join('\n\n');
   }
 
-  private async call(project: string, step: StepName, request: Partial<ModelRun> & Pick<ModelRun, 'prompt'>) {
+  private async call(
+    project: string,
+    id: string,
+    step: StepName,
+    request: Partial<ModelRun> & Pick<ModelRun, 'prompt'>,
+  ) {
     const { repo } = await this.deps.projects.read(project);
-    return this.deps.runner(project).run({
+    return this.deps.runner(project, id).run({
       step: `feature:${step}`,
       model: FEATURE_MODEL,
       effort: 'high',
@@ -390,7 +395,7 @@ export class FeatureService {
           '\nAsk your first question.',
         ].join('\n')
       : `The developer answered:\n<answer>\n${answer}\n</answer>`;
-    const result = await this.call(project, 'grill', {
+    const result = await this.call(project, id, 'grill', {
       prompt,
       outputSchema: GRILL_REPLY_SCHEMA,
       persistSession: true,
@@ -417,7 +422,7 @@ export class FeatureService {
     const transcript = feature.grill.turns
       .map((t) => `${t.role === 'user' ? 'Developer' : 'Agent'}: ${t.text}`)
       .join('\n\n');
-    const spec = await this.call(project, 'spec', {
+    const spec = await this.call(project, id, 'spec', {
       prompt: [
         `Feature: ${feature.title}`,
         '<idea>',
@@ -434,7 +439,7 @@ export class FeatureService {
     let critiqueCost: number | null = null;
     try {
       // A second model reads the spec as its builder and verifier would.
-      const result = await this.call(project, 'critique', {
+      const result = await this.call(project, id, 'critique', {
         model: CRITIQUE_MODEL,
         effort: 'medium',
         prompt: `<spec>\n${spec.text}\n</spec>`,
@@ -455,7 +460,7 @@ export class FeatureService {
   private async plan(project: string, id: string): Promise<void> {
     const spec = (await this.text(project, id, 'spec.md')) ?? '';
     const critique = await this.text(project, id, 'critique.md');
-    const result = await this.call(project, 'tickets', {
+    const result = await this.call(project, id, 'tickets', {
       prompt: ['<spec>', spec, '</spec>', ...(critique ? ['<critique>', critique, '</critique>'] : [])].join(
         '\n',
       ),
@@ -482,7 +487,7 @@ export class FeatureService {
           `${task?.review ? `, reviewer ${task.review.verdict}` : ''}`,
       );
     }
-    const result = await this.call(project, 'qa', {
+    const result = await this.call(project, id, 'qa', {
       prompt: [
         '<spec>',
         spec,

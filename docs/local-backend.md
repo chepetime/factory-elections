@@ -108,6 +108,30 @@ Every model request has a `model.run` child span sharing its task trace ID. Even
 
 Log appends are synchronous and ordered to keep buffering bounded for the current synchronous driver callbacks. This small-server trade-off can affect latency under heavy log volume. Retention/rotation, async backpressure-aware sinks and collector export remain follow-ups; logs are preserved on disk until manually removed.
 
+## The span ledger (one trace model)
+
+Every unit of agent work writes one span record when it ends, to `<project>/trace/spans-YYYY-MM.jsonl` (mode 0600). With Postgres and S3 configured, each line goes to S3 and its record to `factory_trace_events` with kind `span`, so SQL can count across runs. The JSONL log is the plain log that a metrics store rebuilds from. The schema is `SpanRecord` in `packages/core/src/trace.ts`, and `TraceLog` in `packages/backend/src/traces.ts` writes and reads it.
+
+| Span type | Written by | Parent |
+| --- | --- | --- |
+| `run` | each task run (`StartRun`) | none: the root of the task trace |
+| `model` | each model call of the run | the run |
+| `tool` | each tool call of a model call or review turn | its call |
+| `loop-judge` | each loop-guard judgement | its call |
+| `child` | each `delegate` child task, on any provider | the call that started it |
+| `review` | each finished PR review turn (written by the sweep) | none |
+| `feature-step` | each feature step (grill, spec, critique, tickets, QA) | none; `feature_id` joins them |
+| `memory-review` | each fact review | none |
+| `gate` | the wait at the approval gate, when the human approves, rejects or asks for a revision | none; `task_id` joins it |
+
+Rules:
+
+- **Cost.** A span's `cost_usd` is its own cost, so a roll-up adds every span. `null` means the provider reported no cost (Codex): it is a gap, never $0. Tool and gate spans have no cost. The loop judge's cost moves from its call to the judge span.
+- **Day-one fields.** Every span carries `project`, and `task_id`, `feature_id`, the board `ticket` (with its Jira key when the board was mirrored), the `pr` and the `task_class` (`code/S`) when they are known. The run span also has `replay`: the repo, base branch, base commit, prompt and verification commands. Outcome records (merged, reverted) join later on `task_id` and `pr`.
+- **Privacy.** Spans hold no prompts, model output or file contents, except the run span's `replay.prompt`. A tool span keeps a short input summary: the command, path, pattern or URL.
+- **Timing.** Tool calls of a detached review turn have no timings in the log, so their spans have no `duration_ms`.
+- **Old evidence.** The per-run `events.jsonl` (below) stays as the run's own log. The ledger is the cross-run record.
+
 ## Communication and configuration
 
 The versioned contract is `packages/backend/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.

@@ -7,3 +7,4 @@ export * from './pull-requests.ts';
 export * from './agents.ts';
 export * from './memory.ts';
 export * from './features.ts';
+export * from './trace.ts';

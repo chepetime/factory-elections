@@ -258,7 +258,19 @@ export class ClaudeAgentRunner implements ModelRunner {
     };
     const loop = request.loopGuard
       ? new LoopGuard({
-          judge: (evidence) => this.judge(evidence, request.signal),
+          judge: async (evidence) => {
+            const started = Date.now();
+            const verdict = await this.judge(evidence, request.signal);
+            request.onEvent?.({
+              type: 'judge',
+              stuck: verdict.stuck,
+              confidence: verdict.confidence,
+              costUsd: verdict.costUsd,
+              startedAt: new Date(started).toISOString(),
+              durationMs: Date.now() - started,
+            });
+            return verdict;
+          },
           onStuck: (line) => this.options.onProgress?.(`  · loop guard: ${line}`),
         })
       : undefined;

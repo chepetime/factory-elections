@@ -183,6 +183,28 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
   const gate = JSON.parse((await backendCall('GetGate', { project: 'demo', id })).json);
   await backendCall('ExecuteTask', { project: 'demo', id, action: 'approve', head: gate.head_sha });
   assert.equal(JSON.parse((await backendCall('GetTask', { project: 'demo', id })).json).stage, 'approved');
+  // The span ledger: one run span with the day-one fields, its model calls under it, and the gate.
+  const ledger = await server.service.traces.read('demo', { task_id: id });
+  const run = ledger.find((s) => s.type === 'run')!;
+  assert.equal(run.task_class, 'code/S');
+  assert.equal(run.replay!.prompt, task.prompt);
+  assert.match(run.replay!.base_sha!, /^[0-9a-f]{40}$/);
+  assert.ok(run.replay!.verification.length > 0);
+  const models = ledger.filter((s) => s.type === 'model');
+  assert.deepEqual(
+    models.map((s) => s.step),
+    ['classifier', 'coder', 'reviewer', 'pr-writer'],
+  );
+  assert.ok(models.every((s) => s.parent_span_id === run.span_id && s.trace_id === run.trace_id));
+  assert.deepEqual(
+    models.map((s) => s.task_class ?? null),
+    [null, 'code/S', 'code/S', 'code/S'],
+    'spans after classification carry the task class',
+  );
+  assert.ok(Math.abs(models.reduce((sum, s) => sum + (s.cost_usd ?? 0), 0) - 0.171) < 0.000001);
+  const gateSpan = ledger.find((s) => s.type === 'gate')!;
+  assert.equal(gateSpan.attributes!.decision, 'approved');
+  assert.ok(gateSpan.duration_ms! >= 0);
   await backendCall('ClearLog', { project: 'demo', id });
   assert.equal(
     JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json).logTail,

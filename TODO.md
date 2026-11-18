@@ -34,6 +34,12 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 
 ## Later (plan phase 2)
 
+- [ ] **Trace page and metrics RPCs:** read the span ledger (`TraceLog.read`) for a trace tree per run, and counts across runs (build step 3).
+- [ ] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database yet.
+- [ ] **Human time in review:** gate spans record the wait, not the time spent. Record time spent when the in-app review exists.
+- [ ] **Outcome records:** merged, reverted and incident records that join spans on `task_id` and `pr`.
+- [ ] **Tool timings for review turns:** detached turns log no tool timings; add them with a hook, or read timestamps if the CLI adds them.
+
 - [ ] PR tending: follow review comments and CI on opened PRs.
 - [ ] **Codex review turns:** they need deny rules that hold for wrapped commands. Options: a Codex rules file plus no network, or prefetched PR data.
 - [ ] **Loop guard and context warnings for review turns and Codex:** they need tool hooks (a `--settings` hook command for detached Claude turns).

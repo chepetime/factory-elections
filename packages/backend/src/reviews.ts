@@ -25,6 +25,11 @@ import {
   contextStatus,
   digestSession,
   missingCapabilities,
+  newSpanId,
+  newTraceId,
+  spanTokens,
+  ToolSpans,
+  type AgentEvent,
   type ContextStatus,
   triagePullRequests,
   type AgentCli,
@@ -49,6 +54,7 @@ import { claudeCli } from '@factory/adapters-claude';
 import { Conflict } from './conflict.ts';
 import type { DelegationServer, Grant } from './delegation.ts';
 import type { MemoryService } from './memory.ts';
+import type { TraceLog } from './traces.ts';
 
 export const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -97,6 +103,9 @@ const Turn = z.object({
   stopped: z.boolean().optional(),
   /** Set when the backend stopped the turn, not the user. */
   stop_reason: z.enum(['stalled']).optional(),
+  /** The turn's span in the trace ledger; its children hang under it. */
+  trace_id: z.string().optional(),
+  span_id: z.string().optional(),
 });
 const RunFile = z.object({
   number: PrNumber,
@@ -267,6 +276,8 @@ export class ReviewService {
   delegation?: DelegationServer;
   /** Repository facts for the system prompt; finished turns teach it, and its tool pruning applies. */
   memory?: MemoryService;
+  /** Writes a span for each finished turn, with its tool calls. */
+  traces?: TraceLog;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, Grant>();
   constructor(
@@ -327,7 +338,7 @@ export class ReviewService {
 
   /** Gives memory each finished turn once: its digest, and which tools it was offered and used. */
   async learn(project: string, record: RunFile): Promise<void> {
-    if (!this.memory) return;
+    if (!this.memory && !this.traces) return;
     const dir = this.dir(project, record.number);
     for (let k = 0; k < record.turns.length; k++) {
       const marker = join(dir, `turn-${k}.learned`);
@@ -337,7 +348,8 @@ export class ReviewService {
       const lines = await readLines(join(dir, `turn-${k}.jsonl`));
       const events = lines.flatMap((l) => this.deps.agent.parse(l));
       const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
-      if (events.length) {
+      await this.traceTurn(project, record, k, events).catch(() => undefined);
+      if (events.length && this.memory) {
         await this.memory.record(
           project,
           digestSession(
@@ -359,6 +371,43 @@ export class ReviewService {
       }
       await writeFile(marker, '');
     }
+  }
+
+  /** The finished turn's span, with its tool calls under it (the log has no tool timings). */
+  private async traceTurn(project: string, record: RunFile, k: number, events: AgentEvent[]): Promise<void> {
+    if (!this.traces) return;
+    const turn = record.turns[k]!;
+    const dir = this.dir(project, record.number);
+    const ended = (await stat(join(dir, `turn-${k}.exit`)).catch(() => undefined))?.mtime ?? new Date();
+    const result = events.findLast((e) => e.type === 'result');
+    const tools = new ToolSpans();
+    for (const e of events) tools.event(e);
+    const scope = {
+      trace_id: turn.trace_id ?? newTraceId(),
+      project,
+      pr: { url: record.url, number: record.number },
+    };
+    const spanId = turn.span_id ?? newSpanId();
+    const grant = this.grants.get(`${project}#${record.number}`);
+    if (grant && k === record.turns.length - 1) this.traces.unbindGrant(grant.endpoint.token);
+    this.traces.append(scope, {
+      span_id: spanId,
+      type: 'review',
+      name: turn.label ?? (k === 0 ? 'review' : 'review reply'),
+      step: 'review',
+      model: REVIEW_MODEL,
+      provider: this.deps.agent.id,
+      gateway: 'direct',
+      started_at: turn.at,
+      ended_at: ended.toISOString(),
+      duration_ms: Math.max(0, ended.getTime() - Date.parse(turn.at)),
+      outcome: turn.stopped ? 'aborted' : result?.ok === false ? 'failed' : 'completed',
+      cost_usd: result?.costUsd ?? null,
+      ...(result?.usage ? { tokens: spanTokens(result.usage) } : {}),
+      attributes: { turn: k },
+    });
+    this.traces.append({ ...scope, parent_span_id: spanId }, ...tools.finish(false));
+    await this.traces.flush();
   }
 
   private dir(project: string, number: number): string {
@@ -597,6 +646,16 @@ export class ReviewService {
       budgetUsd: REVIEW_DELEGATE_BUDGET_USD,
     });
     if (grant) this.grants.set(key, grant);
+    // The turn's span is written when it ends; children started meanwhile hang under its id.
+    const traceId = newTraceId();
+    const spanId = newSpanId();
+    if (grant)
+      this.traces?.bindGrant(grant.endpoint.token, {
+        trace_id: traceId,
+        project,
+        parent_span_id: spanId,
+        pr: { url: record.url, number: record.number },
+      });
     const turn: AgentTurn = {
       message: message.text,
       systemPromptFile,
@@ -617,7 +676,14 @@ export class ReviewService {
       session_id: resume ?? record.session_id,
       turns: [
         ...record.turns,
-        { at: new Date().toISOString(), text: message.text, label: message.label, pid },
+        {
+          at: new Date().toISOString(),
+          text: message.text,
+          label: message.label,
+          pid,
+          trace_id: traceId,
+          span_id: spanId,
+        },
       ],
     };
     await writeJsonAtomic(join(dir, 'run.json'), next);

@@ -1,5 +1,6 @@
 // Interfaces the driver needs; adapters implement them.
 import type { AgentEvent, ContextStatus, McpEndpoint, Usage } from './agents.ts';
+import type { TraceScope } from './trace.ts';
 import type { Effort } from './schemas.ts';
 
 export type ToolAccess = 'none' | 'read-only' | 'edit';
@@ -35,6 +36,8 @@ export interface ModelRun {
   persistSession?: boolean;
   /** The backend's MCP server, when this call may start child tasks with `delegate`. */
   mcp?: McpEndpoint;
+  /** For a delegate child: the span it hangs under, in its parent's trace. */
+  traceParent?: TraceScope;
   /** Receives the call's events as they happen. */
   onEvent?: (event: AgentEvent) => void;
   /** Watch for a turn stuck on one failure and redirect it once (providers with tool hooks). */

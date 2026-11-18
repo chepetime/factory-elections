@@ -18,6 +18,7 @@ import {
   type ProviderId,
   type ToolAccess,
   type ToolGuard,
+  type TraceScope,
 } from '@factory/core';
 
 /** How deep children may nest: a parent's child may start one more level, no further. */
@@ -56,6 +57,7 @@ export interface Grant {
 }
 
 interface GrantState extends GrantOptions {
+  token: string;
   depth: number;
   left: number;
   spentUsd: number;
@@ -66,6 +68,8 @@ export interface DelegationDeps {
   /** Takes an agent slot at once, or returns undefined when every slot is in use. */
   slot(): Promise<(() => void) | undefined>;
   log?(line: string): void;
+  /** The span a grant's children hang under, from the trace ledger. */
+  traceParent?(token: string): TraceScope | undefined;
 }
 
 const Rpc = z.object({
@@ -128,7 +132,7 @@ export class DelegationServer {
     const depth = options.depth ?? 0;
     if (!this.address || depth >= MAX_DELEGATION_DEPTH) return undefined;
     const token = randomBytes(24).toString('base64url');
-    const state: GrantState = { ...options, depth, left: options.budgetUsd, spentUsd: 0 };
+    const state: GrantState = { ...options, token, depth, left: options.budgetUsd, spentUsd: 0 };
     this.grants.set(token, state);
     return {
       endpoint: { url: this.address, token },
@@ -236,6 +240,7 @@ export class DelegationServer {
     });
     const runner = grant.runner ?? this.deps.runner;
     const tools: ToolAccess = access;
+    const traceParent = this.deps.traceParent?.(grant.token);
     const request: ModelRun = {
       step: `delegate:${provider}`,
       model: ref,
@@ -252,6 +257,7 @@ export class DelegationServer {
       maxTurns: 100,
       signal: grant.signal ? AbortSignal.any([grant.signal, this.stopping.signal]) : this.stopping.signal,
       ...(child ? { mcp: child.endpoint } : {}),
+      ...(traceParent ? { traceParent } : {}),
     };
     this.deps.log?.(`  · delegate ${grant.label} → ${provider} (${access}, up to $${budget.toFixed(2)})`);
     try {

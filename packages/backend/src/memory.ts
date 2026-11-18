@@ -52,11 +52,15 @@ export interface MemorySnapshot {
 
 export class MemoryService {
   private readonly root: string;
-  private readonly runner: () => ModelRunner;
+  private readonly runner: (project: string) => ModelRunner;
   private readonly log: (line: string) => void;
   /** One chain per project, so writes and reviews never overlap. */
   private readonly chains = new Map<string, Promise<unknown>>();
-  constructor(root: string, runner: () => ModelRunner, log: (line: string) => void = () => {}) {
+  constructor(
+    root: string,
+    runner: (project: string) => ModelRunner,
+    log: (line: string) => void = () => {},
+  ) {
     this.root = root;
     this.runner = runner;
     this.log = log;
@@ -160,7 +164,7 @@ export class MemoryService {
     };
     let cost: number | null = null;
     try {
-      const result = await this.runner().run(request);
+      const result = await this.runner(project).run(request);
       cost = result.costUsd;
       const proposal = FactProposal.parse(result.structured);
       proposal.facts = proposal.facts.filter((f) => !SECRET.test(f.text));

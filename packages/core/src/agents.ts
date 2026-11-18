@@ -106,6 +106,15 @@ export type AgentEvent =
   | { type: 'tool-result'; ok: boolean; text: string; sub?: boolean }
   /** Tokens the model read for one request: the session's context size at that point. */
   | { type: 'context'; tokens: number }
+  /** A loop-guard judgement: a small model decided whether the turn is stuck. */
+  | {
+      type: 'judge';
+      stuck: boolean;
+      confidence: number;
+      costUsd: number | null;
+      startedAt: string;
+      durationMs: number;
+    }
   | {
       type: 'result';
       ok: boolean;
