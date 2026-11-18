@@ -1,0 +1,61 @@
+name: Delivery build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: delivery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web-build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Select changed delivery inputs
+        id: plan
+        env:
+          BASE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo 'web=true' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-plan.mjs "$BASE" HEAD --direct
+          fi
+      - uses: pnpm/action-setup@v4
+        if: steps.plan.outputs.web == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.plan.outputs.web == 'true'
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        if: steps.plan.outputs.web == 'true'
+      - uses: actions/cache@v4
+        if: steps.plan.outputs.web == 'true'
+        with:
+          path: apps/web/.next/cache
+          key: next-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml') }}-
+      - run: pnpm --filter @factory/web build
+        if: steps.plan.outputs.web == 'true'
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.web == 'true'
+        with:
+          name: web-build-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            apps/web/.next
+            !apps/web/.next/cache
+          retention-days: 7
+          if-no-files-found: error

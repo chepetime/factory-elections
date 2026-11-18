@@ -29,7 +29,11 @@
     "data:status": "node scripts/data.mjs status",
     "data:migrate": "node scripts/data.mjs migrate",
     "data:test": "node scripts/data.mjs test",
-    "e2e": "node --test --test-concurrency=1 \"apps/web/e2e/*.e2e.ts\""
+    "e2e": "node --test --test-concurrency=1 \"apps/web/e2e/*.e2e.ts\"",
+    "worktree": "node scripts/worktree.mjs",
+    "ci:plan": "node scripts/ci-plan.mjs",
+    "ci:affected": "node scripts/ci-run.mjs",
+    "harness:stats": "node scripts/harness-stats.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
