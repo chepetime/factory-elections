@@ -10,7 +10,7 @@ import {
   taskActions,
   type TaskRecord,
 } from '@factory/core';
-import { CodeBlock } from '@factory/affect-ui/components/code-block-clean';
+import { DiffCodeBlock } from '@/components/diff-code-block';
 import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
@@ -587,13 +587,7 @@ export default async function TaskPage({
               <details className="mt-3">
                 <summary className="cursor-pointer text-sm font-medium">Full diff</summary>
                 <div className="mt-2">
-                  <CodeBlock
-                    code={diff}
-                    language="diff"
-                    filename="Changes.diff"
-                    showLineNumbers
-                    maxHeight="32rem"
-                  />
+                  <DiffCodeBlock code={diff} filename="Changes.diff" showLineNumbers maxHeight="32rem" />
                 </div>
               </details>
             )}

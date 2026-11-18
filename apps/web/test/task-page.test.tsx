@@ -156,8 +156,9 @@ it('shows the approval diff in a copyable code view and reports read errors', as
   expect(page).toContain('Full diff');
   expect(page).toContain('Changes.diff');
   expect(page).toContain('+new line');
-  expect(page).toContain('ui-codec__t-add');
-  expect(page).toContain('ui-codec__t-del');
+  // Line 4 is the deletion and line 5 the addition.
+  expect(page).toContain(':nth-child(n+4):nth-child(-n+4){background:var(--diff-del-bg)}');
+  expect(page).toContain(':nth-child(n+5):nth-child(-n+5){background:var(--diff-add-bg)}');
   expect(page).toContain('Copy code');
   vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
   expect(await html()).toContain('Could not load the diff: unavailable');
