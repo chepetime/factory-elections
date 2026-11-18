@@ -62,13 +62,22 @@ test('spawn failure and a child closing stdin do not crash the caller', async ()
 test('a group run stops the shell and the processes it started on a timeout', async () => {
   // The shell starts a long sleep in the background and waits; killing only /bin/sh would leave it.
   const started = Date.now();
-  const result = await run('/bin/sh', ['-c', 'sleep 30 & echo $! ; wait'], { timeoutMs: 300, group: true });
+  // The limit leaves the shell time to print its child's PID on a loaded machine.
+  const result = await run('/bin/sh', ['-c', 'sleep 30 & echo $! ; wait'], { timeoutMs: 1500, group: true });
   assert.equal(result.stopped, 'timeout');
   assert.ok(Date.now() - started < 10_000);
   const child = Number(result.stdout.trim());
   assert.ok(child > 0);
-  await new Promise((done) => setTimeout(done, 100));
-  assert.throws(() => process.kill(child, 0), { code: 'ESRCH' });
+  const gone = () => {
+    try {
+      process.kill(child, 0);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ESRCH';
+    }
+  };
+  for (let i = 0; i < 50 && !gone(); i++) await new Promise((done) => setTimeout(done, 100));
+  assert.ok(gone(), 'the background child was stopped with the group');
 });
 
 test('an aborted run stops at once and says why', async () => {
