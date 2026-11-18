@@ -438,7 +438,10 @@ export class BackendService {
     unlock: () => Promise<void>,
   ): void {
     {
-      const work = Effect.tryPromise(() => this.work(command, record, dir)).pipe(
+      const work = Effect.tryPromise({
+        try: () => this.work(command, record, dir),
+        catch: (error) => error,
+      }).pipe(
         this.worker.withPermits(1),
         Effect.ensuring(
           Effect.promise(async () => {

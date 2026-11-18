@@ -6,17 +6,31 @@ import { randomUUID } from 'node:crypto';
 import { Effect, type Tracer } from 'effect';
 import type { ModelRunner } from '@factory/core';
 
+export interface EvidenceOptions {
+  /**
+   * Makes the trace best-effort: a failed write goes here instead of failing the traced work, and
+   * later events go to a new stream. Use it for diagnostics such as RPC spans, never for run
+   * evidence, which must stop model work when it cannot be persisted.
+   */
+  onWriteError?: (error: unknown) => void;
+}
+
 export class Evidence {
   private readonly fd?: number;
-  private readonly events?: ArtifactWriter;
-  private readonly output?: ArtifactWriter;
+  private events?: ArtifactWriter;
+  private output?: ArtifactWriter;
   private sequence = 0;
+  private generation = 0;
+  private readonly storage?: DataStorage;
+  private readonly onWriteError?: (error: unknown) => void;
   readonly path: string;
   readonly runId: string;
-  constructor(path: string, runId: string, storage?: DataStorage) {
+  constructor(path: string, runId: string, storage?: DataStorage, options: EvidenceOptions = {}) {
     this.path = path;
     this.runId = runId;
+    this.onWriteError = options.onWriteError;
     if (storage?.config) {
+      this.storage = storage;
       this.events = storage.writer(path);
       this.output = storage.writer(join(dirname(path), 'run.log'));
     } else this.fd = openSync(path, 'ax', 0o600);
@@ -30,17 +44,26 @@ export class Evidence {
       ...fields,
     };
     const text = `${JSON.stringify(event)}\n`;
-    if (this.events) this.events.append(text, event);
-    else writeSync(this.fd!, text);
+    this.guard(() => {
+      if (this.events) this.events.append(text, event);
+      else writeSync(this.fd!, text);
+    });
   }
   log(message: string, fields: Record<string, unknown> = {}): void {
     this.record('log', { ...fields, message });
-    if (this.output) this.output.append(`${message}\n`);
-    else appendFileSync(join(dirname(this.path), 'run.log'), `${message}\n`, { mode: 0o600 });
+    this.guard(() => {
+      if (this.output) this.output.append(`${message}\n`);
+      else appendFileSync(join(dirname(this.path), 'run.log'), `${message}\n`, { mode: 0o600 });
+    });
   }
   async flush(): Promise<void> {
-    await this.events?.flush();
-    await this.output?.flush();
+    try {
+      await this.events?.flush();
+      await this.output?.flush();
+    } catch (error) {
+      if (!this.onWriteError) throw error;
+      this.recover(error);
+    }
   }
   async close(): Promise<void> {
     try {
@@ -48,6 +71,22 @@ export class Evidence {
     } finally {
       if (this.fd !== undefined) closeSync(this.fd);
     }
+  }
+  private guard(write: () => void): void {
+    try {
+      write();
+    } catch (error) {
+      if (!this.onWriteError) throw error;
+      this.recover(error);
+    }
+  }
+  /** A remote writer latches its first failure, so a best-effort trace moves to new streams. */
+  private recover(error: unknown): void {
+    this.onWriteError!(error);
+    if (!this.storage) return;
+    const suffix = `.${++this.generation}`;
+    this.events = this.storage.writer(this.path.replace(/(\.jsonl)?$/, `${suffix}$1`));
+    this.output = this.storage.writer(join(dirname(this.path), `run${suffix}.log`));
   }
   span<A>(
     name: string,
@@ -67,30 +106,39 @@ export class Evidence {
         attributes,
       };
       const start = performance.now();
-      yield* Effect.tryPromise(async () => {
-        record('span.start', context);
-        await flush();
+      yield* Effect.tryPromise({
+        try: async () => {
+          record('span.start', context);
+          await flush();
+        },
+        catch: (error) => error,
       });
       return yield* Effect.tryPromise({ try: () => action(span), catch: (error) => error }).pipe(
         Effect.tap(() =>
-          Effect.tryPromise(async () => {
-            record('span.end', {
-              ...context,
-              outcome: 'completed',
-              duration_ms: performance.now() - start,
-            });
-            await flush();
+          Effect.tryPromise({
+            try: async () => {
+              record('span.end', {
+                ...context,
+                outcome: 'completed',
+                duration_ms: performance.now() - start,
+              });
+              await flush();
+            },
+            catch: (error) => error,
           }),
         ),
         Effect.tapError((error) =>
-          Effect.tryPromise(async () => {
-            record('span.end', {
-              ...context,
-              outcome: 'failed',
-              duration_ms: performance.now() - start,
-              error: String(error),
-            });
-            await flush();
+          Effect.tryPromise({
+            try: async () => {
+              record('span.end', {
+                ...context,
+                outcome: 'failed',
+                duration_ms: performance.now() - start,
+                error: String(error),
+              });
+              await flush();
+            },
+            catch: (error) => error,
           }),
         ),
       );

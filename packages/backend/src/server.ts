@@ -111,7 +111,10 @@ export async function startBackend(options: ServerOptions) {
     const expected = Buffer.from(`Bearer ${token}`);
     const instance = randomUUID();
     await mkdir(join(root, 'logs'), { recursive: true });
-    evidence = new Evidence(join(root, 'logs', `${instance}.jsonl`), instance, service.storage);
+    // RPC spans are diagnostics: a storage outage must not fail every request until a restart.
+    evidence = new Evidence(join(root, 'logs', `${instance}.jsonl`), instance, service.storage, {
+      onWriteError: (error) => service.traces.reportWriteError(error),
+    });
     const trace = evidence;
     const handlers: { [K in keyof Methods]: (request: Methods[K][0]) => Promise<Methods[K][1]> } = {
       GetDiagnostics: async () => ({ json: JSON.stringify(await service.diagnostics()) }),

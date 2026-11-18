@@ -66,6 +66,11 @@ export class TraceLog {
     };
   }
 
+  /** Counts a failed trace write made outside this log, such as an RPC span, in `write_errors`. */
+  reportWriteError(error: unknown): void {
+    this.onError(error);
+  }
+
   private path(project: string, at: string): string {
     return join(this.root, project, 'trace', `spans-${at.slice(0, 7)}.jsonl`);
   }

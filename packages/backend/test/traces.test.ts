@@ -133,3 +133,13 @@ test('ledger health counts unknown costs, missing parents and write errors', asy
     write_errors: 1,
   });
 });
+
+test('a trace write error reported from outside the log counts in ledger health', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-traces-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const messages: string[] = [];
+  const traces = new TraceLog(root, undefined, (error) => messages.push(String(error)));
+  traces.reportWriteError(new Error('connect ECONNREFUSED 127.0.0.1:18333'));
+  assert.equal((await traces.health([])).write_errors, 1);
+  assert.match(messages[0]!, /ECONNREFUSED/);
+});
