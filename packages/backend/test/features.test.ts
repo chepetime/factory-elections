@@ -215,6 +215,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   assert.match(done.qa!, /Open the screen/);
   assert.match(calls.at(-1)!.prompt, /T1 Add the model: done, PR https:\/\/github\.com\/o\/r\/pull\/41/);
   assert.equal(Number(done.cost_usd.toFixed(2)), 1.4);
+  assert.equal(done.total_cost_usd, done.cost_usd + done.tickets_cost_usd);
   assert.equal(slots, 3, 'every step returned its agent slot');
   await features.act({ project: 'app', id: feature.id, action: 'complete' });
   assert.equal((await features.read('app', feature.id)).stage, 'done');

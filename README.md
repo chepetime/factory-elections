@@ -210,6 +210,7 @@ Automatic recovery of interrupted steps, worktree cleanup, and rebasing are not 
 ```sh
 pnpm test          # scripted models; no paid calls; storage tests skipped
 pnpm data:test     # real Postgres/S3 tests in isolated schemas; requires data:up
+pnpm e2e           # production web build + seeded backend + Chromium; E2E_SKIP_BUILD=1 reuses .next
 pnpm typecheck
 pnpm lint
 ```

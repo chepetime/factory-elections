@@ -197,6 +197,8 @@ export const FACT_REVIEW_PROMPT = [
   'the exact spelling of a command that works here (and the one that fails), an environment variable a',
   'command needs, where generated files live, a convention a check enforces.',
   'Do not propose task-specific details, opinions, secrets, tokens, URLs with credentials or personal data.',
+  'A fact must stay true after the next change: no test counts, line numbers, current file contents or',
+  'lists of what exists "today" (those change with every task).',
   '',
   'You get the current facts and digests of recent sessions (commands run, failures, outcome).',
   'Return:',

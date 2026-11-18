@@ -167,11 +167,20 @@ export class FeatureService {
       this.text(project, id, 'critique.md'),
       this.text(project, id, 'qa.md'),
     ]);
+    // The feature's own steps are in cost_usd; its tickets' task runs are added here.
+    let ticketsCost = 0;
+    for (const t of feature.tickets)
+      if (t.task_id) {
+        const task = await this.deps.tasks.read(project, t.task_id).catch(() => undefined);
+        for (const a of task?.attempts ?? []) ticketsCost += a.cost_usd ?? 0;
+      }
     return {
       ...feature,
       spec,
       critique,
       qa,
+      tickets_cost_usd: ticketsCost,
+      total_cost_usd: feature.cost_usd + ticketsCost,
       working: this.busy.has(`${project}/${id}`) ? feature.working : undefined,
     };
   }
