@@ -7,7 +7,8 @@ import {
   reviewContext,
   reviewConversation,
   reviewKickoff,
-  streamSessionId,
+  eventSession,
+  type AgentEvent,
   summarizePullRequest,
   summarizeReviewStream,
   triagePullRequests,
@@ -98,13 +99,17 @@ test('the review context names the skill, payload, PR, task manager and profile'
       kind: 'jira',
       cli: 'acli',
       read_ticket: 'acli jira workitem view {key}',
+      list_tickets: 'acli jira workitem search --jql "project = EL AND statusCategory != Done"',
       create_epic: ' ',
     },
   });
   assert.match(text, /SKILL_DIR: `\/f\/skill`/);
   assert.match(text, /PAYLOAD: `\/d\/payload\.json`/);
   assert.match(text, /#12 \(https:\/\/github\.com\/o\/r\/pull\/12\), branch `feat\/x`/);
-  assert.match(text, /- Kind: jira\n- CLI: acli\n- Read a ticket: acli jira workitem view \{key\}/);
+  assert.match(
+    text,
+    /- Kind: jira\n- CLI: acli\n- Read a ticket: acli jira workitem view \{key\}\n- List open tickets: acli jira workitem search/,
+  );
   assert.doesNotMatch(text, /Create an epic/);
   assert.match(text, /### Project review profile\n\n# Elections profile/);
   assert.doesNotMatch(
@@ -121,34 +126,22 @@ test('the review context names the skill, payload, PR, task manager and profile'
 });
 
 test('the review chat pairs each message with its turn and skips sub-agent output', () => {
-  const assistant = (content: unknown[], parent?: string) =>
-    JSON.stringify({
-      type: 'assistant',
-      session_id: 's1',
-      parent_tool_use_id: parent ?? null,
-      message: { content },
-    });
   const turns = [
     {
       at: 't0',
       text: 'Review PR #1',
       label: 'Review',
-      lines: [
-        JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }),
-        assistant([{ type: 'tool_use', name: 'Bash', input: { command: 'gh pr view 1' } }]),
-        assistant([{ type: 'text', text: 'sub-agent noise' }], 'tool-1'),
-        assistant([{ type: 'text', text: '**Verdict:** Approve' }]),
-        JSON.stringify({
-          type: 'result',
-          subtype: 'success',
-          result: '**Verdict:** Approve',
-          total_cost_usd: 2,
-        }),
-      ],
+      events: [
+        { type: 'session', id: 's1' },
+        { type: 'tool', name: 'Bash', input: { command: 'gh pr view 1' } },
+        { type: 'text', text: 'sub-agent noise', sub: true },
+        { type: 'text', text: '**Verdict:** Approve' },
+        { type: 'result', ok: true, text: '**Verdict:** Approve', costUsd: 2 },
+      ] satisfies AgentEvent[],
     },
-    { at: 't1', text: 'Why?', lines: [] },
+    { at: 't1', text: 'Why?', events: [] },
   ];
-  assert.equal(streamSessionId(turns[0]!.lines), 's1');
+  assert.equal(eventSession(turns[0]!.events), 's1');
   assert.deepEqual(reviewConversation(turns), [
     { role: 'user', id: 'u0', at: 't0', text: 'Review PR #1', label: 'Review' },
     {

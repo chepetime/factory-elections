@@ -6,6 +6,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
+import { claudeCli } from '@factory/adapters-claude';
 import { ProjectSettings } from '@factory/core';
 import {
   AUTOMATED_TURN_DENY,
@@ -91,6 +92,7 @@ async function fixture(t: TestContext, otherAgents = () => 0) {
       }),
     },
     agent: {
+      ...claudeCli,
       command: process.execPath,
       args: (turn) => (turns.push(turn), [agent, turn.systemPromptFile, turn.resume ?? '-', turn.message]),
     },
@@ -228,9 +230,9 @@ test('automated turns may not post to GitHub; a message the user typed may ask t
     turns.map((turn) => turn.deny),
     [AUTOMATED_TURN_DENY, []],
   );
-  assert.ok(turns.every((turn) => turn.budgetUsd > 0));
+  assert.ok(turns.every((turn) => (turn.budgetUsd ?? 0) > 0));
   // The real CLI arguments carry the budget, the rules and an end-of-options marker before the text.
-  const args = defaultReviewDeps.agent.args({ ...turns[0]!, message: '--not-a-flag' });
+  const args = defaultReviewDeps.agent.args({ ...turns[0]!, message: '--not-a-flag' }, { systemPrompt: '' });
   assert.deepEqual(args.slice(args.indexOf('--max-budget-usd'), args.indexOf('--max-budget-usd') + 2), [
     '--max-budget-usd',
     String(turns[0]!.budgetUsd),

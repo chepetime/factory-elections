@@ -4,3 +4,6 @@ export * from './ports.ts';
 export * from './team.ts';
 export * from './task-controls.ts';
 export * from './pull-requests.ts';
+export * from './agents.ts';
+export * from './memory.ts';
+export * from './features.ts';

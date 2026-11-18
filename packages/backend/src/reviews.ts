@@ -20,8 +20,15 @@ import {
   reviewContext,
   reviewConversation,
   reviewKickoff,
-  streamSessionId,
+  eventSession,
+  contextLimit,
+  contextStatus,
+  digestSession,
+  missingCapabilities,
+  type ContextStatus,
   triagePullRequests,
+  type AgentCli,
+  type HeadlessTurn,
   type ProjectSettings,
   type PullRequestSummary,
   type ReviewChatEntry,
@@ -38,7 +45,10 @@ import {
 } from '@factory/adapters-git';
 import { githubLogin, openPullRequestNodes, pullRequestHead } from '@factory/adapters-github';
 import { isAlive, spawnDetached, stopGroup } from '@factory/adapters-process';
+import { claudeCli } from '@factory/adapters-claude';
 import { Conflict } from './conflict.ts';
+import type { DelegationServer, Grant } from './delegation.ts';
+import type { MemoryService } from './memory.ts';
 
 export const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -56,6 +66,8 @@ export const MAX_AGENTS = Number(process.env.FACTORY_MAX_AGENTS ?? 6);
 export const REVIEW_STALL_MS = Number(process.env.FACTORY_REVIEW_STALL_MS ?? 30 * 60_000);
 /** Most one review turn may spend. */
 export const REVIEW_TURN_BUDGET_USD = Number(process.env.FACTORY_REVIEW_BUDGET_USD ?? 25);
+/** Most the child tasks of one review turn may spend together. */
+export const REVIEW_DELEGATE_BUDGET_USD = Number(process.env.FACTORY_REVIEW_DELEGATE_BUDGET_USD ?? 10);
 /**
  * GitHub and git writes the agent may not make on its own. Kickoff and re-review turns get this
  * list; a message the user typed does not, so the user can still ask the agent to post.
@@ -132,53 +144,26 @@ export interface ReviewDetail extends ReviewStatus {
   payload_error?: string;
   /** Dollars the agent reported over all turns; absent when no turn reported a cost. */
   cost_usd?: number;
+  /** The latest turn's context size against the project's limit (warn at 80%). */
+  context?: ContextStatus;
 }
 
-export interface AgentTurn {
-  message: string;
-  systemPromptFile: string;
-  /** The session to continue; absent for a new chat. */
-  resume?: string;
-  /** Most this turn may spend. */
-  budgetUsd: number;
-  /** Tool rules this turn may not use. */
-  deny: readonly string[];
-}
+/** One review turn, as the provider CLI receives it. */
+export type AgentTurn = HeadlessTurn;
 export interface ReviewDeps {
   github: {
     login(): Promise<string>;
     nodes(cwd: string, me: string): Promise<unknown[]>;
     pull(cwd: string, number: number): Promise<{ branch: string; url: string; title?: string }>;
   };
-  agent: { command: string; args(turn: AgentTurn): string[] };
+  /** The provider that runs review turns. Automated turns need its deny rules. */
+  agent: AgentCli;
   skillDir: string;
 }
 
 export const defaultReviewDeps: ReviewDeps = {
   github: { login: githubLogin, nodes: openPullRequestNodes, pull: pullRequestHead },
-  agent: {
-    command: 'claude',
-    // Same runner as the CLI (`claude --dangerously-skip-permissions --model claude-opus-5-5`),
-    // headless with a streamed event log so the web app can show the chat.
-    args: (turn) => [
-      '-p',
-      '--dangerously-skip-permissions',
-      '--model',
-      'claude-opus-5-5',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--append-system-prompt-file',
-      turn.systemPromptFile,
-      '--max-budget-usd',
-      String(turn.budgetUsd),
-      ...(turn.deny.length ? ['--disallowedTools', ...turn.deny] : []),
-      ...(turn.resume ? ['--resume', turn.resume] : []),
-      // Ends the variadic tool list, so the message is never read as a tool rule.
-      '--',
-      turn.message,
-    ],
-  },
+  agent: claudeCli,
   skillDir: SKILL_DIR,
 };
 
@@ -239,6 +224,25 @@ function agentEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/** The review model, for its context limit. */
+const REVIEW_MODEL = 'claude-opus-5-5';
+
+/** Built-in tools a Claude turn was offered, from its init line (MCP tools are not pruned). */
+function offeredTools(lines: readonly string[]): string[] {
+  for (const line of lines.slice(0, 40)) {
+    try {
+      const e = JSON.parse(line) as { subtype?: unknown; tools?: unknown };
+      if (e.subtype === 'init' && Array.isArray(e.tools))
+        return (e.tools as unknown[]).filter(
+          (t): t is string => typeof t === 'string' && !t.startsWith('mcp__'),
+        );
+    } catch {
+      // Not JSON.
+    }
+  }
+  return [];
+}
+
 function stripFrontmatter(text: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
 }
@@ -259,6 +263,12 @@ export class ReviewService {
   private accepting: Promise<unknown> = Promise.resolve();
   private readonly otherAgents: () => number;
   private sweeper?: ReturnType<typeof setInterval>;
+  /** Starts `delegate` child tasks for review turns, when the backend runs the server. */
+  delegation?: DelegationServer;
+  /** Repository facts for the system prompt; finished turns teach it, and its tool pruning applies. */
+  memory?: MemoryService;
+  /** The live grant of each PR's latest turn; a new turn replaces it. */
+  private readonly grants = new Map<string, Grant>();
   constructor(
     root: string,
     projects: ProjectStore,
@@ -292,7 +302,12 @@ export class ReviewService {
     for (const project of await this.projects.list()) {
       for (const number of await this.reviewNumbers(project.name)) {
         const record = await this.readRun(project.name, number).catch(() => undefined);
-        if (!record || (await this.status(project.name, record, false)).state !== 'running') continue;
+        if (!record) continue;
+        const state = (await this.status(project.name, record, false)).state;
+        if (state !== 'running') {
+          await this.learn(project.name, record).catch(() => undefined);
+          continue;
+        }
         const k = record.turns.length - 1;
         const turn = record.turns[k]!;
         const log = await stat(join(this.dir(project.name, number), `turn-${k}.jsonl`)).catch(
@@ -308,6 +323,42 @@ export class ReviewService {
       }
     }
     return stopped;
+  }
+
+  /** Gives memory each finished turn once: its digest, and which tools it was offered and used. */
+  async learn(project: string, record: RunFile): Promise<void> {
+    if (!this.memory) return;
+    const dir = this.dir(project, record.number);
+    for (let k = 0; k < record.turns.length; k++) {
+      const marker = join(dir, `turn-${k}.learned`);
+      if (await stat(marker).catch(() => undefined)) continue;
+      if (!(await stat(join(dir, `turn-${k}.exit`)).catch(() => undefined)) && !record.turns[k]!.stopped)
+        continue;
+      const lines = await readLines(join(dir, `turn-${k}.jsonl`));
+      const events = lines.flatMap((l) => this.deps.agent.parse(l));
+      const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
+      if (events.length) {
+        await this.memory.record(
+          project,
+          digestSession(
+            {
+              id: `review:${record.number}:${k}`,
+              at: record.turns[k]!.at,
+              kind: 'review-turn',
+              provider: this.deps.agent.id,
+            },
+            events,
+          ),
+        );
+        if (offered.length)
+          await this.memory.recordTools(
+            project,
+            offered,
+            events.flatMap((e) => (e.type === 'tool' ? [e.name] : [])),
+          );
+      }
+      await writeFile(marker, '');
+    }
   }
 
   private dir(project: string, number: number): string {
@@ -427,7 +478,14 @@ export class ReviewService {
         lines: await readLines(join(dir, `turn-${k}.jsonl`)),
       })),
     );
-    const conversation = reviewConversation(turns);
+    const parsed = turns.map((t) => ({ ...t, events: t.lines.flatMap((l) => this.deps.agent.parse(l)) }));
+    const conversation = reviewConversation(parsed);
+    let tokens = 0;
+    for (const e of parsed.at(-1)!.events) if (e.type === 'context') tokens = e.tokens;
+    const settings = await this.settings(project).catch(() => undefined);
+    const context = tokens
+      ? contextStatus(tokens, contextLimit(settings?.context_tokens, REVIEW_MODEL))
+      : undefined;
     // A turn that never produced stream JSON (e.g. the agent failed to start) still explains itself.
     const last = turns.at(-1)!;
     if (status.state !== 'running' && conversation.at(-1)?.role === 'user' && last.lines.length)
@@ -444,6 +502,7 @@ export class ReviewService {
     return {
       ...status,
       ...(costs.length ? { cost_usd: costs.reduce((a, b) => a + b, 0) } : {}),
+      ...(context ? { context } : {}),
       number,
       branch: record.branch,
       url: record.url,
@@ -463,7 +522,8 @@ export class ReviewService {
     const dir = this.dir(project, record.number);
     // The latest turn that reported a session wins: a resumed session may get a new id.
     for (let k = record.turns.length - 1; k >= 0; k--) {
-      const id = streamSessionId(await headLines(join(dir, `turn-${k}.jsonl`)));
+      const lines = await headLines(join(dir, `turn-${k}.jsonl`));
+      const id = eventSession(lines.flatMap((l) => this.deps.agent.parse(l)));
       if (id) return id;
     }
     return record.session_id;
@@ -515,26 +575,43 @@ export class ReviewService {
       profile: settings.review_profile,
       taskManager: settings.task_manager,
     });
+    const agent = this.deps.agent;
+    const refusal = automated ? missingCapabilities(agent.id, ['denyRules']) : undefined;
+    if (refusal) throw new Conflict(`Automated review turns cannot run on ${agent.id}: ${refusal}`);
+    const facts = await this.memory?.prompt(project);
+    const systemPrompt = [skill, context, facts].filter(Boolean).join('\n\n');
+    const pruned = (await this.memory?.pruned(project)) ?? [];
+    const known = pruned.length ? ((await this.memory?.toolUsage(project))?.known ?? []) : [];
     const systemPromptFile = join(dir, 'system-prompt.md');
-    await writeFile(systemPromptFile, `${skill}\n\n${context}`);
+    await writeFile(systemPromptFile, systemPrompt);
     const k = record.turns.length;
     await rm(join(dir, `turn-${k}.exit`), { force: true });
-    const pid = spawnDetached(
-      this.deps.agent.command,
-      this.deps.agent.args({
-        message: message.text,
-        systemPromptFile,
-        resume,
-        budgetUsd: REVIEW_TURN_BUDGET_USD,
-        deny: automated ? AUTOMATED_TURN_DENY : [],
-      }),
-      {
-        cwd: record.worktree,
-        env: agentEnv(),
-        logPath: join(dir, `turn-${k}.jsonl`),
-        exitPath: join(dir, `turn-${k}.exit`),
-      },
-    );
+    const key = `${project}#${record.number}`;
+    this.grants.get(key)?.revoke();
+    this.grants.delete(key);
+    // Review children may only read: the review reads code, and the user decides what to change.
+    const grant = this.delegation?.grant({
+      label: `review ${key}`,
+      cwd: record.worktree,
+      access: 'read-only',
+      budgetUsd: REVIEW_DELEGATE_BUDGET_USD,
+    });
+    if (grant) this.grants.set(key, grant);
+    const turn: AgentTurn = {
+      message: message.text,
+      systemPromptFile,
+      resume,
+      budgetUsd: REVIEW_TURN_BUDGET_USD,
+      deny: automated ? AUTOMATED_TURN_DENY : [],
+      ...(grant ? { mcp: grant.endpoint } : {}),
+      ...(pruned.length && known.length ? { tools: known.filter((t) => !pruned.includes(t)) } : {}),
+    };
+    const pid = spawnDetached(agent.command, agent.args(turn, { systemPrompt }), {
+      cwd: record.worktree,
+      env: { ...agentEnv(), ...agent.env?.(turn) },
+      logPath: join(dir, `turn-${k}.jsonl`),
+      exitPath: join(dir, `turn-${k}.exit`),
+    });
     const next: RunFile = {
       ...record,
       session_id: resume ?? record.session_id,

@@ -355,6 +355,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/adapters-codex:
+    dependencies:
+      '@factory/adapters-process':
+        specifier: workspace:*
+        version: link:../adapters-process
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/adapters-data:
     dependencies:
       '@aws-sdk/client-s3':
@@ -421,6 +430,9 @@ importers:
       '@factory/adapters-claude':
         specifier: workspace:*
         version: link:../adapters-claude
+      '@factory/adapters-codex':
+        specifier: workspace:*
+        version: link:../adapters-codex
       '@factory/adapters-data':
         specifier: workspace:*
         version: link:../adapters-data

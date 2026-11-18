@@ -20,5 +20,5 @@ export default async function TeamPage({ params }: { params: Promise<{ project: 
   if (!isProjectName(project)) notFound();
   const members = await teamMembers(project);
   if (!members.ok) return <p className="p-6 text-destructive">Team unavailable: {members.error}</p>;
-  return <TeamTable project={project} initial={members.value} />;
+  return <TeamTable key={project} project={project} initial={members.value} />;
 }

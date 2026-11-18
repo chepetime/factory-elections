@@ -3,14 +3,66 @@ import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { Effect } from 'effect';
 import { z } from 'zod';
-import { aggregateLog, ProjectName } from '@factory/core';
+import { aggregateLog, ProjectName, type Contributor } from '@factory/core';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 
 const Assignment = z.object({
   team: z.string().trim().min(1).max(40).optional(),
   tags: z.array(z.string().trim().min(1).max(30)).max(12).default([]),
 });
-const TeamFile = z.object({ members: z.record(z.string(), Assignment).default({}) });
+const Email = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(320)
+  .refine((email) => email.includes('@'), 'Invalid member email');
+const TeamFile = z.object({
+  members: z.record(z.string(), Assignment).default({}),
+  aliases: z.record(z.string(), Email).default({}),
+});
+type TeamFile = z.infer<typeof TeamFile>;
+const BulkUpdate = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('edit'),
+      emails: z.array(Email).min(1).max(500),
+      team: z.string().max(40).optional(),
+      tags: z.array(z.string()).max(12).optional(),
+    })
+    .refine((value) => value.team !== undefined || value.tags !== undefined, 'Choose a field to update'),
+  z.object({ kind: z.literal('merge'), emails: z.array(Email).min(2).max(500), primary: Email }),
+]);
+
+function rows(contributors: Contributor[], file: TeamFile) {
+  const combined = new Map<string, Contributor & { aliases: string[] }>();
+  for (const contributor of contributors) {
+    const email = file.aliases[contributor.email] ?? contributor.email;
+    const existing = combined.get(email);
+    if (!existing) combined.set(email, { ...contributor, email, aliases: [] });
+    else {
+      existing.commits += contributor.commits;
+      if (Date.parse(contributor.firstCommit) < Date.parse(existing.firstCommit))
+        existing.firstCommit = contributor.firstCommit;
+      if (Date.parse(contributor.lastCommit) > Date.parse(existing.lastCommit))
+        existing.lastCommit = contributor.lastCommit;
+    }
+  }
+  for (const member of combined.values()) {
+    member.name = contributors.find((c) => c.email === member.email)?.name ?? member.name;
+    member.aliases = Object.entries(file.aliases)
+      .filter(([, primary]) => primary === member.email)
+      .map(([alias]) => alias)
+      .sort();
+  }
+  return [...combined.values()]
+    .map((member) => ({
+      ...member,
+      team: file.members[member.email]?.team,
+      tags: file.members[member.email]?.tags ?? [],
+    }))
+    .sort((a, b) => b.commits - a.commits || a.name.localeCompare(b.name));
+}
 
 export class TeamService {
   private readonly updates = Effect.runSync(Effect.makeSemaphore(1));
@@ -41,8 +93,7 @@ export class TeamService {
     try {
       return TeamFile.parse(await this.storage.readDocument(join(this.root, project, 'team.json')));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-        return { members: {} } as z.infer<typeof TeamFile>;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return TeamFile.parse({});
       throw error;
     }
   }
@@ -53,15 +104,65 @@ export class TeamService {
   }
   async members(project: string) {
     const repo = await this.repo(project);
-    const [log, { members }] = await Promise.all([
+    const [log, file] = await Promise.all([
       this.git(repo, ['log', '--no-merges', '--format=%aN%x1f%aE%x1f%aI']),
       this.read(project),
     ]);
-    return aggregateLog(log).map((contributor) => ({
-      ...contributor,
-      team: members[contributor.email]?.team,
-      tags: members[contributor.email]?.tags ?? [],
-    }));
+    return rows(aggregateLog(log), file);
+  }
+  /** Applies one atomic edit or identity merge, serialized with individual assignments. */
+  async bulk(raw: unknown) {
+    const { project, json } = z.object({ project: ProjectName, json: z.string().max(200_000) }).parse(raw);
+    const input = BulkUpdate.parse(JSON.parse(json));
+    const repo = await this.repo(project);
+    const update = Effect.tryPromise({
+      try: async () => {
+        const [log, file] = await Promise.all([
+          this.git(repo, ['log', '--no-merges', '--format=%aN%x1f%aE%x1f%aI']),
+          this.read(project),
+        ]);
+        const contributors = aggregateLog(log);
+        const current = rows(contributors, file);
+        const emails = [...new Set(input.emails)];
+        if (emails.some((email) => !current.some((member) => member.email === email)))
+          throw new Error('The selected members changed. Reload the page and select them again.');
+        if (input.kind === 'edit') {
+          for (const email of emails) {
+            const before = file.members[email] ?? { tags: [] };
+            file.members[email] = Assignment.parse({
+              team: input.team === undefined ? before.team : input.team.trim() || undefined,
+              tags:
+                input.tags === undefined ? before.tags : [...new Set(input.tags.map((tag) => tag.trim()))],
+            });
+          }
+        } else {
+          if (emails.length < 2 || !emails.includes(input.primary))
+            throw new Error('Choose at least two members and an identity to keep.');
+          const selected = current.filter((member) => emails.includes(member.email));
+          const primary = selected.find((member) => member.email === input.primary)!;
+          const tags = [...new Set(selected.flatMap((member) => member.tags))];
+          if (tags.length > 12)
+            throw new Error(
+              'These members have more than 12 combined tags. Remove some tags before merging.',
+            );
+          file.members[input.primary] = Assignment.parse({ team: primary.team, tags });
+          for (const [alias, target] of Object.entries(file.aliases)) {
+            if (emails.includes(target)) file.aliases[alias] = input.primary;
+          }
+          for (const email of emails) {
+            if (email === input.primary) continue;
+            file.aliases[email] = input.primary;
+            delete file.members[email];
+          }
+        }
+        await this.storage.writeDocument(join(this.root, project, 'team.json'), file);
+        return rows(contributors, file);
+      },
+      catch: (error) => error,
+    }).pipe(this.updates.withPermits(1));
+    const result = await Effect.runPromise(Effect.either(update));
+    if (result._tag === 'Left') throw result.left;
+    return result.right;
   }
   async assign(raw: unknown): Promise<void> {
     const input = z
@@ -82,10 +183,14 @@ export class TeamService {
       team: input.team?.trim() || undefined,
       tags: [...new Set(input.tags.map((tag) => tag.trim()))],
     });
-    const update = Effect.tryPromise(async () => {
-      const file = await this.read(input.project);
-      file.members[input.email.toLowerCase()] = assignment;
-      await this.storage.writeDocument(join(this.root, input.project, 'team.json'), file);
+    const update = Effect.tryPromise({
+      try: async () => {
+        const file = await this.read(input.project);
+        const email = input.email.toLowerCase();
+        file.members[file.aliases[email] ?? email] = assignment;
+        await this.storage.writeDocument(join(this.root, input.project, 'team.json'), file);
+      },
+      catch: (error) => error,
     }).pipe(this.updates.withPermits(1));
     const result = await Effect.runPromise(Effect.either(update));
     if (result._tag === 'Left') throw result.left;

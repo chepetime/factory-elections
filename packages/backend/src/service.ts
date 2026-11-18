@@ -17,6 +17,9 @@ import {
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
 import { composeDriver } from './compose.ts';
+import { DelegationServer } from './delegation.ts';
+import { MemoryService } from './memory.ts';
+import { FeatureService } from './features.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
@@ -24,6 +27,7 @@ import { MAX_AGENTS, ReviewService, type ReviewDeps } from './reviews.ts';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 export { Conflict };
 import { TeamService } from './team.ts';
+import { TicketService } from './tickets.ts';
 import { environmentChecks, type Check } from './diagnostics.ts';
 import type { BackgroundRun, Command, Target } from './protocol.ts';
 
@@ -67,6 +71,7 @@ export class BackendService {
   readonly storage: DataStorage;
   readonly tasks: TaskStore;
   readonly team: TeamService;
+  readonly tickets: TicketService;
   readonly reviews: ReviewService;
   readonly settings: ProjectSettingsService;
   private readonly environment: () => Promise<Check[]>;
@@ -80,6 +85,12 @@ export class BackendService {
   private reservations = 0;
   readonly root: string;
   private readonly runner?: ModelRunner;
+  /** The `delegate` MCP server. Children take agent slots like any other agent. */
+  readonly delegation: DelegationServer;
+  /** What agents learn about each repository across sessions. */
+  readonly memory: MemoryService;
+  /** Grill → spec → board → implement → QA. */
+  readonly features: FeatureService;
   constructor(
     root: string,
     runner?: ModelRunner,
@@ -95,6 +106,7 @@ export class BackendService {
     this.tasks = this.storage.tasks;
     this.projects = this.storage.projects;
     this.settings = new ProjectSettingsService(root, this.storage, this.projects, detector);
+    this.tickets = new TicketService(this.projects, (project) => this.settings.get(project));
     this.reviews = new ReviewService(
       root,
       this.projects,
@@ -102,6 +114,30 @@ export class BackendService {
       reviewDeps,
       () => this.executing,
     );
+    this.delegation = new DelegationServer({
+      runner: { run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request) },
+      slot: () => this.tryAgentSlot(),
+    });
+    this.reviews.delegation = this.delegation;
+    this.memory = new MemoryService(
+      root,
+      () => this.runner ?? composeDriver(this.root).deps.runner,
+      (line) => process.stderr.write(`${line}\n`),
+    );
+    this.reviews.memory = this.memory;
+    this.features = new FeatureService({
+      root,
+      projects: this.projects,
+      runner: (project) =>
+        this.memory.recording(project, 'feature', this.runner ?? composeDriver(this.root).deps.runner),
+      slot: () => this.tryAgentSlot(),
+      settings: (p) => this.settings.get(p),
+      facts: (p) => this.memory.prompt(p),
+      tasks: this.tasks,
+      startRun: (project, id) => this.start({ project, id, action: 'run' } as Command),
+      reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
   }
   async diagnostics() {
     const [environment, projects] = await Promise.all([this.environment(), this.projects.list()]);
@@ -125,7 +161,10 @@ export class BackendService {
     return TargetSchema.parse(target);
   }
   driver(log: (line: string) => void = () => {}, runner = this.runner, signal?: AbortSignal): Driver {
-    return composeDriver(this.root, log, runner, signal);
+    return composeDriver(this.root, log, runner, signal, this.delegation, {
+      repositoryFacts: (project) => this.memory.prompt(project),
+      contextLimits: async (project) => (await this.settings.get(project)).context_tokens,
+    });
   }
   /** Projects with their display name and icon from settings. */
   async projectSummaries() {
@@ -294,7 +333,7 @@ export class BackendService {
         { project: command.project, task_id: command.id },
         async (span) => {
           const base = this.runner ?? composeDriver(this.root, log).deps.runner;
-          const traced = sink.runner(base, span);
+          const traced = this.memory.recording(command.project, record.id, sink.runner(base, span));
           const checked: ModelRunner = {
             run(request) {
               if (logFailure) return Promise.reject(logFailure);
@@ -452,6 +491,18 @@ export class BackendService {
       }
       await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
     }
+  }
+  /** Takes a free agent slot at once, for a child task; undefined when none is free. */
+  private async tryAgentSlot(): Promise<(() => void) | undefined> {
+    if (!this.accepting) return undefined;
+    const reviews = await this.reviews.agentsInUse().catch(() => 0);
+    if (!this.accepting || this.executing + reviews >= MAX_AGENTS) return undefined;
+    this.executing++;
+    let released = false;
+    return () => {
+      if (!released) this.executing--;
+      released = true;
+    };
   }
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     this.accepting = false;

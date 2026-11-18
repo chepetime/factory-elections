@@ -8,6 +8,7 @@ export type { Contributor };
 
 const TeamMember = z.object({
   email: z.string(),
+  aliases: z.array(z.string()).optional(),
   name: z.string(),
   commits: z.number().int().nonnegative(),
   firstCommit: z.string(),
@@ -43,6 +44,19 @@ export async function saveAssignment(
   try {
     await backendCall('SaveAssignment', { project, email, team, tags });
     return { ok: true, value: null };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
+  }
+}
+
+export type MemberUpdate =
+  | { kind: 'edit'; emails: string[]; team?: string; tags?: string[] }
+  | { kind: 'merge'; emails: string[]; primary: string };
+
+export async function updateMembers(project: string, update: MemberUpdate): Promise<Result<TeamMember[]>> {
+  try {
+    const response = await backendCall('UpdateMembers', { project, json: JSON.stringify(update) }, 60_000);
+    return { ok: true, value: z.array(TeamMember).parse(JSON.parse(response.json)) };
   } catch (error) {
     return { ok: false, error: backendError(error) };
   }

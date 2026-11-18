@@ -93,6 +93,7 @@ export async function startBackend(options: ServerOptions) {
       GetDiagnostics: async () => ({ json: JSON.stringify(await service.diagnostics()) }),
       GetTeam: async (request) => ({ json: JSON.stringify(await service.team.members(request.project)) }),
       GetGitUser: async (request) => ({ text: await service.team.userName(request.project) }),
+      UpdateMembers: async (request) => ({ json: JSON.stringify(await service.team.bulk(request)) }),
       SaveAssignment: async (request) => {
         await service.team.assign(request);
         return { text: 'Saved' };
@@ -108,6 +109,34 @@ export async function startBackend(options: ServerOptions) {
         json: JSON.stringify(await service.settings.detect(request)),
       }),
       AddProject: async (request) => ({ json: JSON.stringify(await service.addProject(request)) }),
+      GetMemory: async (request) => ({
+        json: JSON.stringify(await service.memory.snapshot(ProjectName.parse(request.project))),
+      }),
+      ForgetFact: async (request) => {
+        await service.memory.forget(
+          ProjectName.parse(request.project),
+          z.string().min(1).max(64).parse(request.id),
+        );
+        return { text: 'forgotten' };
+      },
+      ListFeatures: async (request) => ({
+        json: JSON.stringify(await service.features.list(request.project)),
+      }),
+      GetFeature: async (request) => ({ json: JSON.stringify(await service.features.detail(request)) }),
+      CreateFeature: async (request) => ({
+        json: JSON.stringify(
+          await service.features.create({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      FeatureAction: async (request) => ({
+        json: JSON.stringify(
+          await service.features.act({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      RestoreTools: async (request) => {
+        await service.memory.restoreTools(ProjectName.parse(request.project));
+        return { text: 'restored' };
+      },
       ListPullRequests: async (request) => ({ json: JSON.stringify(await service.reviews.list(request)) }),
       StartReviews: async (request) => ({ json: JSON.stringify(await service.reviews.start(request)) }),
       GetReview: async (request) => ({ json: JSON.stringify(await service.reviews.detail(request)) }),
@@ -123,6 +152,7 @@ export async function startBackend(options: ServerOptions) {
         await service.reviews.remove(request);
         return { text: 'Removed' };
       },
+      ListTickets: async (request) => ({ json: JSON.stringify(await service.tickets.list(request)) }),
       ListTasks: async (request) => ({
         json: JSON.stringify(await service.tasks.list(ProjectName.parse(request.project))),
       }),
@@ -174,7 +204,7 @@ export async function startBackend(options: ServerOptions) {
             (error: unknown) => {
               const message = error instanceof Error ? error.message : String(error);
               const code =
-                error instanceof z.ZodError
+                error instanceof z.ZodError || error instanceof SyntaxError
                   ? status.INVALID_ARGUMENT
                   : error instanceof Conflict || /locked by another command/.test(message)
                     ? status.FAILED_PRECONDITION
@@ -204,7 +234,10 @@ export async function startBackend(options: ServerOptions) {
     // This process owns the data root now, so runs left by a previous backend can be settled.
     const recovered = await service.recover();
     service.reviews.startSweeping();
+    service.features.startTicking();
     trace.record('server.recovered', recovered);
+    const delegation = await service.delegation.start();
+    trace.record('server.delegation', { url: delegation });
     let closing: Promise<void> | undefined;
     return {
       port,
@@ -216,9 +249,12 @@ export async function startBackend(options: ServerOptions) {
           await Promise.all([
             service.drain(),
             Promise.resolve(service.reviews.stopSweeping()),
+            Promise.resolve(service.features.stopTicking()),
             new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),
             new Promise<void>((done, reject) => health.close((error) => (error ? reject(error) : done()))),
           ]);
+          // Runs have drained; stop review children and refuse new delegate calls.
+          await service.delegation.close();
           // Timed-out RPCs may still be finishing diagnostics; preserve their traces.
           await Promise.allSettled(requests);
           trace.record('server.stopped');
@@ -230,9 +266,18 @@ export async function startBackend(options: ServerOptions) {
   } catch (error) {
     rpc.forceShutdown();
     health.close();
+    await service.delegation.close();
     await evidence?.close();
     await service.storage.close();
     await rm(owner, { force: true });
     throw error;
   }
+}
+
+/** A request's JSON body as an object; a malformed body is an input error. */
+function jsonObject(text: string): Record<string, unknown> {
+  const value: unknown = JSON.parse(text || '{}');
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new SyntaxError('expected a JSON object');
+  return value as Record<string, unknown>;
 }

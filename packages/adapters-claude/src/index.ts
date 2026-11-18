@@ -4,18 +4,29 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   query,
+  type HookCallbackMatcher,
   type Options,
+  type PostToolUseFailureHookInput,
   type SandboxSettings,
   type SDKResultMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
+  contextStatus,
+  contextWarning,
+  LOOP_JUDGE_PROMPT,
+  LOOP_JUDGE_SCHEMA,
+  LoopGuard,
   modelFailureKind,
+  type LoopJudgement,
   type ModelFailure,
   type ModelResult,
   type ModelRun,
   type ModelRunner,
   type ToolAccess,
 } from '@factory/core';
+import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, claudeMessageEvents, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
+
+export * from './cli.ts';
 
 const TOOLS: Record<ToolAccess, string[]> = {
   none: [],
@@ -66,6 +77,9 @@ export class ModelRunError extends Error {
     this.kind = kind;
   }
 }
+
+/** The model that judges whether a turn is stuck: small, since it reads a few failures. */
+export const LOOP_JUDGE_MODEL = process.env.FACTORY_LOOP_JUDGE_MODEL ?? 'claude-haiku-5-5';
 
 /** Waits before each retry of a rate-limited call that had not spent anything yet. */
 export const RATE_LIMIT_RETRY_MS = [30_000, 120_000];
@@ -132,6 +146,29 @@ export class ClaudeAgentRunner implements ModelRunner {
     }
   }
 
+  /** Asks a small model whether a turn is stuck. Its cost is added to the turn's cost. */
+  private async judge(evidence: string, signal?: AbortSignal): Promise<LoopJudgement> {
+    const result = await this.runOnce({
+      step: 'loop-guard',
+      model: LOOP_JUDGE_MODEL,
+      effort: 'low',
+      tools: 'none',
+      systemPrompt: LOOP_JUDGE_PROMPT,
+      prompt: `Recent failures, oldest first:\n<failures>\n${evidence}\n</failures>`,
+      outputSchema: LOOP_JUDGE_SCHEMA as unknown as Record<string, unknown>,
+      maxBudgetUsd: 0.05,
+      timeoutMs: 60_000,
+      ...(signal ? { signal } : {}),
+    });
+    const verdict = (result.structured ?? {}) as Partial<LoopJudgement>;
+    return {
+      stuck: verdict.stuck === true,
+      confidence: Number(verdict.confidence ?? 0),
+      redirect: String(verdict.redirect ?? ''),
+      costUsd: result.costUsd,
+    };
+  }
+
   private async runOnce(request: ModelRun): Promise<ModelResult> {
     if (request.signal?.aborted) throw new ModelRunError(LIMIT_TEXT.aborted, null, 'aborted');
     const controller = new AbortController();
@@ -170,6 +207,8 @@ export class ClaudeAgentRunner implements ModelRunner {
     heard: () => void,
   ): Promise<ModelResult> {
     const tools = TOOLS[request.tools];
+    // `delegate` is an MCP tool, so it is allowed by name; the step guard still screens it.
+    const allowed = request.mcp ? [...tools, CLAUDE_DELEGATE_TOOL] : tools;
     const guard = request.guard;
     const sandbox = sandboxFor(request.tools);
     const options: Options = {
@@ -179,10 +218,10 @@ export class ClaudeAgentRunner implements ModelRunner {
       // No allowedTools: pre-approved tools would bypass canUseTool and the step's guard.
       // Do not load the user's or the target repository's Claude settings, hooks or plugins.
       settingSources: [],
-      persistSession: false,
+      persistSession: request.persistSession === true || Boolean(request.resume),
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
-        if (!tools.includes(toolName))
+        if (!allowed.includes(toolName))
           return { behavior: 'deny', message: `${toolName} is not available to this step` };
         const denial = guard?.check(toolName, input);
         return denial ? { behavior: 'deny', message: denial } : { behavior: 'allow', updatedInput: input };
@@ -191,21 +230,89 @@ export class ClaudeAgentRunner implements ModelRunner {
         request.tools === 'none'
           ? request.systemPrompt
           : { type: 'preset', preset: 'claude_code', append: request.systemPrompt },
-      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0' },
+      env: {
+        ...process.env,
+        CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0',
+        MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS),
+      },
       abortController: controller,
       ...(request.maxBudgetUsd ? { maxBudgetUsd: request.maxBudgetUsd } : {}),
       ...(sandbox ? { sandbox } : {}),
       ...(request.cwd ? { cwd: request.cwd } : {}),
       ...(request.maxTurns ? { maxTurns: request.maxTurns } : {}),
+      ...(request.resume ? { resume: request.resume } : {}),
+      ...(request.mcp
+        ? { mcpServers: (JSON.parse(claudeMcpConfig(request.mcp)) as Pick<Options, 'mcpServers'>).mcpServers }
+        : {}),
       ...(request.outputSchema
         ? { outputFormat: { type: 'json_schema', schema: request.outputSchema } }
         : {}),
     };
 
+    // Notes for the agent (context warnings) ride on the next tool result, through SDK hooks.
+    let note: string | undefined;
+    const takeNote = () => {
+      const n = note;
+      note = undefined;
+      return n;
+    };
+    const loop = request.loopGuard
+      ? new LoopGuard({
+          judge: (evidence) => this.judge(evidence, request.signal),
+          onStuck: (line) => this.options.onProgress?.(`  · loop guard: ${line}`),
+        })
+      : undefined;
+    let contextLevel = 0;
+    const hooks: Partial<Record<'PostToolUse' | 'PostToolUseFailure', HookCallbackMatcher[]>> = {};
+    if (request.context || loop) {
+      hooks.PostToolUse = [
+        {
+          hooks: [
+            async () => {
+              const n = takeNote();
+              return n ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: n } } : {};
+            },
+          ],
+        },
+      ];
+      hooks.PostToolUseFailure = [
+        {
+          hooks: [
+            async (input) => {
+              const failure = input as PostToolUseFailureHookInput;
+              const redirect = loop
+                ? await loop.failure(failure.tool_name, describeInput(failure.tool_input), failure.error)
+                : undefined;
+              if (redirect) this.options.onProgress?.('  · loop guard: redirected the agent');
+              const n = [redirect, takeNote()].filter(Boolean).join('\n\n');
+              return n
+                ? { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: n } }
+                : {};
+            },
+          ],
+        },
+      ];
+      options.hooks = hooks;
+    }
+
     let result: SDKResultMessage | undefined;
     try {
       for await (const message of (this.options.query ?? query)({ prompt: request.prompt, options })) {
         heard();
+        if (request.context && message.type === 'assistant')
+          for (const event of claudeMessageEvents(message as unknown as Record<string, unknown>))
+            if (event.type === 'context') {
+              const status = contextStatus(event.tokens, request.context.limit);
+              const level = status.over ? 2 : status.warn ? 1 : 0;
+              if (level > contextLevel) {
+                contextLevel = level;
+                note = contextWarning(status);
+                request.context.onStatus?.(status);
+              }
+            }
+        if (request.onEvent)
+          for (const event of claudeMessageEvents(message as unknown as Record<string, unknown>))
+            request.onEvent(event);
         if (message.type === 'result') result = message;
         else if (message.type === 'assistant' && this.options.onProgress) {
           for (const block of message.message.content) {
@@ -218,6 +325,8 @@ export class ClaudeAgentRunner implements ModelRunner {
       throw new ModelRunError(`model run failed: ${(error as Error).message}`);
     }
     if (!result) throw new ModelRunError('model run ended without a result');
+    const extra = loop?.spentUsd ?? 0;
+    if (extra && typeof result.total_cost_usd === 'number') result.total_cost_usd += extra;
     if (result.subtype !== 'success' || result.is_error) {
       const detail = result.subtype === 'success' ? result.result : result.errors.join('; ');
       const message = `model run failed (${result.subtype}): ${detail || 'no detail'}`;
@@ -231,8 +340,24 @@ export class ClaudeAgentRunner implements ModelRunner {
       text: result.result,
       structured: result.structured_output,
       costUsd: result.total_cost_usd ?? null,
+      ...(result.session_id ? { sessionId: result.session_id } : {}),
+      // Test doubles and older CLIs may leave usage out.
+      ...((result.usage as typeof result.usage | undefined)
+        ? {
+            usage: {
+              inputTokens: result.usage.input_tokens,
+              outputTokens: result.usage.output_tokens,
+              cachedInputTokens: result.usage.cache_read_input_tokens ?? 0,
+            },
+          }
+        : {}),
     };
   }
+}
+
+function describeInput(input: unknown): string {
+  const record = (input ?? {}) as Record<string, unknown>;
+  return String(record.command ?? record.file_path ?? record.path ?? record.pattern ?? '').slice(0, 300);
 }
 
 function describeToolUse(name: string, input: unknown): string {

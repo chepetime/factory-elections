@@ -1,5 +1,6 @@
 // Bounded git operations used by the driver. Every call names its repository or worktree explicitly.
-import { realpath, stat } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { run } from '@factory/adapters-process';
 
 export class GitError extends Error {}
@@ -49,6 +50,19 @@ export async function topLevel(dir: string): Promise<string | undefined> {
 export async function commonRepo(dir: string): Promise<string | undefined> {
   const result = await run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: dir });
   return result.code === 0 ? realpath(result.stdout.trim()) : undefined;
+}
+
+/**
+ * Ignores `pattern` in this repository only (`info/exclude`, never committed), e.g. a tool's local
+ * session files. Shared by every worktree of the repository.
+ */
+export async function excludeLocally(dir: string, pattern: string): Promise<void> {
+  const common = resolve(dir, (await git(dir, ['rev-parse', '--git-common-dir'])).trim());
+  const file = join(common, 'info', 'exclude');
+  const text = await readFile(file, 'utf8').catch(() => '');
+  if (text.split('\n').some((line) => line.trim() === pattern)) return;
+  await mkdir(dirname(file), { recursive: true });
+  await appendFile(file, `${text && !text.endsWith('\n') ? '\n' : ''}${pattern}\n`);
 }
 
 export async function isClean(dir: string): Promise<boolean> {

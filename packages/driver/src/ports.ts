@@ -1,5 +1,14 @@
 // What the driver needs from the outside world. The CLI composes concrete adapters into these.
-import type { ModelLadder, ModelRunner, RepoProfile, StepDefinition, TaskRecord } from '@factory/core';
+import type {
+  ContextLimits,
+  McpEndpoint,
+  ModelLadder,
+  ModelRunner,
+  RepoProfile,
+  StepDefinition,
+  TaskRecord,
+  ToolGuard,
+} from '@factory/core';
 
 export interface TaskStorePort {
   read(project: string, id: string): Promise<TaskRecord>;
@@ -25,6 +34,10 @@ export interface GitPort {
   commitCountSince(dir: string, base: string): Promise<number>;
   remoteUrl(dir: string): Promise<string | undefined>;
   push(dir: string, branch: string): Promise<void>;
+  /** Whether origin has this branch (after the last fetch or push). */
+  remoteBranchExists?(repo: string, branch: string): Promise<boolean>;
+  /** Ignores a pattern in this repository only, without a committed .gitignore change. */
+  excludeLocally?(dir: string, pattern: string): Promise<void>;
 }
 
 export interface ShellPort {
@@ -38,6 +51,8 @@ export interface ShellPort {
       signal?: AbortSignal;
       /** Run in its own process group, and stop the whole group on timeout or abort. */
       group?: boolean;
+      /** The whole environment of the command; absent: this process's environment. */
+      env?: Record<string, string>;
     },
   ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' }>;
 }
@@ -66,6 +81,19 @@ export interface StepPaths {
   ladder: string;
 }
 
+/** Lets a model call start child tasks with the `delegate` tool (the backend's MCP server). */
+export interface DelegationPort {
+  grant(options: {
+    label: string;
+    cwd: string;
+    access: 'read-only' | 'edit';
+    budgetUsd: number;
+    guard?: ToolGuard;
+    signal?: AbortSignal;
+    runner?: ModelRunner;
+  }): { endpoint: McpEndpoint; spent(): number; revoke(): void } | undefined;
+}
+
 export interface DriverDeps {
   tasks: TaskStorePort;
   readProfile(project: string): Promise<RepoProfile>;
@@ -81,6 +109,12 @@ export interface DriverDeps {
   log(line: string): void;
   /** Aborted when the run must stop (backend shutdown). Model calls and checks stop with it. */
   signal?: AbortSignal;
+  /** Absent: no step can start child tasks. */
+  delegation?: DelegationPort;
+  /** Confirmed repository facts for system prompts (the backend's memory). */
+  repositoryFacts?(project: string): Promise<string | undefined>;
+  /** The project's context size limits; absent: the default. */
+  contextLimits?(project: string): Promise<ContextLimits | undefined>;
 }
 
 export class DriverError extends Error {}

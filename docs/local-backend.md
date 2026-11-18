@@ -20,7 +20,63 @@ Run/revision acceptance is persisted before returning. Up to 32 runs may be acce
 
 Each model call gets a wall-clock limit, a stall limit (no message from the model) and a budget, from the step definition's `limits` (`timeout_minutes`, `stall_minutes`, `budget_usd`; defaults 60, 20 and $5). The profile's optional `limits.task_budget_usd` (default $15) caps a whole task: the driver stops before a call when the task's recorded spend reaches it, and lowers each call's budget to what is left. `limits.check_timeout_minutes` (default 30) bounds each verification command, and a stopped check kills its whole process group. A call that the provider rate-limited before it spent anything is retried twice (after 30 s and 2 min); no other call is retried. A usage-limit failure leaves the task `failed` with the instruction to run it again after the reset. The coder may start subagents (the `Agent` tool); their tool calls go through the same guard, sandbox and budget.
 
-PR review turns run `claude -p` with `--max-budget-usd` (`FACTORY_REVIEW_BUDGET_USD`, default $25). Kickoff and re-review turns may not run `gh pr review/comment/merge/close/edit/ready`, `gh issue comment/create/edit`, `gh api` or `git push`; a message the user types has no such rule, so the user can ask the agent to post. Starting a review returns at once: the PR shows `preparing` while the backend fetches it and prepares the worktree, and a failure there shows on the PR. The backend stops a turn with no new output for `FACTORY_REVIEW_STALL_MS` (default 30 min) and marks it stopped for that reason.
+PR review turns run the review provider (Claude Code, `claude -p` with only the repository's settings: no user skills, plugins, hooks or MCP servers) with `--max-budget-usd` (`FACTORY_REVIEW_BUDGET_USD`, default $25). Kickoff and re-review turns may not run `gh pr review/comment/merge/close/edit/ready`, `gh issue comment/create/edit`, `gh api` or `git push`; a message the user types has no such rule, so the user can ask the agent to post. Starting a review returns at once: the PR shows `preparing` while the backend fetches it and prepares the worktree, and a failure there shows on the PR. The backend stops a turn with no new output for `FACTORY_REVIEW_STALL_MS` (default 30 min) and marks it stopped for that reason.
+
+### Providers and child tasks
+
+All model calls go through one port (`ModelRunner`, `packages/core/src/ports.ts`) and one router (`ProviderRouter`, `packages/core/src/agents.ts`). A ladder rung or step names its provider in `model`: a `claude-…` id runs on the Claude Agent SDK, and `codex` or `codex:<model>` runs `codex exec --json` with the machine's Codex sign-in. Detached review turns use the same contract as a CLI (`AgentCli`: turn arguments plus a JSONL parser that gives shared events), so the chat reads any provider.
+
+Each provider states what it enforces (`PROVIDER_CAPABILITIES`). The router refuses a call that needs a missing capability instead of running it with weaker controls:
+
+| | Claude | Codex |
+| --- | --- | --- |
+| Screens each tool call (step guard) | yes | no: a guarded step, such as the coder, cannot run on Codex |
+| Deny rules that hold for wrapped commands | yes | no: its rules match only the first words, so automated review turns stay on Claude |
+| OS sandbox | yes | yes: `read-only`, or `workspace-write` (working directory only, no network) |
+| Dollar limit and cost | yes | no: it reports tokens; time and stall limits still apply |
+| Structured output | yes | yes: the adapter makes each schema strict (closed objects, optional fields nullable) |
+
+Codex runs ignore the user's `config.toml`, like Claude runs ignore user settings. Codex can run the classifier, reviewer and PR-writer steps, and read-only child tasks.
+
+**Child tasks.** The backend runs one MCP server on 127.0.0.1 (`FACTORY_DELEGATION_PORT`, default a free port) with one tool, `delegate(provider, task, access, model?, budget_usd?)`. The coder step and every review turn get a grant: a bearer token tied to the parent's working directory, its access and a budget. A child never starts another provider directly, so it takes an agent slot from `FACTORY_MAX_AGENTS` (it fails at once when none is free, so a parent never waits on itself), counts against the parent's budget, stops on shutdown and appears in the parent's trace. Rules:
+
+- The coder's grant allows `edit` children with the coder guard and a pool as large as the coder call's own budget; child costs are added to the coder attempt. Review grants allow only `read-only` children, with `FACTORY_REVIEW_DELEGATE_BUDGET_USD` (default $10) per turn.
+- A Codex child cannot keep the guard, so it may only read when the parent is guarded. A child without a named budget gets $2.
+- Children may start children down to `FACTORY_DELEGATION_DEPTH` (default 2). Each child is limited to 30 minutes, and to 10 minutes with no output.
+- A grant lives in memory: after a backend restart, a review turn that is still running cannot delegate.
+
+### Repository memory, tool pruning, loop guard and context size
+
+These follow [TokenEconomizer](https://github.com/microsoft/TokenEconomizer). The rules are in `packages/core/src/memory.ts`, and the service is in `packages/backend/src/memory.ts`. Files live under `$FACTORY_ROOT/<project>/memory/`.
+
+- **Facts.** Each tool-using model call of a task run, and each finished review turn, is one session. The backend stores a short digest of each session: commands, failures with their command, tools used, and the outcome. After every 3 sessions, a small model (`FACTORY_MEMORY_MODEL`, default `claude-haiku-5-5`, up to $0.20 for each review) reads the recent digests and the current facts. It proposes facts, and each fact names the sessions that show it. Session IDs that the model was not shown are ignored. A fact goes into the system prompts of the coder, reviewer, PR writer and review turns only after 3 sessions confirm it. A session that contradicts a fact drops it. Text that looks like a credential is never stored. Review costs are in `costs.jsonl`. RPCs: `GetMemory`, `ForgetFact` and `RestoreTools`.
+- **Tool pruning.** Review turns record which built-in tools they were offered and which they used. A tool that goes unused for 5 review sessions is left out of the next turns (`--tools`). Core tools are always kept: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `ToolSearch`, `Task` and `Agent`. `RestoreTools` brings all tools back, and pruning then waits 5 more sessions.
+- **Loop guard.** In SDK runs (the coder, reviewer and PR writer on Claude), a `PostToolUseFailure` hook counts repeated failures. After 3 identical failures, a judge (`FACTORY_LOOP_JUDGE_MODEL`, default Haiku, up to $0.05) decides whether the turn is stuck. If its confidence is at least 0.7, the agent gets one redirect note on its next tool result. If the failure still repeats after that, the run log says so. The guard never stops a turn. The judge's cost is added to the call's cost. Codex and detached review turns have no tool hooks, so they get no loop guard.
+- **Context size.** The project setting `context_tokens` sets the limit: one number, or values per provider and model, for example `{ "default": 150000, "codex": 120000, "claude-opus-5-5": 180000 }`. The default is 150k (`FACTORY_CONTEXT_TOKENS`), where quality starts to fall for current models. At 80% of the limit, and again at 100%, SDK runs log a warning and tell the agent to finish or hand off the work. Review details return `context` (tokens, limit, warn, over) for the chat. Codex reports tokens only for each turn, not for each request, so it gets no context warning.
+
+### Runtime check (Reticle)
+
+A profile can set `commands.runtime_check`, for example `npx @reticlehq/server@<version>` (pin a version), or `cd apps/web && npx @reticlehq/server@<version>` in a monorepo. Verification runs it after `full_check`, with the same timeout. It gets a free `PORT` and runs with `DO_NOT_TRACK=1` and `RETICLE_FEEDBACK=0`, so Reticle sends no telemetry. `.reticle/` is excluded through the repository's local `info/exclude`. The last `verified:` line decides the result:
+
+- `yes` passes.
+- `no` fails verification, and the fault lines go back to the coder.
+- `unknown`, `no-fault` or no verdict line do not fail, but the task's `verification.runtime` records the verdict, and the gate tells the human to check the running app.
+
+Do not run `reticle init` from the factory: it changes the repository's build config, its agent files and its hooks.
+
+### Features: grill, spec, board, implement, QA
+
+A feature is the unit above tasks. Its rules are in `packages/core/src/features.ts`, and the service is in `packages/backend/src/features.ts`. Files are under `$FACTORY_ROOT/<project>/features/<id>/`: `feature.json`, `spec.md`, `critique.md` and `qa.md`. RPCs: `ListFeatures`, `GetFeature`, `CreateFeature` and `FeatureAction` (`{ id, action, … }`).
+
+1. **Grill** (`grill`, repeated with the developer's answer, or `skip-grill`): the agent asks one question at a time, each with its recommendation, and reads the code instead of asking when it can. The session resumes on every turn. Each settled decision is saved. When no question is left, the feature moves to `spec`.
+2. **Spec** (`write-spec`, `save-spec`, `approve-spec`): the agent writes the spec from the idea, the decisions and the transcript. A second model (`FACTORY_CRITIQUE_MODEL`) critiques it as its builder and verifier would. A human edits it if needed and approves it.
+3. **Board** (`plan`, `save-board`, `approve-board` with `mirror`): the agent splits the spec into tickets T1…Tn, each with acceptance checks, a size and `blocked_by` links. A board with an unknown blocker, a self-block or a cycle is refused. `mirror: true` creates each ticket with the project's `create_ticket` command. Ticket text reaches that command as environment variables, so the shell never parses it.
+4. **Implement** (automatic, every 20 s): each ticket whose blockers are done becomes a task run, in parallel up to the worker limit. A ticket with one blocker stacks on that blocker's branch, and its PR can open only after the blocker's branch is on origin. A ticket with several blockers waits until a human marks their PRs merged (`mark-merged`). A ticket is done when its task reaches the approval gate. When its PR opens, a senior-pr-review starts once. `retry-ticket` runs a failed ticket again.
+5. **QA** (automatic when every ticket is done, or `write-qa`; then `complete`): the agent writes a checklist for the human from the spec, the ticket branches, the PRs and the verification and runtime-check results.
+
+Each step's instructions are the bundled contract in `definitions/features/<step>.md`, plus the repository's own skill when it has one: `grill-with-docs`, `spec-critique` or `test-plan` under `.agents/skills/` or `.claude/skills/`, plus the confirmed repository facts. Agent steps take an agent slot, return at once and show `working` and `error` on the feature. Each step is limited to $3 (a grill turn to $1) and 30 minutes, and has the loop guard. Their costs add up in `cost_usd`.
+
+The profile's optional `commands.setup`, for example `pnpm install --frozen-lockfile`, runs once in each new task worktree before coding. A failure stops the task before any model call, and running the task again retries it.
 
 While `backend.lock` exists, the CLI forwards `task run`, `revise`, `approve`, `reject` and `open-pr` to the server. `run`/`revise` wait and print log updates; Ctrl-C stops the waiting CLI without killing the server-owned run. Read commands remain available against authoritative task snapshots. Individual mutating step commands require the backend to be stopped. With no backend ownership lock, the CLI retains its original standalone behavior.
 

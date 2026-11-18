@@ -568,6 +568,24 @@ export default async function TaskPage({
               {task.verification.passed ? 'Passed' : 'Failed'} at{' '}
               <span className="font-mono">{task.verification.head_sha.slice(0, 12)}</span>
             </p>
+            {task.verification.runtime && (
+              <p
+                className={cn(
+                  'mt-1 text-sm',
+                  task.verification.runtime === 'no' && 'text-destructive',
+                  task.verification.runtime !== 'yes' &&
+                    task.verification.runtime !== 'no' &&
+                    'text-amber-700 dark:text-amber-400',
+                )}
+              >
+                Running app (Reticle):{' '}
+                {task.verification.runtime === 'yes'
+                  ? 'no faults found'
+                  : task.verification.runtime === 'no'
+                    ? 'faults found'
+                    : 'could not decide. Check the running app before you approve.'}
+              </p>
+            )}
             <details className="mt-2">
               <summary className="cursor-pointer text-sm">Output</summary>
               <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-background p-3 text-xs whitespace-pre-wrap">

@@ -126,6 +126,7 @@ export function ProjectSettingsForm({
     { key: 'cli', label: 'CLI', hint: 'The command-line tool, e.g. acli or gh.', mono: true },
     { key: 'project_key', label: 'Project key or board', mono: true },
     { key: 'read_ticket', label: 'Read a ticket', hint: 'Use {key} for the ticket key.', mono: true },
+    { key: 'list_tickets', label: 'List tickets', hint: "Lists the project's open tickets.", mono: true },
     { key: 'search', label: 'Search tickets', hint: 'Use {query} for the search text.', mono: true },
     { key: 'create_ticket', label: 'Create a ticket', hint: 'Use {summary} and {description}.', mono: true },
     { key: 'create_epic', label: 'Create an epic', hint: 'Use {summary} and {description}.', mono: true },

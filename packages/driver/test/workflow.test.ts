@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -128,6 +129,10 @@ const ready: Script = (r) => {
 };
 const writeFeature: Script = async (r) => (
   await writeFile(join(r.cwd!, 'feature.txt'), 'done\n'),
+  { text: 'ok', costUsd: 0.1 }
+);
+const writeOther: Script = async (r) => (
+  await writeFile(join(r.cwd!, 'other.txt'), 'more\n'),
   { text: 'ok', costUsd: 0.1 }
 );
 const defaultDraft: Script = () => ({
@@ -501,6 +506,129 @@ test('the ladder stops when the task budget is spent, and says how to continue',
   assert.match(stored.events!.at(-1)!.message, /limits\.task_budget_usd/);
 });
 
+test('the coder may delegate: it gets a grant for its worktree, and child costs join its attempt', async () => {
+  const grants: { label: string; cwd: string; access: string; budgetUsd: number; guard?: unknown }[] = [];
+  let revoked = 0;
+  const { driver, store, task, runner } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  driver.deps.delegation = {
+    grant: (options) => (
+      grants.push(options),
+      {
+        endpoint: { url: 'http://127.0.0.1:1/mcp', token: 't' },
+        spent: () => 0.25,
+        revoke: () => void revoked++,
+      }
+    ),
+  };
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const coder = runner.calls.find((c) => c.tools === 'edit')!;
+  assert.deepEqual(coder.mcp, { url: 'http://127.0.0.1:1/mcp', token: 't' });
+  assert.equal(grants.length, 1, 'only the coder may start children');
+  assert.equal(grants[0]!.cwd, coder.cwd);
+  assert.equal(grants[0]!.access, 'edit');
+  assert.equal(grants[0]!.guard, coder.guard, 'children inherit the coder guard');
+  assert.equal(revoked, 1);
+  const attempt = (await store.read('demo', task.id)).attempts!.find((a) => a.step === 'coder')!;
+  assert.equal(attempt.cost_usd, 0.1 + 0.25);
+  assert.equal(runner.calls.filter((c) => c.mcp).length, 1);
+});
+
+test('tool-using steps get confirmed repository facts, the loop guard and the project context limit', async () => {
+  const { driver, task, runner } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  driver.deps.repositoryFacts = async () =>
+    '## What earlier sessions learned about this repository\n\n- [f1] Run build first.';
+  driver.deps.contextLimits = async () => ({ default: 100_000, 'claude-opus-5-5': 180_000 });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const classifier = runner.calls.find((c) => c.tools === 'none')!;
+  assert.doesNotMatch(classifier.systemPrompt, /earlier sessions/, 'a step without tools gets no facts');
+  for (const call of runner.calls.filter((c) => c.tools !== 'none')) {
+    assert.match(call.systemPrompt, /\[f1\] Run build first\./);
+    assert.equal(call.loopGuard, true);
+    assert.equal(call.context?.limit, call.model === 'claude-opus-5-5' ? 180_000 : 100_000);
+  }
+});
+
+test('the setup command runs once per worktree; a failure stops before any model call and a rerun retries it', async () => {
+  const withSetup = (driver: Driver, command: string) => {
+    const read = driver.deps.readProfile;
+    driver.deps.readProfile = async (p) => {
+      const profile = await read(p);
+      return { ...profile, commands: { ...profile.commands, setup: command } };
+    };
+  };
+  const { driver, task, runner, store } = await setup({
+    classifier: [ready, ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  withSetup(driver, 'test -f .ok-to-install && echo installed >> setup.log');
+  await assert.rejects(
+    driver.run('demo', task.id, { maxAttempts: 1 }),
+    /Worktree setup .* exited with status 1/,
+  );
+  assert.equal(
+    runner.calls.filter((c) => c.tools === 'edit').length,
+    0,
+    'no coder call after a failed setup',
+  );
+  assert.equal((await store.read('demo', task.id)).stage, 'failed');
+  const path = (await store.read('demo', task.id)).worktree!.path;
+  // setup.log is untracked output; ignore it so verification stays clean.
+  await writeFile(join(path, '.ok-to-install'), '');
+  await git.excludeLocally(path, 'setup.log');
+  await git.excludeLocally(path, '.ok-to-install');
+  const after = await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.ok(after.worktree!.setup_at);
+  assert.equal(after.stage, 'awaiting-approval');
+  assert.equal(
+    (await readFile(join(path, 'setup.log'), 'utf8')).trim(),
+    'installed',
+    'setup ran exactly once',
+  );
+});
+
+test('a stacked task starts from its blocker branch and opens its PR only after the blocker is pushed', async () => {
+  const first = await setup({
+    classifier: [ready, ready],
+    coder: [writeFeature, writeOther],
+    reviewer: [approveReview, approveReview],
+  });
+  const { driver, store, task, repo } = first;
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const blocker = (await store.read('demo', task.id)).worktree!.branch;
+  const second = await store.create(
+    'demo',
+    repo,
+    'Add other.txt on top of feature.txt',
+    new Date().toISOString(),
+  );
+  await store.write({ ...second, stack_on: blocker });
+  const stacked = await driver.run('demo', second.id, { maxAttempts: 1 });
+  assert.equal(stacked.worktree!.base_branch, blocker);
+  assert.ok(
+    existsSync(join(stacked.worktree!.path, 'feature.txt')),
+    'the blocker change is in the stacked worktree',
+  );
+  assert.doesNotMatch(
+    (await driver.gate('demo', second.id)).diffStat,
+    /feature\.txt/,
+    'the diff holds only its own change',
+  );
+  await driver.approve('demo', second.id, { head: (await driver.gate('demo', second.id)).headSha });
+  await assert.rejects(
+    driver.openPr('demo', second.id),
+    /open the pull request of the blocking ticket first/,
+  );
+});
+
 test('a failed model call keeps its reported cost, and a usage limit says when to run again', async () => {
   const limited: Script = () => {
     throw Object.assign(new Error("model run failed: You've hit your limit"), {
@@ -552,6 +680,41 @@ test('opening a PR adopts one that a lost write already opened, instead of openi
   assert.equal(opened.pr?.url, 'https://github.com/example/demo/pull/9');
   assert.deepEqual(asked, [`factory/${task.id}`]);
   assert.equal(prs.length, 0);
+});
+
+test('a runtime check (Reticle) runs after full_check: yes passes, no fails, unknown passes for a human to check', async () => {
+  const withRuntime = (driver: Driver, command: string) => {
+    const read = driver.deps.readProfile;
+    driver.deps.readProfile = async (p) => {
+      const profile = await read(p);
+      return { ...profile, commands: { ...profile.commands, runtime_check: command } };
+    };
+  };
+  for (const [script, passed, verdict, note] of [
+    [
+      "echo '  ✗ Console error on /: boom'; echo 'verified: no — 1 fault(s)'; exit 1",
+      false,
+      'no',
+      /fix each ✗ line/,
+    ],
+    ["echo 'verified: yes — 3 page(s)'", true, 'yes', undefined],
+    [
+      "mkdir -p .reticle && echo j > .reticle/session.json; echo 'verified: unknown'; exit 2",
+      true,
+      'unknown',
+      /check the running app before approving/,
+    ],
+  ] as const) {
+    const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+    withRuntime(driver, script);
+    await driver.classify('demo', task.id);
+    await driver.prepareWorktree('demo', task.id);
+    await driver.code('demo', task.id, { name: 'r', model: 'claude-sonnet-5-5', effort: 'low' });
+    const result = await driver.verify('demo', task.id);
+    assert.equal(result.passed, passed, `${script}\n${result.output}`);
+    assert.equal(result.runtime, verdict);
+    if (note) assert.match(result.output, note);
+  }
 });
 
 test('a check that runs past its time limit is stopped and fails verification', async () => {

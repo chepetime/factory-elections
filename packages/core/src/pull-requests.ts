@@ -1,6 +1,7 @@
 // Pure PR-review triage. Ported from the `elections review` picker's jq rules: who is asked to
 // review, what changed since your last review or comment, and the urgency order of the list.
 import { z } from 'zod';
+import { ContextLimits, type AgentEvent } from './agents.ts';
 
 const Login = z.object({ login: z.string() }).nullable();
 
@@ -173,6 +174,7 @@ export function reviewContext(input: ReviewContextInput): string {
       ['CLI', tm.cli],
       ['Project key', tm.project_key],
       ['Read a ticket', tm.read_ticket],
+      ['List open tickets', tm.list_tickets],
       ['Search tickets', tm.search],
       ['Create a ticket', tm.create_ticket],
       ['Create an epic', tm.create_epic],
@@ -248,19 +250,6 @@ export function summarizeReviewStream(lines: readonly string[], keep = 40): Revi
   return { steps: steps.slice(-keep), result };
 }
 
-/** The id Claude Code assigns to a session, from any line of its stream-json output. */
-export function streamSessionId(lines: readonly string[]): string | undefined {
-  for (const line of lines) {
-    try {
-      const id = (JSON.parse(line) as { session_id?: unknown }).session_id;
-      if (typeof id === 'string' && id) return id;
-    } catch {
-      // Not JSON: skip.
-    }
-  }
-  return undefined;
-}
-
 export type ReviewBlock = { kind: 'text'; text: string } | { kind: 'tool'; text: string };
 export type ReviewChatEntry =
   | { role: 'user'; id: string; at: string; text: string; label?: string }
@@ -272,12 +261,12 @@ export type ReviewChatEntry =
       result?: NonNullable<ReviewActivity['result']>;
     };
 
-/** One user message and the stream-json output of the agent turn it started. */
+/** One user message and the events of the agent turn it started, from any provider. */
 export interface ReviewTurn {
   at: string;
   text: string;
   label?: string;
-  lines: readonly string[];
+  events: readonly AgentEvent[];
 }
 
 /** The review chat: each user message, then the agent's text and tool steps for that turn. */
@@ -285,30 +274,18 @@ export function reviewConversation(turns: readonly ReviewTurn[]): ReviewChatEntr
   return turns.flatMap((turn, i): ReviewChatEntry[] => {
     const blocks: ReviewBlock[] = [];
     let result: ReviewActivity['result'];
-    for (const line of turn.lines) {
-      let e: Record<string, unknown>;
-      try {
-        e = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      // Sub-agent messages carry a parent id; the chat shows the main agent only.
-      if (e.parent_tool_use_id) continue;
-      if (e.type === 'assistant') {
-        const content = (e.message as { content?: unknown } | undefined)?.content;
-        if (!Array.isArray(content)) continue;
-        for (const part of content as Record<string, unknown>[]) {
-          if (part.type === 'text' && typeof part.text === 'string' && part.text.trim())
-            blocks.push({ kind: 'text', text: part.text.trim() });
-          if (part.type === 'tool_use' && typeof part.name === 'string')
-            blocks.push({
-              kind: 'tool',
-              text: toolStep(part.name, (part.input as Record<string, unknown>) ?? {}),
-            });
-        }
-      } else if (e.type === 'result') {
-        result = summarizeReviewStream([line]).result;
-      }
+    for (const e of turn.events) {
+      // Subagent events: the chat shows the main agent only.
+      if ((e.type === 'text' || e.type === 'tool') && e.sub) continue;
+      if (e.type === 'text') blocks.push({ kind: 'text', text: e.text });
+      else if (e.type === 'tool') blocks.push({ kind: 'tool', text: toolStep(e.name, e.input) });
+      else if (e.type === 'result')
+        result = {
+          ok: e.ok,
+          text: e.text ? clip(e.text, 600) : e.ok ? 'success' : 'failed',
+          costUsd: e.costUsd,
+          durationMs: e.durationMs,
+        };
     }
     const user: ReviewChatEntry = {
       role: 'user',
@@ -422,6 +399,8 @@ export const TaskManager = z.object({
   project_key: z.string().max(100).optional(),
   /** Command templates; `{key}`, `{query}`, `{summary}` mark the arguments. */
   read_ticket: z.string().max(1000).optional(),
+  /** Lists the project's open tickets, without arguments. */
+  list_tickets: z.string().max(1000).optional(),
   search: z.string().max(1000).optional(),
   create_ticket: z.string().max(1000).optional(),
   create_epic: z.string().max(1000).optional(),
@@ -438,6 +417,11 @@ export const ProjectSettings = z.object({
   task_manager: TaskManager.default({ kind: 'none' }),
   /** Markdown review profile for senior-pr-review; replaces the bundled profile for this repo. */
   review_profile: z.string().max(100_000).optional(),
+  /**
+   * Context size limits for this project's agents: one number, or per provider and model
+   * (`{ "default": 150000, "codex": 120000, "claude-opus-5-5": 180000 }`). The factory warns at 80%.
+   */
+  context_tokens: ContextLimits.optional(),
   updated_at: z.string().optional(),
 });
 export type ProjectSettings = z.infer<typeof ProjectSettings>;

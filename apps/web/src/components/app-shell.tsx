@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Settings,
   SlidersHorizontal,
+  Tickets,
   User,
   X,
 } from 'lucide-react';
@@ -166,7 +167,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const projects = useProjects(pathname);
   // Task chat screens own their columns and scrolling.
   const fullBleed =
-    pathname === '/' || /^\/projects\/[^/]+\/(tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
+    pathname === '/' ||
+    /^\/projects\/[^/]+$/.test(pathname) ||
+    /^\/projects\/[^/]+\/(tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -215,9 +218,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pick = (name: string) => {
     remember(name);
     setRemembered(name);
-    router.push(
-      /^\/projects\/[^/]+\/team/.test(pathname) ? `/projects/${name}/team` : `/projects/${name}/tasks/new`,
-    );
+    router.push(/^\/projects\/[^/]+\/team/.test(pathname) ? `/projects/${name}/team` : `/projects/${name}`);
   };
 
   return (
@@ -508,6 +509,13 @@ function Sidebar({
       {project && (
         <div className="flex flex-col gap-1 px-2 pb-2">
           <Link
+            href={`/projects/${project}`}
+            aria-current={pathname === `/projects/${project}` || pathname === '/' ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <Home className="size-4 text-muted-foreground" /> Home
+          </Link>
+          <Link
             href={`/projects/${project}/team`}
             aria-current={/^\/projects\/[^/]+\/team/.test(pathname) ? 'page' : undefined}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
@@ -522,16 +530,17 @@ function Sidebar({
             <GitPullRequest className="size-4 text-muted-foreground" /> PR Reviews
           </Link>
           <Link
-            href={`/projects/${project}/settings`}
-            aria-current={/^\/projects\/[^/]+\/settings/.test(pathname) ? 'page' : undefined}
+            href={`/projects/${project}/tickets`}
+            aria-current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname) ? 'page' : undefined}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
           >
-            <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
+            <Tickets className="size-4 text-muted-foreground" /> Tickets
           </Link>
+          <div role="separator" className="my-2 h-px bg-border" />
           <Link
             href={`/projects/${project}/tasks/new`}
             aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <Plus className="size-4" /> New task
           </Link>
@@ -571,6 +580,18 @@ function Sidebar({
           </ul>
         )}
       </div>
+
+      {project && (
+        <div className="border-t px-2 py-2">
+          <Link
+            href={`/projects/${project}/settings`}
+            aria-current={/^\/projects\/[^/]+\/settings/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
+          </Link>
+        </div>
+      )}
 
       <div
         role="separator"

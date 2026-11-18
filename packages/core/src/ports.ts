@@ -1,4 +1,5 @@
 // Interfaces the driver needs; adapters implement them.
+import type { AgentEvent, ContextStatus, McpEndpoint, Usage } from './agents.ts';
 import type { Effort } from './schemas.ts';
 
 export type ToolAccess = 'none' | 'read-only' | 'edit';
@@ -28,12 +29,27 @@ export interface ModelRun {
   stallMs?: number;
   /** Most this call may spend. */
   maxBudgetUsd?: number;
+  /** Session to continue, for providers that can resume. */
+  resume?: string;
+  /** Keep the session on disk so a later call can resume it (chats). Off by default. */
+  persistSession?: boolean;
+  /** The backend's MCP server, when this call may start child tasks with `delegate`. */
+  mcp?: McpEndpoint;
+  /** Receives the call's events as they happen. */
+  onEvent?: (event: AgentEvent) => void;
+  /** Watch for a turn stuck on one failure and redirect it once (providers with tool hooks). */
+  loopGuard?: boolean;
+  /** Warn at 80% of this context size, and tell the agent, where the provider reports it. */
+  context?: { limit: number; onStatus?(status: ContextStatus): void };
 }
 
 export interface ModelResult {
   text: string;
   structured?: unknown;
+  /** Null when the provider reports no cost (Codex reports tokens only). */
   costUsd: number | null;
+  sessionId?: string;
+  usage?: Usage;
 }
 
 /** Why a model call failed, so the caller can decide to wait, resume or stop. */

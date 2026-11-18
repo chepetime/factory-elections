@@ -7,10 +7,12 @@ export interface TeamEdits {
   error?: string;
 }
 export type TeamEdit =
+  | { type: 'replace'; members: TeamMember[] }
   | { type: 'start'; email: string; requestId: number; team?: string; tags: string[] }
   | { type: 'settle'; email: string; requestId: number; error?: string };
 
 export function teamEdits(state: TeamEdits, event: TeamEdit): TeamEdits {
+  if (event.type === 'replace') return { members: event.members, pending: {} };
   const pending = state.pending[event.email];
   if (event.type === 'start') {
     const before = state.members.find((m) => m.email === event.email);

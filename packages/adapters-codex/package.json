@@ -1,0 +1,12 @@
+{
+  "name": "@factory/adapters-codex",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/core": "workspace:*",
+    "@factory/adapters-process": "workspace:*"
+  }
+}

@@ -37,6 +37,7 @@ export interface Methods {
   GetDiagnostics: [{}, { json: string }];
   GetTeam: [Target, { json: string }];
   GetGitUser: [Target, { text: string }];
+  UpdateMembers: [{ project: string; json: string }, { json: string }];
   SaveAssignment: [{ project: string; email: string; team?: string; tags: string[] }, { text: string }];
   ListProjects: [{}, { json: string }];
   AddProject: [{ name: string; repo: string }, { json: string }];
@@ -49,6 +50,21 @@ export interface Methods {
   GetProjectSettings: [Target, { json: string }];
   SaveProjectSettings: [{ project: string; json: string }, { json: string }];
   DetectProjectSettings: [Target, { json: string }];
+  /** Facts, pruned tools and review cost; `id` is unused. */
+  GetMemory: [Target, { json: string }];
+  /** Drops the fact whose id is `id`. */
+  ForgetFact: [Target, { text: string }];
+  /** Brings back every pruned review tool; `id` is unused. */
+  RestoreTools: [Target, { text: string }];
+  /** The project's features, newest first; `id` is unused. */
+  ListFeatures: [Target, { json: string }];
+  /** One feature with its spec, critique and QA plan; `id` is the feature id. */
+  GetFeature: [Target, { json: string }];
+  /** `json`: `{ idea, title? }`. */
+  CreateFeature: [{ project: string; json: string }, { json: string }];
+  /** `json`: `{ id, action, … }`, see FeatureAction in packages/backend/src/features.ts. */
+  FeatureAction: [{ project: string; json: string }, { json: string }];
+  ListTickets: [Target, { json: string }];
   ListTasks: [Target, { json: string }];
   GetTask: [Target, { json: string }];
   GetTaskControls: [Target, { json: string }];

@@ -23,7 +23,8 @@ const DETECT_PROMPT = `Explore this repository read-only and work out how the te
 Find:
 - The task manager (Jira, GitHub Issues, Linear, other, or none) and the CLI the repository documents for it (for example \`acli\` for Jira or \`gh\` for GitHub).
 - The project key or board, when the repository names one.
-- Exact command templates to read a ticket, search tickets, create a ticket and create an epic. Use placeholders {key}, {query}, {summary} and {description}. Copy commands from the repository's docs, scripts, skills or agent instructions; do not invent flags.
+- Exact command templates to read a ticket, list the project's open tickets, search tickets, create a ticket and create an epic. Use placeholders {key}, {query}, {summary} and {description}. Copy commands from the repository's docs, scripts, skills or agent instructions; do not invent flags.
+- For listing, use the documented command that lists open tickets. When there is none, use the documented search command with a query for the project's open tickets (for Jira, JQL like \`project = KEY AND statusCategory != Done ORDER BY updated DESC\`).
 - The repository paths that document this usage (for example AGENTS.md, CLAUDE.md, docs/, .claude/skills/).
 - Conventions worth knowing in notes: ticket key format, branch or PR title rules, required fields, epic linking.
 

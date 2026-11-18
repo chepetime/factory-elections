@@ -4,7 +4,10 @@
 // (https://www.affectui.com/screens/crm); original implementation, no Affect UI source or assets.
 import { Popover } from '@base-ui/react/popover';
 import { Check, Plus, Search, Users, X } from 'lucide-react';
-import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from 'react';
+import { updateTeamMembers } from '@/app/team-actions';
+import { MemberBulkEditor } from '@/components/member-bulk-editor';
+import type { MemberUpdate } from '@/lib/team';
 import { assignMember } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -87,6 +90,12 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
   const [edits, dispatch] = useReducer(teamEdits, { members: initial, pending: {} });
   const { members, error } = edits;
   const inFlight = useRef(new Set<string>());
+  const bulkLock = useRef(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMode, setBulkMode] = useState<'edit' | 'merge'>();
+  const [bulkPending, setBulkPending] = useState(false);
+  const [bulkError, setBulkError] = useState<string>();
+  const selectAll = useRef<HTMLInputElement>(null);
   const sequence = useRef(0);
   const [filter, setFilter] = useState<
     { kind: 'all' } | { kind: 'team'; team: string } | { kind: 'tag'; tag: string }
@@ -107,7 +116,7 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
   );
 
   const update = (email: string, team: string | undefined, nextTags: string[]) => {
-    if (inFlight.current.has(email)) return;
+    if (bulkLock.current || inFlight.current.has(email)) return;
     inFlight.current.add(email);
     const requestId = ++sequence.current;
     dispatch({ type: 'start', email, requestId, team, tags: nextTags });
@@ -132,8 +141,39 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
       (!q ||
         m.name.toLowerCase().includes(q) ||
         m.email.includes(q) ||
+        m.aliases?.some((email) => email.includes(q)) ||
         m.tags.some((t) => t.toLowerCase().includes(q))),
   );
+  const selectedMembers = members.filter((member) => selected.has(member.email));
+  const allVisibleSelected = visible.length > 0 && visible.every((member) => selected.has(member.email));
+  const selectionLocked = bulkPending || Boolean(bulkMode);
+  const actionsDisabled = bulkPending || Object.keys(edits.pending).length > 0;
+  useEffect(() => {
+    if (selectAll.current)
+      selectAll.current.indeterminate =
+        !allVisibleSelected && visible.some((member) => selected.has(member.email));
+  }, [allVisibleSelected, visible, selected]);
+  const saveBulk = async (update: MemberUpdate) => {
+    if (bulkLock.current || inFlight.current.size > 0) return;
+    bulkLock.current = true;
+    setBulkPending(true);
+    setBulkError(undefined);
+    try {
+      const result = await updateTeamMembers(project, update);
+      if (result.error || !result.members) {
+        setBulkError(result.error ?? 'Could not update members. Try again.');
+        return;
+      }
+      dispatch({ type: 'replace', members: result.members });
+      setSelected(new Set());
+      setBulkMode(undefined);
+    } catch {
+      setBulkError('Could not update members. Try again.');
+    } finally {
+      bulkLock.current = false;
+      setBulkPending(false);
+    }
+  };
   const groups: [string, TeamMember[]][] = grouped
     ? [...teams, NO_TEAM]
         .map((t): [string, TeamMember[]] => [
@@ -170,6 +210,65 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
           </Button>
         </div>
       </header>
+
+      {selected.size > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-5 py-2">
+          <p role="status" className="mr-2 text-sm tabular-nums">
+            {selected.size} selected
+            {selectedMembers.filter((member) => !visible.some((row) => row.email === member.email)).length >
+              0 && <span className="text-muted-foreground"> (including members hidden by filters)</span>}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={actionsDisabled || Boolean(bulkMode)}
+            onClick={() => {
+              setBulkError(undefined);
+              setBulkMode('edit');
+            }}
+          >
+            Edit selected
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={actionsDisabled || selected.size < 2 || Boolean(bulkMode)}
+            onClick={() => {
+              setBulkError(undefined);
+              setBulkMode('merge');
+            }}
+          >
+            Merge selected
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={selectionLocked}
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
+      {bulkMode && (
+        <MemberBulkEditor
+          key={bulkMode}
+          members={selectedMembers}
+          mode={bulkMode}
+          pending={bulkPending}
+          error={bulkError}
+          onSave={(update) => {
+            void saveBulk(update);
+          }}
+          onCancel={() => {
+            setBulkMode(undefined);
+            setBulkError(undefined);
+          }}
+        />
+      )}
 
       {error && (
         <p role="alert" className="border-b bg-destructive/5 px-5 py-2 text-sm text-destructive">
@@ -240,6 +339,28 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
             <table className="w-full min-w-[44rem] text-left text-sm">
               <thead className="sticky top-0 z-10 bg-background text-xs text-muted-foreground shadow-[0_1px_0_var(--border)]">
                 <tr>
+                  <th scope="col" className="w-12 px-2">
+                    <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
+                      <input
+                        ref={selectAll}
+                        type="checkbox"
+                        aria-label="Select all visible members"
+                        checked={allVisibleSelected}
+                        disabled={selectionLocked}
+                        className="size-4 accent-primary"
+                        onChange={() =>
+                          setSelected((previous) => {
+                            const next = new Set(previous);
+                            for (const member of visible) {
+                              if (allVisibleSelected) next.delete(member.email);
+                              else next.add(member.email);
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    </label>
+                  </th>
                   <th className="px-5 py-2 font-medium">Member</th>
                   <th className="px-3 py-2 font-medium">Team</th>
                   <th className="px-3 py-2 font-medium">Tags</th>
@@ -252,7 +373,7 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                   {grouped && (
                     <tr>
                       <th
-                        colSpan={5}
+                        colSpan={6}
                         scope="colgroup"
                         className="bg-muted/50 px-5 py-1.5 text-xs font-medium"
                       >
@@ -274,8 +395,30 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                     <tr
                       key={m.email}
                       aria-busy={Boolean(edits.pending[m.email])}
-                      className="border-b last:border-b-0 hover:bg-muted/30"
+                      className={cn(
+                        'border-b last:border-b-0 hover:bg-muted/30',
+                        selected.has(m.email) && 'bg-accent/50',
+                      )}
                     >
+                      <td className="px-2">
+                        <label className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${m.name} (${m.email})`}
+                            className="size-4 accent-primary"
+                            checked={selected.has(m.email)}
+                            disabled={selectionLocked}
+                            onChange={() =>
+                              setSelected((previous) => {
+                                const next = new Set(previous);
+                                if (next.has(m.email)) next.delete(m.email);
+                                else next.add(m.email);
+                                return next;
+                              })
+                            }
+                          />
+                        </label>
+                      </td>
                       <td className="px-5 py-2">
                         <div className="flex items-center gap-3">
                           <span
@@ -287,12 +430,17 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                           <span className="min-w-0">
                             <span className="block truncate font-medium">{m.name}</span>
                             <span className="block truncate text-xs text-muted-foreground">{m.email}</span>
+                            {Boolean(m.aliases?.length) && (
+                              <span className="block max-w-80 text-xs break-words text-muted-foreground">
+                                Aliases: {m.aliases!.join(', ')}
+                              </span>
+                            )}
                           </span>
                         </div>
                       </td>
                       <td className="px-3 py-2">
                         <fieldset
-                          disabled={Boolean(edits.pending[m.email])}
+                          disabled={bulkPending || Boolean(bulkMode) || Boolean(edits.pending[m.email])}
                           aria-label={`Team for ${m.name}`}
                         >
                           <TeamPicker
@@ -304,7 +452,7 @@ export function TeamTable({ project, initial }: { project: string; initial: Team
                       </td>
                       <td className="px-3 py-2">
                         <fieldset
-                          disabled={Boolean(edits.pending[m.email])}
+                          disabled={bulkPending || Boolean(bulkMode) || Boolean(edits.pending[m.email])}
                           aria-label={`Tags for ${m.name}`}
                         >
                           <TagEditor

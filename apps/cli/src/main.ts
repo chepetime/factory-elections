@@ -1,4 +1,5 @@
 // `factory` command line: composes the filesystem, git, GitHub and Claude adapters with the driver.
+import '../../../scripts/load-env.ts';
 import { resolve, join } from 'node:path';
 import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

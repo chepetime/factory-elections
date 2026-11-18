@@ -203,6 +203,10 @@
                   "requestType": "Target",
                   "responseType": "Text"
                 },
+                "UpdateMembers": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "SaveAssignment": {
                   "requestType": "Assignment",
                   "responseType": "Text"
@@ -248,6 +252,38 @@
                   "responseType": "Snapshot"
                 },
                 "DetectProjectSettings": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetMemory": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "ForgetFact": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                },
+                "RestoreTools": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                },
+                "ListFeatures": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetFeature": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "CreateFeature": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "FeatureAction": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "ListTickets": {
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },

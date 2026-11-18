@@ -34,6 +34,7 @@ service Factory {
   rpc GetDiagnostics(Empty) returns (Snapshot);
   rpc GetTeam(Target) returns (Snapshot);
   rpc GetGitUser(Target) returns (Text);
+  rpc UpdateMembers(SettingsUpdate) returns (Snapshot);
   rpc SaveAssignment(Assignment) returns (Text);
   rpc ListProjects(Empty) returns (Snapshot);
   rpc AddProject(ProjectRegistration) returns (Snapshot);
@@ -46,6 +47,14 @@ service Factory {
   rpc GetProjectSettings(Target) returns (Snapshot);
   rpc SaveProjectSettings(SettingsUpdate) returns (Snapshot);
   rpc DetectProjectSettings(Target) returns (Snapshot);
+  rpc GetMemory(Target) returns (Snapshot);
+  rpc ForgetFact(Target) returns (Text);
+  rpc RestoreTools(Target) returns (Text);
+  rpc ListFeatures(Target) returns (Snapshot);
+  rpc GetFeature(Target) returns (Snapshot);
+  rpc CreateFeature(SettingsUpdate) returns (Snapshot);
+  rpc FeatureAction(SettingsUpdate) returns (Snapshot);
+  rpc ListTickets(Target) returns (Snapshot);
   rpc ListTasks(Target) returns (Snapshot);
   rpc GetTask(Target) returns (Snapshot);
   rpc GetTaskControls(Target) returns (Snapshot);

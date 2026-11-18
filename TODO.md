@@ -35,6 +35,11 @@ Next steps for factory-elections, roughly in priority order. The README lists wh
 ## Later (plan phase 2)
 
 - [ ] PR tending: follow review comments and CI on opened PRs.
+- [ ] **Codex review turns:** they need deny rules that hold for wrapped commands. Options: a Codex rules file plus no network, or prefetched PR data.
+- [ ] **Loop guard and context warnings for review turns and Codex:** they need tool hooks (a `--settings` hook command for detached Claude turns).
+- [ ] **Resume a model step after a restart:** steps return a session id now; keep sessions (`persistSession`) and pass `resume` when a run continues.
+- [ ] **Durable delegate grants:** a review turn that outlives a backend restart loses its grant.
+- [ ] **eve, or another provider:** add it as an `AgentCli` plus a `ModelRunner`, with its capabilities.
 - [ ] Research route for tasks classified as research.
 - [ ] Slicer: split large tasks into smaller ones.
 - [ ] Reconcile the hand-written code with turri output if turri becomes available again (see ADR 0002).

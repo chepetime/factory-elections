@@ -1,5 +1,6 @@
 // Validated shapes shared by the CLI, adapters and web app. Mirrors resources/*.schema.json.
 import { z } from 'zod';
+import { ModelRef } from './agents.ts';
 
 export const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -139,6 +140,16 @@ export const PR_DRAFT_SCHEMA = {
 
 const Iso = z.string().min(1);
 
+/** What a runtime check (Reticle) concluded about the running app. Only `yes` is a pass. */
+export const RuntimeVerdict = z.enum(['yes', 'no', 'unknown', 'no-fault', 'none']);
+export type RuntimeVerdict = z.infer<typeof RuntimeVerdict>;
+
+/** The last `verified: …` line of a runtime check's output; `none` when it printed none. */
+export function runtimeVerdict(output: string): RuntimeVerdict {
+  const all = [...output.matchAll(/verified:\s*(yes|no-fault|no|unknown)\b/gi)];
+  return (all.at(-1)?.[1]?.toLowerCase() as RuntimeVerdict | undefined) ?? 'none';
+}
+
 export const StepAttempt = z.looseObject({
   step: NonEmpty,
   rung: NonEmpty,
@@ -164,10 +175,29 @@ export const TaskRecord = z.looseObject({
   created_at: Iso.optional(),
   updated_at: Iso.optional(),
   verdict: ClassifierVerdict.optional(),
-  worktree: z.looseObject({ path: NonEmpty, branch: NonEmpty, base_branch: NonEmpty }).optional(),
+  worktree: z
+    .looseObject({
+      path: NonEmpty,
+      branch: NonEmpty,
+      base_branch: NonEmpty,
+      /** When the profile's setup command last succeeded in this worktree. */
+      setup_at: Iso.optional(),
+    })
+    .optional(),
+  /** A local branch to start from instead of the profile's base: the branch of a blocking ticket. */
+  stack_on: NonEmpty.optional(),
+  /** The feature ticket this task implements. */
+  ticket: z.looseObject({ feature: NonEmpty, id: NonEmpty }).optional(),
   attempts: z.array(StepAttempt).optional(),
   verification: z
-    .looseObject({ passed: z.boolean(), head_sha: NonEmpty, at: Iso, output_tail: z.string() })
+    .looseObject({
+      passed: z.boolean(),
+      head_sha: NonEmpty,
+      at: Iso,
+      output_tail: z.string(),
+      /** The runtime check's verdict, when the profile has one. */
+      runtime: RuntimeVerdict.optional(),
+    })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
   pr_draft: PrDraft.extend({ head_sha: NonEmpty, at: Iso }).optional(),
@@ -189,7 +219,17 @@ export const RepoProfile = z.looseObject({
   project: ProjectName,
   approved_at: NonEmpty,
   repo: z.looseObject({ base_branch: z.looseObject({ value: NonEmpty, source: NonEmpty }) }),
-  commands: z.looseObject({ test: NonEmpty, full_check: NonEmpty }),
+  commands: z.looseObject({
+    test: NonEmpty,
+    full_check: NonEmpty,
+    /**
+     * Optional check of the running app after full_check, e.g. Reticle (`npx @reticlehq/server`).
+     * It must print `verified: yes|no|unknown|no-fault`; only `yes` passes, `no` fails.
+     */
+    runtime_check: NonEmpty.optional(),
+    /** Runs once in each new task worktree before coding, e.g. `pnpm install --frozen-lockfile`. */
+    setup: NonEmpty.optional(),
+  }),
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   design_sources: z.array(z.string()),
   qa_targets: z.array(z.string()),
@@ -253,7 +293,7 @@ export const ModelLadder = z
       .array(
         z.looseObject({
           name: NonEmpty,
-          model: z.string().startsWith('claude-'),
+          model: ModelRef,
           effort: Effort,
           requires_human_approval: z.boolean().optional(),
         }),
@@ -309,7 +349,7 @@ export const LoopDefinition = z
 export type LoopDefinition = z.infer<typeof LoopDefinition>;
 
 export const ClassifierRequest = z
-  .object({ task: TaskRecord, prompt: NonEmpty, model: z.string().startsWith('claude-'), effort: Effort })
+  .object({ task: TaskRecord, prompt: NonEmpty, model: ModelRef, effort: Effort })
   .strict();
 export type ClassifierRequest = z.infer<typeof ClassifierRequest>;
 

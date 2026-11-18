@@ -127,3 +127,65 @@ test('the coder may start subagents, and the step guard screens their tool calls
   assert.equal((await canUseTool('Write', { file_path: 'src/a.ts' }, fromSubagent)).behavior, 'allow');
   assert.equal((await canUseTool('WebFetch', { url: 'https://x' }, fromSubagent)).behavior, 'deny');
 });
+
+test('loop guard and context warning reach the agent through SDK hooks; the judge cost joins the call', async () => {
+  const notes: string[] = [];
+  const statuses: boolean[] = [];
+  let calls = 0;
+  const query = ((args: { options: Record<string, any> }) => {
+    calls++;
+    const options = args.options;
+    return (async function* () {
+      if (calls > 1) {
+        // The judge: a small structured call.
+        yield {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: '',
+          total_cost_usd: 0.002,
+          structured_output: { stuck: true, confidence: 0.9, redirect: 'Install tsc first.' },
+        };
+        return;
+      }
+      yield {
+        type: 'assistant',
+        message: {
+          content: [],
+          usage: { input_tokens: 10, cache_read_input_tokens: 125_000, cache_creation_input_tokens: 0 },
+        },
+      };
+      const failure = options.hooks.PostToolUseFailure[0].hooks[0];
+      for (let i = 0; i < 3; i++) {
+        const out = await failure(
+          {
+            hook_event_name: 'PostToolUseFailure',
+            tool_name: 'Bash',
+            tool_input: { command: 'npm run build' },
+            error: 'tsc: not found',
+            tool_use_id: `t${i}`,
+          },
+          `t${i}`,
+          { signal: new AbortController().signal },
+        );
+        if (out.hookSpecificOutput?.additionalContext) notes.push(out.hookSpecificOutput.additionalContext);
+      }
+      yield { type: 'result', subtype: 'success', is_error: false, result: 'done', total_cost_usd: 0.1 };
+    })();
+  }) as unknown as Query;
+  const runner = new ClaudeAgentRunner({ query });
+  const result = await runner.run({
+    ...request,
+    tools: 'edit',
+    loopGuard: true,
+    context: { limit: 150_000, onStatus: (s) => statuses.push(s.warn) },
+  });
+  assert.deepEqual(statuses, [true], 'one warning at 80% of the limit');
+  assert.match(
+    notes[0]!,
+    /Context is 125k tokens, 83% of the 150k limit/,
+    'the agent hears the warning on the next tool result',
+  );
+  assert.match(notes.at(-1)!, /loop guard: the same failure has repeated 3 times\. Install tsc first\./);
+  assert.equal(result.costUsd, 0.1 + 0.002);
+});
