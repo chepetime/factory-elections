@@ -35,6 +35,7 @@ import { FeatureService } from './features.ts';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
+import { OutcomeStore } from './outcomes.ts';
 import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
@@ -127,6 +128,7 @@ export class BackendService {
   readonly traces: TraceLog;
   readonly experiments: ExperimentStore;
   readonly prReviewRecords: PrReviewStore;
+  readonly outcomes: OutcomeStore;
   /** Keeps open factory PRs moving, for projects that turn it on. */
   readonly tending: TendingService;
   constructor(
@@ -155,6 +157,7 @@ export class BackendService {
     this.traces = new TraceLog(root, this.storage);
     this.experiments = new ExperimentStore(root, this.storage);
     this.prReviewRecords = new PrReviewStore(root, this.storage);
+    this.outcomes = new OutcomeStore(root, this.storage);
     const base: ModelRunner = {
       run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request),
     };

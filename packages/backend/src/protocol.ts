@@ -73,6 +73,8 @@ export interface Methods {
   /** Everything that waits on the human, across projects: `{ items, dismissed }`. */
   ListPrReviewRecords: [Target, { json: string }];
   AddPrReviewRecord: [{ project: string; json: string }, { json: string }];
+  ListOutcomes: [Target, { json: string }];
+  AddOutcome: [{ project: string; json: string }, { json: string }];
   ListExperiments: [Target, { json: string }];
   AddExperiment: [{ project: string; json: string }, { json: string }];
   GetInbox: [{}, { json: string }];

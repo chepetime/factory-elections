@@ -60,6 +60,8 @@ service Factory {
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);
   rpc AddPrReviewRecord(SettingsUpdate) returns (Snapshot);
+  rpc ListOutcomes(Target) returns (Snapshot);
+  rpc AddOutcome(SettingsUpdate) returns (Snapshot);
   rpc ListExperiments(Target) returns (Snapshot);
   rpc AddExperiment(SettingsUpdate) returns (Snapshot);
   rpc GetInbox(Empty) returns (Snapshot);

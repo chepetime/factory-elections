@@ -311,6 +311,14 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ListOutcomes": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "AddOutcome": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "ListExperiments": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

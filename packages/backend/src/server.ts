@@ -1,3 +1,4 @@
+import { outcomeTraceIds } from '@factory/core';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -155,6 +156,27 @@ export async function startBackend(options: ServerOptions) {
         await service.projects.read(request.project);
         return {
           json: JSON.stringify(await service.prReviewRecords.add(request.project, jsonObject(request.json))),
+        };
+      },
+      ListOutcomes: async (request) => {
+        await service.projects.read(request.project);
+        const [outcomes, spans] = await Promise.all([
+          service.outcomes.list(request.project),
+          service.traces.read(request.project),
+        ]);
+        return {
+          json: JSON.stringify(
+            outcomes.map((outcome) => ({
+              ...outcome,
+              trace_ids: outcomeTraceIds(outcome, request.project, spans),
+            })),
+          ),
+        };
+      },
+      AddOutcome: async (request) => {
+        await service.projects.read(request.project);
+        return {
+          json: JSON.stringify(await service.outcomes.add(request.project, jsonObject(request.json))),
         };
       },
       ListExperiments: async (request) => {
