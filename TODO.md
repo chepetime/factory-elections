@@ -5,18 +5,18 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 ## Now
 
 - [ ] **Decide task bb64645e** (LayerStack component on the web homepage). It is at the approval gate at `5750b1ee1546`, with verification passed and the review approved with 3 minor findings. Check the animation in a browser, then approve and open the PR, revise it or reject it. Its branch predates the affect-ui commit on `main`, so expect a conflict, mostly in `pnpm-lock.yaml`.
-- [ ] **Use the new components in the web app:** `AgentFindings` for review findings and `AgentCheckpoints` for the stage timeline on the task page. Wait until the component work in the other session settles.
+- [x] **Use the new components in the web app:** `AgentFindings` for review findings and `AgentCheckpoints` for the stage timeline on the task page. Wait until the component work in the other session settles.
 - [ ] **First paid run on a real project:** take one change-elections feature end to end (the profile is approved). Do not mirror to Jira or open a PR until the run is checked.
 - [ ] **Answer the open entity questions** in [docs/vision/entities.md](docs/vision/entities.md): ticket vs task, feature vs epic, human PR reviews, a team above members. Steps 5 and 6 depend on them.
 
 ## Vision steps 1–4: finish what is open
 
-- [ ] **Trace page (UI agent):** one run as a span tree from `GetTrace`, with the time, tokens and cost of each span and the totals per subtree.
-- [ ] **Weekly page (UI agent):** spend and tokens per day, cost and median time per PR, the reliability rates and call grading, from `GetMetrics`.
-- [ ] **Inbox page (UI agent):** one list from `GetInbox` across all projects, on the home page, with `DismissInboxItem`. This replaces the per-page lists.
-- [ ] **Tending toggle (UI agent)** in project settings. The settings form must keep the `tending` field, or a save turns tending off.
-- [ ] **Feature gate screens (UI agent):** approve the spec and the board in the browser, not only through the RPCs.
-- [ ] **Tending gaps:** a stale `pr-opened` worktree that was removed stops tending with an error. Thread replies post as the signed-in `gh` account.
+- [x] **Trace page (UI agent):** one run as a span tree from `GetTrace`, with the time, tokens and cost of each span and the totals per subtree.
+- [x] **Weekly page (UI agent):** spend and tokens per day, cost and median time per PR, the reliability rates and call grading, from `GetMetrics`.
+- [x] **Inbox page (UI agent):** one list from `GetInbox` across all projects, on the home page, with `DismissInboxItem`. This replaces the per-page lists.
+- [x] **Tending toggle (UI agent)** in project settings. The settings form must keep the `tending` field, or a save turns tending off.
+- [x] **Feature gate screens (UI agent):** approve the spec and the board in the browser, not only through the RPCs.
+- [ ] **Tending gaps:** thread replies post as the signed-in `gh` account. (A removed `pr-opened` worktree now stops tending cleanly with an inbox item.)
 - [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
 - [ ] **Tool timings for review turns:** detached turns log no tool timings. Add them with a hook, or read timestamps if the CLI adds them.
 - [ ] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
@@ -24,7 +24,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 
 ## Vision step 5: links and team import
 
-- [ ] **Run-to-ticket links:** every task run records its Jira ticket. Add the link where a task starts from a Jira issue, not only for feature tickets.
+- [x] **Run-to-ticket links:** every task run records its Jira ticket. Add the link where a task starts from a Jira issue, not only for feature tickets.
 - [x] **Team member records:** name, Jira identity and GitHub identity, linked to a project.
 - [ ] **Jira import:** the team's tickets per project, with type, status, assignee, and the created and resolved dates.
 - [ ] **GitHub import:** the team's PRs, with author, state, opened and merged dates, review rounds and reverts.
@@ -35,7 +35,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 
 - [ ] **Per-task workflows** in YAML: full, quick fix, research and manual, chosen by task class.
 - [ ] **Research workflow** for tasks classified as research.
-- [ ] **Slicing rule:** each ticket is one deploy unit. The critic checks this before the board.
+- [x] **Slicing rule:** each ticket is one deploy unit. The critic checks this before the board.
 - [ ] **Slicer:** split large tasks into smaller ones.
 - [x] **Size rule:** a PR has at most 400 non-test lines. Stop or slice when a diff is larger.
 - [ ] **Inline review at the gate:** threads on the diff in the app, not only approve or revise. Record the time I spend, not only the wait.
@@ -57,7 +57,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 
 The design is in [docs/vision/tools-and-reviews.md](docs/vision/tools-and-reviews.md). The backend is the tool broker: agents get project tools through a backend MCP server, never credentials.
 
-- [ ] **Tool catalog** in core: each tool has a name, a provider (GitHub, Jira, Confluence, Slack, Fathom, Figma, Sentry, New Relic, browser, local services), operations, and a level for each operation (`read`, `draft`, `publish`).
+- [x] **Tool catalog** in core: each tool has a name, a provider (GitHub, Jira, Confluence, Slack, Fathom, Figma, Sentry, New Relic, browser, local services), operations, and a level for each operation (`read`, `draft`, `publish`).
 - [ ] **Grants in project settings:** the tools of a project and the highest level of each. A workflow step can narrow them. Child tasks get the grants of their parent. Keep the `tending` and `tools` fields when the settings form saves.
 - [ ] **Broker MCP server:** extend the `delegate` server so that a grant token also exposes the project's tools at the step's level. Calls from another project's token fail.
 - [ ] **Credential store:** the backend holds the tokens (macOS Keychain, or the storage secrets), not the agent environment. `factory doctor` and the settings page show the status and expiry of each credential.
@@ -106,11 +106,11 @@ The design is in [docs/vision/tools-and-reviews.md](docs/vision/tools-and-review
 - [ ] **Context bundle per head SHA** in the backend: diff, stat, commits, ticket, CI logs, base versions of touched files, callers, history, review profile, `tests_on_base.sh` and `diff_coverage.py` results. Shared with tending and QA (the read cache in [Tools](#tools)).
 - [ ] **Triage in code:** risk, size and lens triggers from the skill's path rules (§2b, §3c), with a Haiku check only for open cases.
 - [x] **Reviewer definitions** in `definitions/reviewers/*.yaml`: name, lens file, trigger, model, effort, budget, tools, and which hunks it gets. The lens text stays in `definitions/skills/senior-pr-review/lenses/`.
-- [ ] **Candidate schema** in core: file, lines, quoted hunk, evidence, proposed severity, confidence, specialist.
+- [x] **Candidate schema** in core: file, lines, quoted hunk, evidence, proposed severity, confidence, specialist.
 - [ ] **Specialists as child runs:** each one is traced, budgeted and takes an agent slot. The bundle is the start of each prompt, so the specialists share the cache.
 - [ ] **Lead in judge mode:** a senior-pr-review mode that takes the candidates in the review context, verifies them, removes duplicates, applies the suppression lists and the cap, and writes the payload.
 - [ ] **Low risk stays a single pass** on Sonnet. Move `REVIEW_MODEL` from a constant to the router.
-- [ ] **New lens: data and performance** (migrations, SQL, queries, hot paths).
+- [x] **New lens: data and performance** (migrations, SQL, queries, hot paths).
 - [ ] **Codex as the adversarial second opinion** at High risk. Needs the Codex review-turn rules (step 6).
 - [ ] **Run the benchmark on the panel** and compare it with the current skill. Switch automatic reviews to the panel only if recall is higher and precision and cost are not worse.
 - [ ] **Specialist grading:** candidates that survive the lead and lead to a change, against cost, per specialist and per project. Move a weak specialist to a cheaper model or turn it off for that project.
@@ -130,7 +130,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 ### Router
 
-- [ ] **Route decision type** in core: step, task class, size, risk, history, provider health, budget left → provider, model, effort, gateway, budget.
+- [x] **Route decision type** in core: step, task class, size, risk, history, provider health, budget left → provider, model, effort, gateway, budget.
 - [ ] **Record each decision** on the model span: the route, the reason and the policy (pinned, learned, default).
 - [ ] **Pinned routes** in YAML per step and per task class. A pin always wins.
 - [ ] **Learned routes:** the cheapest route whose first-pass rate is within a margin of the best one, after a minimum number of runs.
@@ -195,7 +195,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 ## Workflow
 
-- [ ] **LLM-generated task name:** the classifier should also return a short task name, stored on the task record and shown in the CLI and web app instead of the first line of the prompt or the UUID.
+- [x] **LLM-generated task name:** the classifier should also return a short task name, stored on the task record and shown in the CLI and web app instead of the first line of the prompt or the UUID.
 - [ ] **`factory task cleanup`:** remove worktrees and branches of tasks that are pr-opened, rejected or failed.
 - [ ] **Rebase or refresh a task branch** when `main` moves on, so a PR doesn't start with conflicts (see bb64645e).
 - [ ] **Resume a model step after a restart:** steps return a session id now; keep sessions (`persistSession`) and pass `resume` when a run continues.
@@ -206,10 +206,10 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 - [ ] **Chat-style task view:** show the task as a conversation (prompt, coder and reviewer turns, revise notes, approval) with a toggleable sidebar listing all task events.
 - [ ] **Use the new components across the app:** the affect-ui free components (`packages/affect-ui`) and shadcn/ui, following [docs/frontend-component-patterns.md](docs/frontend-component-patterns.md), instead of hand-rolled markup.
-- [ ] **Render the approval gate's diff** with a proper code view (affect-ui `CodeBlock` / Tool Call Card patterns) instead of plain text.
-- [ ] Show the task's cost and model attempts as a small breakdown.
+- [x] **Render the approval gate's diff** with a proper code view (affect-ui `CodeBlock` / Tool Call Card patterns) instead of plain text.
+- [x] Show the task's cost and model attempts as a small breakdown.
 - [ ] Replace the remaining placeholder cards with real views.
-- [ ] Tests for `layer-stack.tsx` once bb64645e lands (the reviewer's nit).
+- [x] Tests for `layer-stack.tsx` once bb64645e lands (the reviewer's nit).
 
 ## Other
 
