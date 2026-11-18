@@ -109,3 +109,27 @@ test('a failed call writes a failed span with its reported cost, and the error s
   assert.equal(span!.cost_usd, 0.3);
   assert.equal(span!.provider, 'codex');
 });
+
+test('ledger health counts unknown costs, missing parents and write errors', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-health-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const traces = new TraceLog(root, undefined, () => {});
+  const common = {
+    type: 'model' as const,
+    name: 'call',
+    started_at: '2026-01-01',
+    ended_at: '2026-01-01',
+    outcome: 'completed' as const,
+  };
+  traces.append(
+    { project: 'demo', trace_id: 'trace' },
+    { ...common, span_id: 'root', cost_usd: null },
+    { ...common, parent_span_id: 'missing', cost_usd: 1 },
+  );
+  traces.append({ project: 'demo', trace_id: 'trace' }, { ...common, name: '', cost_usd: null });
+  assert.deepEqual(await traces.health(['demo']), {
+    unknown_cost_spans: 1,
+    missing_parent_links: 1,
+    write_errors: 1,
+  });
+});

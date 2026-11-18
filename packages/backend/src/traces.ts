@@ -51,6 +51,7 @@ export class TraceLog {
   private readonly root: string;
   private readonly storage?: DataStorage;
   private readonly onError: (error: unknown) => void;
+  private writeErrors = 0;
   constructor(
     root: string,
     storage?: DataStorage,
@@ -59,7 +60,10 @@ export class TraceLog {
   ) {
     this.root = root;
     this.storage = storage;
-    this.onError = onError;
+    this.onError = (error) => {
+      this.writeErrors++;
+      onError(error);
+    };
   }
 
   private path(project: string, at: string): string {
@@ -110,6 +114,21 @@ export class TraceLog {
   async flush(): Promise<void> {
     await this.chain;
     await Promise.all([...this.writers.values()].map((w) => w.flush().catch(this.onError)));
+  }
+
+  /** Ledger health across registered projects. Write errors count failures since startup. */
+  async health(
+    projects: string[],
+  ): Promise<{ unknown_cost_spans: number; missing_parent_links: number; write_errors: number }> {
+    const spans = (await Promise.all(projects.map((project) => this.read(project)))).flat();
+    const ids = new Set(spans.map((span) => `${span.project}/${span.trace_id}/${span.span_id}`));
+    return {
+      unknown_cost_spans: spans.filter((span) => span.cost_usd === null).length,
+      missing_parent_links: spans.filter(
+        (span) => span.parent_span_id && !ids.has(`${span.project}/${span.trace_id}/${span.parent_span_id}`),
+      ).length,
+      write_errors: this.writeErrors,
+    };
   }
 
   /** A project's spans, oldest first. */

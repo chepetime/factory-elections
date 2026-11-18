@@ -57,12 +57,16 @@ export async function startBackend(options: ServerOptions) {
     try {
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       const storageHealth = service.storage.config ? await service.storage.health() : undefined;
+      const ledgerHealth = await service.traces.health(
+        (await service.projects.list()).map((project) => project.name),
+      );
       response.end(
         JSON.stringify({
           engine: 'running',
           task_store: storageHealth?.postgres ?? (await isReadableDirectory(root)),
           telemetry_database: storageHealth?.postgres ?? 'not_configured',
           ...(storageHealth ? { artifact_store: storageHealth.artifacts } : {}),
+          ledger: ledgerHealth,
           integrations: [],
         }),
       );

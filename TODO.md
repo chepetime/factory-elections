@@ -19,7 +19,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [ ] **Tending gaps:** thread replies post as the signed-in `gh` account. (A removed `pr-opened` worktree now stops tending cleanly with an inbox item.)
 - [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
 - [ ] **Tool timings for review turns:** detached turns log no tool timings. Add them with a hook, or read timestamps if the CLI adds them.
-- [ ] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
+- [x] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
 - [ ] **More end-to-end flows:** the inbox and tending, against the seeded build. (The feature flow from grill to QA is covered.)
 
 ## Vision step 5: links and team import

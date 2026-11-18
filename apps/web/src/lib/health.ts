@@ -10,6 +10,13 @@ const EngineHealth = z
     task_store: z.enum(['available', 'not_initialized', 'unavailable']),
     telemetry_database: z.enum(['not_configured', 'available', 'unavailable']),
     artifact_store: z.enum(['available', 'unavailable']).optional(),
+    ledger: z
+      .object({
+        unknown_cost_spans: z.number().int().nonnegative(),
+        missing_parent_links: z.number().int().nonnegative(),
+        write_errors: z.number().int().nonnegative(),
+      })
+      .optional(),
     integrations: z.array(z.never()).max(0),
   })
   .strict();

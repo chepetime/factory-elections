@@ -32,6 +32,16 @@ export function EngineHealthView({ state }: { state: HealthState }) {
               <dd>{STORE[state.health.artifact_store]}</dd>
             </>
           )}
+          {state.health.ledger && (
+            <>
+              <dt className="text-muted-foreground">Spans with unknown cost</dt>
+              <dd>{state.health.ledger.unknown_cost_spans}</dd>
+              <dt className="text-muted-foreground">Missing parent links</dt>
+              <dd>{state.health.ledger.missing_parent_links}</dd>
+              <dt className="text-muted-foreground">Ledger write errors since startup</dt>
+              <dd>{state.health.ledger.write_errors}</dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Integrations</dt>
           <dd>No integrations configured</dd>
         </dl>
