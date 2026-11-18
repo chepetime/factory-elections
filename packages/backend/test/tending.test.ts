@@ -235,3 +235,11 @@ test('a conflict with the base is merged in, resolved by the agent and pushed wi
   assert.equal(git(f.work, 'merge-base', '--is-ancestor', mainHead, head), '', 'the PR now contains main');
   assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'pushed');
 });
+
+test('missing worktree stops tending and appears in the inbox', async (t) => {
+  const f = await fixture(t);
+  await rm(f.work, { recursive: true, force: true });
+  assert.equal((await f.tending.tend(f.task, f.settings))?.kind, 'stop');
+  assert.match((await f.tending.waiting('app', [f.task]))[0]!.reason, /Worktree is missing/);
+  assert.equal((await f.tending.tend(f.task, f.settings))?.kind, 'wait');
+});

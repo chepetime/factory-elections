@@ -5,6 +5,7 @@
 // profile's test command passes. After MAX_TEND_FIXES fixes without a green PR, tending stops and
 // the PR goes to the inbox.
 import { dirname, join } from 'node:path';
+import { stat } from 'node:fs/promises';
 import {
   answeredKey,
   isGreen,
@@ -224,6 +225,17 @@ export class TendingService {
       const cwd = task.worktree.path;
       let record = (await this.record(task)) ?? TendRecord.parse({ number, url: task.pr.url });
       if (record.ended) return undefined;
+      if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
+      try {
+        const info = await stat(cwd);
+        if (!info.isDirectory()) throw Object.assign(new Error('not a directory'), { code: 'ENOENT' });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        const reason = `Worktree is missing: ${cwd}`;
+        const now = new Date().toISOString();
+        await this.save(task, { ...record, checked_at: now, last: 'stop', stopped: { reason, at: now } });
+        return { kind: 'stop', reason };
+      }
       const pr = await this.github.pr(cwd, number);
       const now = new Date().toISOString();
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
