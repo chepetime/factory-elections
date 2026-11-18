@@ -56,6 +56,8 @@ service Factory {
   rpc FeatureAction(SettingsUpdate) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
+  rpc ListExperiments(Target) returns (Snapshot);
+  rpc AddExperiment(SettingsUpdate) returns (Snapshot);
   rpc GetInbox(Empty) returns (Snapshot);
   rpc DismissInboxItem(SettingsUpdate) returns (Text);
   rpc TendPullRequests(Target) returns (Snapshot);

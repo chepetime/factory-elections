@@ -295,6 +295,14 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ListExperiments": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "AddExperiment": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "GetInbox": {
                   "requestType": "Empty",
                   "responseType": "Snapshot"

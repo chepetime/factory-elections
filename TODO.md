@@ -163,7 +163,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 ### Count savings
 
-- [ ] **Experiments:** record each change with a date, the change and the task classes it affects.
+- [x] **Experiments:** record each change with a date, the change and the task classes it affects.
 - [ ] **Savings per class:** (median cost of the 20 runs before − cost after) × runs. A saving counts only if the first-pass rate, the review findings and the revert rate hold. Otherwise roll the change back.
 - [ ] **Savings on the Weekly page:** savings by change, and the cost per outcome over time.
 

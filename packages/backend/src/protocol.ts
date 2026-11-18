@@ -69,6 +69,8 @@ export interface Methods {
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */
   GetMetrics: [{ project: string; json: string }, { json: string }];
   /** Everything that waits on the human, across projects: `{ items, dismissed }`. */
+  ListExperiments: [Target, { json: string }];
+  AddExperiment: [{ project: string; json: string }, { json: string }];
   GetInbox: [{}, { json: string }];
   /** `json`: `{ id }`; `project` is unused. */
   DismissInboxItem: [{ project: string; json: string }, { text: string }];

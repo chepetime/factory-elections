@@ -32,6 +32,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { TraceLog } from './traces.ts';
+import { ExperimentStore } from './experiments.ts';
 import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
@@ -122,6 +123,7 @@ export class BackendService {
   readonly features: FeatureService;
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
+  readonly experiments: ExperimentStore;
   /** Keeps open factory PRs moving, for projects that turn it on. */
   readonly tending: TendingService;
   constructor(
@@ -148,6 +150,7 @@ export class BackendService {
       () => this.executing,
     );
     this.traces = new TraceLog(root, this.storage);
+    this.experiments = new ExperimentStore(root, this.storage);
     const base: ModelRunner = {
       run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request),
     };

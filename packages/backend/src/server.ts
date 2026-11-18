@@ -141,6 +141,16 @@ export async function startBackend(options: ServerOptions) {
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      ListExperiments: async (request) => {
+        await service.projects.read(request.project);
+        return { json: JSON.stringify(await service.experiments.list(request.project)) };
+      },
+      AddExperiment: async (request) => {
+        await service.projects.read(request.project);
+        return {
+          json: JSON.stringify(await service.experiments.add(request.project, jsonObject(request.json))),
+        };
+      },
       GetInbox: async () => ({ json: JSON.stringify(await service.inbox()) }),
       DismissInboxItem: async (request) => {
         await service.dismissInbox(jsonObject(request.json));
