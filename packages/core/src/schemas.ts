@@ -296,6 +296,12 @@ export const RepoProfile = z.looseObject({
         .positive()
         .max(24 * 60)
         .optional(),
+      /** A setup or check command that prints nothing for this long is stopped as stalled. */
+      check_stall_minutes: z
+        .number()
+        .positive()
+        .max(24 * 60)
+        .optional(),
     })
     .optional(),
 });
@@ -327,7 +333,11 @@ export const DEFAULT_STEP_LIMITS = {
 } as const satisfies Required<StepLimits>;
 
 /** Used when a repository profile does not set its own limits. */
-export const DEFAULT_TASK_LIMITS = { task_budget_usd: 15, check_timeout_minutes: 30 } as const;
+export const DEFAULT_TASK_LIMITS = {
+  task_budget_usd: 15,
+  check_timeout_minutes: 30,
+  check_stall_minutes: 10,
+} as const;
 
 export const StepDefinition = z.looseObject({
   name: NonEmpty,

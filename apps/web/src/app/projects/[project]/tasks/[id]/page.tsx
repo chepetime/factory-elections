@@ -18,6 +18,7 @@ import { AgentCheckpoints, type Checkpoint } from '@/components/agent-checkpoint
 import { AgentFindings } from '@/components/agent-findings';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { LocalTime } from '@/components/local-time';
+import { LiveOutput } from '@/components/live-output';
 import { OutputBlock } from '@/components/output-block';
 import { StageBadge } from '@/components/stage-badge';
 import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
@@ -32,7 +33,14 @@ import {
   type Gate,
 } from '@/lib/factory';
 import { clip, projectLabel, stageGlyph } from '@/lib/page-title';
-import { lastStepId, splitOutput, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
+import {
+  lastStepId,
+  runStatus,
+  stageTimeline,
+  taskConversation,
+  type AgentStep,
+  type ChatEntry,
+} from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -216,19 +224,37 @@ function ReviewCard({ review }: { review: NonNullable<TaskRecord['review']> }) {
 }
 
 function RunningTurn({ run }: { run: BackgroundRun }) {
+  const status = runStatus(run.activity, run.logTail ?? '', Date.now());
   return (
     <AgentMessage>
       <div className="affect-ui-theme">
         <ThinkingLoader phases={[run.label ?? 'Working']} variant="plain" size="sm" />
       </div>
-      {run.logTail && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground">Live output</summary>
-          <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-            {run.logTail}
-          </pre>
-        </details>
+      {status.text && (
+        <p className="mt-1 flex min-w-0 gap-2 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate font-mono" title={status.text}>
+            Now: {status.text}
+          </span>
+          {status.elapsed && <span className="shrink-0 tabular-nums">· {status.elapsed}</span>}
+          {status.silent && (
+            <span
+              className={cn('shrink-0 tabular-nums', status.quiet && 'text-amber-700 dark:text-amber-400')}
+            >
+              · no output for {status.silent}
+            </span>
+          )}
+        </p>
       )}
+      {status.quiet && (
+        <p
+          role="status"
+          className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+        >
+          No output for {status.silent}. The command is still running, but it prints nothing. Stop the run if
+          it should have finished; a command silent for the profile's stall limit is stopped anyway.
+        </p>
+      )}
+      {run.logTail && <LiveOutput output={run.logTail} />}
     </AgentMessage>
   );
 }
@@ -302,6 +328,15 @@ export default async function TaskPage({
     phase === 'interrupted' ||
     (!busy && phase !== 'unavailable' && (task.stage === 'coding' || task.stage === 'reviewing'));
 
+  const runLabel =
+    phase === 'queued'
+      ? 'Queued for the worker'
+      : phase === 'finalizing'
+        ? 'Saving evidence and releasing the task'
+        : run.label;
+  // Stop is offered while the run waits or works; finalizing only saves evidence.
+  const canStop = phase === 'queued' || phase === 'running';
+
   const conversation = taskConversation(task);
   const reviewAt = lastStepId(conversation, 'stage:awaiting-approval');
   const blockedAt = lastStepId(conversation, 'stage:blocked') ?? lastStepId(conversation, 'verdict');
@@ -323,6 +358,13 @@ export default async function TaskPage({
 
   const composer = canRevise ? (
     <TaskChatComposer mode="revise" project={project} id={id} />
+  ) : canStop ? (
+    <TaskChatComposer
+      mode="running"
+      project={project}
+      id={id}
+      reason="The factory is working. Stop the run, or ask for changes when it finishes."
+    />
   ) : (
     <TaskChatComposer
       mode="locked"
@@ -370,19 +412,7 @@ export default async function TaskPage({
             ),
           )}
 
-          {busy && (
-            <RunningTurn
-              run={{
-                ...run,
-                label:
-                  phase === 'queued'
-                    ? 'Queued for the worker'
-                    : phase === 'finalizing'
-                      ? 'Saving evidence and releasing the task'
-                      : run.label,
-              }}
-            />
-          )}
+          {busy && <RunningTurn run={{ ...run, label: runLabel }} />}
           {phase === 'unavailable' && (
             <p role="alert" className="text-sm text-destructive">
               Execution status is unavailable. Refresh before acting.
@@ -458,19 +488,11 @@ export default async function TaskPage({
           <AgentCheckpoints
             title="Stages"
             mode="timeline"
-            checkpoints={(task.events ?? [])
-              .filter((event) => event.kind.startsWith('stage:'))
-              .map((event, index, events): Checkpoint => {
-                const start = Date.parse(events[0]!.at);
-                const at = Date.parse(event.at);
-                return {
-                  id: `stage-${index}`,
-                  ...(index ? { parent: `stage-${index - 1}` } : {}),
-                  title: splitOutput(event.message).text || event.kind.slice(6),
-                  status: /failed|blocked|rejected/.test(event.kind) ? 'failed' : 'done',
-                  ...(Number.isFinite(start) && Number.isFinite(at) ? { at: Math.max(0, at - start) } : {}),
-                };
-              })}
+            checkpoints={stageTimeline(task.events, {
+              busy,
+              label: runLabel ?? 'Working',
+              now: Date.now(),
+            }).map((step): Checkpoint => step)}
           />
         </Section>
 

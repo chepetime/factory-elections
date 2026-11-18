@@ -142,6 +142,14 @@ const Background = z.object({
   runId: z.string().optional(),
   state: z.enum(['queued', 'running', 'completed', 'failed', 'interrupted']).optional(),
   error: z.string().optional(),
+  activity: z
+    .object({
+      run_started_at: z.string(),
+      command: z.string().optional(),
+      command_started_at: z.string().optional(),
+      last_output_at: z.string().optional(),
+    })
+    .optional(),
 });
 export type BackgroundRun = z.infer<typeof Background>;
 export async function backgroundRun(project: string, id: string): Promise<BackgroundRun> {
@@ -157,6 +165,14 @@ export async function backgroundRun(project: string, id: string): Promise<Backgr
       label: 'Backend unavailable',
       logTail: backendError(error),
     };
+  }
+}
+/** Asks the backend to stop the task's active run. */
+export async function stopBackgroundRun(project: string, id: string): Promise<Result<string>> {
+  try {
+    return { ok: true, value: (await backendCall('StopRun', { project, id })).text };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
   }
 }
 export async function clearBackgroundLog(project: string, id: string): Promise<void> {

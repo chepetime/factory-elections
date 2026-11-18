@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskRecord } from '@factory/core';
-import { lastStepId, splitOutput, taskConversation } from '@/lib/task-chat';
+import {
+  lastStepId,
+  latestActivity,
+  runStatus,
+  splitOutput,
+  stageTimeline,
+  taskConversation,
+} from '@/lib/task-chat';
 
 const at = (m: number) => `2026-11-14T00:${String(m).padStart(2, '0')}:00.000Z`;
 
@@ -81,5 +88,82 @@ describe('splitOutput', () => {
     } as unknown as TaskRecord;
     const steps = taskConversation(failed).flatMap((e) => (e.role === 'agent' ? e.steps : []));
     expect(steps[0]).toMatchObject({ text: 'Setup failed.', output: 'line 1\nline 2', tone: 'danger' });
+  });
+});
+
+describe('latestActivity', () => {
+  it('names the latest command, tool call or step, not install progress', () => {
+    const log = [
+      'Coder attempt 1/3 on sonnet-medium (claude-sonnet-5-5, medium)…',
+      '  · Bash pnpm outdated -r',
+      '$ pnpm install --frozen-lockfile   # setup',
+      'Progress: resolved 3784, reused 3783, downloaded 1, added 3783',
+      '\u001b[32mProgress: resolved 3785\u001b[0m',
+    ].join('\n');
+    expect(latestActivity(log)).toBe('$ pnpm install --frozen-lockfile   # setup');
+    expect(latestActivity('  · Read src/app.ts\nsome output')).toBe('Read src/app.ts');
+    expect(latestActivity('nothing useful')).toBeUndefined();
+  });
+});
+
+describe('stageTimeline', () => {
+  const events = [
+    { at: at(0), kind: 'stage:queued', message: 'Task submitted' },
+    { at: at(1), kind: 'stage:coding', message: 'Coder on sonnet-medium' },
+  ];
+  const now = Date.parse(at(3));
+
+  it('marks the current stage running while a run works', () => {
+    const stages = stageTimeline(events, { busy: true, label: 'Running', now });
+    expect(stages.map((s) => s.status)).toEqual(['done', 'running']);
+  });
+
+  it('adds a running step when the latest stage is already finished', () => {
+    const failed = [
+      ...events,
+      { at: at(2), kind: 'stage:failed', message: 'coder made no changes\nCoder said: x' },
+    ];
+    const stages = stageTimeline(failed, { busy: true, label: 'Revising: code → verify → review', now });
+    expect(stages.map((s) => [s.title, s.status])).toEqual([
+      ['Task submitted', 'done'],
+      ['Coder on sonnet-medium', 'done'],
+      ['coder made no changes', 'failed'],
+      ['Revising: code → verify → review', 'running'],
+    ]);
+    expect(stages.at(-1)).toMatchObject({ parent: 'stage-2', at: 3 * 60_000 });
+  });
+
+  it('shows no running step when nothing runs', () => {
+    expect(stageTimeline(events, { busy: false, label: 'x', now }).map((s) => s.status)).toEqual([
+      'done',
+      'done',
+    ]);
+  });
+});
+
+describe('runStatus', () => {
+  const t = (s: number) => new Date(Date.parse(at(0)) + s * 1000).toISOString();
+  const now = Date.parse(at(0)) + 900_000;
+
+  it('names the running command with its elapsed time and the silence since its last output', () => {
+    expect(
+      runStatus(
+        { run_started_at: t(0), command: 'pnpm install', command_started_at: t(0), last_output_at: t(60) },
+        '',
+        now,
+      ),
+    ).toEqual({ text: '$ pnpm install', elapsed: '15m', silent: '14m', quiet: true });
+  });
+
+  it('is not quiet while output keeps coming, and falls back to the latest log activity', () => {
+    expect(runStatus({ run_started_at: t(0), last_output_at: t(890) }, '  · Bash pnpm test', now)).toEqual({
+      text: 'Bash pnpm test',
+      elapsed: '15m',
+      quiet: false,
+    });
+  });
+
+  it('works without activity from an older backend', () => {
+    expect(runStatus(undefined, '$ pnpm lint', now)).toEqual({ text: '$ pnpm lint', quiet: false });
   });
 });

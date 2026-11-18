@@ -89,3 +89,14 @@ test('an aborted run stops at once and says why', async () => {
   const already = await run('/bin/sh', ['-c', 'sleep 30'], { signal: AbortSignal.abort(), group: true });
   assert.equal(already.stopped, 'aborted');
 });
+
+test('a command that prints nothing for the stall limit is stopped as stalled; output resets the limit', async () => {
+  const quiet = await run('/bin/sh', ['-c', 'echo started; sleep 30'], { stallMs: 600, group: true });
+  assert.equal(quiet.stopped, 'stalled');
+  assert.match(quiet.stdout, /started/);
+  const chatty = await run('/bin/sh', ['-c', 'for i in 1 2 3 4; do echo $i; sleep 0.3; done'], {
+    stallMs: 600,
+  });
+  assert.equal(chatty.stopped, undefined);
+  assert.equal(chatty.code, 0);
+});

@@ -1,3 +1,4 @@
+import type { ActivitySnapshot } from './activity.ts';
 import type { ExecutionPhase } from '@factory/core';
 import { fromJSON } from '@grpc/proto-loader';
 import type { ServiceDefinition } from '@grpc/grpc-js';
@@ -32,6 +33,8 @@ export interface BackgroundRun {
   runId?: string;
   state?: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
   error?: string;
+  /** While the run executes: its current command and when it last printed anything. */
+  activity?: ActivitySnapshot;
 }
 export interface Methods {
   GetDiagnostics: [{}, { json: string }];
@@ -93,4 +96,5 @@ export interface Methods {
   StartRun: [Command, { json: string }];
   GetBackground: [Target, { json: string }];
   ClearLog: [Target, { text: string }];
+  StopRun: [Target, { text: string }];
 }

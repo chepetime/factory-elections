@@ -223,3 +223,36 @@ it('shows command output of a failed step and the last run output as copyable co
   expect(page).toMatch(/ui-codec[\s\S]*\$ pnpm install/);
   expect(page).not.toContain('Token has expired</span><time');
 });
+it('while a run works: a stop composer, the latest activity and the following live output', async () => {
+  observe('running');
+  vi.mocked(backgroundRun).mockResolvedValue({
+    running: true,
+    phase: 'running',
+    logTail:
+      'Coder attempt 1/3 on sonnet-medium…\n$ pnpm install --frozen-lockfile   # setup\nProgress: resolved 3784',
+  });
+  const page = await html();
+  expect(page).toContain('composer:running');
+  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  expect(page).toMatch(/aria-label="Live output"[\s\S]*Progress: resolved 3784/);
+  expect(page).toMatch(/Stage timeline[\s\S]*running/);
+});
+it('a silent command shows its elapsed time and a notice that it is still running', async () => {
+  observe('running');
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  vi.mocked(backgroundRun).mockResolvedValue({
+    running: true,
+    phase: 'running',
+    logTail: 'Progress: resolved 3784',
+    activity: {
+      run_started_at: minutesAgo(16),
+      command: 'pnpm install --frozen-lockfile',
+      command_started_at: minutesAgo(15),
+      last_output_at: minutesAgo(14),
+    },
+  });
+  const page = await html();
+  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  expect(page).toMatch(/15m[\s\S]*no output for 14m/);
+  expect(page).toMatch(/role="status"[^>]*>[\s\S]*No output for 14m/);
+});

@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import {
   addProjectRequest,
   clearBackgroundLog,
+  stopBackgroundRun,
   executeTask,
   isProjectName,
   isTaskId,
@@ -128,6 +129,14 @@ export async function openPullRequest(_prev: ActionState, form: FormData): Promi
   const result = await executeTask({ ...t, action: 'open-pr', draft: form.get('draft') === 'on' }, 300_000);
   refresh(t.project, t.id);
   return result.ok ? { message: `Opened ${result.value}` } : { error: result.error };
+}
+
+export async function stopTask(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const t = target(form);
+  if ('error' in t) return t;
+  const result = await stopBackgroundRun(t.project, t.id);
+  refresh(t.project, t.id);
+  return result.ok ? { message: result.value } : { error: result.error };
 }
 
 export async function dismissLog(form: FormData): Promise<void> {

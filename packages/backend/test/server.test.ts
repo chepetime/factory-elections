@@ -576,3 +576,38 @@ test('task runs execute in parallel, up to the worker count', async (t) => {
   for (const task of ids) assert.equal((await finished(task)).state, 'completed');
   assert.equal(peak, 2);
 });
+
+test('StopRun aborts the active run, and the task says you stopped it', async (t) => {
+  let signals = 0;
+  const runner: ModelRunner = {
+    run: (request) =>
+      new Promise((_, fail) => {
+        if (request.signal) signals++;
+        request.signal?.addEventListener('abort', () =>
+          fail(Object.assign(new Error('model run stopped: aborted'), { kind: 'aborted' })),
+        );
+      }),
+  };
+  const { server, id } = await fixture(t, runner);
+  await assert.rejects(backendCall('StopRun', { project: 'demo', id }), /No run is active/);
+  const run = JSON.parse((await backendCall('StartRun', { project: 'demo', id, action: 'run' })).json);
+  for (let i = 0; i < 200 && signals === 0; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(signals, 1);
+  const live = JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json);
+  assert.ok(live.activity.run_started_at, 'a running run reports its activity');
+  assert.ok(live.activity.last_output_at, 'log lines count as output');
+  assert.match((await backendCall('StopRun', { project: 'demo', id })).text, /Stopping/);
+  for (
+    let i = 0;
+    i < 200 && JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json).running;
+    i++
+  )
+    await new Promise((done) => setTimeout(done, 10));
+  const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', run.id);
+  const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+  assert.equal(record.state, 'failed');
+  assert.match(record.error, /Stopped by you/);
+  const task = await server.service.tasks.read('demo', id);
+  assert.equal(task.stage, 'failed');
+  assert.match(task.events!.at(-1)!.message, /Stopped by you/);
+});

@@ -47,6 +47,7 @@ import { TeamService } from './team.ts';
 import { TicketService } from './tickets.ts';
 import { environmentChecks, type Check } from './diagnostics.ts';
 import type { BackgroundRun, Command, Target } from './protocol.ts';
+import { RunActivity, trackShell } from './activity.ts';
 
 const TargetSchema = z.object({ project: ProjectName, id: TaskId });
 const CommandSchema = TargetSchema.extend({
@@ -113,6 +114,10 @@ export class BackendService {
   private readonly active = new Map<string, Promise<void>>();
   /** Aborts each running run's model calls and checks, on shutdown after the grace period. */
   private readonly controllers = new Map<string, AbortController>();
+  /** What each executing run is doing now: current command and last output. */
+  private readonly activities = new Map<string, RunActivity>();
+  /** Runs a person asked to stop; a queued one stops as soon as it starts. */
+  private readonly stopRequests = new Set<string>();
   private executing = 0;
   private accepting = true;
   private reservations = 0;
@@ -467,6 +472,9 @@ export class BackendService {
     if (!(await this.takeAgentSlot())) return;
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
+    if (this.stopRequests.has(record.id)) controller.abort();
+    const activity = new RunActivity();
+    this.activities.set(record.id, activity);
     let evidence: Evidence | undefined;
     const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
     try {
@@ -476,6 +484,7 @@ export class BackendService {
       const sink = evidence;
       let logFailure: unknown;
       const log = (message: string) => {
+        activity.heard();
         try {
           sink.log(message, { project: command.project, task_id: command.id });
         } catch (error) {
@@ -501,20 +510,29 @@ export class BackendService {
               return result;
             },
           };
-          await this.perform(command, this.driver(log, checked, controller.signal));
+          const driver = this.driver(log, checked, controller.signal);
+          driver.deps.shell = trackShell(driver.deps.shell, activity);
+          await this.perform(command, driver);
           if (logFailure) throw logFailure;
         },
       );
       record.state = 'completed';
     } catch (error) {
       record.state = 'failed';
-      record.error = error instanceof Error ? error.message : String(error);
+      const stopped = this.stopRequests.has(record.id);
+      record.error = stopped
+        ? 'Stopped by you before the run finished.'
+        : error instanceof Error
+          ? error.message
+          : String(error);
       // A worker error must not leave the UI thinking an owned run is still coding.
       const task = await this.tasks.read(command.project, command.id);
-      if (['coding', 'reviewing'].includes(task.stage))
+      if (stopped || ['coding', 'reviewing'].includes(task.stage))
         await this.tasks.write(withStage(task, new Date().toISOString(), 'failed', record.error));
     } finally {
       this.controllers.delete(record.id);
+      this.activities.delete(record.id);
+      this.stopRequests.delete(record.id);
       this.executing--;
       record.finished_at = new Date().toISOString();
       if (trace) await this.traceEnd(trace, command.action, record).catch(() => undefined);
@@ -730,6 +748,9 @@ export class BackendService {
       runId: record.id,
       label: record.label,
       logTail,
+      ...(running && this.activities.has(record.id)
+        ? { activity: this.activities.get(record.id)!.snapshot() }
+        : {}),
       state: unfinished && !running ? 'interrupted' : record.state,
       error:
         unfinished && !running
@@ -767,6 +788,16 @@ export class BackendService {
       gate_error,
       actions: taskActions(task, execution, head_sha),
     };
+  }
+  /** Stops the task's active run: its model calls and commands get the abort signal. */
+  async stopRun(target: Target): Promise<string> {
+    const latest = await this.latest(target);
+    if (!latest || !this.active.has(latest.record.id)) throw new Conflict('No run is active for this task.');
+    this.stopRequests.add(latest.record.id);
+    const controller = this.controllers.get(latest.record.id);
+    if (!controller) return 'Stopping the run before it starts.';
+    controller.abort();
+    return 'Stopping the run.';
   }
   async clearLog(target: Target): Promise<void> {
     const { project, id } = this.target(target);

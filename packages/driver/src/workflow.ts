@@ -58,6 +58,35 @@ function tail(text: string, size = OUTPUT_TAIL): string {
 
 const MINUTE = 60_000;
 
+/** "1 second", "40 seconds", "10 minutes": for messages about check limits. */
+function duration(ms: number): string {
+  if (ms < MINUTE) {
+    const seconds = Math.max(1, Math.round(ms / 1000));
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  }
+  const minutes = Math.round(ms / MINUTE);
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+/** Time and silence limits for setup and check commands. */
+function checkLimits(profile: RepoProfile) {
+  const timeoutMs =
+    (profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes) * MINUTE;
+  const stallMs = Math.max(
+    1,
+    Math.round((profile.limits?.check_stall_minutes ?? DEFAULT_TASK_LIMITS.check_stall_minutes) * MINUTE),
+  );
+  return {
+    timeoutMs,
+    stallMs,
+    /** Why a stopped command stopped, in words. */
+    why: (stopped: 'timeout' | 'stalled') =>
+      stopped === 'stalled'
+        ? `printed nothing for ${duration(stallMs)}`
+        : `did not finish within ${duration(timeoutMs)}`,
+  };
+}
+
 /** The cost a failed model call reported, when it reported one. */
 function errorCost(error: unknown): number | null {
   const cost = (error as { costUsd?: unknown } | null)?.costUsd;
@@ -381,7 +410,7 @@ export class Driver {
     if (!command || !task.worktree) return undefined;
     const key = await setupInputsKey(task.worktree.path, profile.setup_inputs);
     if (task.worktree.setup_at && task.worktree.setup_key === key) return undefined;
-    const checkMinutes = profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes;
+    const limits = checkLimits(profile);
     let output = '';
     this.deps.log(`$ ${command}   # setup`);
     const result = await this.deps.shell.runShell(command, {
@@ -391,7 +420,8 @@ export class Driver {
         output = tail(output + chunk);
         this.deps.log(chunk.replace(/\n$/, ''));
       },
-      timeoutMs: checkMinutes * MINUTE,
+      timeoutMs: limits.timeoutMs,
+      stallMs: limits.stallMs,
       signal: this.deps.signal,
       group: true,
     });
@@ -399,7 +429,7 @@ export class Driver {
       throw new DriverError('setup was stopped because the run was cancelled');
     if (result.stopped || result.code !== 0) {
       const why = result.stopped
-        ? `did not finish within ${checkMinutes} minutes`
+        ? `${limits.why(result.stopped)} and was stopped`
         : `exited with status ${result.code}`;
       return `Worktree setup (\`${command}\`) ${why}.\n${tail(output, 2000)}`;
     }
@@ -472,7 +502,7 @@ export class Driver {
         output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
         headSha: startingHead,
       };
-    const checkMinutes = profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes;
+    const limits = checkLimits(profile);
     let output = '';
     const onOutput = (chunk: string) => {
       output = tail(output + chunk);
@@ -487,14 +517,15 @@ export class Driver {
         cwd: path,
         captureLimit: 0,
         onOutput,
-        timeoutMs: checkMinutes * MINUTE,
+        timeoutMs: limits.timeoutMs,
+        stallMs: limits.stallMs,
         signal: this.deps.signal,
         group: true,
       });
       if (result.stopped === 'aborted')
         throw new DriverError(`${label} was stopped because the run was cancelled`);
-      if (result.stopped === 'timeout') {
-        output += `\n[${label} did not finish within ${checkMinutes} minutes and was stopped]\n`;
+      if (result.stopped) {
+        output += `\n[${label} ${limits.why(result.stopped)} and was stopped]\n`;
         return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
       }
       if (result.code !== 0) {
@@ -518,14 +549,15 @@ export class Driver {
           checkOutput = tail(checkOutput + chunk);
           onOutput(chunk);
         },
-        timeoutMs: checkMinutes * MINUTE,
+        timeoutMs: limits.timeoutMs,
+        stallMs: limits.stallMs,
         signal: this.deps.signal,
         group: true,
       });
       if (result.stopped === 'aborted')
         throw new DriverError('runtime_check was stopped because the run was cancelled');
-      if (result.stopped === 'timeout') {
-        output += `\n[runtime_check did not finish within ${checkMinutes} minutes and was stopped]\n`;
+      if (result.stopped) {
+        output += `\n[runtime_check ${limits.why(result.stopped)} and was stopped]\n`;
         return {
           passed: false,
           output: tail(output),

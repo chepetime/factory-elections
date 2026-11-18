@@ -53,13 +53,15 @@ export interface ShellPort {
       captureLimit?: number;
       onOutput?: (chunk: string) => void;
       timeoutMs?: number;
+      /** Stop the command when it prints nothing for this long. */
+      stallMs?: number;
       signal?: AbortSignal;
       /** Run in its own process group, and stop the whole group on timeout or abort. */
       group?: boolean;
       /** The whole environment of the command; absent: this process's environment. */
       env?: Record<string, string>;
     },
-  ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' }>;
+  ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' | 'stalled' }>;
 }
 
 export interface GitHubPort {

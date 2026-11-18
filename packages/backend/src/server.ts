@@ -269,6 +269,7 @@ export async function startBackend(options: ServerOptions) {
       ExecuteTask: async (request: Command) => ({ text: await service.execute(request) }),
       StartRun: async (request: Command) => ({ json: JSON.stringify(await service.start(request)) }),
       GetBackground: async (request: Target) => ({ json: JSON.stringify(await service.background(request)) }),
+      StopRun: async (request: Target) => ({ text: await service.stopRun(request) }),
       ClearLog: async (request: Target) => {
         await service.clearLog(request);
         return { text: 'Dismissed' };

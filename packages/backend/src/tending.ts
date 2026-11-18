@@ -7,6 +7,7 @@
 import { dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import {
+  DEFAULT_TASK_LIMITS,
   answeredKey,
   isGreen,
   nextTendAction,
@@ -383,6 +384,10 @@ export class TendingService {
     }
     const head = await gitOk(cwd, ['rev-parse', 'HEAD']);
     let setupKey: string | undefined;
+    // A setup or test that prints nothing for this long is stopped, like the driver's checks.
+    const stallMs = Math.round(
+      (profile.limits?.check_stall_minutes ?? DEFAULT_TASK_LIMITS.check_stall_minutes) * 60_000,
+    );
     if (head !== before && profile.commands.setup) {
       // A merged base or a fix may change the lockfile; the test must run on matching dependencies.
       const key = await setupInputsKey(cwd, profile.setup_inputs);
@@ -390,6 +395,7 @@ export class TendingService {
         const setup = await runShell(profile.commands.setup, {
           cwd,
           timeoutMs: TEST_TIMEOUT_MS,
+          stallMs,
           group: true,
         });
         if (setup.code !== 0) {
@@ -404,7 +410,12 @@ export class TendingService {
       }
     }
     if (head !== before) {
-      const test = await runShell(profile.commands.test, { cwd, timeoutMs: TEST_TIMEOUT_MS, group: true });
+      const test = await runShell(profile.commands.test, {
+        cwd,
+        timeoutMs: TEST_TIMEOUT_MS,
+        stallMs,
+        group: true,
+      });
       if (test.code !== 0) {
         await git(cwd, ['reset', '-q', '--hard', before]);
         return done('failed', cost, `the test command failed: ${(test.stdout + test.stderr).slice(-500)}`);

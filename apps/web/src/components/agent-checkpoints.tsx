@@ -249,7 +249,15 @@ export function AgentCheckpoints({
                                 </span>
                               </>
                             )}
-                            {mode === 'timeline' && <span>{isHead ? 'Latest stage' : 'Earlier stage'}</span>}
+                            {mode === 'timeline' && (
+                              <span>
+                                {status === 'running'
+                                  ? 'In progress'
+                                  : isHead
+                                    ? 'Latest stage'
+                                    : 'Earlier stage'}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">

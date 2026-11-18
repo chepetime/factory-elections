@@ -864,6 +864,27 @@ test('a registry token that cannot be minted fails the task before the coder, as
   assert.match(failed.message, /Token has expired/);
 });
 
+test('a setup or check that prints nothing for the stall limit is stopped and says so', async () => {
+  const { driver, task, runner, store } = await setup(
+    { classifier: [ready], coder: [writeFeature] },
+    'echo testing; sleep 30',
+  );
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, setup: 'echo installing; sleep 30' },
+    limits: { ...profile.limits, check_stall_minutes: 0.01 },
+  }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /printed nothing for 1 second/);
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 0);
+  assert.match((await store.read('demo', task.id)).events!.at(-1)!.message, /installing/);
+  withProfile(driver, (profile) => ({ ...profile, commands: { ...profile.commands, setup: 'true' } }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }));
+  assert.match(
+    (await store.read('demo', task.id)).verification!.output_tail,
+    /\[test printed nothing for 1 second and was stopped\]/,
+  );
+});
+
 test('a stacked task starts from its blocker branch and opens its PR only after the blocker is pushed', async () => {
   const first = await setup({
     classifier: [ready, ready],
@@ -992,5 +1013,5 @@ test('a check that runs past its time limit is stopped and fails verification', 
   await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /still failing/);
   const failed = await driver.deps.tasks.read('demo', task.id);
   assert.equal(failed.stage, 'verification-failed');
-  assert.match(failed.verification!.output_tail, /test did not finish within 0\.005 minutes/);
+  assert.match(failed.verification!.output_tail, /test did not finish within 1 second and was stopped/);
 });

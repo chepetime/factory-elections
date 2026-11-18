@@ -78,4 +78,5 @@ service Factory {
   rpc StartRun(Command) returns (Snapshot);
   rpc GetBackground(Target) returns (Snapshot);
   rpc ClearLog(Target) returns (Text);
+  rpc StopRun(Target) returns (Text);
 }

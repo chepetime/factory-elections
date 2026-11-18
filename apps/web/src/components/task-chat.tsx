@@ -9,10 +9,11 @@ import {
   LoaderCircle,
   MessageSquare,
   Play,
+  Square,
   type LucideIcon,
 } from 'lucide-react';
 import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
-import { reviseTask, submitTask, type ActionState } from '@/app/actions';
+import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -74,7 +75,8 @@ export function ChatScroll({ children }: { children: ReactNode }) {
 type ComposerProps =
   | { mode: 'new'; project: string }
   | { mode: 'revise'; project: string; id: string }
-  | { mode: 'locked'; reason: string };
+  | { mode: 'locked'; reason: string }
+  | { mode: 'running'; project: string; id: string; reason: string };
 
 export function TaskChatComposer(props: ComposerProps) {
   return (
@@ -84,6 +86,8 @@ export function TaskChatComposer(props: ComposerProps) {
           <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
             {props.reason}
           </div>
+        ) : props.mode === 'running' ? (
+          <RunningComposer {...props} />
         ) : (
           <Composer {...props} />
         )}
@@ -92,7 +96,46 @@ export function TaskChatComposer(props: ComposerProps) {
   );
 }
 
-function Composer(props: Exclude<ComposerProps, { mode: 'locked' }>) {
+/** While a run works: the reason you cannot send, and the send button turned into Stop. */
+function RunningComposer({ project, id, reason }: Extract<ComposerProps, { mode: 'running' }>) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(stopTask, {});
+  const stopping = pending || Boolean(state.message);
+  return (
+    <form
+      action={action}
+      className="flex items-center gap-3 rounded-2xl border bg-muted/40 py-2 pr-2 pl-4 text-sm text-muted-foreground"
+    >
+      <input type="hidden" name="project" value={project} />
+      <input type="hidden" name="id" value={id} />
+      <p className="min-w-0 flex-1" role={state.error ? 'alert' : 'status'}>
+        {state.error ? (
+          <span className="text-destructive">{state.error}</span>
+        ) : stopping ? (
+          'Stopping the run. The page updates when it ends.'
+        ) : (
+          reason
+        )}
+      </p>
+      <Button
+        type="submit"
+        size="icon"
+        variant="destructive"
+        className="shrink-0 rounded-full pointer-coarse:size-11"
+        disabled={stopping}
+        aria-label={stopping ? 'Stopping the run' : 'Stop the run'}
+        title="Stop the run"
+      >
+        {stopping ? (
+          <LoaderCircle className="motion-safe:animate-spin" />
+        ) : (
+          <Square className="fill-current" aria-hidden />
+        )}
+      </Button>
+    </form>
+  );
+}
+
+function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>) {
   const isNew = props.mode === 'new';
   const [state, action, pending] = useActionState<ActionState, FormData>(isNew ? submitTask : reviseTask, {});
   const [text, setText] = useState('');
