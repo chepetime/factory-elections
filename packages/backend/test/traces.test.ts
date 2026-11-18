@@ -40,7 +40,7 @@ test('a traced call writes its model span, tool spans, the loop judge and a chil
       return {
         text: 'ok',
         costUsd: 0.51,
-        usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80 },
+        usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80, cacheWriteInputTokens: 10 },
       };
     },
   };
@@ -67,7 +67,7 @@ test('a traced call writes its model span, tool spans, the loop judge and a chil
   const model = spans.find((s) => s.type === 'model')!;
   assert.equal(model.parent_span_id, 'run1');
   assert.equal(model.provider, 'claude');
-  assert.deepEqual(model.tokens, { input: 100, output: 20, cache_read: 80 });
+  assert.deepEqual(model.tokens, { input: 100, output: 20, cache_read: 80, cache_write: 10 });
   assert.equal(model.cost_source, 'reported');
   assert.ok(Math.abs(model.cost_usd! - 0.5) < 1e-9, 'the judge cost moves to the judge span');
   const byType = (type: string) => spans.filter((s) => s.type === type);

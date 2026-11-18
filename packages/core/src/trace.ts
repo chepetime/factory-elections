@@ -36,6 +36,7 @@ export const SpanTokens = z.object({
   input: z.number().int().nonnegative(),
   output: z.number().int().nonnegative(),
   cache_read: z.number().int().nonnegative().optional(),
+  cache_write: z.number().int().nonnegative().optional(),
 });
 export type SpanTokens = z.infer<typeof SpanTokens>;
 
@@ -113,6 +114,7 @@ export function spanTokens(usage: Usage | undefined): SpanTokens | undefined {
     input: usage.inputTokens,
     output: usage.outputTokens,
     ...(usage.cachedInputTokens !== undefined ? { cache_read: usage.cachedInputTokens } : {}),
+    ...(usage.cacheWriteInputTokens !== undefined ? { cache_write: usage.cacheWriteInputTokens } : {}),
   };
 }
 

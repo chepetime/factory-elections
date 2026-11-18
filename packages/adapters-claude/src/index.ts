@@ -371,6 +371,7 @@ export class ClaudeAgentRunner implements ModelRunner {
                 (result.usage.cache_creation_input_tokens ?? 0),
               outputTokens: result.usage.output_tokens,
               cachedInputTokens: result.usage.cache_read_input_tokens ?? 0,
+              cacheWriteInputTokens: result.usage.cache_creation_input_tokens ?? 0,
             },
           }
         : {}),

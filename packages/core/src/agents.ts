@@ -96,6 +96,8 @@ export interface Usage {
   outputTokens: number;
   /** The part of `inputTokens` read from the prompt cache. */
   cachedInputTokens?: number;
+  /** The part of inputTokens written to the prompt cache. */
+  cacheWriteInputTokens?: number;
 }
 
 /** What any provider's event stream means, in one shape. */

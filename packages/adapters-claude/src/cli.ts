@@ -129,6 +129,7 @@ export function claudeMessageEvents(e: Record<string, unknown>): AgentEvent[] {
                 Number(usage.cache_creation_input_tokens ?? 0),
               outputTokens: Number(usage.output_tokens ?? 0),
               cachedInputTokens: Number(usage.cache_read_input_tokens ?? 0),
+              cacheWriteInputTokens: Number(usage.cache_creation_input_tokens ?? 0),
             },
           }
         : {}),

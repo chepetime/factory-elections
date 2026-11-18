@@ -22,7 +22,7 @@ test('a trace tree rolls up its spans and keeps unknown costs apart', () => {
     span_id: 'coder',
     parent_span_id: 'run',
     cost_usd: 1,
-    tokens: { input: 100, output: 10, cache_read: 50 },
+    tokens: { input: 100, output: 10, cache_read: 50, cache_write: 7 },
   });
   const child = span({ type: 'child', parent_span_id: 'coder', cost_usd: null });
   const tool = span({ type: 'tool', parent_span_id: 'coder' });
@@ -32,7 +32,7 @@ test('a trace tree rolls up its spans and keeps unknown costs apart', () => {
   assert.deepEqual(root!.total, {
     cost_usd: 1,
     unknown_cost_spans: 1,
-    tokens: { input: 100, output: 10, cache_read: 50 },
+    tokens: { input: 100, output: 10, cache_read: 50, cache_write: 7 },
   });
 });
 

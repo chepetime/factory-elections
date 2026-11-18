@@ -15,7 +15,7 @@ export interface CostSum {
 const emptySum = (): CostSum => ({
   cost_usd: 0,
   unknown_cost_spans: 0,
-  tokens: { input: 0, output: 0, cache_read: 0 },
+  tokens: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
 });
 
 function addSpan(sum: CostSum, span: SpanRecord): void {
@@ -25,6 +25,7 @@ function addSpan(sum: CostSum, span: SpanRecord): void {
     sum.tokens.input += span.tokens.input;
     sum.tokens.output += span.tokens.output;
     sum.tokens.cache_read += span.tokens.cache_read ?? 0;
+    sum.tokens.cache_write += span.tokens.cache_write ?? 0;
   }
 }
 
@@ -34,6 +35,7 @@ function addSum(sum: CostSum, other: CostSum): void {
   sum.tokens.input += other.tokens.input;
   sum.tokens.output += other.tokens.output;
   sum.tokens.cache_read += other.tokens.cache_read;
+  sum.tokens.cache_write += other.tokens.cache_write;
 }
 
 export interface TraceNode {
