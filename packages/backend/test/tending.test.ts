@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
   ProjectSettings,
@@ -21,7 +21,7 @@ const git = (cwd: string, ...args: string[]) =>
     .toString()
     .trim();
 
-async function fixture(t: TestContext, testCommand = 'true') {
+async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
   const base = await mkdtemp(join(tmpdir(), 'factory-tending-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const origin = join(base, 'origin.git');
@@ -80,7 +80,7 @@ async function fixture(t: TestContext, testCommand = 'true') {
     settings: async () => ProjectSettings.parse({ tending: { enabled: true, answer_threads: true } }),
     profile: async () =>
       ({
-        commands: { test: testCommand },
+        commands: { test: testCommand, ...(setup ? { setup } : {}) },
         confirmed: { forbidden_paths: [], forbidden_commands: [] },
       }) as unknown as RepoProfile,
     runner: () => ({ run: async (r) => (requests.push(r), agent(r)) }),
@@ -95,6 +95,7 @@ async function fixture(t: TestContext, testCommand = 'true') {
     github,
   });
   return {
+    base,
     work,
     other,
     origin,
@@ -234,6 +235,42 @@ test('a conflict with the base is merged in, resolved by the agent and pushed wi
   git(f.work, 'fetch', '-q', 'origin');
   assert.equal(git(f.work, 'merge-base', '--is-ancestor', mainHead, head), '', 'the PR now contains main');
   assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'pushed');
+});
+
+async function lockfileConflict(f: Awaited<ReturnType<typeof fixture>>) {
+  await writeFile(join(f.other, 'app.txt'), 'line one changed on main\n');
+  await writeFile(join(f.other, 'pnpm-lock.yaml'), 'lockfileVersion: main\n');
+  git(f.other, 'add', '.');
+  git(f.other, 'commit', '-qm', 'main change with a new lockfile');
+  git(f.other, 'push', '-q', 'origin', 'main');
+  f.setPr({ mergeable: 'CONFLICTING' });
+  f.setAgent(async (r) => {
+    await writeFile(join(r.cwd!, 'app.txt'), 'line one changed on main\nfeature\n');
+    return { text: '', costUsd: 0.3 };
+  });
+}
+
+test('a merged base that changes the lockfile runs setup before the test, once per lockfile', async (t) => {
+  const log = join(await mkdtemp(join(tmpdir(), 'factory-tend-setup-')), 'setup.log');
+  t.after(() => rm(dirname(log), { recursive: true, force: true }));
+  const f = await fixture(t, 'true', `echo run >> ${log}`);
+  await lockfileConflict(f);
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'merge-base');
+  const record = (await f.tending.record(f.task))!;
+  assert.equal(record.fixes.at(-1)!.outcome, 'pushed');
+  assert.equal((await readFile(log, 'utf8')).trim(), 'run', 'setup ran once');
+  assert.ok(record.setup_key, 'the installed lockfile is remembered');
+});
+
+test('a failed setup after a base merge is not pushed', async (t) => {
+  const f = await fixture(t, 'true', 'echo install failed >&2; exit 1');
+  await lockfileConflict(f);
+  const before = f.remote('refs/heads/factory/t1');
+  await f.tending.tend(f.task, f.settings);
+  const fix = (await f.tending.record(f.task))!.fixes.at(-1)!;
+  assert.equal(fix.outcome, 'failed');
+  assert.match(fix.note ?? '', /setup .*failed[\s\S]*install failed/);
+  assert.equal(f.remote('refs/heads/factory/t1'), before, 'nothing was pushed');
 });
 
 test('missing worktree stops tending and appears in the inbox', async (t) => {

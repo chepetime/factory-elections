@@ -1,7 +1,7 @@
 // Task workflow: classify → worktree → code → verify → review → human approval → pull request.
 // The driver coordinates adapters through ports; every rule lives in @factory/core.
 import { createServer } from 'node:net';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   CLASSIFIER_OUTPUT_SCHEMA,
   ClassifierRequest,
@@ -11,6 +11,7 @@ import {
   REVIEW_OUTPUT_SCHEMA,
   DEFAULT_STEP_LIMITS,
   DEFAULT_TASK_LIMITS,
+  environmentFailure,
   ReviewOutput,
   approvalBlockers,
   blockingFindings,
@@ -41,7 +42,10 @@ import {
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
+import { setupInputsKey } from './setup.ts';
 
 const OUTPUT_TAIL = 6000;
 const MAX_DIFF_CHARS = 200_000;
@@ -332,14 +336,51 @@ export class Driver {
   }
 
   /**
-   * Runs the profile's setup command (dependency install) once per worktree. A failure stops the
-   * run before any model call; running the task again retries it.
+   * Runs the profile's preflight checks, e.g. an expired cloud login, before any model call or
+   * setup. A failure marks the task failed with the fix command and throws.
    */
-  async setupWorktree(project: string, id: string): Promise<TaskRecord> {
-    let task = await this.deps.tasks.read(project, id);
+  async preflight(project: string, id: string): Promise<void> {
     const profile = await this.deps.readProfile(project);
+    if (!profile.preflight?.length) return;
+    const task = await this.deps.tasks.read(project, id);
+    for (const check of profile.preflight) {
+      let output = '';
+      this.deps.log(`$ ${check.run}   # preflight: ${check.name}`);
+      const result = await this.deps.shell.runShell(check.run, {
+        cwd: task.repo,
+        captureLimit: 0,
+        onOutput: (chunk) => {
+          output = tail(output + chunk, 4000);
+          this.deps.log(chunk.replace(/\n$/, ''));
+        },
+        timeoutMs: 2 * MINUTE,
+        signal: this.deps.signal,
+        group: true,
+      });
+      if (result.stopped === 'aborted')
+        throw new DriverError('preflight was stopped because the run was cancelled');
+      if (!result.stopped && result.code === 0) continue;
+      const fix = check.fix
+        ? ` Fix: \`${check.fix}\`, then run the task again.`
+        : ' Fix it, then run the task again.';
+      const message = `Preflight check "${check.name}" failed, so nothing ran.${fix}${output.trim() ? `\n${tail(output.trim(), 1000)}` : ''}`;
+      await this.deps.tasks.write(
+        withStage(await this.deps.tasks.read(project, id), this.deps.now(), 'failed', message),
+      );
+      throw new DriverError(message);
+    }
+  }
+
+  /**
+   * Runs the setup command when the worktree was never set up or its setup inputs changed.
+   * Returns the failure text, or undefined when setup passed or was not needed.
+   */
+  private async refreshSetup(project: string, id: string, profile: RepoProfile): Promise<string | undefined> {
+    let task = await this.deps.tasks.read(project, id);
     const command = profile.commands.setup;
-    if (!command || !task.worktree || task.worktree.setup_at) return task;
+    if (!command || !task.worktree) return undefined;
+    const key = await setupInputsKey(task.worktree.path, profile.setup_inputs);
+    if (task.worktree.setup_at && task.worktree.setup_key === key) return undefined;
     const checkMinutes = profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes;
     let output = '';
     this.deps.log(`$ ${command}   # setup`);
@@ -356,23 +397,40 @@ export class Driver {
     });
     if (result.stopped === 'aborted')
       throw new DriverError('setup was stopped because the run was cancelled');
-    task = await this.deps.tasks.read(project, id);
     if (result.stopped || result.code !== 0) {
       const why = result.stopped
         ? `did not finish within ${checkMinutes} minutes`
         : `exited with status ${result.code}`;
-      const message = `Worktree setup (\`${command}\`) ${why}. Fix the setup command or the repository, then run the task again.\n${tail(output, 2000)}`;
-      await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
-      throw new DriverError(message);
+      return `Worktree setup (\`${command}\`) ${why}.\n${tail(output, 2000)}`;
     }
-    task = withEvent(
-      { ...task, worktree: { ...task.worktree!, setup_at: this.deps.now() } },
-      this.deps.now(),
-      'worktree',
-      `Setup finished: ${command}`,
+    task = await this.deps.tasks.read(project, id);
+    await this.deps.tasks.write(
+      withEvent(
+        { ...task, worktree: { ...task.worktree!, setup_at: this.deps.now(), setup_key: key } },
+        this.deps.now(),
+        'worktree',
+        `Setup finished: ${command}`,
+      ),
     );
-    await this.deps.tasks.write(task);
-    return task;
+    return undefined;
+  }
+
+  /**
+   * Runs the profile's setup command (dependency install) in a new worktree, and again when its
+   * lockfiles changed. A failure stops the run before any model call; running the task again retries it.
+   */
+  async setupWorktree(project: string, id: string): Promise<TaskRecord> {
+    const profile = await this.deps.readProfile(project);
+    const failure = await this.refreshSetup(project, id, profile);
+    const task = await this.deps.tasks.read(project, id);
+    if (!failure) return task;
+    const [first, ...rest] = failure.split('\n');
+    const message = [
+      `${first} Fix the setup command or the repository, then run the task again.`,
+      ...rest,
+    ].join('\n');
+    await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
+    throw new DriverError(message);
   }
 
   private async checkedWorktree(task: TaskRecord): Promise<{ path: string; branch: string; base: string }> {
@@ -509,7 +567,17 @@ export class Driver {
   }
 
   private async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
-    const result = await this.verify(project, id);
+    // The coder may have changed a lockfile: install again, and send a failure back as feedback.
+    const setupFailure = await this.refreshSetup(project, id, await this.deps.readProfile(project));
+    const result = setupFailure
+      ? {
+          passed: false,
+          output: `${setupFailure}\n[setup failed after the change; fix the dependency files (package.json, lockfile)]\n`,
+          headSha: await this.deps.git.headSha(
+            (await this.checkedWorktree(await this.deps.tasks.read(project, id))).path,
+          ),
+        }
+      : await this.verify(project, id);
     const task = await this.deps.tasks.read(project, id);
     const now = this.deps.now();
     const verification = {
@@ -530,6 +598,53 @@ export class Driver {
 
   private coderGuard(worktree: string, profile: RepoProfile): ToolGuard {
     return worktreeGuard(worktree, profile);
+  }
+
+  /**
+   * The coder's extra environment: the profile's fixed variables, and a private npmrc holding
+   * freshly minted registry tokens. A token that cannot be minted fails the task before the call.
+   */
+  private async coderAccess(
+    project: string,
+    id: string,
+    repo: string,
+    profile: RepoProfile,
+  ): Promise<{ env?: Record<string, string>; cleanup: () => Promise<void> }> {
+    const fixed = profile.sandbox?.env ?? {};
+    const tokens = profile.sandbox?.npm_tokens ?? [];
+    if (!tokens.length)
+      return { ...(Object.keys(fixed).length ? { env: { ...fixed } } : {}), cleanup: async () => {} };
+    const lines: string[] = [];
+    for (const { registry, command } of tokens) {
+      // No onOutput: the token must not reach the run log.
+      const result = await this.deps.shell.runShell(command, {
+        cwd: repo,
+        timeoutMs: 2 * MINUTE,
+        signal: this.deps.signal,
+        group: true,
+      });
+      const token = result.stdout.trim();
+      if (result.stopped || result.code !== 0 || !token || /\s/.test(token)) {
+        const why = result.stopped
+          ? 'did not finish'
+          : result.code !== 0
+            ? `exited with status ${result.code}`
+            : 'printed no single token';
+        const message = `Could not get the registry token for ${registry}: the token command ${why}. Check the login it needs, then run the task again.\n${tail(result.stderr.trim(), 1000)}`;
+        await this.deps.tasks.write(
+          withStage(await this.deps.tasks.read(project, id), this.deps.now(), 'failed', message),
+        );
+        throw new DriverError(message.split('\n')[0]!);
+      }
+      lines.push(`${registry}:_authToken=${token}`);
+    }
+    const dir = await mkdtemp(join(tmpdir(), 'factory-npmrc-'));
+    const npmrc = join(dir, '.npmrc');
+    await writeFile(npmrc, `${lines.join('\n')}\n`, { mode: 0o600 });
+    return {
+      env: { ...fixed, NPM_CONFIG_USERCONFIG: npmrc },
+      cleanup: () => rm(dir, { recursive: true, force: true }),
+    };
   }
 
   /** One coder attempt on one rung, followed by a driver-owned commit. */
@@ -588,11 +703,16 @@ export class Driver {
     let finalText = '';
     const guard = this.coderGuard(path, profile);
     // Children share a pool as large as the step's own budget; their cost is added to the attempt.
+    const sandbox = {
+      allowed_domains: profile.sandbox?.allowed_domains,
+      allow_write: profile.sandbox?.allow_write,
+    };
+    const access = await this.coderAccess(project, id, task.repo, profile);
     const grant = this.deps.delegation?.grant({
       label: `coder ${project}/${id}`,
       cwd: path,
       access: 'edit',
-      sandbox: profile.sandbox,
+      sandbox,
       budgetUsd: limits.maxBudgetUsd ?? DEFAULT_STEP_LIMITS.budget_usd,
       guard,
       runner: this.deps.runner,
@@ -602,7 +722,8 @@ export class Driver {
       const result = await this.deps.runner.run({
         ...limits,
         step: 'coder',
-        sandbox: profile.sandbox,
+        sandbox,
+        ...(access.env ? { env: access.env } : {}),
         model: rung.model,
         effort: rung.effort,
         tools: 'edit',
@@ -621,6 +742,7 @@ export class Driver {
       costUsd = errorCost(e);
     } finally {
       grant?.revoke();
+      await access.cleanup();
     }
     const childCost = grant?.spent() ?? 0;
     if (childCost) costUsd = (costUsd ?? 0) + childCost;
@@ -690,6 +812,13 @@ export class Driver {
       const task = await this.verifyAndRecord(project, id);
       if (task.verification?.passed) return task;
       feedback = task.verification?.output_tail;
+      const profile = await this.deps.readProfile(project);
+      const environment = environmentFailure(feedback ?? '', profile.environment_errors);
+      if (environment) {
+        const message = `Verification failed for an environment reason: ${environment.reason}. A stronger model cannot fix this, so the coder ladder stopped. Fix the machine, then run the task again.\n${tail(feedback ?? '', 2000)}`;
+        await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
+        throw new DriverError(message.split('\n')[0]!);
+      }
     }
     throw new DriverError(
       `verification still failing after ${maxAttempts} coder attempt(s); see \`factory task show\``,
@@ -912,6 +1041,8 @@ export class Driver {
     let task = await this.deps.tasks.read(project, id);
     const blockers = taskCommandBlockers(task, 'run');
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    await this.preflight(project, id);
+    task = await this.deps.tasks.read(project, id);
     if (!task.verdict) task = await this.classify(project, id);
     const decision = readinessDecision(task.verdict!);
     if (decision.action !== 'continue') {
@@ -1048,6 +1179,8 @@ export class Driver {
     );
     await this.deps.tasks.write(updated);
     try {
+      // After the approval is cleared: a failed check must never leave an approved stage behind.
+      await this.preflight(project, id);
       // A revision may follow a failed setup; the coder must not work without the dependencies.
       await this.setupWorktree(project, id);
       await this.codeUntilVerified(project, id, options.maxAttempts);

@@ -189,3 +189,12 @@ test('loop guard and context warning reach the agent through SDK hooks; the judg
   assert.match(notes.at(-1)!, /loop guard: the same failure has repeated 3 times\. Install tsc first\./);
   assert.equal(result.costUsd, 0.1 + 0.002);
 });
+
+test('a call adds its extra environment on top of the process environment', async () => {
+  const seen: Record<string, unknown>[] = [];
+  const runner = new ClaudeAgentRunner({ query: fake([success()], 0, seen) });
+  await runner.run({ ...request, env: { NPM_CONFIG_USERCONFIG: '/tmp/x/.npmrc' } });
+  const env = seen[0]!.env as Record<string, string>;
+  assert.equal(env.NPM_CONFIG_USERCONFIG, '/tmp/x/.npmrc');
+  assert.equal(env.PATH, process.env.PATH, 'the process environment stays');
+});

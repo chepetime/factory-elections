@@ -3,10 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { ModelRun, ModelResult, ModelRunner } from '@factory/core';
+import type { ModelRun, ModelResult, ModelRunner, RepoProfile } from '@factory/core';
 import * as fsAdapter from '@factory/adapters-fs';
 import * as git from '@factory/adapters-git';
 import { runShell } from '@factory/adapters-process';
@@ -714,6 +714,154 @@ test('a coder that makes no changes fails with its last message, so the reason i
   assert.equal(failed.message.split('\n')[0], 'coder made no changes');
   assert.match(failed.message, /\nCoder's last message:\n[\s\S]*registry at codeartifact is not reachable/);
   assert.match(stored.attempts!.at(-1)!.error!, /registry at codeartifact is not reachable/);
+});
+
+/** Overrides profile fields for one test driver. */
+function withProfile(driver: Driver, change: (profile: RepoProfile) => RepoProfile) {
+  const read = driver.deps.readProfile;
+  driver.deps.readProfile = async (p) => change(await read(p));
+}
+
+test('a failed preflight check stops a run and a revision before any model call, and names the fix', async () => {
+  const { driver, task, runner, store } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  const marker = join(await mkdtemp(join(tmpdir(), 'factory-preflight-')), 'signed-in');
+  withProfile(driver, (profile) => ({
+    ...profile,
+    preflight: [{ name: 'AWS SSO', run: `test -f ${marker}`, fix: `touch ${marker}` }],
+  }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /Preflight check "AWS SSO" failed/);
+  assert.equal(runner.calls.length, 0, 'no classifier or coder call');
+  const failed = await store.read('demo', task.id);
+  assert.equal(failed.stage, 'failed');
+  assert.equal(failed.worktree, undefined, 'no worktree was created');
+  assert.match(failed.events!.at(-1)!.message, new RegExp(`Fix: \`touch ${marker}\``));
+  await writeFile(marker, '');
+  const done = await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.equal(done.stage, 'awaiting-approval');
+  await rm(marker);
+  await assert.rejects(
+    driver.revise('demo', task.id, 'more', { maxAttempts: 1 }),
+    /Preflight check "AWS SSO" failed/,
+  );
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 1, 'no coder call for the revision');
+});
+
+test('an environment failure in verification stops the ladder instead of trying a stronger model', async () => {
+  const { driver, task, runner, store } = await setup(
+    { classifier: [ready], coder: [writeFeature, writeFeature, writeFeature] },
+    "echo 'connect ECONNREFUSED 127.0.0.1:5432' && exit 1",
+  );
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 3 }), /environment/);
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 1, 'one coder attempt only');
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'failed');
+  const message = stored.events!.at(-1)!.message;
+  assert.match(message.split('\n')[0]!, /a network service is not reachable/);
+  assert.match(message, /ECONNREFUSED 127\.0\.0\.1:5432/);
+});
+
+test('a profile environment pattern also stops the ladder', async () => {
+  const { driver, task, runner } = await setup(
+    { classifier: [ready], coder: [writeFeature, writeFeature] },
+    "echo 'mdm sandbox is down' && exit 1",
+  );
+  withProfile(driver, (profile) => ({ ...profile, environment_errors: ['sandbox is down'] }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 2 }), /environment/);
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 1);
+});
+
+test('setup runs again when the coder changes a lockfile, and a failed rerun goes back to the coder', async () => {
+  const logDir = await mkdtemp(join(tmpdir(), 'factory-setup-'));
+  const log = join(logDir, 'setup.log');
+  const brokenLock: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+    await writeFile(join(r.cwd!, 'pnpm-lock.yaml'), 'broken\n');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  let feedback = '';
+  const fixedLock: Script = async (r) => {
+    feedback = r.prompt;
+    await writeFile(join(r.cwd!, 'pnpm-lock.yaml'), 'lockfileVersion: valid\n');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task } = await setup({
+    classifier: [ready],
+    coder: [brokenLock, fixedLock],
+    reviewer: [approveReview],
+  });
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: {
+      ...profile.commands,
+      setup: `echo run >> ${log} && { test ! -f pnpm-lock.yaml || grep -q valid pnpm-lock.yaml; }`,
+    },
+  }));
+  const done = await driver.run('demo', task.id, { maxAttempts: 2 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.match(feedback, /setup/i, 'the failed setup output reached the next coder attempt');
+  assert.equal(
+    (await readFile(log, 'utf8')).trim().split('\n').length,
+    3,
+    'setup ran for the new worktree, then after each lockfile change',
+  );
+  assert.ok(done.worktree!.setup_key, 'the setup inputs are recorded');
+});
+
+test('the coder gets a short-lived registry token in its own npmrc and the profile env, never in the log', async () => {
+  let seen: { env?: Record<string, string>; npmrc?: string } = {};
+  const probe: Script = async (r) => {
+    seen = { env: r.env, npmrc: await readFile(r.env!.NPM_CONFIG_USERCONFIG!, 'utf8') };
+    return writeFeature(r);
+  };
+  const { driver, task, store } = await setup({
+    classifier: [ready],
+    coder: [probe],
+    reviewer: [approveReview],
+  });
+  const lines: string[] = [];
+  driver.deps.log = (line) => void lines.push(line);
+  withProfile(driver, (profile) => ({
+    ...profile,
+    sandbox: {
+      allowed_domains: ['registry.example.test'],
+      env: { CODEARTIFACT_TOKEN_STAGED: '1' },
+      npm_tokens: [{ registry: '//registry.example.test/npm/mdm/', command: 'echo tok-123' }],
+    },
+  }));
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.equal(seen.env!.CODEARTIFACT_TOKEN_STAGED, '1');
+  assert.equal(seen.npmrc, '//registry.example.test/npm/mdm/:_authToken=tok-123\n');
+  assert.equal(existsSync(seen.env!.NPM_CONFIG_USERCONFIG!), false, 'the npmrc is removed after the call');
+  const stored = JSON.stringify(await store.read('demo', task.id));
+  assert.ok(
+    !stored.includes('tok-123') && !lines.join('\n').includes('tok-123'),
+    'the token is never recorded',
+  );
+});
+
+test('a registry token that cannot be minted fails the task before the coder, as an environment fault', async () => {
+  const { driver, task, runner, store } = await setup({ classifier: [ready], coder: [writeFeature] });
+  withProfile(driver, (profile) => ({
+    ...profile,
+    sandbox: {
+      npm_tokens: [
+        {
+          registry: '//registry.example.test/npm/mdm/',
+          command: "echo 'Error when retrieving token from sso: Token has expired' >&2; exit 255",
+        },
+      ],
+    },
+  }));
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /registry token/);
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 0);
+  const failed = (await store.read('demo', task.id)).events!.at(-1)!;
+  assert.equal(failed.kind, 'stage:failed');
+  assert.match(failed.message, /\/\/registry\.example\.test\/npm\/mdm\//);
+  assert.match(failed.message, /Token has expired/);
 });
 
 test('a stacked task starts from its blocker branch and opens its PR only after the blocker is pushed', async () => {

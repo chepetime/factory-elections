@@ -64,6 +64,8 @@ export const TendRecord = z.object({
   /** Agent fixes since the PR was last green. */
   fixes_since_green: z.number().int().nonnegative().default(0),
   last: z.string().optional(),
+  /** Hash of the lockfiles that tending last installed; a change runs setup again. */
+  setup_key: z.string().optional(),
   stopped: z.object({ reason: z.string(), at: z.string() }).optional(),
   ended: z.object({ state: z.enum(['MERGED', 'CLOSED']), at: z.string() }).optional(),
 });

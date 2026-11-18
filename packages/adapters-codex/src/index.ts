@@ -322,7 +322,11 @@ export class CodexRunner implements ModelRunner {
     try {
       const out = await runProcess(this.options.command ?? 'codex', args, {
         cwd: request.cwd,
-        env: request.mcp ? { ...process.env, [CODEX_TOKEN_ENV]: request.mcp.token } : process.env,
+        env: {
+          ...process.env,
+          ...request.env,
+          ...(request.mcp ? { [CODEX_TOKEN_ENV]: request.mcp.token } : {}),
+        },
         signal: controller.signal,
         group: true,
         captureLimit: 64 * 1024,

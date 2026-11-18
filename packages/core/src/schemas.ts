@@ -185,6 +185,8 @@ export const TaskRecord = z.looseObject({
       base_branch: NonEmpty,
       /** When the profile's setup command last succeeded in this worktree. */
       setup_at: Iso.optional(),
+      /** Hash of the setup inputs (lockfiles) at that time; a change runs setup again. */
+      setup_key: NonEmpty.optional(),
     })
     .optional(),
   /** A local branch to start from instead of the profile's base: the branch of a blocking ticket. */
@@ -238,9 +240,50 @@ export const RepoProfile = z.looseObject({
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   /** Repository-relative files or directories whose generated output must not be committed. */
   generated_paths: z.array(NonEmpty).optional(),
+  /**
+   * Cheap checks run before any model call or setup, e.g. an expired cloud login. A failure stops
+   * the run and shows `fix`, the command a person runs to repair it.
+   */
+  preflight: z.array(z.looseObject({ name: NonEmpty, run: NonEmpty, fix: NonEmpty.optional() })).optional(),
+  /**
+   * Regular expressions for failed check output that means the machine is at fault, in addition
+   * to the known faults. Such a failure stops the coder ladder instead of trying a stronger model.
+   */
+  environment_errors: z
+    .array(
+      NonEmpty.refine((source) => {
+        try {
+          new RegExp(source);
+          return true;
+        } catch {
+          return false;
+        }
+      }, 'must be a valid regular expression'),
+    )
+    .optional(),
+  /** Repository-relative files whose contents decide when setup runs again; default: lockfiles. */
+  setup_inputs: z.array(NonEmpty).optional(),
   /** Additional sandbox network domains and absolute write paths for this repository. */
   sandbox: z
-    .object({ allowed_domains: z.array(NonEmpty).optional(), allow_write: z.array(NonEmpty).optional() })
+    .object({
+      allowed_domains: z.array(NonEmpty).optional(),
+      allow_write: z.array(NonEmpty).optional(),
+      /** Fixed, non-secret environment variables for the coder, e.g. a repository's agent-runner flag. */
+      env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
+      /**
+       * Short-lived npm registry tokens. Before each coder call the host runs `command` (it prints
+       * the token) and the coder gets a private npmrc with `<registry>:_authToken=<token>` through
+       * NPM_CONFIG_USERCONFIG. The file is removed after the call; the token is never logged.
+       */
+      npm_tokens: z
+        .array(
+          z.object({
+            registry: z.string().regex(/^\/\/\S+\/$/, 'must look like //host/path/'),
+            command: NonEmpty,
+          }),
+        )
+        .optional(),
+    })
     .optional(),
   design_sources: z.array(z.string()),
   qa_targets: z.array(z.string()),

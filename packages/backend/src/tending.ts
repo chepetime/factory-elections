@@ -25,7 +25,7 @@ import {
   type TendFix,
   type TendingWaiting,
 } from '@factory/core';
-import { worktreeGuard } from '@factory/driver';
+import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
 
 export interface TendingGitHub {
@@ -263,8 +263,9 @@ export class TendingService {
           const release = await this.deps.slot();
           if (!release) return { kind: 'wait', reason: 'every agent slot is in use' };
           try {
-            const fix = await this.fix(task, pr, action, cwd);
+            const fix = await this.fix(task, pr, action, cwd, record.setup_key ?? task.worktree.setup_key);
             record.fixes = [...record.fixes, fix.fix];
+            if (fix.setupKey) record.setup_key = fix.setupKey;
             if (fix.fix.outcome !== 'no-change') record.fixes_since_green++;
             if (fix.answered.length) record.answered = [...record.answered, ...fix.answered];
           } finally {
@@ -286,7 +287,8 @@ export class TendingService {
     pr: PrState,
     action: Extract<TendAction, { kind: 'merge-base' | 'fix-ci' | 'answer-threads' }>,
     cwd: string,
-  ): Promise<{ fix: TendFix; answered: string[] }> {
+    installedKey?: string,
+  ): Promise<{ fix: TendFix; answered: string[]; setupKey?: string }> {
     const at = new Date().toISOString();
     const branch = task.worktree!.branch;
     const done = (outcome: TendFix['outcome'], cost: number | null, note?: string) => ({
@@ -380,6 +382,27 @@ export class TendingService {
       return done('failed', cost, error instanceof Error ? error.message : String(error));
     }
     const head = await gitOk(cwd, ['rev-parse', 'HEAD']);
+    let setupKey: string | undefined;
+    if (head !== before && profile.commands.setup) {
+      // A merged base or a fix may change the lockfile; the test must run on matching dependencies.
+      const key = await setupInputsKey(cwd, profile.setup_inputs);
+      if (key !== installedKey) {
+        const setup = await runShell(profile.commands.setup, {
+          cwd,
+          timeoutMs: TEST_TIMEOUT_MS,
+          group: true,
+        });
+        if (setup.code !== 0) {
+          await git(cwd, ['reset', '-q', '--hard', before]);
+          return done(
+            'failed',
+            cost,
+            `setup (\`${profile.commands.setup}\`) failed after the change: ${(setup.stdout + setup.stderr).slice(-500)}`,
+          );
+        }
+        setupKey = key;
+      }
+    }
     if (head !== before) {
       const test = await runShell(profile.commands.test, { cwd, timeoutMs: TEST_TIMEOUT_MS, group: true });
       if (test.code !== 0) {
@@ -397,7 +420,7 @@ export class TendingService {
       answered.push(answeredKey(thread));
     }
     const result = done(head !== before ? 'pushed' : 'no-change', cost);
-    return { ...result, answered };
+    return { ...result, answered, ...(setupKey ? { setupKey } : {}) };
   }
 
   /** PRs whose tending stopped and now wait on the human. */
