@@ -641,6 +641,9 @@ export default async function TaskPage({
         )}
 
         <Section title="Project">
+          <Link href={`/projects/${project}/tasks/${id}/trace`} className="text-sm underline">
+            View trace
+          </Link>
           <Link href={`/projects/${project}/tasks`} className="text-sm hover:underline">
             All tasks in {project}
           </Link>
