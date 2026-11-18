@@ -89,3 +89,48 @@ it('does not unlock commands when the controls observation failed but a later lo
   expect(page).toContain('composer:locked');
   expect(page).toContain('Execution status is unavailable');
 });
+
+it('shows model attempts and their combined cost, preserving unknown costs', async () => {
+  observe('completed');
+  const attempt = {
+    step: 'coder',
+    rung: 'first',
+    model: 'claude-sonnet',
+    effort: 'high' as const,
+    started_at: '2026-01-01',
+    finished_at: '2026-01-01',
+    outcome: 'completed' as const,
+    cost_usd: 1.25,
+  };
+  const withAttempts = {
+    ...task,
+    attempts: [
+      attempt,
+      {
+        ...attempt,
+        step: 'reviewer',
+        model: 'codex',
+        outcome: 'failed' as const,
+        cost_usd: 0.5,
+        error: 'timeout',
+      },
+    ],
+  };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: withAttempts, execution: 'completed', actions: taskActions(withAttempts, 'completed') },
+  });
+  const page = await html();
+  expect(page).toContain('Model attempts');
+  expect(page).toContain('claude-sonnet');
+  expect(page).toContain('codex');
+  expect(page).toContain('failed: timeout');
+  expect(page).toContain('$1.75');
+  expect(page).toContain('$1.25');
+  const unknown = { ...withAttempts, attempts: [attempt, { ...attempt, cost_usd: null }] };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: unknown, execution: 'completed', actions: taskActions(unknown, 'completed') },
+  });
+  expect(await html()).toContain('unknown');
+});
