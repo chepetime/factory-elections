@@ -12,6 +12,7 @@ import * as files from '@factory/adapters-fs';
 import { DataStorage, StorageConfig } from '../src/index.ts';
 import { migrateFiles } from '../src/migrate.ts';
 import { Evidence } from '../../backend/src/evidence.ts';
+import { TraceLog } from '../../backend/src/traces.ts';
 import { startBackend } from '../../backend/src/server.ts';
 import { backendCall, closeBackendClient } from '../../backend/src/client.ts';
 
@@ -300,3 +301,44 @@ qa_targets: []
     }
   },
 );
+
+test('Postgres span ledger reads and filters persisted spans', { skip: !enabled }, async (t) => {
+  const { storage, root } = await setup(t);
+  const ledger = new TraceLog(root, storage);
+  const span = {
+    type: 'model' as const,
+    name: 'call',
+    started_at: '2026-01-01T00:00:00.000Z',
+    ended_at: '2026-01-01T00:00:01.000Z',
+    outcome: 'completed' as const,
+    cost_usd: null,
+  };
+  const first = ledger.append(
+    { project: 'demo', trace_id: 'trace-a', task_id: 'task-a' },
+    { ...span, span_id: 'span-a' },
+  );
+  ledger.append(
+    { project: 'demo', trace_id: 'trace-b', feature_id: 'feature-b' },
+    { ...span, span_id: 'span-b', ended_at: '2026-02-01T00:00:00.000Z' },
+  );
+  ledger.append({ project: 'other', trace_id: 'trace-a' }, { ...span, span_id: 'span-c' });
+  await ledger.flush();
+  const reader = new TraceLog(root, storage);
+  assert.deepEqual(await reader.read('demo', { trace_id: 'trace-a' }), first);
+  assert.deepEqual(
+    (await reader.read('demo', { task_id: 'task-a' })).map((s) => s.span_id),
+    ['span-a'],
+  );
+  assert.deepEqual(
+    (await reader.read('demo', { feature_id: 'feature-b' })).map((s) => s.span_id),
+    ['span-b'],
+  );
+  assert.deepEqual(
+    (await reader.read('demo', { since: '2026-01-15T00:00:00.000Z' })).map((s) => s.span_id),
+    ['span-b'],
+  );
+  assert.deepEqual(
+    (await reader.read('other')).map((s) => s.span_id),
+    ['span-c'],
+  );
+});

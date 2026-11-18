@@ -17,7 +17,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [ ] **Tending toggle (UI agent)** in project settings. The settings form must keep the `tending` field, or a save turns tending off.
 - [ ] **Feature gate screens (UI agent):** approve the spec and the board in the browser, not only through the RPCs.
 - [ ] **Tending gaps:** a stale `pr-opened` worktree that was removed stops tending with an error. Thread replies post as the signed-in `gh` account.
-- [ ] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
+- [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
 - [ ] **Tool timings for review turns:** detached turns log no tool timings. Add them with a hook, or read timestamps if the CLI adds them.
 - [ ] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
 - [ ] **More end-to-end flows:** the feature flow (grill to QA), the inbox and tending, against the seeded build.
