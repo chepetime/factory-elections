@@ -245,7 +245,7 @@ export class Driver {
     if (verdict.data.intake_id !== task.id)
       throw new DriverError('verdict intake_id does not match the task id');
     const updated = withEvent(
-      { ...task, verdict: verdict.data },
+      { ...task, verdict: verdict.data, name: verdict.data.name ?? task.name },
       this.deps.now(),
       'verdict',
       `Readiness: ${verdict.data.readiness}`,
@@ -263,7 +263,7 @@ export class Driver {
     const { verdict, costUsd } = await this.runClassifier(request, await this.callLimits(request.task, step));
     const task = await this.deps.tasks.read(project, id);
     const recorded = withEvent(
-      { ...task, verdict },
+      { ...task, verdict, name: verdict.name ?? task.name },
       this.deps.now(),
       'verdict',
       `Readiness: ${verdict.readiness}`,

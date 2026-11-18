@@ -21,6 +21,7 @@ export const Blocker = z.looseObject({
 
 const VerdictShape = z.looseObject({
   intake_id: NonEmpty,
+  name: NonEmpty.max(100).optional(),
   kind: z.enum(['code', 'research', 'unsupported']),
   loe: z.enum(['S', 'M', 'L', 'unknown']),
   readiness: z.enum(['ready', 'needs-research', 'needs-clarification', 'needs-slicing']),
@@ -51,9 +52,10 @@ export type ClassifierVerdict = z.infer<typeof ClassifierVerdict>;
 /** Plain JSON Schema the classifier model is asked to produce. */
 export const CLASSIFIER_OUTPUT_SCHEMA = {
   type: 'object',
-  required: ['intake_id', 'kind', 'loe', 'readiness', 'blockers'],
+  required: ['intake_id', 'name', 'kind', 'loe', 'readiness', 'blockers'],
   properties: {
     intake_id: { type: 'string' },
+    name: { type: 'string', minLength: 1, maxLength: 100 },
     kind: { enum: ['code', 'research', 'unsupported'] },
     loe: { enum: ['S', 'M', 'L', 'unknown'] },
     readiness: { enum: ['ready', 'needs-research', 'needs-clarification', 'needs-slicing'] },
@@ -170,6 +172,7 @@ export const TaskRecord = z.looseObject({
   id: TaskId,
   project: ProjectName,
   repo: NonEmpty,
+  name: NonEmpty.max(100).optional(),
   prompt: z.string().refine((p) => p.trim().length > 0, 'must not be empty'),
   stage: Stage,
   created_at: Iso.optional(),

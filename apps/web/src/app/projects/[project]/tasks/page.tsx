@@ -52,7 +52,7 @@ export default async function ProjectTasks({ params }: { params: Promise<{ proje
                     href={`/projects/${project}/tasks/${task.id}`}
                     className="line-clamp-2 text-sm font-medium hover:underline"
                   >
-                    {task.prompt}
+                    {task.name ?? task.prompt}
                   </Link>
                   <StageBadge stage={task.stage} />
                 </div>

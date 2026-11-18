@@ -102,7 +102,7 @@ function maxAttempts(value: string | undefined): number {
 
 function gateText(gate: Awaited<ReturnType<Driver['gate']>>): string {
   const { task, headSha, diffStat, blockers } = gate;
-  const lines = [`Task ${task.id} — stage: ${task.stage}`, '', task.prompt.trim(), ''];
+  const lines = [`Task ${task.name ?? task.id} — stage: ${task.stage}`, '', task.prompt.trim(), ''];
   lines.push(
     `Branch ${task.worktree?.branch ?? '-'} → ${task.worktree?.base_branch ?? '-'}, head ${headSha.slice(0, 12)}`,
   );

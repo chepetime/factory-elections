@@ -128,7 +128,14 @@ const ready: Script = (r) => {
   const id = /"id": "([^"]+)"/.exec(r.prompt)![1];
   return {
     text: '',
-    structured: { intake_id: id, kind: 'code', loe: 'S', readiness: 'ready', blockers: [] },
+    structured: {
+      intake_id: id,
+      name: 'Add the feature',
+      kind: 'code',
+      loe: 'S',
+      readiness: 'ready',
+      blockers: [],
+    },
     costUsd: 0.001,
   };
 };
@@ -159,6 +166,7 @@ test('task goes from intake to an opened pull request only after approval', asyn
   });
   const reviewed = await driver.run('demo', task.id, { maxAttempts: 2 });
   assert.equal(reviewed.stage, 'awaiting-approval');
+  assert.equal(reviewed.name, 'Add the feature');
   assert.equal(reviewed.verification?.passed, true);
   await assert.rejects(driver.openPr('demo', task.id), /not approved|has not approved/);
   assert.equal(prs.length, 0);

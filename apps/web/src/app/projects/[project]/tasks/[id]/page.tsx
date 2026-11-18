@@ -219,7 +219,7 @@ export async function generateMetadata({
   const [shown, label] = await Promise.all([loadControls(project, id), projectLabel(project)]);
   if (!shown.ok) return { title: `Task · ${label}` };
   const task = shown.value.task;
-  return { title: `${stageGlyph(task.stage)} ${clip(task.prompt)} · ${label}` };
+  return { title: `${stageGlyph(task.stage)} ${clip(task.name ?? task.prompt)} · ${label}` };
 }
 
 export default async function TaskPage({
@@ -319,8 +319,8 @@ export default async function TaskPage({
 
       <section aria-label="Conversation" className="flex min-h-0 flex-col max-lg:h-[85dvh] max-lg:shrink-0">
         <header className="flex shrink-0 items-center gap-3 border-b px-6 py-3">
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={task.prompt}>
-            {title(task.prompt)}
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={task.name ?? task.prompt}>
+            {title(task.name ?? task.prompt)}
           </h1>
           <StageBadge stage={task.stage} />
         </header>
