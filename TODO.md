@@ -20,7 +20,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
 - [ ] **Tool timings for review turns:** detached turns log no tool timings. Add them with a hook, or read timestamps if the CLI adds them.
 - [ ] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
-- [ ] **More end-to-end flows:** the feature flow (grill to QA), the inbox and tending, against the seeded build.
+- [ ] **More end-to-end flows:** the inbox and tending, against the seeded build. (The feature flow from grill to QA is covered.)
 
 ## Vision step 5: links and team import
 
@@ -28,7 +28,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [x] **Team member records:** name, Jira identity and GitHub identity, linked to a project.
 - [ ] **Jira import:** the team's tickets per project, with type, status, assignee, and the created and resolved dates.
 - [ ] **GitHub import:** the team's PRs, with author, state, opened and merged dates, review rounds and reverts.
-- [ ] **PR review records** from people and from agent runs, with reviewer, verdict, findings and time taken.
+- [x] **PR review records** from people and from agent runs, with reviewer, verdict, findings and time taken.
 - [ ] **Team baseline metrics:** lead time, review rounds and revert rate per ticket type, beside the same numbers for my agent-run work.
 
 ## Vision step 6: workflows, rules and controls
@@ -181,7 +181,7 @@ The design and the paid-run numbers are in [docs/vision/models-and-costs.md](doc
 
 ## Vision step 10: outcomes and upstream
 
-- [ ] **Outcome records:** merged, reverted and incident records that join spans on `task_id` and `pr`.
+- [x] **Outcome records:** merged, reverted and incident records that join spans on `task_id` and `pr`.
 - [ ] **Cost per outcome:** count cost per shipped outcome, not per PR. Add the attention metric (my minutes per shipped outcome).
 - [ ] **Product metric link:** record if a feature moved its product metric.
 - [ ] **Upstream proposals:** read the backlog, incidents and review findings, then draft specs for me to accept or reject.
