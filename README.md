@@ -215,6 +215,7 @@ pnpm typecheck
 pnpm lint
 ```
 
+- [Product vision](VISION.md): where the factory is going, with details in [docs/vision/](docs/vision/)
 - [Docker storage, migration, and backups](docs/docker-storage.md)
 - [Backend operation and interruption recovery](docs/local-backend.md)
 - [State machines and agent action discovery](docs/state-machines.md)

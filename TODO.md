@@ -1,6 +1,6 @@
 # TODO
 
-Next steps for factory-elections, roughly in priority order. The README lists what works today; [docs/HANDOFF.md](docs/HANDOFF.md) has the background.
+Next steps for factory-elections, roughly in priority order. The README lists what works today; [docs/HANDOFF.md](docs/HANDOFF.md) has the background, and [VISION.md](VISION.md) has the product vision and build order.
 
 ## Now
 
