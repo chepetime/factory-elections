@@ -233,6 +233,8 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   assert.equal(calls.find((c) => c.step === 'feature:tickets')!.model, 'claude-sonnet-5-5');
   assert.equal(calls.find((c) => c.step === 'feature:qa')!.model, 'claude-sonnet-5-5');
   assert.match(calls.at(-1)!.prompt, /T1 Add the model: done, PR https:\/\/github\.com\/o\/r\/pull\/41/);
+  assert.match(calls.at(-1)!.prompt, /Ticket T1: diff unavailable/);
+  assert.equal(calls.at(-1)!.tools, 'none');
   assert.equal(Number(done.cost_usd.toFixed(2)), 1.7);
   assert.equal(done.total_cost_usd, done.cost_usd + done.tickets_cost_usd);
   assert.equal(slots, 3, 'every step returned its agent slot');

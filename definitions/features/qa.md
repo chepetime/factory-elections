@@ -1,6 +1,6 @@
 # Write the QA plan
 
-Write a QA plan that a human follows to check the finished feature: what automated checks could not prove. You may read the repository.
+Write a QA plan that a human follows to check the finished feature: what automated checks could not prove. Use only the supplied spec, ticket diffs, verification evidence and screenshots. If evidence is missing, say so as an open risk; do not infer that checks passed.
 
 Use these sections:
 
