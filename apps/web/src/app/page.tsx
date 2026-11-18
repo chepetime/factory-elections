@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { AddProjectForm } from '@/components/add-project-form';
 import { ProjectHome } from '@/components/project-home';
+import { getInbox } from '@/lib/inbox';
 import { listProjects, listTasks } from '@/lib/factory';
 import { gitUserName } from '@/lib/team';
 
@@ -20,6 +21,13 @@ export default async function Home() {
     );
   const remembered = (await cookies()).get('factory.lastProject')?.value;
   const project = projects.value.find((p) => p.name === remembered)?.name ?? projects.value[0]!.name;
-  const [tasks, userName] = await Promise.all([listTasks(project), gitUserName(project)]);
-  return <ProjectHome project={project} tasks={tasks.ok ? tasks.value : undefined} userName={userName} />;
+  const [tasks, userName, inbox] = await Promise.all([listTasks(project), gitUserName(project), getInbox()]);
+  return (
+    <ProjectHome
+      project={project}
+      tasks={tasks.ok ? tasks.value : undefined}
+      userName={userName}
+      inbox={inbox}
+    />
+  );
 }

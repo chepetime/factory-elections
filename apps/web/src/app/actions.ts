@@ -242,3 +242,18 @@ export async function featureGateAction(_prev: ActionState, form: FormData): Pro
     return { error: error instanceof Error ? error.message : 'Could not update feature.' };
   }
 }
+
+export async function dismissInboxItem(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = field(form, 'id');
+  const project = field(form, 'project');
+  if (!id || id.length > 400 || !isProjectName(project)) return { error: 'Invalid inbox item.' };
+  try {
+    const { backendCall } = await import('@factory/backend/client');
+    await backendCall('DismissInboxItem', { project, json: JSON.stringify({ id }) });
+    revalidatePath('/', 'layout');
+    return { message: 'Dismissed.' };
+  } catch {
+    return { error: 'Could not dismiss this item. Try again.' };
+
+  }
+}

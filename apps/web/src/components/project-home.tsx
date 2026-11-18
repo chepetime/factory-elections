@@ -3,6 +3,8 @@
 // screens (https://www.affectui.com/screens/assistant-home, /assistant-overview); original
 // implementation, no Affect UI source or assets.
 import Link from 'next/link';
+import { Inbox } from '@/components/inbox';
+import type { InboxItem } from '@/lib/inbox';
 import type { ReactNode } from 'react';
 import type { Stage, TaskRecord } from '@factory/core';
 import { TaskChatComposer } from '@/components/task-chat';
@@ -103,10 +105,12 @@ export function ProjectHome({
   project,
   tasks,
   userName,
+  inbox,
 }: {
   project: string;
   tasks: TaskRecord[] | undefined;
   userName?: string;
+  inbox: { ok: true; value: { items: InboxItem[] } } | { ok: false };
 }) {
   const now = new Date();
   const board = tasks ? overview(tasks, now) : undefined;
@@ -126,6 +130,7 @@ export function ProjectHome({
           </p>
         </div>
         <TaskChatComposer mode="new" project={project} />
+        <Inbox items={inbox.ok ? inbox.value.items : undefined} error={!inbox.ok} />
 
         <div className="mt-8">
           {!board ? (
@@ -138,7 +143,7 @@ export function ProjectHome({
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <Card title="Activity">
                 <p className="mb-3 text-xs text-muted-foreground">
                   {board.activityTotal} events in the last {ACTIVITY_WEEKS} weeks
@@ -176,18 +181,6 @@ export function ProjectHome({
                   tasks={board.recent.slice(0, 5)}
                   meta={(t) => ago(t.updated_at ?? t.created_at, now)}
                 />
-              </Card>
-
-              <Card title="Needs you">
-                {board.needsYou.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nothing is waiting on you.</p>
-                ) : (
-                  <TaskRows
-                    project={project}
-                    tasks={board.needsYou.slice(0, 5)}
-                    meta={(t) => t.stage.replace('-', ' ')}
-                  />
-                )}
               </Card>
 
               <Card title="This month">
