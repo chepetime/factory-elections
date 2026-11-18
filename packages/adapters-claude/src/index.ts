@@ -45,14 +45,18 @@ export const SANDBOX_ALLOWED_DOMAINS = ['registry.npmjs.org'];
  * and reach only the package registries. The step guard still screens every command, because
  * sandboxed Bash is not auto-approved, and the model cannot opt a command out of the sandbox.
  */
-export function sandboxFor(tools: ToolAccess, home: string = homedir()): SandboxSettings | undefined {
+export function sandboxFor(
+  tools: ToolAccess,
+  home: string = homedir(),
+  extra?: ModelRun['sandbox'],
+): SandboxSettings | undefined {
   if (!TOOLS[tools].includes('Bash')) return undefined;
   return {
     enabled: true,
     failIfUnavailable: true,
     autoAllowBashIfSandboxed: false,
     allowUnsandboxedCommands: false,
-    network: { allowedDomains: SANDBOX_ALLOWED_DOMAINS },
+    network: { allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])] },
     filesystem: {
       denyRead: [
         join(home, '.ssh'),
@@ -66,6 +70,7 @@ export function sandboxFor(tools: ToolAccess, home: string = homedir()): Sandbox
         join(home, 'Library', 'Caches', 'pnpm'),
         join(home, '.npm'),
         join(home, '.cache'),
+        ...(extra?.allow_write ?? []),
       ],
     },
   };
@@ -217,7 +222,7 @@ export class ClaudeAgentRunner implements ModelRunner {
     // `delegate` is an MCP tool, so it is allowed by name; the step guard still screens it.
     const allowed = request.mcp ? [...tools, CLAUDE_DELEGATE_TOOL] : tools;
     const guard = request.guard;
-    const sandbox = sandboxFor(request.tools);
+    const sandbox = sandboxFor(request.tools, homedir(), request.sandbox);
     const options: Options = {
       model: request.model,
       effort: request.effort,

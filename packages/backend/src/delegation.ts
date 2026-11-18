@@ -41,6 +41,7 @@ export interface GrantOptions {
   cwd: string;
   /** Most children may change: `read-only` children may only read. */
   access: 'read-only' | 'edit';
+  sandbox?: ModelRun['sandbox'];
   budgetUsd: number;
   guard?: ToolGuard;
   signal?: AbortSignal;
@@ -248,6 +249,7 @@ export class DelegationServer {
       systemPrompt: CHILD_SYSTEM_PROMPT,
       prompt: task,
       cwd: grant.cwd,
+      sandbox: grant.sandbox,
       tools,
       // Codex cannot screen tool calls; its sandbox holds a read-only child. An edit child keeps the guard.
       ...(grant.guard && (provider === 'claude' || access === 'edit') ? { guard: grant.guard } : {}),

@@ -3,6 +3,8 @@ import type {
   ContextLimits,
   McpEndpoint,
   ModelLadder,
+  ModelRun,
+
   ModelRunner,
   RepoProfile,
   StepDefinition,
@@ -91,6 +93,7 @@ export interface DelegationPort {
     label: string;
     cwd: string;
     access: 'read-only' | 'edit';
+    sandbox?: ModelRun['sandbox'];
     budgetUsd: number;
     guard?: ToolGuard;
     signal?: AbortSignal;

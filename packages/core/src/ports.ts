@@ -19,6 +19,7 @@ export interface ModelRun {
   prompt: string;
   cwd?: string;
   tools: ToolAccess;
+  sandbox?: { allowed_domains?: string[]; allow_write?: string[] };
   guard?: ToolGuard;
   outputSchema?: Record<string, unknown>;
   maxTurns?: number;

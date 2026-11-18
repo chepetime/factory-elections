@@ -591,6 +591,7 @@ export class Driver {
       label: `coder ${project}/${id}`,
       cwd: path,
       access: 'edit',
+      sandbox: profile.sandbox,
       budgetUsd: limits.maxBudgetUsd ?? DEFAULT_STEP_LIMITS.budget_usd,
       guard,
       runner: this.deps.runner,
@@ -600,6 +601,7 @@ export class Driver {
       const result = await this.deps.runner.run({
         ...limits,
         step: 'coder',
+        sandbox: profile.sandbox,
         model: rung.model,
         effort: rung.effort,
         tools: 'edit',

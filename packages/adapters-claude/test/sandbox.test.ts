@@ -23,3 +23,12 @@ test('the coder runs Bash in a sandbox it cannot leave and that keeps the guard 
   ]);
   for (const path of sandbox?.filesystem?.allowWrite ?? []) assert.ok(path.startsWith('/home/me/'));
 });
+
+test('profile sandbox additions extend defaults', () => {
+  const sandbox = sandboxFor('edit', '/home/me', {
+    allowed_domains: ['registry.example.com'],
+    allow_write: ['/tmp/cache'],
+  });
+  assert.deepEqual(sandbox?.network?.allowedDomains, ['registry.npmjs.org', 'registry.example.com']);
+  assert.ok(sandbox?.filesystem?.allowWrite?.includes('/tmp/cache'));
+});

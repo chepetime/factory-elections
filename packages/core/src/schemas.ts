@@ -238,6 +238,10 @@ export const RepoProfile = z.looseObject({
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   /** Repository-relative files or directories whose generated output must not be committed. */
   generated_paths: z.array(NonEmpty).optional(),
+  /** Additional sandbox network domains and absolute write paths for this repository. */
+  sandbox: z
+    .object({ allowed_domains: z.array(NonEmpty).optional(), allow_write: z.array(NonEmpty).optional() })
+    .optional(),
   design_sources: z.array(z.string()),
   qa_targets: z.array(z.string()),
   /** Spending and time limits for this repository. Absent values use DEFAULT_TASK_LIMITS. */
