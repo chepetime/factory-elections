@@ -21,7 +21,16 @@ test('the coder runs Bash in a sandbox it cannot leave and that keeps the guard 
     '/home/me/.config/gh',
     '/home/me/Library/Keychains',
   ]);
-  for (const path of sandbox?.filesystem?.allowWrite ?? []) assert.ok(path.startsWith('/home/me/'));
+  const locks = /^\/(private\/)?tmp\/pnpm-store-operation-locks-\d+$/;
+  for (const path of sandbox?.filesystem?.allowWrite ?? [])
+    assert.ok(path.startsWith('/home/me/') || locks.test(path), path);
+});
+
+test("pnpm 12 can take its store lock, which lives in /tmp, not the user's temp folder", () => {
+  const writes = sandboxFor('edit', '/home/me')?.filesystem?.allowWrite ?? [];
+  const uid = process.getuid?.() ?? 0;
+  assert.ok(writes.includes(`/private/tmp/pnpm-store-operation-locks-${uid}`));
+  assert.ok(writes.includes(`/tmp/pnpm-store-operation-locks-${uid}`));
 });
 
 test('profile sandbox additions extend defaults', () => {

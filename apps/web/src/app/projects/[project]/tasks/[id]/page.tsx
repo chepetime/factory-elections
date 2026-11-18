@@ -19,6 +19,7 @@ import { AgentFindings } from '@/components/agent-findings';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { LocalTime } from '@/components/local-time';
 import { LiveOutput } from '@/components/live-output';
+import { Markdown } from '@/components/markdown';
 import { OutputBlock } from '@/components/output-block';
 import { StageBadge } from '@/components/stage-badge';
 import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
@@ -170,6 +171,17 @@ function StepList({ steps, extra }: { steps: AgentStep[]; extra: (step: AgentSte
             </span>
             <LocalTime iso={step.at} className="shrink-0 text-xs tabular-nums text-muted-foreground" />
           </div>
+          {step.reply && (
+            <div
+              className={cn(
+                'mt-2 ml-4 rounded-lg border bg-card px-3 py-2 shadow-xs',
+                step.tone === 'danger' && 'border-l-[3px] border-l-destructive',
+              )}
+            >
+              <p className="mb-1 text-xs text-muted-foreground">Coder&apos;s last message</p>
+              <Markdown text={step.reply} />
+            </div>
+          )}
           {step.output && (
             <div className="ml-4">
               <OutputBlock output={step.output} tone={step.tone === 'danger' ? 'danger' : undefined} />

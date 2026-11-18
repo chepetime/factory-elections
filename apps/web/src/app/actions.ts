@@ -13,6 +13,7 @@ import {
   startTask,
   submitTaskRequest,
 } from '@/lib/factory';
+import { startProfileCheck } from '@/lib/profile-check';
 import { saveAssignment } from '@/lib/team';
 import {
   isPrNumber,
@@ -137,6 +138,15 @@ export async function stopTask(_prev: ActionState, form: FormData): Promise<Acti
   const result = await stopBackgroundRun(t.project, t.id);
   refresh(t.project, t.id);
   return result.ok ? { message: result.value } : { error: result.error };
+}
+
+/** Starts the project's "Check setup" run: preflight, setup and checks with no model call. */
+export async function checkProjectSetup(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const project = field(form, 'project');
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const result = await startProfileCheck(project);
+  revalidatePath(`/projects/${project}/settings`);
+  return result.ok ? { message: 'Checking the setup…' } : { error: result.error };
 }
 
 export async function dismissLog(form: FormData): Promise<void> {

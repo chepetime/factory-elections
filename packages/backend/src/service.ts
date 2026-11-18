@@ -48,6 +48,7 @@ import { TicketService } from './tickets.ts';
 import { environmentChecks, type Check } from './diagnostics.ts';
 import type { BackgroundRun, Command, Target } from './protocol.ts';
 import { RunActivity, trackShell } from './activity.ts';
+import { ProfileChecks } from './profile-check.ts';
 
 const TargetSchema = z.object({ project: ProjectName, id: TaskId });
 const CommandSchema = TargetSchema.extend({
@@ -105,6 +106,7 @@ export class BackendService {
   readonly storage: DataStorage;
   readonly tasks: TaskStore;
   readonly team: TeamService;
+  readonly profileChecks: ProfileChecks;
   readonly tickets: TicketService;
   readonly reviews: ReviewService;
   readonly settings: ProjectSettingsService;
@@ -146,6 +148,12 @@ export class BackendService {
     this.root = root;
     this.storage = storageFor(root);
     this.team = new TeamService(root);
+    this.profileChecks = new ProfileChecks({
+      root,
+      storage: this.storage,
+      repo: async (project) => (await this.projects.read(project)).repo,
+      driver: (log, signal) => this.driver(log, this.runner, signal),
+    });
     this.environment = environment ?? (() => environmentChecks(root));
     this.runner = runner;
     this.tasks = this.storage.tasks;
@@ -841,6 +849,7 @@ export class BackendService {
   }
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     this.accepting = false;
+    this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
       for (const controller of this.controllers.values()) controller.abort();
     }, graceMs);

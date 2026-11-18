@@ -91,11 +91,12 @@ test('an aborted run stops at once and says why', async () => {
 });
 
 test('a command that prints nothing for the stall limit is stopped as stalled; output resets the limit', async () => {
-  const quiet = await run('/bin/sh', ['-c', 'echo started; sleep 30'], { stallMs: 600, group: true });
+  const quiet = await run('/bin/sh', ['-c', 'echo started; sleep 30'], { stallMs: 1000, group: true });
   assert.equal(quiet.stopped, 'stalled');
   assert.match(quiet.stdout, /started/);
-  const chatty = await run('/bin/sh', ['-c', 'for i in 1 2 3 4; do echo $i; sleep 0.3; done'], {
-    stallMs: 600,
+  // Output every 0.2 s keeps resetting a 3 s limit; together the run lasts longer than the limit.
+  const chatty = await run('/bin/sh', ['-c', 'for i in $(seq 1 20); do echo $i; sleep 0.2; done'], {
+    stallMs: 3000,
   });
   assert.equal(chatty.stopped, undefined);
   assert.equal(chatty.code, 0);

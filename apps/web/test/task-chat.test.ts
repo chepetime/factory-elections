@@ -167,3 +167,27 @@ describe('runStatus', () => {
     expect(runStatus(undefined, '$ pnpm lint', now)).toEqual({ text: '$ pnpm lint', quiet: false });
   });
 });
+
+describe('coder messages', () => {
+  const said =
+    "coder made no changes\nCoder's last message:\nI made no changes.\n\n| Package | Latest |\n|---|---|\n| pg | 8.23.1 |";
+  const failed = {
+    ...task,
+    stage: 'failed',
+    events: [
+      { at: at(1), kind: 'stage:coding', message: 'Coder on sonnet-medium' },
+      { at: at(2), kind: 'attempt', message: `Coder failed: ${said}` },
+      { at: at(2), kind: 'stage:failed', message: said },
+    ],
+  } as unknown as TaskRecord;
+
+  it("shows the coder's last message once, as a message, on the failed stage", () => {
+    const steps = taskConversation(failed).flatMap((e) => (e.role === 'agent' ? e.steps : []));
+    expect(steps[1]).toMatchObject({ text: 'Coder failed: coder made no changes' });
+    expect(steps[1]!.output).toBeUndefined();
+    expect(steps[1]!.reply).toBeUndefined();
+    expect(steps[2]).toMatchObject({ text: 'coder made no changes', tone: 'danger' });
+    expect(steps[2]!.reply).toMatch(/^I made no changes\.\n\n\| Package/);
+    expect(steps[2]!.output).toBeUndefined();
+  });
+});

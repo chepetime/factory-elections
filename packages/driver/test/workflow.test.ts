@@ -885,6 +885,55 @@ test('a setup or check that prints nothing for the stall limit is stopped and sa
   );
 });
 
+test('the profile check runs preflight, setup and the checks in a temporary worktree, with no model call', async () => {
+  const { driver, repo, runner } = await setup({}, 'test -f README.md');
+  withProfile(driver, (profile) => ({
+    ...profile,
+    preflight: [{ name: 'Login', run: 'true' }],
+    commands: { ...profile.commands, setup: 'echo installing' },
+  }));
+  const result = await driver.checkProfile('demo', repo);
+  assert.equal(result.passed, true);
+  assert.deepEqual(
+    result.steps.map((s) => [s.name, s.outcome]),
+    [
+      ['Preflight: Login', 'passed'],
+      ['Worktree from main', 'passed'],
+      ['Setup', 'passed'],
+      ['Test', 'passed'],
+      ['Full check', 'passed'],
+    ],
+  );
+  assert.match(result.steps[2]!.output, /installing/);
+  assert.equal(runner.calls.length, 0);
+  assert.equal(
+    sh(repo, 'worktree', 'list').trim().split('\n').length,
+    1,
+    'the temporary worktree is removed',
+  );
+});
+
+test('the profile check stops at the first failure, names environment faults and skips the rest', async () => {
+  const { driver, repo } = await setup({});
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, setup: "echo 'connect ECONNREFUSED 127.0.0.1:443'; exit 1" },
+  }));
+  const result = await driver.checkProfile('demo', repo);
+  assert.equal(result.passed, false);
+  assert.deepEqual(
+    result.steps.map((s) => [s.name, s.outcome]),
+    [
+      ['Worktree from main', 'passed'],
+      ['Setup', 'failed'],
+      ['Test', 'skipped'],
+      ['Full check', 'skipped'],
+    ],
+  );
+  assert.equal(result.steps[1]!.environment, 'a network service is not reachable');
+  assert.equal(sh(repo, 'worktree', 'list').trim().split('\n').length, 1);
+});
+
 test('a stacked task starts from its blocker branch and opens its PR only after the blocker is pushed', async () => {
   const first = await setup({
     classifier: [ready, ready],

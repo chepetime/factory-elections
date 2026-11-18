@@ -35,6 +35,24 @@ function inline(text: string, key: string): ReactNode[] {
   return parts;
 }
 
+/** The cells of one `| a | b |` table row. */
+function cells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+/** A pipe row followed by a `|---|---|` separator row. */
+function isTableStart(lines: string[], i: number): boolean {
+  return (
+    /^\s*\|.*\|\s*$/.test(lines[i] ?? '') &&
+    /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(lines[i + 1] ?? '')
+  );
+}
+
 export function Markdown({ text }: { text: string }) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
@@ -88,12 +106,50 @@ export function Markdown({ text }: { text: string }) {
       );
       continue;
     }
+    if (isTableStart(lines, i)) {
+      const header = cells(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i]!)) rows.push(cells(lines[i++]!));
+      blocks.push(
+        <div key={key} className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr>
+                {header.map((cell, c) => (
+                  <th key={c} className="border-b px-2 py-1 font-semibold">
+                    {inline(cell, `${key}-h${c}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td key={c} className="border-b px-2 py-1 align-top">
+                      {inline(cell, `${key}-${r}-${c}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
     if (!line.trim()) {
       i++;
       continue;
     }
     const para: string[] = [];
-    while (i < lines.length && lines[i]!.trim() && !/^(#{1,4}\s|```|\s*([-*]|\d+\.)\s+)/.test(lines[i]!))
+    while (
+      i < lines.length &&
+      lines[i]!.trim() &&
+      !isTableStart(lines, i) &&
+      !/^(#{1,4}\s|```|\s*([-*]|\d+\.)\s+)/.test(lines[i]!)
+    )
       para.push(lines[i++]!);
     blocks.push(
       <p key={key}>

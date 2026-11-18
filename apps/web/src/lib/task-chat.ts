@@ -13,6 +13,8 @@ export interface AgentStep {
   href?: string;
   /** Command output after the first line of the message, shown as a code block. */
   output?: string;
+  /** An agent's own words after the first line (its last message), shown as Markdown. */
+  reply?: string;
 }
 
 export type ChatEntry =
@@ -143,6 +145,15 @@ export function stageTimeline(
   return steps;
 }
 
+const REPLY = /^Coder's last message:\n/;
+
+/** The first line, then either an agent's reply (Markdown) or command output (a code block). */
+function stepDetail(message: string): { text: string; output?: string; reply?: string } {
+  const { text, output } = splitOutput(message);
+  if (output && REPLY.test(output)) return { text, reply: output.replace(REPLY, '').trim() };
+  return output ? { text, output } : { text };
+}
+
 /** Splits a message into its first line and the command output that follows it, if any. */
 export function splitOutput(message: string): { text: string; output?: string } {
   const newline = message.indexOf('\n');
@@ -189,9 +200,18 @@ export function taskConversation(task: TaskRecord): ChatEntry[] {
       id,
       at: event.at,
       kind: event.kind,
-      ...splitOutput(event.message),
+      ...stepDetail(event.message),
       tone: tone(event.kind, event.message),
     };
+    // A failed attempt and the failed stage after it carry the same detail: show it once, on the stage.
+    const next = task.events?.[i + 1];
+    if (event.kind === 'attempt' && next?.kind.startsWith('stage:')) {
+      const later = stepDetail(next.message);
+      if ((step.reply && step.reply === later.reply) || (step.output && step.output === later.output)) {
+        delete step.reply;
+        delete step.output;
+      }
+    }
     if (event.kind === 'stage:pr-opened' && /^https?:\/\//.test(event.message)) step.href = event.message;
     turn.steps.push(step);
   });

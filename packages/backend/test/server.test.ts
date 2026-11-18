@@ -611,3 +611,26 @@ test('StopRun aborts the active run, and the task says you stopped it', async (t
   assert.equal(task.stage, 'failed');
   assert.match(task.events!.at(-1)!.message, /Stopped by you/);
 });
+
+test('a profile check runs in the background and keeps its last result', async (t) => {
+  const { server } = await fixture(t, { run: async () => assert.fail('no model call') });
+  const started = JSON.parse((await backendCall('StartProfileCheck', { project: 'demo', id: '' })).json);
+  assert.equal(started.running, true);
+  let state = started;
+  for (let i = 0; i < 300 && state.running; i++) {
+    await new Promise((done) => setTimeout(done, 20));
+    state = JSON.parse((await backendCall('GetProfileCheck', { project: 'demo', id: '' })).json);
+  }
+  assert.equal(state.running, false);
+  assert.equal(state.passed, false, 'the fixture test command fails on the base branch');
+  assert.deepEqual(
+    state.steps.map((s: { name: string; outcome: string }) => [s.name, s.outcome]),
+    [
+      ['Worktree from main', 'passed'],
+      ['Test', 'failed'],
+      ['Full check', 'skipped'],
+    ],
+  );
+  assert.ok(state.finished_at);
+  await server.service.drain(10);
+});

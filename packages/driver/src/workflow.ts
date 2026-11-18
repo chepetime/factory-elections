@@ -58,6 +58,20 @@ function tail(text: string, size = OUTPUT_TAIL): string {
 
 const MINUTE = 60_000;
 
+export interface ProfileCheckStep {
+  name: string;
+  command?: string;
+  outcome: 'passed' | 'failed' | 'skipped';
+  duration_ms: number;
+  output: string;
+  /** Plain words when a failure is a machine fault, e.g. "a credential has expired or is missing". */
+  environment?: string;
+}
+export interface ProfileCheckResult {
+  passed: boolean;
+  steps: ProfileCheckStep[];
+}
+
 /** "1 second", "40 seconds", "10 minutes": for messages about check limits. */
 function duration(ms: number): string {
   if (ms < MINUTE) {
@@ -443,6 +457,91 @@ export class Driver {
       ),
     );
     return undefined;
+  }
+
+  /**
+   * Checks the profile before any paid run: preflight checks, then setup, test and full_check in
+   * a temporary worktree from the base branch. No model is called. The first failure skips the
+   * remaining steps; the worktree is always removed.
+   */
+  async checkProfile(project: string, repo: string): Promise<ProfileCheckResult> {
+    const profile = await this.deps.readProfile(project);
+    const limits = checkLimits(profile);
+    const steps: ProfileCheckStep[] = [];
+    let failed = false;
+    const step = async (name: string, command: string, cwd: string, timeoutMs: number, stallMs?: number) => {
+      if (failed) {
+        steps.push({ name, command, outcome: 'skipped', duration_ms: 0, output: '' });
+        return;
+      }
+      const started = Date.now();
+      let output = '';
+      this.deps.log(`$ ${command}   # ${name}`);
+      const result = await this.deps.shell.runShell(command, {
+        cwd,
+        captureLimit: 0,
+        onOutput: (chunk) => {
+          output = tail(output + chunk, 4000);
+          this.deps.log(chunk.replace(/\n$/, ''));
+        },
+        timeoutMs,
+        ...(stallMs ? { stallMs } : {}),
+        signal: this.deps.signal,
+        group: true,
+      });
+      if (result.stopped === 'aborted') throw new DriverError('the profile check was stopped');
+      const ok = !result.stopped && result.code === 0;
+      if (!ok)
+        output += `\n[${result.stopped ? `${limits.why(result.stopped)} and was stopped` : `exited with status ${result.code}`}]`;
+      const environment = ok ? undefined : environmentFailure(output, profile.environment_errors);
+      steps.push({
+        name,
+        command,
+        outcome: ok ? 'passed' : 'failed',
+        duration_ms: Date.now() - started,
+        output: output.trim(),
+        ...(environment ? { environment: environment.reason } : {}),
+      });
+      if (!ok) failed = true;
+    };
+    for (const check of profile.preflight ?? [])
+      await step(`Preflight: ${check.name}`, check.run, repo, 2 * MINUTE);
+    const base = profile.repo.base_branch.value;
+    const stamp = `profile-check-${Date.now()}`;
+    const path = this.deps.tasks.worktreePath(project, stamp);
+    const branch = `factory/${stamp}`;
+    let created = false;
+    if (failed) steps.push({ name: `Worktree from ${base}`, outcome: 'skipped', duration_ms: 0, output: '' });
+    else {
+      const started = Date.now();
+      try {
+        await this.deps.git.addWorktree(repo, path, branch, base);
+        created = true;
+        steps.push({
+          name: `Worktree from ${base}`,
+          outcome: 'passed',
+          duration_ms: Date.now() - started,
+          output: path,
+        });
+      } catch (error) {
+        failed = true;
+        steps.push({
+          name: `Worktree from ${base}`,
+          outcome: 'failed',
+          duration_ms: Date.now() - started,
+          output: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    try {
+      if (profile.commands.setup)
+        await step('Setup', profile.commands.setup, path, limits.timeoutMs, limits.stallMs);
+      await step('Test', profile.commands.test, path, limits.timeoutMs, limits.stallMs);
+      await step('Full check', profile.commands.full_check, path, limits.timeoutMs, limits.stallMs);
+    } finally {
+      if (created) await this.deps.git.removeWorktree(repo, path, branch).catch(() => undefined);
+    }
+    return { passed: !failed, steps };
   }
 
   /**

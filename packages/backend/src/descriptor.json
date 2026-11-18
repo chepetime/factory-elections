@@ -386,6 +386,14 @@
                 "StopRun": {
                   "requestType": "Target",
                   "responseType": "Text"
+                },
+                "StartProfileCheck": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetProfileCheck": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
                 }
               }
             }

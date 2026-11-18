@@ -97,4 +97,6 @@ export interface Methods {
   GetBackground: [Target, { json: string }];
   ClearLog: [Target, { text: string }];
   StopRun: [Target, { text: string }];
+  StartProfileCheck: [Target, { json: string }];
+  GetProfileCheck: [Target, { json: string }];
 }
