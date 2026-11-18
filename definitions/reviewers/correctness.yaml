@@ -1,0 +1,10 @@
+name: correctness
+lenses: [adversarial.md]
+trigger: always
+risks: [medium, high]
+model: claude-sonnet-5-5
+high_risk_model: claude-opus-5-5
+effort: high
+budget_usd: 5
+tools: [read, search]
+hunks: all

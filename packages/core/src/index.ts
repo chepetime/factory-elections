@@ -16,3 +16,4 @@ export * from './review-candidate.ts';
 export * from './routing.ts';
 export * from './experiments.ts';
 export * from './team-member.ts';
+export * from './reviewer-definition.ts';

@@ -1,0 +1,9 @@
+name: data-performance
+lenses: [data-performance.md]
+trigger: data-performance
+risks: [medium, high]
+model: claude-sonnet-5-5
+effort: high
+budget_usd: 5
+tools: [read, search]
+hunks: triggered

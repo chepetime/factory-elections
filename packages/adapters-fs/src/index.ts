@@ -11,6 +11,7 @@ import {
   Project,
   ProjectName,
   RepoProfile,
+  ReviewerDefinition,
   StepDefinition,
   TaskId,
   TaskRecord,
@@ -328,6 +329,21 @@ export async function readStepDefinition(path: string): Promise<{ step: StepDefi
   const promptPath = resolve(dirname(path), step.prompt);
   const prompt = await readText(promptPath, 'step prompt');
   return { step, prompt };
+}
+
+export async function readReviewerDefinition(
+  path: string,
+  lensDir: string,
+): Promise<{ reviewer: ReviewerDefinition; lenses: string[] }> {
+  const reviewer = validate(
+    ReviewerDefinition,
+    await readYamlFile(path, 'reviewer definition'),
+    'reviewer definition',
+  );
+  const lenses = await Promise.all(
+    reviewer.lenses.map((name) => readText(join(lensDir, name), 'reviewer lens')),
+  );
+  return { reviewer, lenses };
 }
 
 export async function readLadder(path: string): Promise<ModelLadder> {

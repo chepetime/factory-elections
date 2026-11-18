@@ -105,7 +105,7 @@ The design is in [docs/vision/tools-and-reviews.md](docs/vision/tools-and-review
 - [ ] **Benchmark set first:** about 30 merged change-elections PRs with known results (comments from people that led to a change, reverts, hotfixes). Measure the current skill on it: precision, recall, cost, wall time.
 - [ ] **Context bundle per head SHA** in the backend: diff, stat, commits, ticket, CI logs, base versions of touched files, callers, history, review profile, `tests_on_base.sh` and `diff_coverage.py` results. Shared with tending and QA (the read cache in [Tools](#tools)).
 - [ ] **Triage in code:** risk, size and lens triggers from the skill's path rules (§2b, §3c), with a Haiku check only for open cases.
-- [ ] **Reviewer definitions** in `definitions/reviewers/*.yaml`: name, lens file, trigger, model, effort, budget, tools, and which hunks it gets. The lens text stays in `definitions/skills/senior-pr-review/lenses/`.
+- [x] **Reviewer definitions** in `definitions/reviewers/*.yaml`: name, lens file, trigger, model, effort, budget, tools, and which hunks it gets. The lens text stays in `definitions/skills/senior-pr-review/lenses/`.
 - [ ] **Candidate schema** in core: file, lines, quoted hunk, evidence, proposed severity, confidence, specialist.
 - [ ] **Specialists as child runs:** each one is traced, budgeted and takes an agent slot. The bundle is the start of each prompt, so the specialists share the cache.
 - [ ] **Lead in judge mode:** a senior-pr-review mode that takes the candidates in the review context, verifies them, removes duplicates, applies the suppression lists and the cap, and writes the payload.

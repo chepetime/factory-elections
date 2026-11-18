@@ -1,0 +1,9 @@
+name: standards
+lenses: [cleanup.md, conventions.md]
+trigger: standards
+risks: [medium, high]
+model: claude-sonnet-5-5
+effort: high
+budget_usd: 5
+tools: [read, search]
+hunks: triggered

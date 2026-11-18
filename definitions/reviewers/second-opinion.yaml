@@ -1,0 +1,9 @@
+name: second-opinion
+lenses: [adversarial.md]
+trigger: high-risk
+risks: [high]
+model: codex
+effort: high
+budget_usd: 5
+tools: [read, search]
+hunks: all
