@@ -194,7 +194,9 @@ export async function main(argv: string[]): Promise<number> {
           const repo = v.repo ?? (await projects.read(name)).repo;
           const path = await fsAdapter.writeProfileDraft(root, name, await draftProfile(name, repo));
           out(path);
-          process.stderr.write('Review the draft, set approved_at, then run `factory profile check`.\n');
+          process.stderr.write(
+            `Review the draft, set approved_at, then run \`factory profile check --project ${name}\`.\n`,
+          );
           return 0;
         }
         break;

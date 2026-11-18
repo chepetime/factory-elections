@@ -199,7 +199,7 @@ For changes, use `factory task revise --project "$FACTORY_PROJECT" --id "$TASK_I
 | `factory: command not found` | Add `~/.local/bin` to PATH or use `node bin/factory` from this checkout. |
 | Backend/projects unavailable | Verify Docker with `docker info`, run `pnpm data:up`, and start the apps with `pnpm web -- --dev`. Confirm every process uses the same `FACTORY_ROOT`. |
 | Port already occupied | Identify the existing listener. Reuse the correct installation or stop your old instance; do not start a second owner of the same data root. |
-| Profile invalid | Review the printed profile path, actual commands, base branch, and `approved_at`; rerun `factory profile check`. |
+| Profile invalid | Review the printed profile path, actual commands, base branch, and `approved_at`; rerun `factory profile check --project <name>`. |
 | Ownership lock after an abrupt exit | Confirm the old process and its child workers stopped before removing a stale lock. See the recovery guide below. |
 | A check needs downloads outside npm | The coder sandbox currently permits `registry.npmjs.org`. Additional hosts require an intentional sandbox change. |
 
