@@ -29,3 +29,5 @@ Each project declares the tools its agents can use. The backend gives a run only
 - **Scoped.** Each tool has an access level: read only, or read and write. A workflow step can make it narrower.
 - **Traced.** Every tool call is a span, so tool use and its cost are visible per project.
 - **Checked before the run.** If a task needs a tool that the project does not grant, or a credential has expired, the run does not start and an item goes to the inbox.
+
+[tools-and-reviews.md](tools-and-reviews.md) has the tool needs of each stage and the broker design.

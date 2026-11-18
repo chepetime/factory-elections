@@ -29,6 +29,8 @@ The app runs locally, on one machine, in three parts:
 | [docs/vision/entities.md](docs/vision/entities.md) | The thirteen entities, how they connect, open questions |
 | [docs/vision/workflow.md](docs/vision/workflow.md) | The six stages, the flow rules, the inbox, PR tending |
 | [docs/vision/control.md](docs/vision/control.md) | Many agents, one control point, factory controls, tools per project |
+| [docs/vision/tools-and-reviews.md](docs/vision/tools-and-reviews.md) | Tool needs by stage, the tool broker, automated PR reviews |
+| [docs/vision/models-and-costs.md](docs/vision/models-and-costs.md) | The model router, cost tracing, where the savings are |
 | [docs/vision/tracing-and-metrics.md](docs/vision/tracing-and-metrics.md) | Spans, the team baseline, the metrics, the five day-one fields |
 | [docs/vision/roadmap.md](docs/vision/roadmap.md) | The trace as control input, where it stands, the build order |
 
@@ -44,7 +46,7 @@ The trace model comes first, because every later step reads from it. The status 
 | 4 | One inbox and PR tending | Backend done; UI open |
 | 5 | Links and team import | Not started |
 | 6 | Workflows, rules and controls | Not started |
-| 7 | Routing, escalation and call grading | Grading done; routing not started |
+| 7 | Model router, cost tracing and cost savings | Grading done; routing not started |
 | 8 | Retro and evals | Not started |
 | 9 | Earned autonomy, replay and quotes | Replay inputs recorded; rest not started |
 | 10 | Outcomes and upstream | Not started |

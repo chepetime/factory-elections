@@ -45,7 +45,7 @@ The trace model comes first, because every later step reads from it. This order 
 4. **One inbox and PR tending.** Put everything that waits on me in one place, and keep open PRs moving until they merge. *Backend done; pages open.*
 5. **Links and team import.** Link runs to Jira tickets and PRs, and import team tickets and PRs from Jira and GitHub. *Spans carry the ticket and PR; the import is open.*
 6. **Workflows, rules and controls.** Add per-task workflows, the size and slicing rules, inline review with counsel, browser QA, gateways and Pi, and the factory controls.
-7. **Routing, escalation and call grading.** Use the metrics to pick models, set budgets and decide when a task goes up. *Call grading done.*
+7. **Routing, escalation and call grading.** Use the metrics to pick models, set budgets and decide when a task goes up. *Call grading done.* [models-and-costs.md](models-and-costs.md) has the design.
 8. **Retro and evals.** Propose fixes from finished runs, and check the steps that classify and route.
 9. **Earned autonomy, replay and quotes.** Move gates with the track record, rerun stored tasks on new models, and predict cost and time at spec time. *Run spans record the replay inputs.*
 10. **Outcomes and upstream.** Follow work after merge, and let the app propose specs.
