@@ -37,7 +37,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [ ] **Research workflow** for tasks classified as research.
 - [ ] **Slicing rule:** each ticket is one deploy unit. The critic checks this before the board.
 - [ ] **Slicer:** split large tasks into smaller ones.
-- [ ] **Size rule:** a PR has at most 400 non-test lines. Stop or slice when a diff is larger.
+- [x] **Size rule:** a PR has at most 400 non-test lines. Stop or slice when a diff is larger.
 - [ ] **Inline review at the gate:** threads on the diff in the app, not only approve or revise. Record the time I spend, not only the wait.
 - [ ] **Counsel step:** an agent judges each of my review comments before the coder acts on it.
 - [ ] **Browser QA** for web apps, behind a proxy, from the profile's `qa_targets`.

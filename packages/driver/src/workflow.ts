@@ -402,6 +402,18 @@ export class Driver {
     const profile = await this.deps.readProfile(project);
     const { path, base } = await this.checkedWorktree(task);
     const startingHead = await this.deps.git.headSha(path);
+    const changes = await this.deps.git.diffLineCounts(path, base);
+    const isTest = (file: string) =>
+      /(^|\/)(__tests__|tests?|specs?)(\/|$)/i.test(file) || /(?:^|[._-])(?:test|spec)\.[^/]+$/i.test(file);
+    const nonTestLines = changes
+      .filter((change) => !isTest(change.path))
+      .reduce((sum, change) => sum + (change.added ?? 0) + (change.deleted ?? 0), 0);
+    if (nonTestLines > 400)
+      return {
+        passed: false,
+        output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
+        headSha: startingHead,
+      };
     const checkMinutes = profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes;
     let output = '';
     const onOutput = (chunk: string) => {

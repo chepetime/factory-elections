@@ -31,6 +31,10 @@ export interface GitPort {
   commit(dir: string, message: string): Promise<string>;
   addedOrModifiedSince(dir: string, base: string): Promise<string[]>;
   diffSince(dir: string, base: string, stat?: boolean): Promise<string>;
+  diffLineCounts(
+    dir: string,
+    base: string,
+  ): Promise<{ path: string; added: number | null; deleted: number | null }[]>;
   commitCountSince(dir: string, base: string): Promise<number>;
   remoteUrl(dir: string): Promise<string | undefined>;
   push(dir: string, branch: string): Promise<void>;

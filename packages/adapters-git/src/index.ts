@@ -123,6 +123,33 @@ export async function addedOrModifiedSince(dir: string, base: string): Promise<s
     .filter(Boolean);
 }
 
+/** Added and deleted lines per path, retaining rename destinations and binary markers. */
+export async function diffLineCounts(
+  dir: string,
+  base: string,
+): Promise<{ path: string; added: number | null; deleted: number | null }[]> {
+  const fields = (await git(dir, ['diff', '--numstat', '-z', `${base}...HEAD`])).split('\0');
+  const result: { path: string; added: number | null; deleted: number | null }[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i]!;
+    if (!field) continue;
+    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(field);
+    if (!match) throw new Error('Unexpected git numstat output');
+    let path = match[3]!;
+    if (!path) {
+      i++;
+      path = fields[++i] ?? '';
+    }
+    if (!path) throw new Error('Missing path in git numstat output');
+    result.push({
+      path,
+      added: match[1] === '-' ? null : Number(match[1]),
+      deleted: match[2] === '-' ? null : Number(match[2]),
+    });
+  }
+  return result;
+}
+
 export async function diffSince(dir: string, base: string, stat = false): Promise<string> {
   return git(dir, ['diff', ...(stat ? ['--stat'] : []), `${base}...HEAD`]);
 }

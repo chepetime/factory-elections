@@ -386,6 +386,30 @@ test('verification that leaves uncommitted files fails', async () => {
   assert.equal(stored.attempts?.[0]?.step, 'classifier');
 });
 
+test('verification rejects more than 400 non-test changed lines', async () => {
+  const writeLarge: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'line\n'.repeat(401));
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task, store } = await setup({ classifier: [ready], coder: [writeLarge] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  assert.match((await store.read('demo', task.id)).verification!.output_tail, /401 non-test lines/);
+});
+
+test('test lines do not count toward the 400 line limit', async () => {
+  const writeTests: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'line\n'.repeat(400));
+    await writeFile(join(r.cwd!, 'feature.test.ts'), 'test\n'.repeat(500));
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task } = await setup({
+    classifier: [ready],
+    coder: [writeTests],
+    reviewer: [approveReview],
+  });
+  assert.equal((await driver.run('demo', task.id, { maxAttempts: 1 })).stage, 'awaiting-approval');
+});
+
 test('verification fails when the change commits generated files', async () => {
   const writeWithCache: Script = async (r) => {
     await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
