@@ -585,6 +585,7 @@ export class Driver {
     let outcome: StepAttempt['outcome'] = 'completed';
     let error: string | undefined;
     let costUsd: number | null = null;
+    let finalText = '';
     const guard = this.coderGuard(path, profile);
     // Children share a pool as large as the step's own budget; their cost is added to the attempt.
     const grant = this.deps.delegation?.grant({
@@ -613,6 +614,7 @@ export class Driver {
         ...(grant ? { mcp: grant.endpoint } : {}),
       });
       costUsd = result.costUsd;
+      finalText = result.text?.trim() ?? '';
     } catch (e) {
       outcome = 'failed';
       error = failureText(e);
@@ -638,7 +640,8 @@ export class Driver {
         );
         if (committed === 0) {
           outcome = 'failed';
-          error = 'coder made no changes';
+          // Without its last message, "no changes" hides why: a blocked registry, a question, a refusal.
+          error = `coder made no changes${finalText ? `\nCoder's last message:\n${tail(finalText, 2000)}` : ''}`;
         }
       } else {
         commitMessage = `${taskTitle(task)}\n\nFactory task ${task.id} (${rung.name}).`;
@@ -1045,6 +1048,8 @@ export class Driver {
     );
     await this.deps.tasks.write(updated);
     try {
+      // A revision may follow a failed setup; the coder must not work without the dependencies.
+      await this.setupWorktree(project, id);
       await this.codeUntilVerified(project, id, options.maxAttempts);
       return await this.review(project, id);
     } catch (error) {

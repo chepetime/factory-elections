@@ -667,6 +667,55 @@ test('the setup command runs once per worktree; a failure stops before any model
   );
 });
 
+test('a revision after a failed setup runs the setup again before the coder', async () => {
+  const { driver, task, runner, store } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  const read = driver.deps.readProfile;
+  driver.deps.readProfile = async (p) => {
+    const profile = await read(p);
+    return {
+      ...profile,
+      commands: { ...profile.commands, setup: 'test -f .ok-to-install && echo installed >> setup.log' },
+    };
+  };
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /Worktree setup/);
+  await assert.rejects(
+    driver.revise('demo', task.id, 'try again', { maxAttempts: 1 }),
+    /Worktree setup .* exited with status 1/,
+  );
+  assert.equal(
+    runner.calls.filter((c) => c.tools === 'edit').length,
+    0,
+    'no coder call while setup still fails',
+  );
+  const path = (await store.read('demo', task.id)).worktree!.path;
+  await writeFile(join(path, '.ok-to-install'), '');
+  await git.excludeLocally(path, 'setup.log');
+  await git.excludeLocally(path, '.ok-to-install');
+  const revised = await driver.revise('demo', task.id, 'try again', { maxAttempts: 1 });
+  assert.ok(revised.worktree!.setup_at);
+  assert.equal(revised.stage, 'awaiting-approval');
+  assert.equal((await readFile(join(path, 'setup.log'), 'utf8')).trim(), 'installed');
+});
+
+test('a coder that makes no changes fails with its last message, so the reason is visible', async () => {
+  const idle: Script = () => ({
+    text: 'I could not update anything: the registry at codeartifact is not reachable from the sandbox.',
+    costUsd: 0.3,
+  });
+  const { driver, task, store } = await setup({ classifier: [ready], coder: [idle] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /coder made no changes/);
+  const stored = await store.read('demo', task.id);
+  const failed = stored.events!.at(-1)!;
+  assert.equal(failed.kind, 'stage:failed');
+  assert.equal(failed.message.split('\n')[0], 'coder made no changes');
+  assert.match(failed.message, /\nCoder's last message:\n[\s\S]*registry at codeartifact is not reachable/);
+  assert.match(stored.attempts!.at(-1)!.error!, /registry at codeartifact is not reachable/);
+});
+
 test('a stacked task starts from its blocker branch and opens its PR only after the blocker is pushed', async () => {
   const first = await setup({
     classifier: [ready, ready],
