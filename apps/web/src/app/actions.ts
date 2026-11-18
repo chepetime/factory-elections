@@ -215,3 +215,30 @@ export async function detectProjectSettings(
   const detected = await detectProjectSettingsRun(project);
   return detected.ok ? { proposal: detected.value } : { error: detected.error };
 }
+
+export async function featureGateAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const project = field(form, 'project');
+  const id = field(form, 'id');
+  const action = field(form, 'action');
+  if (
+    !isProjectName(project) ||
+    !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) ||
+    !['approve-spec', 'plan', 'approve-board'].includes(action)
+  )
+    return { error: 'Invalid feature action.' };
+  try {
+    const { backendCall } = await import('@factory/backend/client');
+    await backendCall('FeatureAction', {
+      project,
+      json: JSON.stringify({
+        id,
+        action,
+        ...(action === 'approve-board' ? { mirror: form.get('mirror') === 'on' } : {}),
+      }),
+    });
+    revalidatePath(`/projects/${project}/features/${id}`);
+    return { message: action === 'plan' ? 'Planning started. Refresh to check progress.' : 'Approved.' };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Could not update feature.' };
+  }
+}
