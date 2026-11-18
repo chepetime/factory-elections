@@ -543,6 +543,13 @@ function Sidebar({
           >
             <Tickets className="size-4 text-muted-foreground" /> Features
           </Link>
+          <Link
+            href={`/projects/${project}/weekly`}
+            aria-current={/^\/projects\/[^/]+\/weekly/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background"
+          >
+            <span aria-hidden="true">◷</span> Weekly
+          </Link>
           <div role="separator" className="my-2 h-px bg-border" />
           <Link
             href={`/projects/${project}/tasks/new`}
