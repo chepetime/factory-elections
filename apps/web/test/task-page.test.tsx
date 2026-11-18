@@ -19,7 +19,10 @@ vi.mock('@/app/actions', () => ({
   rejectTask: vi.fn(),
   runTask: vi.fn(),
 }));
-vi.mock('@/components/auto-refresh', () => ({ AutoRefresh: () => <span>polling</span> }));
+vi.mock('next/navigation', async (load) => ({
+  ...(await load<typeof import('next/navigation')>()),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock('@/components/action-form', () => ({
   ActionForm: ({ submit }: { submit: string }) => <span>{submit}</span>,
 }));
@@ -62,7 +65,7 @@ it('stops polling an interrupted coding task and offers explicit recovery', asyn
   const page = await html();
   expect(page).toContain('no live owner');
   expect(page).toContain('Run task');
-  expect(page).not.toContain('polling');
+  expect(page).not.toContain('data-live-run');
 });
 it('offers revision after approval and never unlocks commands on an unavailable observation', async () => {
   observe('completed', 'approved');
@@ -76,7 +79,7 @@ it('offers revision after approval and never unlocks commands on an unavailable 
 it('keeps finalizing busy and explains partial submission success', async () => {
   observe('finalizing', 'awaiting-approval');
   const page = await html('failed');
-  expect(page).toContain('polling');
+  expect(page).toContain('data-live-run');
   expect(page).toContain('Saving evidence and releasing the task');
   expect(page).toContain('Task saved, but the run could not start');
   expect(page).not.toContain('composer:revise');

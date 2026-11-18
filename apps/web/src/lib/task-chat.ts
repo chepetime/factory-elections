@@ -225,3 +225,23 @@ export function lastStepId(entries: ChatEntry[], kind: string): string | undefin
     if (entry.role === 'agent') for (const step of entry.steps) if (step.kind === kind) found = step.id;
   return found;
 }
+
+/** What the task page poll got: the page version, whether a run is busy, and live output. */
+export interface LivePoll {
+  version: string;
+  busy: boolean;
+  logTail?: string;
+  activity?: RunActivity;
+}
+
+/**
+ * Reload the page when the task changed or the run ended; otherwise only the live output and
+ * activity change, and the page stays as it is.
+ */
+export function livePollOutcome(
+  version: string,
+  poll: LivePoll,
+): 'reload' | { logTail?: string; activity?: RunActivity } {
+  if (poll.version !== version || !poll.busy) return 'reload';
+  return { logTail: poll.logTail, activity: poll.activity };
+}

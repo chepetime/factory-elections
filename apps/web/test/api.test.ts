@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend/client';
 import { taskActions, TaskRecord } from '@factory/core';
 import { GET as getState } from '@/app/api/projects/[project]/tasks/[id]/state/route';
+import { GET as getLive } from '@/app/api/projects/[project]/tasks/[id]/live/route';
 import { GET as getProjects } from '@/app/api/projects/route';
 import { GET as getTasks } from '@/app/api/projects/[project]/tasks/route';
 
@@ -84,4 +85,34 @@ it('exposes validated action discovery without executing work', async () => {
       })
     ).status,
   ).toBe(503);
+});
+
+it('serves live run output with a page version that changes only with the task', async () => {
+  const current = TaskRecord.parse({ ...task, stage: 'coding' });
+  const controls = (stage: string) => {
+    const record = TaskRecord.parse({ ...task, stage });
+    return {
+      json: JSON.stringify({ task: record, execution: 'idle', actions: taskActions(record, 'idle') }),
+    };
+  };
+  const live = async (stage: string, logTail: string) => {
+    rpc.mockImplementation(async (method: string) =>
+      method === 'GetTaskControls'
+        ? controls(stage)
+        : { json: JSON.stringify({ running: true, state: 'running', label: 'Coding', logTail }) },
+    );
+    const response = await getLive(new Request('http://localhost'), {
+      params: Promise.resolve({ project: 'demo', id: current.id }),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    return response.json();
+  };
+  const first = await live('coding', 'line 1');
+  const second = await live('coding', 'line 1\nline 2');
+  const third = await live('reviewing', 'line 1\nline 2');
+  expect(first).toMatchObject({ busy: true, logTail: 'line 1' });
+  expect(second.version).toBe(first.version);
+  expect(second.logTail).toBe('line 1\nline 2');
+  expect(third.version).not.toBe(first.version);
 });

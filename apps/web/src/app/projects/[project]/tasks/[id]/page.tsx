@@ -11,37 +11,21 @@ import {
   type TaskRecord,
 } from '@factory/core';
 import { DiffCodeBlock } from '@/components/diff-code-block';
-import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { approveTask, dismissLog, openPullRequest, rejectTask, runTask } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
 import { AgentCheckpoints, type Checkpoint } from '@/components/agent-checkpoints';
 import { AgentFindings } from '@/components/agent-findings';
-import { AutoRefresh } from '@/components/auto-refresh';
 import { LocalTime } from '@/components/local-time';
-import { LiveOutput } from '@/components/live-output';
+import { LiveRun } from '@/components/live-run';
 import { Markdown } from '@/components/markdown';
 import { OutputBlock } from '@/components/output-block';
 import { StageBadge } from '@/components/stage-badge';
 import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
 import { Input } from '@/components/ui/input';
-import {
-  backgroundRun,
-  isProjectName,
-  isTaskId,
-  readDiff,
-  readTaskControls,
-  type BackgroundRun,
-  type Gate,
-} from '@/lib/factory';
+import { backgroundRun, isProjectName, isTaskId, readDiff, readTaskControls, type Gate } from '@/lib/factory';
+import { pageVersion, taskPhase } from '@/lib/live-run';
 import { clip, projectLabel, stageGlyph } from '@/lib/page-title';
-import {
-  lastStepId,
-  runStatus,
-  stageTimeline,
-  taskConversation,
-  type AgentStep,
-  type ChatEntry,
-} from '@/lib/task-chat';
+import { lastStepId, stageTimeline, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -235,42 +219,6 @@ function ReviewCard({ review }: { review: NonNullable<TaskRecord['review']> }) {
   );
 }
 
-function RunningTurn({ run }: { run: BackgroundRun }) {
-  const status = runStatus(run.activity, run.logTail ?? '', Date.now());
-  return (
-    <AgentMessage>
-      <div className="affect-ui-theme">
-        <ThinkingLoader phases={[run.label ?? 'Working']} variant="plain" size="sm" />
-      </div>
-      {status.text && (
-        <p className="mt-1 flex min-w-0 gap-2 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate font-mono" title={status.text}>
-            Now: {status.text}
-          </span>
-          {status.elapsed && <span className="shrink-0 tabular-nums">· {status.elapsed}</span>}
-          {status.silent && (
-            <span
-              className={cn('shrink-0 tabular-nums', status.quiet && 'text-amber-700 dark:text-amber-400')}
-            >
-              · no output for {status.silent}
-            </span>
-          )}
-        </p>
-      )}
-      {status.quiet && (
-        <p
-          role="status"
-          className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
-        >
-          No output for {status.silent}. The command is still running, but it prints nothing. Stop the run if
-          it should have finished; a command silent for the profile's stall limit is stopped anyway.
-        </p>
-      )}
-      {run.logTail && <LiveOutput output={run.logTail} />}
-    </AgentMessage>
-  );
-}
-
 /* ---------- Page ---------- */
 
 /** One backend read per request, shared by the tab title and the page. */
@@ -322,14 +270,9 @@ export default async function TaskPage({
   const diffResult = gate ? await readDiff(project, id) : undefined;
   const diff = diffResult?.ok ? diffResult.value : undefined;
   const run = await backgroundRun(project, id);
-  // A failed observation must never unlock a command or pretend a worker is alive.
-  const phase =
-    controls.execution === 'unavailable' || run.phase === 'unavailable'
-      ? 'unavailable'
-      : executionBusy(controls.execution)
-        ? controls.execution
-        : (run.phase ?? controls.execution);
+  const phase = taskPhase(controls.execution, run);
   const busy = executionBusy(phase);
+  const version = pageVersion(task, phase, run.label);
   const actions = taskActions(task, phase, controls.head_sha);
   const allowed = (action: string) => actions.some((a) => a.action === action && a.allowed);
   const hidden = { project, id };
@@ -398,8 +341,6 @@ export default async function TaskPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:grid lg:grid-cols-[2fr_1fr]">
-      {busy && <AutoRefresh />}
-
       <section aria-label="Conversation" className="flex min-h-0 flex-col max-lg:h-[85dvh] max-lg:shrink-0">
         <header className="flex shrink-0 items-center gap-3 border-b px-6 py-3">
           <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={task.name ?? task.prompt}>
@@ -424,7 +365,19 @@ export default async function TaskPage({
             ),
           )}
 
-          {busy && <RunningTurn run={{ ...run, label: runLabel }} />}
+          {busy && (
+            <AgentMessage>
+              <LiveRun
+                key={version}
+                project={project}
+                id={id}
+                label={runLabel}
+                version={version}
+                initial={{ logTail: run.logTail, activity: run.activity }}
+                renderedAt={Date.now()}
+              />
+            </AgentMessage>
+          )}
           {phase === 'unavailable' && (
             <p role="alert" className="text-sm text-destructive">
               Execution status is unavailable. Refresh before acting.

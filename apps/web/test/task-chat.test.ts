@@ -3,6 +3,7 @@ import type { TaskRecord } from '@factory/core';
 import {
   lastStepId,
   latestActivity,
+  livePollOutcome,
   runStatus,
   splitOutput,
   stageTimeline,
@@ -189,5 +190,18 @@ describe('coder messages', () => {
     expect(steps[2]).toMatchObject({ text: 'coder made no changes', tone: 'danger' });
     expect(steps[2]!.reply).toMatch(/^I made no changes\.\n\n\| Package/);
     expect(steps[2]!.output).toBeUndefined();
+  });
+});
+
+describe('livePollOutcome', () => {
+  it('keeps the page and takes the new output while the same task version runs', () => {
+    expect(livePollOutcome('v1', { version: 'v1', busy: true, logTail: 'a\nb' })).toEqual({
+      logTail: 'a\nb',
+      activity: undefined,
+    });
+  });
+  it('reloads the page when the task changed or the run ended', () => {
+    expect(livePollOutcome('v1', { version: 'v2', busy: true })).toBe('reload');
+    expect(livePollOutcome('v1', { version: 'v1', busy: false })).toBe('reload');
   });
 });
