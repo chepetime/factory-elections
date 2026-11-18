@@ -11,6 +11,8 @@ export interface AgentStep {
   text: string;
   tone: StepTone;
   href?: string;
+  /** Command output after the first line of the message, shown as a code block. */
+  output?: string;
 }
 
 export type ChatEntry =
@@ -25,6 +27,22 @@ function tone(kind: string, text: string): StepTone {
   if (kind === 'stage:awaiting-approval') return 'attention';
   if (kind === 'stage:pr-opened' || kind === 'verification') return 'success';
   return 'neutral';
+}
+
+// Terminal color and cursor codes from captured command output.
+const ESC = String.fromCharCode(27);
+const ANSI = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, 'g');
+
+/** Splits a message into its first line and the command output that follows it, if any. */
+export function splitOutput(message: string): { text: string; output?: string } {
+  const newline = message.indexOf('\n');
+  if (newline < 0) return { text: message };
+  const output = message
+    .slice(newline + 1)
+    .replace(ANSI, '')
+    .replace(/\s+$/, '');
+  const text = message.slice(0, newline).trimEnd();
+  return output.trim() ? { text, output } : { text };
 }
 
 export function taskConversation(task: TaskRecord): ChatEntry[] {
@@ -61,7 +79,7 @@ export function taskConversation(task: TaskRecord): ChatEntry[] {
       id,
       at: event.at,
       kind: event.kind,
-      text: event.message,
+      ...splitOutput(event.message),
       tone: tone(event.kind, event.message),
     };
     if (event.kind === 'stage:pr-opened' && /^https?:\/\//.test(event.message)) step.href = event.message;

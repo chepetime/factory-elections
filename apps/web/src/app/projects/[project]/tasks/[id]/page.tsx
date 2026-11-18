@@ -18,6 +18,7 @@ import { AgentCheckpoints, type Checkpoint } from '@/components/agent-checkpoint
 import { AgentFindings } from '@/components/agent-findings';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { LocalTime } from '@/components/local-time';
+import { OutputBlock } from '@/components/output-block';
 import { StageBadge } from '@/components/stage-badge';
 import { ChatScroll, TaskChatComposer } from '@/components/task-chat';
 import { Input } from '@/components/ui/input';
@@ -31,7 +32,7 @@ import {
   type Gate,
 } from '@/lib/factory';
 import { clip, projectLabel, stageGlyph } from '@/lib/page-title';
-import { lastStepId, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
+import { lastStepId, splitOutput, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -161,6 +162,11 @@ function StepList({ steps, extra }: { steps: AgentStep[]; extra: (step: AgentSte
             </span>
             <LocalTime iso={step.at} className="shrink-0 text-xs tabular-nums text-muted-foreground" />
           </div>
+          {step.output && (
+            <div className="ml-4">
+              <OutputBlock output={step.output} tone={step.tone === 'danger' ? 'danger' : undefined} />
+            </div>
+          )}
           {extra(step)}
         </li>
       ))}
@@ -413,9 +419,7 @@ export default async function TaskPage({
             <AgentMessage>
               <details>
                 <summary className="cursor-pointer text-sm text-muted-foreground">Last run output</summary>
-                <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
-                  {run.logTail}
-                </pre>
+                <OutputBlock output={run.logTail} label="Run output" />
               </details>
               <form action={dismissLog} className="mt-1">
                 <input type="hidden" name="project" value={project} />
@@ -462,7 +466,7 @@ export default async function TaskPage({
                 return {
                   id: `stage-${index}`,
                   ...(index ? { parent: `stage-${index - 1}` } : {}),
-                  title: event.message || event.kind.slice(6),
+                  title: splitOutput(event.message).text || event.kind.slice(6),
                   status: /failed|blocked|rejected/.test(event.kind) ? 'failed' : 'done',
                   ...(Number.isFinite(start) && Number.isFinite(at) ? { at: Math.max(0, at - start) } : {}),
                 };

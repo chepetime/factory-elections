@@ -193,3 +193,33 @@ it('renders review findings and stage events through the shared components', asy
   expect(page).toContain('src/a.ts');
   expect(page).not.toContain('Saved checkpoint');
 });
+it('shows command output of a failed step and the last run output as copyable code blocks', async () => {
+  const failed = {
+    ...task,
+    stage: 'failed' as const,
+    events: [
+      {
+        at: '2026-11-18T12:47:00.000Z',
+        kind: 'stage:failed',
+        message: 'Worktree setup (`pnpm install`) exited with status 1.\naws: [ERROR] Token has expired',
+      },
+    ],
+  };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: failed, execution: 'completed', actions: taskActions(failed, 'completed') },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({
+    running: false,
+    phase: 'completed',
+    logTail: '$ pnpm install\nexit 1',
+  });
+  const page = await html();
+  expect(page).toContain('Worktree setup (`pnpm install`) exited with status 1.');
+  expect(page).toMatch(/ui-codec[\s\S]*aws: \[ERROR\] Token has expired/);
+  expect(page).toMatch(/data-tone="danger"[\s\S]*Error output[\s\S]*Token has expired/);
+  expect(page.match(/data-tone="danger"/g)).toHaveLength(1);
+  expect(page).toContain('Copy');
+  expect(page).toMatch(/ui-codec[\s\S]*\$ pnpm install/);
+  expect(page).not.toContain('Token has expired</span><time');
+});

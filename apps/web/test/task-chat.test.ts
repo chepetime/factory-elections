@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskRecord } from '@factory/core';
-import { lastStepId, taskConversation } from '@/lib/task-chat';
+import { lastStepId, splitOutput, taskConversation } from '@/lib/task-chat';
 
 const at = (m: number) => `2026-11-14T00:${String(m).padStart(2, '0')}:00.000Z`;
 
@@ -55,5 +55,31 @@ describe('taskConversation', () => {
 
   it('shows only the prompt for a task without events', () => {
     expect(taskConversation({ ...task, events: undefined })).toHaveLength(1);
+  });
+});
+
+describe('splitOutput', () => {
+  it('keeps a one-line message as text', () => {
+    expect(splitOutput('Verification passed')).toEqual({ text: 'Verification passed' });
+  });
+
+  it('moves command output after the first line into a block, without terminal colors', () => {
+    const message =
+      'Worktree setup (`pnpm install`) exited with status 1. Fix the setup command.\n' +
+      '. pnpm:devPreinstall$ mise run auth\n\u001b[31maws: [ERROR]\u001b[0m Token has expired\n';
+    expect(splitOutput(message)).toEqual({
+      text: 'Worktree setup (`pnpm install`) exited with status 1. Fix the setup command.',
+      output: '. pnpm:devPreinstall$ mise run auth\naws: [ERROR] Token has expired',
+    });
+  });
+
+  it('gives a failed step its output', () => {
+    const failed = {
+      ...task,
+      stage: 'failed',
+      events: [{ at: at(1), kind: 'stage:failed', message: 'Setup failed.\nline 1\nline 2' }],
+    } as unknown as TaskRecord;
+    const steps = taskConversation(failed).flatMap((e) => (e.role === 'agent' ? e.steps : []));
+    expect(steps[0]).toMatchObject({ text: 'Setup failed.', output: 'line 1\nline 2', tone: 'danger' });
   });
 });
