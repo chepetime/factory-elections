@@ -13,6 +13,7 @@ vi.mock('@/lib/factory', () => ({
   isTaskId: () => true,
 }));
 vi.mock('@/app/actions', () => ({
+  approveAndOpenPullRequest: vi.fn(),
   approveTask: vi.fn(),
   dismissLog: vi.fn(),
   openPullRequest: vi.fn(),
@@ -125,7 +126,7 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
   });
   const page = await html();
   expect(page).toContain('Model attempts');
-  expect(page).toContain('claude-sonnet');
+  expect(page).toMatch(/>sonnet · /);
   expect(page).toContain('codex');
   expect(page).toContain('failed: timeout');
   expect(page).toContain('$1.75');
@@ -190,7 +191,7 @@ it('renders review findings and stage events through the shared components', asy
   });
   const page = await html();
   expect(page).toContain('Stage timeline');
-  expect(page).toContain('Latest stage');
+  expect(page).toMatch(/aria-current="step"[\s\S]*Review ready/);
   expect(page).toContain('Review findings');
   expect(page).toContain('Missing check');
   expect(page).toContain('src/a.ts');
@@ -277,4 +278,63 @@ it('says which checks did not run locally and that CI must pass', async () => {
   });
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
   expect(await html()).toMatch(/Not run locally: test, full_check\.[\s\S]*CI must pass before you merge/);
+});
+it('ends a successful run with a ready card, the findings, and earlier errors folded', async () => {
+  const at = (m: number) => `2026-11-18T00:${String(m).padStart(2, '0')}:00.000Z`;
+  const current = TaskRecord.parse({
+    ...task,
+    stage: 'awaiting-approval',
+    events: [
+      { at: at(0), kind: 'stage:submitted', message: 'Task submitted' },
+      {
+        at: at(1),
+        kind: 'stage:failed',
+        message: 'Verification failed for an environment reason.\n\n```\nold-error-line\n```',
+      },
+      { at: at(2), kind: 'stage:awaiting-approval', message: 'Review ready' },
+    ],
+    verification: {
+      passed: true,
+      head_sha: 'abc123abc123abc',
+      at: at(2),
+      output_tail: '',
+      not_run_locally: ['test'],
+    },
+    review: {
+      verdict: 'approve',
+      summary: 'Looks right.',
+      at: at(2),
+      head_sha: 'abc123abc123abc',
+      findings: [
+        { severity: 'nit', message: 'Tiny thing' },
+        { severity: 'minor', message: 'Deprecated package', file: 'pnpm-lock.yaml' },
+      ],
+    },
+  });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: current,
+      execution: 'completed',
+      head_sha: 'abc123abc123abc',
+      diff_stat: ' a | 1 +\n 2 files changed, 134 insertions(+), 57 deletions(-)',
+      actions: taskActions(current, 'completed', 'abc123abc123abc'),
+    },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
+  vi.mocked(readDiff).mockResolvedValue({ ok: true, value: '' });
+  const page = await html();
+  expect(page).toMatch(/aria-label="Ready for your approval"[\s\S]*Ready for your approval/);
+  expect(page).toContain('2 files changed, 134 insertions(+), 57 deletions(-)');
+  expect(page).toContain('Approved · 1 minor, 1 nit');
+  expect(page).toMatch(/not run locally: test\. CI must pass/);
+  expect(page).toMatch(/minor<\/span>[\s\S]*Deprecated package[\s\S]*nit<\/span>[\s\S]*Tiny thing/);
+  expect(page).toMatch(/<details[^>]*><summary[^>]*>Error output \(a later run went past this failure\)/);
+  expect(page).toMatch(
+    /Ready for your approval[\s\S]*role="group" aria-label="Your options"|Ready for your approval[\s\S]*aria-label="Your options"/,
+  );
+  expect(page).toMatch(
+    /Approve and open draft PR[\s\S]*Approve only[\s\S]*for="chat-input"[^>]*>Ask for changes/,
+  );
+  expect(page).toContain('Reject the change…');
 });

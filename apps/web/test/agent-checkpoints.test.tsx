@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AgentCheckpoints, checkpointGraph, type Checkpoint } from '@/components/agent-checkpoints';
+import {
+  AgentCheckpoints,
+  checkpointGraph,
+  compactCheckpoints,
+  type Checkpoint,
+} from '@/components/agent-checkpoints';
 import { checkpointDemoReducer } from '@/components/agent-checkpoints-demo';
 
 const checkpoints: Checkpoint[] = [
@@ -47,5 +52,29 @@ describe('agent checkpoints', () => {
   it('handles an empty run', () => {
     const html = renderToStaticMarkup(<AgentCheckpoints checkpoints={[]} />);
     expect(html).toContain('Checkpoints will appear as the agent works.');
+  });
+
+  const stages: Checkpoint[] = Array.from({ length: 8 }, (_, i) => ({
+    id: `s${i}`,
+    ...(i ? { parent: `s${i - 1}` } : {}),
+    title: i === 0 ? 'Submitted' : `Stage ${i}`,
+  }));
+
+  it('keeps the submission and the last three stages, linked across the hidden middle', () => {
+    const { shown, hidden } = compactCheckpoints(stages);
+    expect(shown.map((c) => c.id)).toEqual(['s0', 's5', 's6', 's7']);
+    expect(shown[1]!.parent).toBe('s0');
+    expect(hidden).toBe(4);
+    expect(compactCheckpoints(stages.slice(0, 5)).hidden).toBe(0);
+  });
+
+  it('renders a compact timeline with a toggle and no inner scroll', () => {
+    const html = renderToStaticMarkup(<AgentCheckpoints mode="timeline" checkpoints={stages} />);
+    expect(html).toContain('Show 4 more stages');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('Stage 2');
+    expect(html).toContain('Stage 7');
+    expect(html).not.toContain('overflow-auto');
+    expect(html).not.toContain('Enter to rewind');
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend/client';
-import { submitTask, reviseTask, approveTask, assignMember } from '@/app/actions';
+import { submitTask, reviseTask, approveTask, approveAndOpenPullRequest, assignMember } from '@/app/actions';
 import { backgroundRun } from '@/lib/factory';
 import { saveAssignment, teamMembers } from '@/lib/team';
 import { systemStatus } from '@/lib/status';
@@ -60,6 +60,36 @@ describe('web/backend reintegration', () => {
       { project: 'demo', id, action: 'approve', head: 'abcdef1234', note: 'reviewed', accept_blocking: true },
       120_000,
     );
+  });
+  it('approves then opens a draft pull request, and says so when only the approval worked', async () => {
+    rpc
+      .mockResolvedValueOnce({ text: 'Approved' })
+      .mockResolvedValueOnce({ text: 'https://example.test/pr/1' });
+    expect(await approveAndOpenPullRequest({}, form({ project: 'demo', id, head: 'abcdef1234' }))).toEqual({
+      message: 'Opened https://example.test/pr/1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
+      'ExecuteTask',
+      { project: 'demo', id, action: 'approve', head: 'abcdef1234', note: '', accept_blocking: false },
+      120_000,
+    );
+    expect(rpc).toHaveBeenLastCalledWith(
+      'ExecuteTask',
+      { project: 'demo', id, action: 'open-pr', draft: true },
+      300_000,
+    );
+    rpc.mockReset();
+    rpc.mockResolvedValueOnce({ text: 'Approved' }).mockRejectedValueOnce(new Error('push refused'));
+    expect(await approveAndOpenPullRequest({}, form({ project: 'demo', id, head: 'abcdef1234' }))).toEqual({
+      error: 'Approved, but the pull request did not open: push refused',
+    });
+    rpc.mockReset();
+    rpc.mockRejectedValueOnce(new Error('head moved'));
+    expect(await approveAndOpenPullRequest({}, form({ project: 'demo', id, head: 'abcdef1234' }))).toEqual({
+      error: 'head moved',
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
   it('awaits team persistence and reports backend failures', async () => {
     rpc.mockRejectedValueOnce(new Error('assignment failed'));

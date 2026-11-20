@@ -114,6 +114,28 @@ export async function approveTask(_prev: ActionState, form: FormData): Promise<A
   return result.ok ? { message: 'Approved.' } : { error: result.error };
 }
 
+/** Approves exactly this commit, then pushes the branch and opens a draft pull request. */
+export async function approveAndOpenPullRequest(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const t = target(form);
+  if ('error' in t) return t;
+  const approved = await executeTask({
+    ...t,
+    action: 'approve',
+    head: field(form, 'head'),
+    note: field(form, 'note'),
+    accept_blocking: form.get('acceptBlocking') === 'on',
+  });
+  if (!approved.ok) {
+    refresh(t.project, t.id);
+    return { error: approved.error };
+  }
+  const opened = await executeTask({ ...t, action: 'open-pr', draft: true }, 300_000);
+  refresh(t.project, t.id);
+  return opened.ok
+    ? { message: `Opened ${opened.value}` }
+    : { error: `Approved, but the pull request did not open: ${opened.error}` };
+}
+
 export async function rejectTask(_prev: ActionState, form: FormData): Promise<ActionState> {
   const t = target(form);
   if ('error' in t) return t;
