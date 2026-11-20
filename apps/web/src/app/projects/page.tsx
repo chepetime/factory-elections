@@ -10,10 +10,7 @@ export default async function ProjectsPage() {
   const projects = await listProjects();
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-        <p className="mt-1 text-muted-foreground">Repositories this factory can work on.</p>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
 
       <section aria-labelledby="add-project" className="rounded-2xl border bg-card p-5 shadow-xs">
         <h2 id="add-project" className="mb-4 text-base font-semibold">

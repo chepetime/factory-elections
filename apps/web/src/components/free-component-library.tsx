@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { ArrowUpRight, BookOpen, Check, Code2, Package, RotateCcw, Search } from 'lucide-react';
+import { ArrowUpRight, Check, RotateCcw, Search } from 'lucide-react';
 import { CodeBlock as CleanCodeBlock } from '@factory/affect-ui/components/code-block-clean';
 import { CodeBlock as ClassicCodeBlock } from '@factory/affect-ui/components/code-block';
 import { DecisionInbox as CleanDecisionInbox } from '@factory/affect-ui/components/decision-inbox-clean';
@@ -69,15 +69,11 @@ export function FreeComponentLibrary() {
     >
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <h2 id="free-library-heading" className="text-xl font-semibold tracking-tight">
-              The free library
-            </h2>
-            <Badge variant="secondary">74 MIT items</Badge>
-          </div>
+          <h2 id="free-library-heading" className="text-xl font-semibold tracking-tight">
+            The free library
+          </h2>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            51 components, 2 blocks, 17 illustrations, and 4 motion effects. Every source is installed
-            locally; Classic and Clean styles are included where available.
+            51 components, 2 blocks, 17 illustrations, and 4 motion effects.
           </p>
         </div>
         <a
@@ -147,9 +143,6 @@ export function FreeComponentLibrary() {
                       item.slug === selected?.slug && 'bg-muted',
                     )}
                   >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-muted-foreground">
-                      <Code2 className="size-4" aria-hidden="true" />
-                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium">{item.title}</span>
                       <span className="mt-0.5 block truncate text-xs text-muted-foreground">
@@ -178,7 +171,7 @@ export function FreeComponentLibrary() {
                   <div className="space-y-1">
                     <h3 className="font-medium">{selected.title}</h3>
                     <p className="text-xs text-muted-foreground capitalize">
-                      {selected.category} · MIT · {canSwitchStyle ? '2 styles' : '1 style'}
+                      {selected.category}
                     </p>
                   </div>
                   {canSwitchStyle && (
@@ -197,10 +190,7 @@ export function FreeComponentLibrary() {
                 <p className="text-sm leading-relaxed text-muted-foreground">{selected.description}</p>
                 {LIVE_PREVIEWS.has(selected.slug) ? (
                   <>
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[11px] font-medium tracking-widest text-muted-foreground uppercase">
-                        Live preview
-                      </h4>
+                    <div className="flex justify-end">
                       <Button
                         variant="ghost"
                         className="min-h-11 text-xs"
@@ -219,26 +209,16 @@ export function FreeComponentLibrary() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex gap-3 rounded-xl border bg-background p-4">
-                    <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Source installed and ready to import. Open its Storybook preview for an isolated
-                      example, prop controls, and style variants. This gallery also includes live previews for
-                      Code Block, Decision Inbox, and Segmented Control.
-                    </p>
-                  </div>
+                  <p className="rounded-xl border bg-background p-4 text-xs leading-relaxed text-muted-foreground">
+                    No live preview. Open its Storybook preview below.
+                  </p>
                 )}
-                <div className="space-y-2">
-                  <h4 className="text-[11px] font-medium tracking-widest text-muted-foreground uppercase">
-                    Import into the app
-                  </h4>
-                  <CleanCodeBlock
-                    code={importExample(selected, style)}
-                    language="tsx"
-                    filename="Import"
-                    wrap
-                  />
-                </div>
+                <CleanCodeBlock
+                  code={importExample(selected, style)}
+                  language="tsx"
+                  filename="Import"
+                  wrap
+                />
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
                   <a
                     href={`http://127.0.0.1:6006/?path=/story/${selected.storybookId}--${variant.style}`}
@@ -281,29 +261,6 @@ export function FreeComponentLibrary() {
           <span>Source snapshot · {inventory.checkedAt}</span>
         </footer>
       </div>
-      <details className="rounded-xl border px-5 py-4">
-        <summary className="min-h-7 cursor-pointer text-sm font-medium outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">
-          <BookOpen className="mr-2 inline size-4 text-muted-foreground" aria-hidden="true" />
-          Patterns for the next factory components
-        </summary>
-        <div className="mt-4 grid gap-5 text-xs leading-relaxed text-muted-foreground sm:grid-cols-3">
-          <p>
-            <strong className="mb-1 block text-foreground">Quiet surfaces</strong>Neutral trays, subtle
-            hairlines, 13px body copy, small metadata, and one accent for the active state. Both style
-            variants share the same component APIs.
-          </p>
-          <p>
-            <strong className="mb-1 block text-foreground">Visible state changes</strong>Decisions confirm
-            before folding away. Copy becomes a check. Controls keep stable dimensions as indicators move and
-            counts change.
-          </p>
-          <p>
-            <strong className="mb-1 block text-foreground">Purposeful motion</strong>Short opacity and
-            transform transitions, a settling ease, keyboard parity, and reduced-motion support. Our custom
-            versions use shadcn, Tailwind, and Motion.
-          </p>
-        </div>
-      </details>
     </section>
   );
 }
@@ -380,9 +337,6 @@ function FeaturedPreview({ slug, style }: { slug: string; style: LibraryStyle })
         <Check className="size-4 text-blue-500" aria-hidden="true" />
         <span className="capitalize">{view} view selected</span>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Use arrow keys, Home, and End to switch views. The selected option stays in the tab order.
-      </p>
     </div>
   );
 }

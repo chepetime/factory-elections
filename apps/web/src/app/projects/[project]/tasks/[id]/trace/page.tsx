@@ -83,7 +83,7 @@ export default async function TracePage({ params }: { params: Promise<{ project:
       </Link>
       <h1 className="text-2xl font-semibold">Task traces</h1>
       <p className="text-sm text-muted-foreground">
-        Each tree is one run or event. Summed span time includes overlapping parent and child spans.
+        Summed span time includes overlapping parent and child spans.
       </p>
       {trace.roots.length ? (
         <ul className="space-y-4">

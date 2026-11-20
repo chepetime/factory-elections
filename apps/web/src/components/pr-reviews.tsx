@@ -238,10 +238,10 @@ export function PullRequestReviews({
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">PR Reviews</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">PR reviews</h1>
           <p className="mt-1 text-muted-foreground">
-            Open pull requests, ordered by what needs you first. Each review is a chat with the
-            senior-pr-review agent (Claude Opus) in its own worktree, and uses model credits.
+            Each review runs the senior-pr-review agent (Claude Opus) in its own worktree and uses model
+            credits.
           </p>
         </div>
         {list && <p className="text-sm text-muted-foreground">Signed in to GitHub as @{list.me}</p>}

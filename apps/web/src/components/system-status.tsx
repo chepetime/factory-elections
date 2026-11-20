@@ -98,7 +98,7 @@ export function SystemStatus() {
   const Icon = running && !report ? LoaderCircle : tone.icon;
   const headline = error
     ? report
-      ? 'Checks unavailable — showing last results'
+      ? 'Checks unavailable. Showing last results.'
       : 'Checks unavailable'
     : !report
       ? 'Running checks…'

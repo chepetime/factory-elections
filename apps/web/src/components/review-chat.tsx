@@ -226,7 +226,7 @@ export function ReviewChat({
           <ChatScroll>
             {detail.conversation.length === 0 && !preparing && !detail.error && (
               <p className="text-sm text-muted-foreground">
-                No review yet. Start one from the PR Reviews list.
+                No review yet. Start one from the PR reviews list.
               </p>
             )}
             {detail.conversation.map((entry, i) =>

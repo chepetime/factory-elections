@@ -466,7 +466,7 @@ function ReviewCard({
   return (
     <div className="mt-2 mb-1 ml-4 rounded-xl border bg-background p-3 text-sm shadow-xs">
       <p>
-        <span className="font-medium">Review: {review.verdict}</span> — {review.summary}
+        <span className="font-medium">Review: {review.verdict}.</span> {review.summary}
       </p>
       {findings && review.findings.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1.5">

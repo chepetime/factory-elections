@@ -17,10 +17,7 @@ export default function SettingsPage() {
   ] as const;
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-muted-foreground">The state of this machine, the engine and your projects.</p>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
       <SystemStatus />
 

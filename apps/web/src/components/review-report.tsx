@@ -119,7 +119,7 @@ export function ReviewReport({ payload }: { payload: ReviewPayload }) {
   const id = (f: Finding) => `f-${payload.findings.indexOf(f)}`;
   const facts = (
     [
-      ['Risk', m.risk_level ? `${m.risk_level}${m.risk_reason ? ` — ${m.risk_reason}` : ''}` : undefined],
+      ['Risk', m.risk_level ? `${m.risk_level}${m.risk_reason ? `: ${m.risk_reason}` : ''}` : undefined],
       [
         'Size',
         m.size?.lines != null
@@ -127,7 +127,7 @@ export function ReviewReport({ payload }: { payload: ReviewPayload }) {
           : undefined,
       ],
       ['Confidence', m.confidence],
-      ['Ticket', m.jira_key ? `${m.jira_key}${m.jira_summary ? ` — ${m.jira_summary}` : ''}` : undefined],
+      ['Ticket', m.jira_key ? `${m.jira_key}${m.jira_summary ? `: ${m.jira_summary}` : ''}` : undefined],
       ['Base', m.base],
       ['Skill', m.skill_version],
     ] as [string, string | null | undefined][]

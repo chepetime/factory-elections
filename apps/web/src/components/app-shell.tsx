@@ -302,7 +302,7 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
             <Menu.Popup className={menuPopup}>
               <div className="px-2.5 py-1.5">
                 <p className="text-sm font-medium">Software Factory</p>
-                <p className="text-xs text-muted-foreground">Local · localhost</p>
+                <p className="text-xs text-muted-foreground">localhost</p>
               </div>
               <Menu.Separator className="my-1 h-px bg-border" />
               <Menu.Item className={menuItem} render={<Link href="/" />}>
@@ -527,7 +527,7 @@ function Sidebar({
             aria-current={/^\/projects\/[^/]+\/reviews/.test(pathname) ? 'page' : undefined}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
           >
-            <GitPullRequest className="size-4 text-muted-foreground" /> PR Reviews
+            <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
           </Link>
           <Link
             href={`/projects/${project}/tickets`}
@@ -576,7 +576,7 @@ function Sidebar({
                 <Link
                   href={`/projects/${project}/tasks/${t.id}`}
                   aria-current={t.id === activeId ? 'page' : undefined}
-                  title={`${taskTitle(t.prompt)} — ${t.stage}`}
+                  title={`${taskTitle(t.prompt)} (${t.stage})`}
                   className={cn(
                     'flex items-center gap-2 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring',
                     t.id === activeId && 'bg-background shadow-xs hover:bg-background',

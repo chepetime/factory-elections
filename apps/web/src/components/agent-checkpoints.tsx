@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
-import { Check, ChevronsUpDown, GitBranch, History, LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { Check, ChevronsUpDown, History, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -372,12 +372,8 @@ export function AgentCheckpoints({
           </div>
         )}
         {!timeline && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/30 px-5 py-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <GitBranch aria-hidden="true" className="size-3.5" />
-              Earlier attempts stay in your history
-            </span>
-            <span>↑ ↓ navigate · Enter to rewind</span>
+          <div className="border-t bg-muted/30 px-5 py-3 text-right text-xs text-muted-foreground">
+            ↑ ↓ navigate · Enter to rewind
           </div>
         )}
       </Card>
