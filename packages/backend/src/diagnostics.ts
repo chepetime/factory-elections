@@ -1,6 +1,7 @@
 // Checks the local prerequisites for the task-to-PR workflow and says how to fix each one.
 import { run } from '@factory/adapters-process';
 import { isReadableDirectory } from '@factory/adapters-fs';
+import { parseVersion, TESTED_RUNTIMES } from '@factory/core';
 
 export interface Check {
   name: string;
@@ -25,6 +26,44 @@ export async function pnpmCheck(runner: Runner = diagnosticRun): Promise<Check> 
   };
 }
 
+/**
+ * The provider CLI versions on PATH beside the tested ones. These checks inform and never fail: a
+ * different version may work, but its lifecycle behavior (cancel, resume, stream framing) is not
+ * verified. Model access is checked apart, by "Claude model access".
+ */
+export async function runtimeVersionChecks(runner: Runner = diagnosticRun): Promise<Check[]> {
+  const [claude, codex] = await Promise.all([
+    runner('claude', ['--version']),
+    runner('codex', ['--version']),
+  ]);
+  const describe = (out: { code: number | null; stdout: string }, tested: string, missing: string) => {
+    const found = out.code === 0 ? parseVersion(out.stdout) : undefined;
+    const detail = !found
+      ? out.code === 0
+        ? `version not recognized; tested with ${tested}`
+        : missing
+      : found === tested
+        ? `${found} (tested)`
+        : `${found}; tested with ${tested}, so cancel, resume and stream behavior are not verified`;
+    return { ok: true, detail };
+  };
+  return [
+    {
+      name: 'Claude CLI version (review turns)',
+      ...describe(claude, TESTED_RUNTIMES.claudeCli, 'claude not found; PR review turns need it'),
+    },
+    {
+      name: 'Claude Agent SDK (tasks)',
+      ok: true,
+      detail: `${TESTED_RUNTIMES.claudeAgentSdk} with bundled Claude Code ${TESTED_RUNTIMES.claudeSdkCli} (lockfile)`,
+    },
+    {
+      name: 'Codex CLI version',
+      ...describe(codex, TESTED_RUNTIMES.codexCli, 'codex not installed (optional)'),
+    },
+  ];
+}
+
 export async function environmentChecks(root: string): Promise<Check[]> {
   const checks: Check[] = [];
   const major = Number(process.versions.node.split('.')[0]);
@@ -36,12 +75,13 @@ export async function environmentChecks(root: string): Promise<Check[]> {
   });
 
   const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
-  const [gitVersion, pnpm, gh, claude, store] = await Promise.all([
+  const [gitVersion, pnpm, gh, claude, store, runtimes] = await Promise.all([
     diagnosticRun('git', ['--version']),
     pnpmCheck(),
     diagnosticRun('gh', ['auth', 'status']),
     hasKey ? Promise.resolve({ code: 0, stdout: '' }) : diagnosticRun('claude', ['auth', 'status']),
     isReadableDirectory(root),
+    runtimeVersionChecks(),
   ]);
   checks.push({
     name: 'git',
@@ -72,6 +112,8 @@ export async function environmentChecks(root: string): Promise<Check[]> {
           : 'Claude Code is not signed in',
     fix: 'Run `claude` once and sign in (or `claude auth login`), or export ANTHROPIC_API_KEY.',
   });
+
+  checks.push(...runtimes);
 
   checks.push({
     name: 'Data root',

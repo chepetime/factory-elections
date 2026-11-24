@@ -80,6 +80,28 @@ const CAPABILITY_TEXT: Record<Capability, string> = {
   mcp: 'call MCP tools',
 };
 
+/**
+ * The provider runtime versions the adapters were last checked against (phase 0 baseline). Each
+ * entry point runs its own binary: SDK tasks use the Claude Code that the SDK package bundles,
+ * detached review turns the `claude` on PATH, and Codex runs the `codex` on PATH. Another version
+ * may work, but its lifecycle behavior is not verified. Update a pin only with new fixtures.
+ */
+export const TESTED_RUNTIMES = {
+  /** `@anthropic-ai/claude-agent-sdk`, pinned by the lockfile. */
+  claudeAgentSdk: '0.3.323',
+  /** The Claude Code binary that SDK version bundles. */
+  claudeSdkCli: '2.1.323',
+  /** `claude` on PATH, for detached review turns. */
+  claudeCli: '2.1.331',
+  /** `codex` on PATH. */
+  codexCli: '0.172.0',
+} as const;
+
+/** The first x.y.z version in a `--version` line, e.g. `2.1.331 (Claude Code)` or `codex-cli 0.172.0`. */
+export function parseVersion(output: string): string | undefined {
+  return /\b(\d+\.\d+\.\d+)\b/.exec(output)?.[1];
+}
+
 /** Undefined when the provider has every capability; otherwise why it cannot take the work. */
 export function missingCapabilities(provider: ProviderId, needs: readonly Capability[]): string | undefined {
   const have = PROVIDER_CAPABILITIES[provider];
