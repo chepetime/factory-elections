@@ -12,6 +12,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [ ] **SDK tasks get 17 skills and 53 slash commands** with `settingSources: []` (finding 2): exclude them, or show them in the manifest.
 - [ ] **Codex loads `~/.agents/skills`** despite `--ignore-user-config` (finding 3).
 - [ ] **A stopped detached review turn has no exit code** (finding 4): record the stop on the review record until phase 3 removes the path.
+- [ ] **Flaky cost assertion** in `packages/backend/test/features.test.ts:238`: once in about six full runs, the feature cost is 1.9 instead of 1.7, which suggests a step ran twice. It did not happen when the file ran alone.
 - [ ] **Worktree paths with `%2F` break `packages/backend/test/server.test.ts`:** the CLI path gets encoded twice (`%252F`). `scripts/worktree.mjs` names worktrees this way, so the full suite fails in every agent worktree.
 
 ## Phase 1: shared contract
