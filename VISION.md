@@ -37,6 +37,7 @@ The app runs locally, on one machine, in three parts:
 | [docs/vision/workspace-and-runtime.md](docs/vision/workspace-and-runtime.md) | The full design draft (24 Nov 2026): vision, domain model, execution manager, provider adapters, lifecycle, migration and acceptance tests |
 | [docs/vision/entities.md](docs/vision/entities.md) | The domain model, how it maps to the code today, open questions |
 | [docs/vision/roadmap.md](docs/vision/roadmap.md) | The build phases, their exit criteria, and where the earlier steps go |
+| [docs/vision/ui.md](docs/vision/ui.md) | The board, the card and the shell: the UI direction |
 | [docs/vision/workflow.md](docs/vision/workflow.md) | The software workflow: six stages, the flow rules, PR tending |
 | [docs/vision/control.md](docs/vision/control.md) | Many agents, one control point, factory controls, tools per project |
 | [docs/vision/tools-and-reviews.md](docs/vision/tools-and-reviews.md) | Tool needs by stage, the tool broker, automated PR reviews |

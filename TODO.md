@@ -53,6 +53,14 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [ ] **Usage checkpoints:** cumulative vs turn-local counters, reported vs estimated vs unavailable cost. Repeated snapshots are not counted twice.
 - [ ] **Stop and Halt** (below) on the new cancellation contract: Stop is a request, and the app says "stopped" only after evidence.
 
+## UI: the board
+
+The direction is in [docs/vision/ui.md](docs/vision/ui.md). It can start now, beside the runtime phases.
+
+- [ ] **Board home page:** Working, Needs me, In review and Ready columns over tasks, runs, inbox items and reviews, with counts.
+- [ ] **Task card:** title, resource line, PR and people, one live line from execution events with its age, and the next action only.
+- [ ] **Sidebar:** Search, projects with their active tasks and state icons, and one "New task" button in the top bar.
+
 ## Phase 5: product generalization
 
 Answer the open questions in [docs/vision/entities.md](docs/vision/entities.md#open-questions) first.
