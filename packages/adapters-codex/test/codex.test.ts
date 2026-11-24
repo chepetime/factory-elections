@@ -8,6 +8,7 @@ import {
   CODEX_TOKEN_ENV,
   dropOptionalNulls,
   execArgs,
+  isCodexProtocolLine,
   parseCodexLine,
   strictSchema,
 } from '../src/index.ts';
@@ -157,4 +158,40 @@ test('step schemas become strict for OpenAI, and optional fields left null are d
     ),
     { verdict: 'approve', findings: [{ message: 'm' }, { message: 'n', file: 'a.ts' }] },
   );
+});
+
+test('stderr noise and non-protocol stdout do not keep a stalled Codex turn alive', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'codex-stall-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const fake = join(dir, 'codex');
+  await writeFile(
+    fake,
+    // One protocol event, then only diagnostics: stderr noise and a non-JSON stdout line, forever.
+    `#!/bin/sh
+echo '{"type":"thread.started","thread_id":"t-1"}'
+while :; do echo 'WARN retrying telemetry' >&2; echo 'not json'; sleep 0.01; done
+`,
+  );
+  await chmod(fake, 0o755);
+  const runner = new CodexRunner({ command: fake, stallCheckMs: 10 });
+  // The stall limit is well above process startup; the timeout bounds a turn that never stalls.
+  await assert.rejects(
+    runner.run({
+      model: 'codex',
+      effort: 'low',
+      systemPrompt: '',
+      prompt: 'x',
+      tools: 'read-only',
+      stallMs: 1_000,
+      timeoutMs: 6_000,
+    }),
+    (e: Error & { kind?: string }) => e.kind === 'stalled',
+  );
+});
+
+test('a stdout line is protocol only when it is a JSON object with a type', () => {
+  assert.equal(isCodexProtocolLine('{"type":"turn.started"}'), true);
+  assert.equal(isCodexProtocolLine('Reading additional input from stdin...'), false);
+  assert.equal(isCodexProtocolLine('{"no":"type"}'), false);
+  assert.equal(isCodexProtocolLine('42'), false);
 });

@@ -19,8 +19,12 @@ export interface RunOptions {
   timeoutMs?: number;
   /** Stops the process when it prints nothing on stdout or stderr for this long. */
   stallMs?: number;
-  /** Called with each output chunk, for streaming progress to the user. */
+  /** Called with each output chunk from stdout and stderr, for streaming progress to the user. */
   onOutput?: (chunk: string) => void;
+  /** Called with each stdout chunk only: for callers that parse a protocol on stdout. */
+  onStdout?: (chunk: string) => void;
+  /** Called with each stderr chunk only: diagnostics, kept apart from protocol data. */
+  onStderr?: (chunk: string) => void;
   /** Stops the process when aborted. */
   signal?: AbortSignal;
   /**
@@ -105,11 +109,13 @@ export function run(
       stdout = capture(stdout, chunk);
       heard();
       options.onOutput?.(chunk);
+      options.onStdout?.(chunk);
     });
     child.stderr.on('data', (chunk: string) => {
       stderr = capture(stderr, chunk);
       heard();
       options.onOutput?.(chunk);
+      options.onStderr?.(chunk);
     });
     // A child may exit before consuming input; EPIPE must not crash the parent.
     child.stdin.on('error', (error: NodeJS.ErrnoException) => {

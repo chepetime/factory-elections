@@ -101,3 +101,17 @@ test('a command that prints nothing for the stall limit is stopped as stalled; o
   assert.equal(chatty.stopped, undefined);
   assert.equal(chatty.code, 0);
 });
+
+test('stdout and stderr callbacks each get only their own stream', async () => {
+  let out = '';
+  let err = '';
+  let both = '';
+  await run(process.execPath, ['-e', "process.stdout.write('o'); process.stderr.write('e')"], {
+    onStdout: (c) => (out += c),
+    onStderr: (c) => (err += c),
+    onOutput: (c) => (both += c),
+  });
+  assert.equal(out, 'o');
+  assert.equal(err, 'e');
+  assert.equal([...both].sort().join(''), 'eo');
+});

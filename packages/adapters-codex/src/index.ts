@@ -174,6 +174,19 @@ function itemTool(item: Record<string, unknown>): AgentEvent | undefined {
   }
 }
 
+/**
+ * Whether a stdout line is a Codex protocol event (a JSON object with a type). Only these show that
+ * the turn is moving; other lines and all stderr output are diagnostics.
+ */
+export function isCodexProtocolLine(line: string): boolean {
+  try {
+    const e = JSON.parse(line) as unknown;
+    return !!e && typeof e === 'object' && typeof (e as { type?: unknown }).type === 'string';
+  } catch {
+    return false;
+  }
+}
+
 /** Events in one line of `codex exec --json` output. */
 export function parseCodexLine(line: string): AgentEvent[] {
   let e: Record<string, unknown>;
@@ -310,6 +323,7 @@ export class CodexRunner implements ModelRunner {
     let text = '';
     let result: Extract<AgentEvent, { type: 'result' }> | undefined;
     const take = (line: string) => {
+      if (isCodexProtocolLine(line)) last = Date.now();
       for (const event of parseCodexLine(line)) {
         request.onEvent?.(event);
         if (event.type === 'session') sessionId = event.id;
@@ -331,8 +345,9 @@ export class CodexRunner implements ModelRunner {
         group: true,
         captureLimit: 64 * 1024,
         ...(request.timeoutMs ? { timeoutMs: request.timeoutMs } : {}),
-        onOutput: (chunk) => {
-          last = Date.now();
+        // Protocol events arrive on stdout. stderr is diagnostics: it stays in `out.stderr` for
+        // the failure detail and does not count as progress, so log noise cannot hide a stall.
+        onStdout: (chunk) => {
           pending += chunk;
           const lines = pending.split('\n');
           pending = lines.pop() ?? '';
