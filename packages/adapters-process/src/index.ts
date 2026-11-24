@@ -71,7 +71,9 @@ export function run(
         if (group) process.kill(-child.pid, sig);
         else child.kill(sig);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        // ESRCH: the group is gone. EPERM: on macOS, a group whose processes all exited (only
+        // a zombie leader left) refuses signals this way before 'close' fires. Both mean done.
+        if (!['ESRCH', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
       }
     };
     const stop = (why: NonNullable<ProcessResult['stopped']>) => {
