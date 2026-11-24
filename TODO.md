@@ -36,6 +36,8 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [ ] **App-server isolation:** app-server has no `--ignore-user-config`, so user MCP servers and skills load ([finding 2](docs/runtime-baseline.md#app-server-findings)). Fix before the flag becomes the default.
 - [ ] **Runtime `inspect()`** of the installed CLI version (ADR 0005 moved it to phase 2): not done. The initialize answer carries the version in `userAgent`.
 
+- [ ] **App-server descendant kill by PID:** survivors are killed by the PID listed before the close, about 3 s later. Check the command line too, so a reused PID is never killed.
+
 ## Phase 3: Claude consolidation
 
 - [x] **Reviews and chats on the managed path:** Claude review turns run in-process on the SDK (`packages/adapters-claude/src/turn.ts`), with the same flags as `claude -p`. A real run confirmed that the automated-turn deny rules hold with `bypassPermissions`. `FACTORY_REVIEW_TRANSPORT=cli` is the rollback.

@@ -52,8 +52,8 @@ Reliable execution comes first, because every workflow and every degree of deleg
 | --- | --- | --- |
 | 0 | Baseline: pinned versions, protocol fixtures, lifecycle checks | Mostly done ([baseline](docs/runtime-baseline.md)) |
 | 1 | Shared execution contract across adapters | Done ([ADR 0005](docs/adr/0005-execution-contract.md)); deferred parts move to phases 2–4 |
-| 2 | Codex app-server prototype | Not started |
-| 3 | Claude consolidation: reviews and chats on the managed SDK path | Not started |
+| 2 | Codex app-server prototype | Done behind `FACTORY_CODEX_TRANSPORT=app-server`; user config isolation open |
+| 3 | Claude consolidation: reviews and chats on the managed SDK path | Done; restart behavior of review turns open |
 | 4 | Durable operations: manifests, recovery, shared limits, usage checkpoints | Partly (slots, budgets, git locks, recovery exist) |
 | 5 | Product generalization: optional repositories, person projects, conversations, knowledge | Not started |
 | Later | Warm pools, remote runtimes, squads, advanced autonomy, and the open earlier steps 5–10 | Paused |
