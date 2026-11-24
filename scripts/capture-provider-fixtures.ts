@@ -1,7 +1,7 @@
 // Phase 0 baseline: runs each provider entry point for real, saves sanitized protocol fixtures and
 // records lifecycle evidence (resume, cancel during a shell tool, descendant cleanup).
 //
-//   node scripts/capture-provider-fixtures.ts [claude-sdk|claude-cli|codex ...]
+//   node scripts/capture-provider-fixtures.ts [claude-sdk|claude-cli|codex|codex-app-server ...]
 //
 // It calls paid models (a few cents: Haiku for Claude, low effort for Codex). It is opt-in and
 // never runs in CI. Fixtures go beside each adapter's tests; the summary prints as JSON.
@@ -12,7 +12,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeAgentRunner, claudeCli } from '../packages/adapters-claude/src/index.ts';
-import { CodexRunner, execArgs } from '../packages/adapters-codex/src/index.ts';
+import {
+  CodexAppServerRunner,
+  CodexAppServerStopped,
+  CodexResumeRejected,
+  CodexRunner,
+  execArgs,
+} from '../packages/adapters-codex/src/index.ts';
 import { spawnDetached, stopGroup, isAlive } from '../packages/adapters-process/src/index.ts';
 import { TESTED_RUNTIMES } from '../packages/core/src/agents.ts';
 
@@ -44,8 +50,8 @@ function sanitizer(dir: string) {
       .replace(/\b(toolu|msg|req)_[A-Za-z0-9]+/g, (m, kind: string) => id(m, kind));
 }
 
-/** Whether a process whose command line contains `marker` still runs; kills any it finds. */
-function survivors(marker: string): number {
+/** How many processes whose command line contains `marker` still run; kills them unless `kill` is false. */
+function survivors(marker: string, kill = true): number {
   let pids: number[] = [];
   try {
     pids = execFileSync('pgrep', ['-f', `sleep ${marker}`], { encoding: 'utf8' })
@@ -55,10 +61,11 @@ function survivors(marker: string): number {
   } catch {
     return 0;
   }
-  for (const pid of pids)
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {}
+  if (kill)
+    for (const pid of pids)
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {}
   return pids.length;
 }
 
@@ -306,7 +313,105 @@ async function codex() {
   });
 }
 
-const PATHS = { 'claude-sdk': claudeSdk, 'claude-cli': claudeCliPath, codex } as const;
+/**
+ * Codex app-server (phase 2), through the runner. Raw stdout lines are teed for fixtures; account
+ * and remote-control notices are left out, and the user agent is redacted.
+ */
+async function codexAppServer() {
+  return withDir(async (dir) => {
+    const sanitize = sanitizer(dir);
+    const clean = (l: string) => sanitize(l).replace(/"userAgent":"[^"]*"/, '"userAgent":"<user-agent>"');
+    const keep = (l: string) => !/"method":"(account|remoteControl)\//.test(l);
+    let raw: string[] = [];
+    let stderr = '';
+    const runner = new CodexAppServerRunner({
+      onProtocolLine: (l) => raw.push(l),
+      onDiagnostic: (c) => (stderr += c),
+    });
+    const base = {
+      model: 'codex',
+      effort: 'low' as const,
+      systemPrompt: '',
+      tools: 'edit' as const,
+      cwd: dir,
+      timeoutMs: 180_000,
+    };
+    const first = await runner.run({ ...base, prompt: TOOL_PROMPT });
+    await save(CODEX_FIXTURES, 'app-server-tool-turn.jsonl', raw.filter(keep), clean);
+    const stderrOnToolTurn = clean(stderr).split('\n').filter(Boolean).slice(0, 5);
+    raw = [];
+    const second = await runner.run({ ...base, prompt: RESUME_PROMPT, resume: first.sessionId! });
+    await save(CODEX_FIXTURES, 'app-server-resume-turn.jsonl', raw.filter(keep), clean);
+
+    raw = [];
+    const missing = '01a20f00-0000-7000-8000-000000000000';
+    const rejected = await runner.run({ ...base, prompt: RESUME_PROMPT, resume: missing }).then(
+      () => 'resumed',
+      (e: Error) => (e instanceof CodexResumeRejected ? 'rejected' : e.message),
+    );
+    await save(CODEX_FIXTURES, 'app-server-resume-rejected.jsonl', raw.filter(keep), clean);
+
+    raw = [];
+    const marker = '44.137';
+    const controller = new AbortController();
+    let toolSeenAt = 0;
+    let abortedAt = 0;
+    let aliveWhenTurnEnded: number | undefined;
+    const started = Date.now();
+    const error = await runner
+      .run({
+        ...base,
+        prompt: sleepPrompt(marker),
+        signal: controller.signal,
+        onEvent: (e) => {
+          if (e.type === 'tool' && !toolSeenAt) {
+            toolSeenAt = Date.now();
+            setTimeout(() => {
+              abortedAt = Date.now();
+              controller.abort();
+            }, 2_000);
+          }
+          // The native interrupt alone: is the command still running when the turn reports its end?
+          if (e.type === 'result') aliveWhenTurnEnded = survivors(marker, false);
+        },
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+    const settledMs = Date.now() - started;
+    const stopLatencyMs = abortedAt ? Date.now() - abortedAt : undefined;
+    await wait(7_000);
+    await save(CODEX_FIXTURES, 'app-server-cancel-during-tool.jsonl', raw.filter(keep), clean);
+    const stop = error instanceof CodexAppServerStopped ? error : undefined;
+    return {
+      path: 'codex app-server',
+      version: execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim(),
+      stderrOnToolTurn,
+      resume: {
+        sameThread: !!first.sessionId && second.sessionId === first.sessionId,
+        missingThread: rejected,
+      },
+      cancel: {
+        toolStarted: toolSeenAt > 0,
+        outcome: stop?.kind ?? (error as Error | undefined)?.message ?? 'completed',
+        settledMs,
+        stopLatencyMs,
+        interrupt: stop?.interrupt,
+        cleanup: stop?.cleanup,
+        aliveWhenTurnEnded,
+        descendantsAfter7s: survivors(marker),
+      },
+    };
+  });
+}
+
+const PATHS = {
+  'claude-sdk': claudeSdk,
+  'claude-cli': claudeCliPath,
+  codex,
+  'codex-app-server': codexAppServer,
+} as const;
 const chosen = (
   process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(PATHS)
 ) as (keyof typeof PATHS)[];

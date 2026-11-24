@@ -1,0 +1,2 @@
+{"id":1,"result":{"userAgent":"<user-agent>","codexHome":"<home>/.codex","platformFamily":"unix","platformOs":"macos"}}
+{"error":{"code":-32600,"message":"no rollout found for thread id uuid-10"},"id":2}

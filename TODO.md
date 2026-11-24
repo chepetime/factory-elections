@@ -8,7 +8,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [x] **Protocol fixtures:** capture sanitized streams from an SDK task, a detached review turn (`packages/adapters-claude/src/cli.ts`) and `codex exec --json`. Store them beside each adapter's tests. No credentials, no private repo text.
 - [x] **Lifecycle checks for the current paths:** resume, cancel during a shell tool, descendant cleanup and stderr, recorded in [docs/runtime-baseline.md](docs/runtime-baseline.md) by `scripts/capture-provider-fixtures.ts`.
 - [ ] **Cancel during model output** and a provoked rate limit: not captured yet (see the baseline's "Not covered yet").
-- [ ] **Codex cancel leaves the shell tool running** (baseline finding 1): stop the descendants or record cleanup as uncertain. Phase 2 interrupt, phase 4 cleanup record.
+- [ ] **Codex cancel leaves the shell tool running** (baseline finding 1): stop the descendants or record cleanup as uncertain. Phase 2 interrupt, phase 4 cleanup record. *The app-server runner stops them and reports `clean` (verified); the default `codex exec` runner still reports `uncertain`.*
 - [x] **SDK tasks get 17 skills and 53 slash commands** with `settingSources: []` (finding 2): `skills: []` and `--disable-slash-commands` now give 0 and 0.
 - [ ] **Codex loads `~/.agents/skills`** despite `--ignore-user-config` (finding 3).
 - [x] **A stopped detached review turn has no exit code** (finding 4): in-process turns always write one, except at shutdown, where the missing file means interrupted. Detached turns still record the stop on the turn.
@@ -27,12 +27,14 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 
 ## Phase 2: Codex app-server prototype
 
-- [ ] **Transport behind a flag:** launch the pinned binary, keep stdin open, parse stdout frames apart from stderr, match request IDs, bound startup.
-- [ ] **Thread continuity:** initialize, start or resume a thread, save the session identity before the turn counts as managed.
-- [ ] **Event normalization:** keep native item and tool IDs, deltas, tool start and result, terminal status and usage. Unknown events stay visible and never count as progress.
-- [ ] **Interrupt:** native turn interrupt, a bounded wait, then process-group termination. Record cleanup apart from outcome.
-- [ ] **Failed resume:** tell a rejected session from a broken transport. A fresh start says so and gets context rebuilt from the task.
-- [ ] **Supplemental input and approvals:** only after a test against the pinned CLI. Tool screening stays refused for Codex until approval requests meet the step guard's controls.
+- [x] **Transport behind a flag:** launch the pinned binary, keep stdin open, parse stdout frames apart from stderr, match request IDs, bound startup. `FACTORY_CODEX_TRANSPORT=app-server` selects `CodexAppServerRunner`; [baseline](docs/runtime-baseline.md#app-server-phase-2).
+- [x] **Thread continuity:** initialize, start or resume a thread, save the session identity before the turn counts as managed. *The `session` event comes before `turn/start`. Saving it durably is phases 3–4.*
+- [x] **Event normalization:** keep native item and tool IDs, deltas, tool start and result, terminal status and usage. Unknown events stay visible and never count as progress. *Deltas count as progress but give no event; text events come from completed messages, as with `codex exec`.*
+- [x] **Interrupt:** native turn interrupt, a bounded wait, then process-group termination. Record cleanup apart from outcome.
+- [ ] **Failed resume:** tell a rejected session from a broken transport. A fresh start says so and gets context rebuilt from the task. *Done in the adapter: `CodexResumeRejected` (`resumeRejected: true`). Open: no caller does the fresh start with rebuilt context yet.*
+- [ ] **Supplemental input and approvals:** only after a test against the pinned CLI. Tool screening stays refused for Codex until approval requests meet the step guard's controls. *The schema has `turn/steer`; not used, `supplementalInput: false`. Approval requests are declined; a guarded step is refused.*
+- [ ] **App-server isolation:** app-server has no `--ignore-user-config`, so user MCP servers and skills load ([finding 2](docs/runtime-baseline.md#app-server-findings)). Fix before the flag becomes the default.
+- [ ] **Runtime `inspect()`** of the installed CLI version (ADR 0005 moved it to phase 2): not done. The initialize answer carries the version in `userAgent`.
 
 ## Phase 3: Claude consolidation
 

@@ -2,7 +2,7 @@
 
 Phase 0 of the [roadmap](vision/roadmap.md). This page records what each provider entry point did on 24 Nov 2026 in real runs. Later phases compare against it.
 
-`node scripts/capture-provider-fixtures.ts [claude-sdk|claude-cli|codex]` runs the scenarios again. It calls paid models (a few cents) and never runs in CI. It writes sanitized fixtures to `packages/adapters-claude/test/fixtures/` and `packages/adapters-codex/test/fixtures/`, and the fixture tests replay them through the parsers. When you capture again for a new version, update `TESTED_RUNTIMES` in `packages/core/src/agents.ts`.
+`node scripts/capture-provider-fixtures.ts [claude-sdk|claude-cli|codex|codex-app-server]` runs the scenarios again. It calls paid models (a few cents) and never runs in CI. It writes sanitized fixtures to `packages/adapters-claude/test/fixtures/` and `packages/adapters-codex/test/fixtures/`, and the fixture tests replay them through the parsers. When you capture again for a new version, update `TESTED_RUNTIMES` in `packages/core/src/agents.ts`.
 
 ## Versions
 
@@ -56,6 +56,35 @@ A real turn on 24 Nov 2026 ran `runClaudeTurn` (SDK 0.3.323, bundled Claude Code
 | Cancel 2 s into a shell tool | Aborted; no leftover process after 7 s |
 
 SDK tasks now also set `skills: []` and `--disable-slash-commands`, so finding 2 is closed. The capture script runs `echo waiting && sleep <marker>`, because Claude Code 2.1.323 blocked a standalone `sleep` once and ran it in the background.
+
+## App-server (phase 2)
+
+`FACTORY_CODEX_TRANSPORT=app-server` selects `CodexAppServerRunner` (`packages/adapters-codex/src/app-server.ts`). The default stays `codex exec`. The runner drives `codex app-server` over stdio JSON-RPC. `packages/adapters-codex/protocol/` has the schema parts it uses.
+
+`node scripts/capture-provider-fixtures.ts codex-app-server` runs the scenarios through the runner. It writes `app-server-*.jsonl` fixtures. Three runs on 24 Nov 2026, codex-cli 0.172.0, low effort:
+
+| Scenario | Codex exec (above) | Codex app-server |
+| --- | --- | --- |
+| Tool turn: call IDs pair calls and results | Yes (item id) | Yes (item id) |
+| Resume after a finished turn | Same thread | Same thread |
+| Resume of a thread that does not exist | Not tested | JSON-RPC error `-32600` ("no rollout found"). The runner throws `CodexResumeRejected` and starts no new thread |
+| Cancel 2 s into `sleep` | `aborted`; the call returned 6.2–7.2 s after it started | `aborted`; the call returned 6.9–7.9 s after it started, and 77–83 ms after the abort |
+| Native interrupt acknowledged | No native interrupt | Yes: `turn/interrupt` answers `{}`, then `turn/completed` has status `interrupted` |
+| `sleep` alive when the turn reported its end | Not measured | **Yes** (1 process) |
+| `sleep` alive 7 s after cancel | **Yes** | No |
+| Processes under the server at the stop / still alive after it closed | Not checked | 4 / 0 |
+| Cleanup the runner reports | `uncertain` | `clean` |
+| Stream after cancel | Started tool call, no result | Started tool call, no result, then an interrupted result |
+| stderr on a normal turn | Two lines: a stdin notice and a skill-load error | One line: the same skill-load error (tracing output with colors) |
+
+### App-server findings
+
+1. **The native interrupt ends the turn, not the command.** `sleep` still runs when `turn/completed` arrives. It stops when the server exits after stdin closes. So the runner always closes the server after a stop. Then it compares the process tree from before the close with what is still alive. It stops any survivor itself, and reports `clean` only when none is left. If `ps` fails, it reports `uncertain`.
+2. **app-server has no `--ignore-user-config`.** It exits with "unexpected argument". The user's `config.toml` loads. The runner sets approval, sandbox, model and instructions on each thread, so those user settings do not apply. User MCP servers still start (`node_repl` and `cua_repl` on this machine), and `-c mcp_servers={}` does not remove them. User skills still load (finding 3). This is weaker isolation than `codex exec`.
+3. **`turn/completed` has no usage.** Usage comes from `thread/tokenUsage/updated`, and its `total` is for the whole thread. A resumed thread first sends the totals of its earlier turn. The runner reports the totals at the end minus the totals before the turn.
+4. **Progress is the turn's own protocol activity.** Responses, and notifications or requests for the turn's thread, count. Account, rate-limit and other server-wide notices, non-JSON lines and stderr do not. A usage snapshot that repeats the last one does not count either.
+5. **No approval request came** with approval policy `never`. The runner declines every approval, question and elicitation the same way, and refuses a guarded step.
+6. **Extra input is possible in the protocol** (`turn/steer` with `expectedTurnId`), but the runner does not use it. `supplementalInput` stays `false`.
 
 ## Not covered yet
 
