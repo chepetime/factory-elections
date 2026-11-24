@@ -1,52 +1,60 @@
 # Product vision
 
-The factory takes software work from an idea to a merged PR through AI agents. One backend controls the work. Each step has a trace with a time, tokens and a cost.
+> Factory is a workspace for organizing and doing my work with agents. Tasks express commitments, projects preserve the context around people, products and initiatives, and conversations help turn intentions into results. I can choose how much to direct and how much to delegate.
 
-Three things define it:
+The task is the central object. Software development is one important workflow. The same workspace also supports management, research, planning and writing, without a repository.
 
-- **One workflow.** An idea goes through grill, spec, board, implement, QA and tend. People approve at a few gates.
-- **One control point.** Claude and Codex run side by side, and the backend owns every run.
-- **One trace.** Every model call, tool call, child task and review has a span with a time, tokens and a cost.
+The main screen answers three questions:
 
-The goal is that the trace does more than report. It is the input that routes work, sets budgets and moves gates. Thus the system gets cheaper and better over time.
+- **What needs me?**
+- **What is progressing?**
+- **What can I review?**
 
-Only my own work is traced. The team shows up as delivery metrics (tickets and PRs). These metrics are the baseline.
+**Headline metric:** my minutes of attention per accepted outcome, with quality and rework beside it. Tokens and cost help to find causes. They do not show value on their own.
 
-**Headline metric:** my minutes of attention per shipped outcome. Tokens are cheap. My time at gates and in review is the scarce resource.
+## Principles
+
+1. **Start with the work.** I can capture a task before I choose an agent, a workflow or an environment.
+2. **Context belongs to its scope.** Project facts are available to the agents that need them. Each agent does not keep its own copy.
+3. **Collaboration and delegation coexist.** In one task I can take part, clarify, review or delegate.
+4. **Progress requires evidence.** A successful provider turn does not complete a task.
+5. **Execution is observable and controllable.** Start, steer, interrupt and resume each have one exact meaning.
+6. **Capabilities are explicit.** The app shows the tools, instructions and permissions that an execution actually gets.
+7. **History stays; current knowledge changes.** A replaced decision stays explainable, but it is no longer an active instruction.
 
 ## How it runs
 
 The app runs locally, on one machine, in three parts:
 
-- **Server.** The backend owns every run and holds all the data: projects, team members, features, tasks, tickets, PRs, reviews and traces.
-- **Web app.** The UI for the board, the gates, the trace page and the metrics.
+- **Server.** The backend owns every execution and holds all the data. One execution manager runs tasks, chats and reviews.
+- **Web app.** Inbox, Tasks, Projects and Conversations first. Agents and execution details are working tools. Skills, integrations and runtime settings are configuration.
 - **CLI.** Commands to start and drive work from the terminal.
 
 ## The vision in detail
 
 | Document | Contents |
 | --- | --- |
-| [docs/vision/entities.md](docs/vision/entities.md) | The thirteen entities, how they connect, open questions |
-| [docs/vision/workflow.md](docs/vision/workflow.md) | The six stages, the flow rules, the inbox, PR tending |
+| [docs/vision/workspace-and-runtime.md](docs/vision/workspace-and-runtime.md) | The full design draft (24 Nov 2026): vision, domain model, execution manager, provider adapters, lifecycle, migration and acceptance tests |
+| [docs/vision/entities.md](docs/vision/entities.md) | The domain model, how it maps to the code today, open questions |
+| [docs/vision/roadmap.md](docs/vision/roadmap.md) | The build phases, their exit criteria, and where the earlier steps go |
+| [docs/vision/workflow.md](docs/vision/workflow.md) | The software workflow: six stages, the flow rules, PR tending |
 | [docs/vision/control.md](docs/vision/control.md) | Many agents, one control point, factory controls, tools per project |
 | [docs/vision/tools-and-reviews.md](docs/vision/tools-and-reviews.md) | Tool needs by stage, the tool broker, automated PR reviews |
 | [docs/vision/models-and-costs.md](docs/vision/models-and-costs.md) | The model router, cost tracing, where the savings are |
-| [docs/vision/tracing-and-metrics.md](docs/vision/tracing-and-metrics.md) | Spans, the team baseline, the metrics, the five day-one fields |
-| [docs/vision/roadmap.md](docs/vision/roadmap.md) | The trace as control input, where it stands, the build order |
+| [docs/vision/tracing-and-metrics.md](docs/vision/tracing-and-metrics.md) | Spans, the team baseline, the metrics |
 
 ## Build order
 
-The trace model comes first, because every later step reads from it. The status column is the status on 18 Nov 2026; [docs/vision/roadmap.md](docs/vision/roadmap.md) has the details.
+Reliable execution comes first, because every workflow and every degree of delegation runs on it. The product then grows past repositories. The status is on 24 Nov 2026; [docs/vision/roadmap.md](docs/vision/roadmap.md) has the details.
 
-| # | Step | Status |
+| Phase | Work | Status |
 | --- | --- | --- |
-| 1 | One trace model | Done |
-| 2 | First real paid run, first end-to-end tests | Done (scratch repo) |
-| 3 | Counts across runs | Backend done; UI open |
-| 4 | One inbox and PR tending | Backend done; UI open |
-| 5 | Links and team import | Not started |
-| 6 | Workflows, rules and controls | Not started |
-| 7 | Model router, cost tracing and cost savings | Grading done; routing not started |
-| 8 | Retro and evals | Not started |
-| 9 | Earned autonomy, replay and quotes | Replay inputs recorded; rest not started |
-| 10 | Outcomes and upstream | Not started |
+| 0 | Baseline: pinned versions, protocol fixtures, lifecycle checks | Not started |
+| 1 | Shared execution contract across adapters | Not started |
+| 2 | Codex app-server prototype | Not started |
+| 3 | Claude consolidation: reviews and chats on the managed SDK path | Not started |
+| 4 | Durable operations: manifests, recovery, shared limits, usage checkpoints | Partly (slots, budgets, git locks, recovery exist) |
+| 5 | Product generalization: optional repositories, person projects, conversations, knowledge | Not started |
+| Later | Warm pools, remote runtimes, squads, advanced autonomy, and the open earlier steps 5–10 | Paused |
+
+The earlier build order (trace model, paid runs, counts, inbox, tending) is done or mostly done. Its open steps are on the roadmap under "Later".

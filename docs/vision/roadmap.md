@@ -1,53 +1,78 @@
 # Roadmap
 
-Part of the [product vision](../../VISION.md).
+Part of the [product vision](../../VISION.md). The phases come from [workspace-and-runtime.md §14](workspace-and-runtime.md#14-migration-plan). This page maps them to the code. [TODO.md](../../TODO.md) has the tasks.
 
-## The trace as control input
+## What the phases keep
 
-The trace feeds decisions back into the system. Thus the system improves without anyone reading a chart.
+These parts work today. The phases move them behind one contract and do not remove them:
 
-1. **Routing.** The backend picks the provider and model for each task type from observed cost, first-pass rate and call grading. It sets budgets from history.
-2. **Escalation.** A task goes up to a stronger model when checks keep failing or the loop guard fires. The first failure of each check is free. A repeated environment failure never goes up.
-3. **Retro.** A daily retro reads finished runs and proposes fixes. Proposals go to the inbox for me to accept or reject.
-4. **Evals.** Evals check the steps that classify and route work. A nightly pass checks the model pins.
-5. **Replay.** Every finished task is stored as a replayable case: repo state, spec and verification. A new model is judged by a rerun of my own history. This removes the bias of harder tasks going to stronger models.
-6. **Quotes.** At spec time the app predicts cost, time and the chance to pass the first time. A run that moves away from its quote is flagged early.
-7. **Earned autonomy.** Gates move with the track record. A task class with a long series of clean passes loses its approval gate. One revert brings the gate back.
-8. **Outcomes.** Work is followed after merge, so cost is counted per outcome and not per PR.
-9. **Upstream.** The app proposes work. It reads the backlog, incidents and review findings, then writes draft specs for me to accept or reject.
+- Claude SDK guards (`canUseTool`), the OS sandbox, budgets, timers and cancellation (`packages/adapters-claude/src/index.ts`).
+- Slots, git locks, recovery and provider rules in the backend (`packages/backend/src`).
+- The span ledger, the inbox, PR tending, metrics and call grading.
+- The software workflow and its gates (`packages/driver/src/workflow.ts`, `definitions/`).
 
-## Where it stands
+## Phases
 
-The main gaps are not more agents. They are one trace model across everything, and links from runs to tickets and PRs, so that the metrics can be counted.
+### Phase 0: Baseline
 
-Status on 18 Nov 2026:
+Pin the Factory revision and the Claude SDK, Claude CLI and Codex CLI versions. Capture sanitized protocol fixtures from each path: SDK tasks, detached review turns, `codex exec --json`. Write lifecycle checks for the current paths: cancel during output, cancel during a shell tool, resume, stderr noise.
 
-| Area | Built | Missing |
-| --- | --- | --- |
-| Workflow | The workflow and its RPCs. One paid run end to end on a scratch repo | A UI for the feature gates, per-task workflows, size and slicing rules, browser QA |
-| PR tending | The tending loop (opt-in per project): merge-base, thread answers, reruns, CI fixes | The settings toggle in the UI |
-| Inbox | One inbox with one rule (`GetInbox`) | The Inbox page |
-| Human review | A gate that approves or asks for a revision | Inline threads on the diff, the counsel step |
-| Agents and control | Slots, budgets, git locks, recovery, provider rules | Tool grants per project, gateways and Pi, opening hours, Stop and Halt, limits per repo and effort, a dead-run check |
-| Tracing | The span ledger: model, tool, child, review, memory-review, loop-judge, gate and PR spans, with tokens and costs | The trace page, the time I spend at gates (only the wait is recorded) |
-| Team delivery | Team members and assignments | The Jira and GitHub import of team metrics |
-| Metrics | Counts across runs and call grading (`GetMetrics`) | The Weekly page |
-| Learning loop | Repository facts | Retro, evals, routing, quotes, earned autonomy |
-| Tests | Unit tests, end-to-end flows against a seeded build (`pnpm e2e`) | |
+**Exit:** each existing path has documented behavior and reproducible lifecycle checks.
 
-## Build order
+### Phase 1: Shared contract
 
-The trace model comes first, because every later step reads from it. This order is a proposal.
+Add execution and provider-session identity, tool-call and parent-call IDs on events, separate stdout and stderr, and retry from evidence. Keep the current transports.
 
-1. **One trace model.** Add tool-call spans, tokens on spans, and reviews and children in the trace tree. Include the five day-one fields. *Done.*
-2. **First real paid run.** Take one feature end to end through the workflow, with the minimum UI to approve at the gates and the project's tools granted. Add the first end-to-end tests against a seeded build. *Done on a scratch repo; the feature gate UI and tool grants are open.*
-3. **Counts across runs.** Build the store views, the Weekly page and the trace page. *Backend done; pages open.*
-4. **One inbox and PR tending.** Put everything that waits on me in one place, and keep open PRs moving until they merge. *Backend done; pages open.*
-5. **Links and team import.** Link runs to Jira tickets and PRs, and import team tickets and PRs from Jira and GitHub. *Spans carry the ticket and PR; the import is open.*
-6. **Workflows, rules and controls.** Add per-task workflows, the size and slicing rules, inline review with counsel, browser QA, gateways and Pi, and the factory controls.
-7. **Routing, escalation and call grading.** Use the metrics to pick models, set budgets and decide when a task goes up. *Call grading done.* [models-and-costs.md](models-and-costs.md) has the design.
-8. **Retro and evals.** Propose fixes from finished runs, and check the steps that classify and route.
-9. **Earned autonomy, replay and quotes.** Move gates with the track record, rerun stored tasks on new models, and predict cost and time at spec time. *Run spans record the replay inputs.*
-10. **Outcomes and upstream.** Follow work after merge, and let the app propose specs.
+Known gaps this phase closes:
 
-[TODO.md](../../TODO.md) has the open follow-ups.
+| Gap | Where |
+| --- | --- |
+| Shared tool events have no call IDs | `AgentEvent` in `packages/core/src/agents.ts` |
+| Codex stdout and stderr share one callback; any output renews activity | `packages/adapters-codex/src/index.ts` |
+| Rate-limit retry uses `!error.costUsd`, so unknown cost counts as zero | `packages/adapters-claude/src/index.ts:159` |
+| Capabilities are static per provider, not per adapter and version | `PROVIDER_CAPABILITIES` in `packages/core/src/agents.ts` |
+| Outcome and cleanup are one status | Run finalization in `packages/backend/src` |
+
+**Exit:** all adapters emit the same lifecycle vocabulary and keep their native detail.
+
+### Phase 2: Codex prototype
+
+Codex app-server over stdio behind a feature flag: initialize, start or resume a thread, stream, interrupt, explicit failed-resume handling. The batch adapter stays for verified one-shot work. Validate request shapes against the pinned CLI's protocol schema, not against Multica. Steps: [workspace-and-runtime.md §9](workspace-and-runtime.md#9-codex-implementation-plan).
+
+**Exit:** continuity, cancellation and failure scenarios pass against the supported CLI versions.
+
+### Phase 3: Claude consolidation
+
+Move PR review and chat turns from detached launches (`spawnDetached` in `packages/backend/src/reviews.ts`) into the execution manager on the SDK path. Keep the guards, sandbox and budgets. Save session IDs early. Use SDK streaming input and interruption only after a check on the installed SDK and CLI. Steps: [workspace-and-runtime.md §10](workspace-and-runtime.md#10-claude-implementation-plan).
+
+**Exit:** no review-specific detached-process lifecycle remains for migrated work.
+
+### Phase 4: Durable operations
+
+A configuration manifest per execution, restart reconciliation with an ownership generation, one scheduler and shared limits across tasks, chats, reviews and children, and usage checkpoints that know cumulative from incremental counters.
+
+**Exit:** restart and concurrent-work tests keep ownership and cause no duplicate side effects.
+
+### Phase 5: Product generalization
+
+Optional repository resources, project kinds (person, product, initiative), task and conversation links, knowledge items with provenance, non-code artifacts, and the Inbox, Tasks, Projects and Conversations navigation. The model is in [entities.md](entities.md). Answer its open questions first.
+
+**Exit:** the three core journeys work without repository assumptions: prepare a 1:1, implement a ticket together, delegate a feature.
+
+## Later
+
+Add each item only after phases 0–4 are reliable and a measured need exists:
+
+- Warm process pools, remote runtimes, squads, scheduled automations, advanced autonomy.
+- The open steps of the earlier build order, with their designs unchanged:
+  - Team import (Jira and GitHub) and team baseline metrics.
+  - Per-task workflows, inline review and counsel, browser QA, gateways, Pi.
+  - The tool broker and tool grants ([tools-and-reviews.md](tools-and-reviews.md)). Phase 4 permissions must fit it.
+  - The model router, escalation and cost savings ([models-and-costs.md](models-and-costs.md)).
+  - Retro, evals, replay, quotes, earned autonomy, outcomes and upstream proposals.
+
+The trace stays the control input for these steps. Routing, escalation, retro, replay and earned autonomy read the event journal that phases 1 and 4 make reliable.
+
+## Acceptance tests
+
+The scenarios are in [workspace-and-runtime.md §15](workspace-and-runtime.md#15-acceptance-tests). Each phase adds the scenarios for its exit criterion: unit tests for protocol parsing and state transitions, process fixtures for interruption and streams, and a small opt-in real-provider suite that records CLI versions and cost.

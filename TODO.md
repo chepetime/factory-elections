@@ -1,13 +1,74 @@
 # TODO
 
-The tasks that remain to fulfill the [product vision](VISION.md), grouped by build step, then the other follow-ups. The README lists what works today. [docs/vision/roadmap.md](docs/vision/roadmap.md) has the status of each step, and [docs/HANDOFF.md](docs/HANDOFF.md) has the background.
+The tasks that remain to fulfill the [product vision](VISION.md), grouped by phase, then the earlier build steps and other follow-ups. The README lists what works today. [docs/vision/roadmap.md](docs/vision/roadmap.md) has the phases and exit criteria, and [docs/HANDOFF.md](docs/HANDOFF.md) has the background.
+
+## Phase 0: baseline
+
+- [ ] **Pin versions:** record the Factory revision and the Claude Agent SDK, Claude CLI and Codex CLI versions. `factory doctor` (`apps/cli/src/doctor.ts`) shows them and warns on an unsupported version.
+- [ ] **Protocol fixtures:** capture sanitized streams from an SDK task, a detached review turn (`packages/adapters-claude/src/cli.ts`) and `codex exec --json`. Store them beside each adapter's tests. No credentials, no private repo text.
+- [ ] **Lifecycle checks for the current paths:** cancel during model output, cancel during a shell tool (descendants stop), resume after a finished turn, stderr noise with no progress, UTF-8 split across chunks. Record what each path does today, also where it is wrong.
+
+## Phase 1: shared contract
+
+- [ ] **Execution and provider-session identity** in core: a Factory execution ID, its task or conversation link, parent execution, owner generation, and a separate provider-session record (provider, native ID, work directory, continuity scope, validity). Native session IDs never identify a task or conversation.
+- [ ] **Tool-call and parent-call IDs** on `AgentEvent` (`packages/core/src/agents.ts`). The Claude SDK, review CLI and Codex adapters fill them.
+- [ ] **Separate Codex stdout and stderr** (`packages/adapters-codex/src/index.ts`). Only protocol events renew activity. stderr goes to diagnostics.
+- [ ] **Retry from evidence:** replace `!error.costUsd` (`packages/adapters-claude/src/index.ts:159`). Retry a rate limit only before turn acceptance and before any tool event. Unknown cost stays unknown.
+- [ ] **Negotiated capabilities:** each adapter declares its capabilities from provider, CLI version and policy (`inspect()`). `PROVIDER_CAPABILITIES` becomes the adapter default, not a provider fact.
+- [ ] **Separate outcome and cleanup** on the terminal record: outcome (completed, failed, cancelled, interrupted) and cleanup (stop requested, native acknowledgement, process exit, descendants, uncertain). A slow cleanup never relabels a completed result as a hang.
+- [ ] **Supplement receipts:** the contract returns accepted, queued or rejected for extra input. The UI shows the receipt, not "sent".
+
+## Phase 2: Codex app-server prototype
+
+- [ ] **Transport behind a flag:** launch the pinned binary, keep stdin open, parse stdout frames apart from stderr, match request IDs, bound startup.
+- [ ] **Thread continuity:** initialize, start or resume a thread, save the session identity before the turn counts as managed.
+- [ ] **Event normalization:** keep native item and tool IDs, deltas, tool start and result, terminal status and usage. Unknown events stay visible and never count as progress.
+- [ ] **Interrupt:** native turn interrupt, a bounded wait, then process-group termination. Record cleanup apart from outcome.
+- [ ] **Failed resume:** tell a rejected session from a broken transport. A fresh start says so and gets context rebuilt from the task.
+- [ ] **Supplemental input and approvals:** only after a test against the pinned CLI. Tool screening stays refused for Codex until approval requests meet the step guard's controls.
+
+## Phase 3: Claude consolidation
+
+- [ ] **Reviews and chats on the managed path:** move PR review turns from `spawnDetached` (`packages/backend/src/reviews.ts`) into the execution manager. Keep guards, sandbox and budgets.
+- [ ] **Persistent sessions by workload policy:** continuing work (implementation, research, review chats) persists and saves its session ID early. Classification and formatting calls stay disposable.
+- [ ] **Streaming input and interruption** through the SDK, advertised only after a check on the installed SDK and CLI.
+- [ ] **Provider completion vs cleanup:** the SDK result is the outcome; stream or process cleanup after it is recorded apart.
+- [ ] **Remove the review-only lifecycle** and its detached stop helper for migrated work. Old sessions finish on their old adapter.
+
+## Phase 4: durable operations
+
+- [ ] **Configuration manifest** per execution: provider and binary version, model, effort, work directory, instruction sources, skills, MCP tools, env variable names, credential references, limits and policy. No secret values.
+- [ ] **Configuration precedence:** application → runtime → agent → project → execution overrides. Permission limits combine conservatively; an override never widens them.
+- [ ] **Restart reconciliation with fencing:** an ownership generation per execution. Unstarted work runs again. Running work with possible side effects becomes interrupted until reconciled. A PID alone proves nothing. This replaces the **Dead-run check** below.
+- [ ] **One scheduler:** limits per machine, provider account and agent, plus work-directory exclusivity, across tasks, chats, reviews and children. A parent that waits for children does not hold their slot.
+- [ ] **Separate timers:** startup, semantic inactivity and active-tool limits. Diagnostics never renew progress. Machine sleep does not count as silence.
+- [ ] **Usage checkpoints:** cumulative vs turn-local counters, reported vs estimated vs unavailable cost. Repeated snapshots are not counted twice.
+- [ ] **Stop and Halt** (below) on the new cancellation contract: Stop is a request, and the app says "stopped" only after evidence.
+
+## Phase 5: product generalization
+
+Answer the open questions in [docs/vision/entities.md](docs/vision/entities.md#open-questions) first.
+
+- [ ] **Optional repository:** `Project` and task schemas (`packages/core/src/schemas.ts`) no longer require `repo`. A repository is a project resource.
+- [ ] **Project kinds:** person, product, initiative, each with its default page (agreements and next meetings; priorities and decisions; outcome and milestones).
+- [ ] **Task fields:** primary project, related projects, accountable owner, current assignee, acceptance criteria, artifacts, parent and dependencies. Task status separate from workflow stage.
+- [ ] **Conversations** as records that can exist before a task, link to many tasks and record decisions.
+- [ ] **Knowledge items** with source, scope, validation status and supersession, extended from repository facts (`packages/core/src/memory.ts`). Promotion: finding → proposed → confirmed → current.
+- [ ] **Context assembler** with a manifest of the source versions each execution used.
+- [ ] **Non-code artifacts:** a reviewed document or research result completes a task.
+- [ ] **Navigation:** Inbox, Tasks, Projects, Conversations. Inbox items become attention items; resolving one does not approve the work.
+- [ ] **Journeys end to end:** prepare a 1:1, implement a ticket together, delegate a feature.
+
+## Earlier build order
+
+These sections follow the earlier build order. They wait until after phase 4 unless a phase above absorbs them. [docs/vision/roadmap.md](docs/vision/roadmap.md#later) lists them.
 
 ## Now
 
 - [x] **Decide task bb64645e** (LayerStack component): merged to `main` directly. The home page it targeted is now the project start screen, so `apps/web/src/components/layer-stack.tsx` still needs a place.
 - [x] **Use the new components in the web app:** `AgentFindings` for review findings and `AgentCheckpoints` for the stage timeline on the task page. Wait until the component work in the other session settles.
 - [ ] **First paid run on a real project:** take one change-elections feature end to end (the profile is approved). Do not mirror to Jira or open a PR until the run is checked.
-- [ ] **Answer the open entity questions** in [docs/vision/entities.md](docs/vision/entities.md): ticket vs task, feature vs epic, human PR reviews, a team above members. Steps 5 and 6 depend on them.
+- [x] **Answer the open entity questions:** ticket vs task, feature vs epic, human PR reviews, a team above members. The new model in [docs/vision/entities.md](docs/vision/entities.md#where-the-earlier-entities-go) answers them.
 
 ## Vision steps 1–4: finish what is open
 
@@ -18,7 +79,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [x] **Feature gate screens (UI agent):** approve the spec and the board in the browser, not only through the RPCs.
 - [ ] **Tending gaps:** thread replies post as the signed-in `gh` account. (A removed `pr-opened` worktree now stops tending cleanly with an inbox item.)
 - [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
-- [ ] **Tool timings for review turns:** detached turns log no tool timings. Add them with a hook, or read timestamps if the CLI adds them.
+- [ ] **Tool timings for review turns:** detached turns log no tool timings. *Phase 3 moves review turns to the SDK path, which has them.*
 - [x] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
 - [ ] **More end-to-end flows:** the inbox and tending, against the seeded build. (The feature flow from grill to QA is covered.)
 
@@ -45,12 +106,12 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by bui
 - [ ] **Gateways:** OpenRouter and custom gateways. Each run records its gateway, and metrics split spend by it.
 - [ ] **Pi** as a third agent beside Claude and Codex.
 - [ ] **Another provider (eve or similar):** add it as an `AgentCli` plus a `ModelRunner`, with its capabilities.
-- [ ] **Codex review turns:** they need deny rules that hold for wrapped commands. Options: a Codex rules file plus no network, or prefetched PR data.
-- [ ] **Loop guard and context warnings for review turns and Codex:** they need tool hooks (a `--settings` hook command for detached Claude turns).
+- [ ] **Codex review turns:** they need deny rules that hold for wrapped commands. Options: a Codex rules file plus no network, or prefetched PR data. *Revisit after phase 2.*
+- [ ] **Loop guard and context warnings for review turns and Codex:** they need tool hooks (a `--settings` hook command for detached Claude turns). *Phases 2–3.*
 - [ ] **Opening hours,** with overtime that needs a reason.
-- [ ] **Stop and Halt:** Stop lets runs finish, Halt ends them now.
+- [ ] **Stop and Halt:** Stop lets runs finish, Halt ends them now. *Phase 4.*
 - [ ] **Limits per repo and per effort level.**
-- [ ] **Dead-run check:** find runs whose process died and recover or fail them.
+- [ ] **Dead-run check:** find runs whose process died and recover or fail them. *Replaced by phase 4 restart reconciliation.*
 - [ ] **Usage-limit skip:** skip a provider until its usage limit resets, and retry the task automatically at the reset time.
 
 ## Tools

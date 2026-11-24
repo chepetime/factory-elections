@@ -2,6 +2,8 @@
 
 Part of the [product vision](../../VISION.md).
 
+This is the software workflow. It is one workflow among others; its stages are not universal task statuses ([entities.md](entities.md#rules)).
+
 Work comes in as features and tasks. Each one follows the same six stages:
 
 1. **Grill.** The idea is questioned until its scope and intent are clear.
