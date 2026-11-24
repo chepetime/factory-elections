@@ -1,5 +1,6 @@
 // A small real-gRPC smoke suite. Models are scripted; git uses an isolated local repository.
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { promisify } from 'node:util';
 import { execFile, execFileSync } from 'node:child_process';
@@ -96,7 +97,7 @@ test('gRPC authenticates, validates input, reads records and reports health', as
   const cli = await promisify(execFile)(
     process.execPath,
     [
-      new URL('../../../apps/cli/src/main.ts', import.meta.url).pathname,
+      fileURLToPath(new URL('../../../apps/cli/src/main.ts', import.meta.url)),
       'task',
       'actions',
       '--project',
@@ -239,7 +240,7 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
     const proc = child.spawn(
       process.execPath,
       [
-        new URL('../../../apps/cli/src/main.ts', import.meta.url).pathname,
+        fileURLToPath(new URL('../../../apps/cli/src/main.ts', import.meta.url)),
         'task',
         'reject',
         '--project',

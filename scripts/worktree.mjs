@@ -29,8 +29,12 @@ try {
     // Use the common repository location, even when invoked from a linked worktree.
     const common = resolve(git('rev-parse', '--git-common-dir'));
     const main = dirname(common);
-    // Encoding preserves uniqueness: feature/a and feature-a have distinct paths.
-    const destination = resolve(dirname(main), `${basename(main)}--${encodeURIComponent(branch)}`);
+    // `/` becomes `-`: an encoded slash (%2F) in a path breaks Node's ESM loader and Vitest.
+    // feature/a and feature-a then share a path; the existence check below refuses the second.
+    const destination = resolve(
+      dirname(main),
+      `${basename(main)}--${encodeURIComponent(branch.replaceAll('/', '-'))}`,
+    );
     if (existsSync(destination)) throw new Error(`Destination exists: ${destination}`);
     git('rev-parse', '--verify', `${base}^{commit}`);
     git('worktree', 'add', '-b', branch, destination, base);

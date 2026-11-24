@@ -5,8 +5,9 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
 
-const script = new URL('./worktree.mjs', import.meta.url).pathname;
+const script = fileURLToPath(new URL('./worktree.mjs', import.meta.url));
 test('isolated launch refuses an occupied health port before starting services', async () => {
   const servers = [];
   try {
@@ -43,6 +44,7 @@ test('worktrees isolate dirty source, preserve ignored files, and keep branches 
     const created = run('new', 'feature/test');
     assert.equal(created.status, 0, created.stderr);
     const target = created.stdout.trim();
+    assert.ok(target.endsWith('--feature-test'), target);
     assert.equal(readFileSync(join(target, 'source'), 'utf8'), 'committed');
     assert.equal(existsSync(join(target, '.env')), false);
     assert.equal(run('new', 'feature/test').status, 1);
