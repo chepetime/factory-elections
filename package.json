@@ -12,7 +12,7 @@
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "factory": "node apps/cli/src/main.ts",
-    "test": "node --test --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\" && pnpm --filter @factory/web test",
+    "test": "node --test --test-timeout=120000 --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\" && pnpm --filter @factory/web test",
     "typecheck": "tsc --noEmit --pretty false && pnpm --filter @factory/web typecheck",
     "lint": "oxlint --deny-warnings .",
     "format": "prettier --write .",

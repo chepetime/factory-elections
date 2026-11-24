@@ -91,6 +91,8 @@ for (const line of lines) console.log(line);
     tools: 'read-only',
     outputSchema: { type: 'object' },
     mcp: { url: 'http://127.0.0.1:1/mcp', token: 'tok' },
+    // A fake that never exits fails the test instead of hanging the suite.
+    timeoutMs: 30_000,
     onEvent: (e) => events.push(e.type),
   });
   assert.deepEqual(result, {
