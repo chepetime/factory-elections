@@ -80,9 +80,9 @@ A cloud, multi-user system; most of it maps to the "Later" remote-runtime work. 
 
 The direction is in [docs/vision/ui.md](docs/vision/ui.md). It can start now, beside the runtime phases.
 
-- [ ] **Board home page:** Working, Needs me, In review and Ready columns over tasks, runs, inbox items and reviews, with counts.
-- [ ] **Task card:** title, resource line, PR and people, one live line from execution events with its age, and the next action only.
-- [ ] **Sidebar:** Search, projects with their active tasks and state icons, and one "New task" button in the top bar.
+- [x] **Board home page:** Working, Needs me, In review and Ready columns over tasks, runs, inbox items and reviews, with counts. The rules are in `apps/web/src/lib/board.ts`. The project start screen is at `/projects/[project]`.
+- [x] **Task card:** title, resource line, PR and people, one live line from execution events with its age, and the next action only. The PR author is the only person shown: the data has no reviewers. Ready shows Merge only from the review decision; check status is not in the PR list yet.
+- [ ] **Sidebar:** Search, projects with their active tasks and state icons. (The "New task" button is in the board's top bar.)
 
 ## Phase 5: product generalization
 

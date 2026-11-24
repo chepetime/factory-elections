@@ -12,6 +12,7 @@ import {
   FolderGit2,
   GitPullRequest,
   Home,
+  KanbanSquare,
   ListTodo,
   Users,
   Menu as MenuIcon,
@@ -284,7 +285,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
   const tasksHref = project ? `/projects/${project}/tasks` : '/';
   const items = [
-    { label: 'Home', href: '/', icon: Home, active: pathname === '/' },
+    { label: 'Board', href: '/', icon: KanbanSquare, active: pathname === '/' },
     { label: 'Tasks', href: tasksHref, icon: ListTodo, active: /^\/projects\/[^/]+\/tasks/.test(pathname) },
     { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
   ];
@@ -306,7 +307,7 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
               </div>
               <Menu.Separator className="my-1 h-px bg-border" />
               <Menu.Item className={menuItem} render={<Link href="/" />}>
-                <Home className="size-4" /> Home
+                <KanbanSquare className="size-4" /> Board
               </Menu.Item>
               <Menu.Item className={menuItem} render={<Link href="/components" />}>
                 <Blocks className="size-4" /> Component library
@@ -510,7 +511,7 @@ function Sidebar({
         <div className="flex flex-col gap-1 px-2 pb-2">
           <Link
             href={`/projects/${project}`}
-            aria-current={pathname === `/projects/${project}` || pathname === '/' ? 'page' : undefined}
+            aria-current={pathname === `/projects/${project}` ? 'page' : undefined}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
           >
             <Home className="size-4 text-muted-foreground" /> Home

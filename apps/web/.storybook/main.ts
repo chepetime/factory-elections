@@ -10,7 +10,15 @@ const config: StorybookConfig = {
   async viteFinal(base) {
     return mergeConfig(base, {
       optimizeDeps: { include: ['@base-ui/react/menu'] },
-      resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+      // @factory/core reads this at import time; stories that build fixtures with core use its default.
+      define: { 'process.env.FACTORY_CONTEXT_TOKENS': 'undefined' },
+      resolve: {
+        alias: {
+          '@': fileURLToPath(new URL('../src', import.meta.url)),
+          // Components that link with next/link render outside the Next runtime here.
+          'next/link': fileURLToPath(new URL('./next-link.tsx', import.meta.url)),
+        },
+      },
     });
   },
 };

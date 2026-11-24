@@ -1,13 +1,38 @@
 import { cookies } from 'next/headers';
+import { Suspense } from 'react';
 import { AddProjectForm } from '@/components/add-project-form';
-import { ProjectHome } from '@/components/project-home';
-import { getInbox } from '@/lib/inbox';
-import { listProjects, listTasks } from '@/lib/factory';
-import { gitUserName } from '@/lib/team';
+import { Board } from '@/components/board';
+import { buildBoard, type BoardInput } from '@/lib/board';
+import { loadBoard, loadPulls, projectsWithPulls } from '@/lib/board-data';
+import { listProjects } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
-/** Home: the start screen of the last project you used (the app shell remembers it in a cookie). */
+interface Shared {
+  now: number;
+  newTaskHref: string;
+  showProject: boolean;
+  notice?: string;
+}
+
+/** The board with PR review state, streamed in after the board without it. */
+async function BoardWithPulls({
+  input,
+  projects,
+  ...shared
+}: Shared & { input: BoardInput; projects: string[] }) {
+  const pulls = await loadPulls(projects);
+  const missing = projects.filter((p) => !pulls[p]);
+  const notice = [
+    shared.notice,
+    missing.length ? `PR state unavailable for ${missing.join(', ')}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return <Board board={buildBoard({ ...input, pulls })} {...shared} notice={notice || undefined} />;
+}
+
+/** Home: the board across all projects. Each project's start screen is at /projects/[project]. */
 export default async function Home() {
   const projects = await listProjects();
   if (!projects.ok) return <p className="p-6 text-destructive">Projects unavailable: {projects.error}</p>;
@@ -19,15 +44,28 @@ export default async function Home() {
         <AddProjectForm />
       </div>
     );
+  const names = projects.value.map((p) => p.name);
   const remembered = (await cookies()).get('factory.lastProject')?.value;
-  const project = projects.value.find((p) => p.name === remembered)?.name ?? projects.value[0]!.name;
-  const [tasks, userName, inbox] = await Promise.all([listTasks(project), gitUserName(project), getInbox()]);
+  const project = names.find((n) => n === remembered) ?? names[0]!;
+  const { input, failedProjects, inboxFailed } = await loadBoard(names);
+  const notice = [
+    failedProjects.length ? `Tasks unavailable for ${failedProjects.join(', ')}` : undefined,
+    inboxFailed ? 'Inbox unavailable' : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const shared: Shared = {
+    now: Date.now(),
+    newTaskHref: `/projects/${encodeURIComponent(project)}/tasks/new`,
+    showProject: names.length > 1,
+    ...(notice ? { notice } : {}),
+  };
+  const withPulls = projectsWithPulls(input);
+  const plain = <Board board={buildBoard(input)} {...shared} />;
+  if (withPulls.length === 0) return plain;
   return (
-    <ProjectHome
-      project={project}
-      tasks={tasks.ok ? tasks.value : undefined}
-      userName={userName}
-      inbox={inbox}
-    />
+    <Suspense fallback={plain}>
+      <BoardWithPulls input={input} projects={withPulls} {...shared} />
+    </Suspense>
   );
 }
