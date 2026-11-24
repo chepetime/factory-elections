@@ -20,3 +20,4 @@ export * from './reviewer-definition.ts';
 export * from './pr-review-record.ts';
 export * from './outcome.ts';
 export * from './environment.ts';
+export * from './execution.ts';

@@ -17,6 +17,7 @@ import {
   LOOP_JUDGE_SCHEMA,
   LoopGuard,
   modelFailureKind,
+  PROVIDER_CAPABILITIES,
   type LoopJudgement,
   type ModelFailure,
   type ModelResult,
@@ -162,6 +163,7 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
 
 export class ClaudeAgentRunner implements ModelRunner {
   readonly options: ClaudeRunnerOptions;
+  readonly capabilities = PROVIDER_CAPABILITIES.claude;
   constructor(options: ClaudeRunnerOptions = {}) {
     this.options = options;
   }

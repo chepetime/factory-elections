@@ -25,6 +25,17 @@ import {
   type TaskControls,
   type TaskRecord,
   type TraceScope,
+  CleanupRecord,
+  combineCleanup,
+  errorCleanup,
+  ExecutionOutcome,
+  failureOutcome,
+  parseModelRef,
+  ProviderSessionRef,
+  withSession,
+  type CallCleanup,
+  type ModelFailure,
+  type ModelResult,
 } from '@factory/core';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
@@ -71,6 +82,12 @@ const RunRecord = z.object({
   finished_at: z.string().optional(),
   error: z.string().optional(),
   dismissed: z.boolean().optional(),
+  /** How the run ended, apart from `state` (ADR 0005). Absent in older records: see runOutcome. */
+  outcome: ExecutionOutcome.optional(),
+  /** Whether the run's processes are known to be gone. Absent: not recorded. */
+  cleanup: CleanupRecord.optional(),
+  /** The provider sessions the run's model calls used, as references. */
+  provider_sessions: z.array(ProviderSessionRef).optional(),
 });
 type RunRecord = z.infer<typeof RunRecord>;
 
@@ -484,6 +501,9 @@ export class BackendService {
     const activity = new RunActivity();
     this.activities.set(record.id, activity);
     let evidence: Evidence | undefined;
+    // Cleanup evidence and session references from the run's model calls (ADR 0005).
+    const calls: CallCleanup[] = [];
+    let sessions: ProviderSessionRef[] = [];
     const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
@@ -510,7 +530,23 @@ export class BackendService {
           const checked: ModelRunner = {
             async run(request) {
               if (logFailure) throw logFailure;
-              const result = await traced.run(request);
+              let result: ModelResult;
+              try {
+                result = await traced.run(request);
+              } catch (error) {
+                const cleanup = errorCleanup(error);
+                if (cleanup) calls.push(cleanup);
+                throw error;
+              }
+              if (result.sessionId)
+                sessions = withSession(sessions, {
+                  provider: parseModelRef(request.model).provider,
+                  native_id: result.sessionId,
+                  ...(request.cwd ? { cwd: request.cwd } : {}),
+                  scope: request.persistSession || request.resume ? 'task' : 'disposable',
+                  ...(request.step ? { step: request.step } : {}),
+                  last_used_at: new Date().toISOString(),
+                });
               // Later spans of the run carry the class the classifier just gave the task.
               if (trace && request.step === 'classifier')
                 trace.scope.task_class =
@@ -525,9 +561,11 @@ export class BackendService {
         },
       );
       record.state = 'completed';
+      record.outcome = 'completed';
     } catch (error) {
       record.state = 'failed';
       const stopped = this.stopRequests.has(record.id);
+      record.outcome = failureOutcome((error as { kind?: ModelFailure } | null)?.kind, stopped);
       record.error = stopped
         ? 'Stopped by you before the run finished.'
         : error instanceof Error
@@ -543,6 +581,8 @@ export class BackendService {
       this.stopRequests.delete(record.id);
       this.executing--;
       record.finished_at = new Date().toISOString();
+      record.cleanup = combineCleanup(calls);
+      if (sessions.length) record.provider_sessions = sessions;
       if (trace) await this.traceEnd(trace, command.action, record).catch(() => undefined);
       try {
         try {
@@ -553,6 +593,7 @@ export class BackendService {
       } catch (error) {
         // Evidence durability is part of completion, even if the workflow itself succeeded.
         record.state = 'failed';
+        record.outcome = 'failed';
         record.error = [
           record.error,
           `Run finalization failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -887,6 +928,11 @@ export class BackendService {
         await this.storage.writeDocument(join(dir, 'run.json'), {
           ...record,
           state: 'interrupted',
+          outcome: 'interrupted',
+          // Processes of a run that was running at a crash are not known to be gone.
+          ...(record.state === 'running'
+            ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
+            : {}),
           error:
             record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
           finished_at: new Date().toISOString(),

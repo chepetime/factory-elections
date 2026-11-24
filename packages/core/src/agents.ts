@@ -41,6 +41,14 @@ export interface ProviderCapabilities {
   resume: boolean;
   /** Calls tools on an MCP server (needed for `delegate`). */
   mcp: boolean;
+  /** Stops a running call on request. */
+  interrupt: boolean;
+  /** Takes extra input while a turn runs and says whether it was accepted (SupplementReceipt). */
+  supplementalInput: boolean;
+  /** Tool events carry native call ids, so results pair with their calls. */
+  callIds: boolean;
+  /** A stopped call is verified to stop the commands it started, not only the provider process. */
+  descendantCleanup: boolean;
 }
 export type Capability = keyof ProviderCapabilities;
 
@@ -54,6 +62,11 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     structuredOutput: true,
     resume: true,
     mcp: true,
+    interrupt: true,
+    supplementalInput: false,
+    callIds: true,
+    // Verified for a shell tool on the SDK path (docs/runtime-baseline.md).
+    descendantCleanup: true,
   },
   // Codex rules match only a command's first words (a `bash -lc '…'` wrapper gets past them), and
   // it reports tokens, not dollars. Its OS sandbox is the control the factory relies on.
@@ -66,6 +79,11 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     structuredOutput: true,
     resume: true,
     mcp: true,
+    interrupt: true,
+    supplementalInput: false,
+    callIds: true,
+    // A cancelled `codex exec` leaves its shell command running (docs/runtime-baseline.md).
+    descendantCleanup: false,
   },
 };
 
@@ -78,6 +96,10 @@ const CAPABILITY_TEXT: Record<Capability, string> = {
   structuredOutput: 'return structured output',
   resume: 'continue a session',
   mcp: 'call MCP tools',
+  interrupt: 'stop a running call',
+  supplementalInput: 'take input during a turn',
+  callIds: 'report tool call ids',
+  descendantCleanup: 'stop the commands it started when stopped',
 };
 
 /**
@@ -103,8 +125,11 @@ export function parseVersion(output: string): string | undefined {
 }
 
 /** Undefined when the provider has every capability; otherwise why it cannot take the work. */
-export function missingCapabilities(provider: ProviderId, needs: readonly Capability[]): string | undefined {
-  const have = PROVIDER_CAPABILITIES[provider];
+export function missingCapabilities(
+  provider: ProviderId,
+  needs: readonly Capability[],
+  have: ProviderCapabilities = PROVIDER_CAPABILITIES[provider],
+): string | undefined {
   const missing = needs.filter((n) => !have[n]);
   return missing.length
     ? `${provider} cannot ${missing.map((m) => CAPABILITY_TEXT[m]).join(', ')}, which this work needs`
@@ -242,8 +267,9 @@ export class ProviderRouter implements ModelRunner {
   /** Why this provider cannot take the call, or undefined when it can. */
   refusal(request: ModelRun): string | undefined {
     const provider = this.provider(request);
-    if (!this.runners[provider]) return `${provider} is not available on this backend`;
-    return missingCapabilities(provider, callNeeds(request));
+    const runner = this.runners[provider];
+    if (!runner) return `${provider} is not available on this backend`;
+    return missingCapabilities(provider, callNeeds(request), runner.capabilities);
   }
   async run(request: ModelRun): Promise<ModelResult> {
     const refusal = this.refusal(request);

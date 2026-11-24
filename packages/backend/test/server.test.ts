@@ -355,6 +355,8 @@ test('shutdown finishes the active run, keeps queued runs for the next start, an
   const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', firstRun.id);
   const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
   assert.equal(record.state, 'completed');
+  assert.equal(record.outcome, 'completed');
+  assert.deepEqual(record.cleanup, { status: 'clean' });
   // Simulate the on-disk evidence left by an abrupt process exit, then start a fresh service.
   await writeFile(join(dir, 'run.json'), JSON.stringify({ ...record, state: 'running' }));
   const restarted = await startBackend({ root, port: 0, healthPort: 0, token, runner });
@@ -366,6 +368,9 @@ test('shutdown finishes the active run, keeps queued runs for the next start, an
     assert.equal(recovered.phase, 'interrupted');
     assert.equal(recovered.running, false);
     assert.match(recovered.error, /backend stopped during this run/);
+    const settled = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+    assert.equal(settled.outcome, 'interrupted');
+    assert.equal(settled.cleanup.status, 'uncertain', 'a crash does not prove the processes stopped');
     // The run that never started is queued again and runs now.
     for (let i = 0; i < 200 && calls < 2; i++) await new Promise((done) => setTimeout(done, 10));
     assert.equal(calls, 2);
@@ -607,10 +612,44 @@ test('StopRun aborts the active run, and the task says you stopped it', async (t
   const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', run.id);
   const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
   assert.equal(record.state, 'failed');
+  assert.equal(record.outcome, 'cancelled', 'a stop is a cancellation, not a failure');
+  assert.deepEqual(record.cleanup, { status: 'clean' });
   assert.match(record.error, /Stopped by you/);
   const task = await server.service.tasks.read('demo', id);
   assert.equal(task.stage, 'failed');
   assert.match(task.events!.at(-1)!.message, /Stopped by you/);
+});
+
+test('a stopped call that cannot vouch for its processes leaves the run cleanup uncertain', async (t) => {
+  let signals = 0;
+  const runner: ModelRunner = {
+    run: (request) =>
+      new Promise((_, fail) => {
+        if (request.signal) signals++;
+        request.signal?.addEventListener('abort', () =>
+          fail(
+            Object.assign(new Error('model run stopped: aborted'), {
+              kind: 'aborted',
+              cleanup: { status: 'uncertain', reason: 'the shell command may still run' },
+            }),
+          ),
+        );
+      }),
+  };
+  const { server, id } = await fixture(t, runner);
+  const run = JSON.parse((await backendCall('StartRun', { project: 'demo', id, action: 'run' })).json);
+  for (let i = 0; i < 200 && signals === 0; i++) await new Promise((done) => setTimeout(done, 10));
+  await backendCall('StopRun', { project: 'demo', id });
+  for (
+    let i = 0;
+    i < 200 && JSON.parse((await backendCall('GetBackground', { project: 'demo', id })).json).running;
+    i++
+  )
+    await new Promise((done) => setTimeout(done, 10));
+  const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', run.id);
+  const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+  assert.equal(record.outcome, 'cancelled');
+  assert.deepEqual(record.cleanup, { status: 'uncertain', reasons: ['the shell command may still run'] });
 });
 
 test('a profile check runs in the background and keeps its last result', async (t) => {

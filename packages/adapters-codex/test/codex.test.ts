@@ -185,7 +185,8 @@ while :; do echo 'WARN retrying telemetry' >&2; echo 'not json'; sleep 0.01; don
       stallMs: 1_000,
       timeoutMs: 6_000,
     }),
-    (e: Error & { kind?: string }) => e.kind === 'stalled',
+    (e: Error & { kind?: string; cleanup?: { status: string } }) =>
+      e.kind === 'stalled' && e.cleanup?.status === 'uncertain',
   );
 });
 

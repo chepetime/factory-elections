@@ -1,5 +1,6 @@
 // Interfaces the driver needs; adapters implement them.
-import type { AgentEvent, ContextStatus, McpEndpoint, Usage } from './agents.ts';
+import type { AgentEvent, ContextStatus, McpEndpoint, ProviderCapabilities, Usage } from './agents.ts';
+import type { CallCleanup } from './execution.ts';
 import type { TraceScope } from './trace.ts';
 import type { Effort } from './schemas.ts';
 
@@ -64,4 +65,15 @@ export type ModelFailure =
 
 export interface ModelRunner {
   run(request: ModelRun): Promise<ModelResult>;
+  /** What this runner enforces. Absent: the provider defaults in PROVIDER_CAPABILITIES. */
+  readonly capabilities?: ProviderCapabilities;
+}
+
+/**
+ * The cleanup evidence a model call error carries when the call stopped early (ADR 0005). Errors
+ * without it reported nothing uncertain.
+ */
+export function errorCleanup(error: unknown): CallCleanup | undefined {
+  const cleanup = (error as { cleanup?: unknown } | null)?.cleanup as CallCleanup | undefined;
+  return cleanup && (cleanup.status === 'clean' || cleanup.status === 'uncertain') ? cleanup : undefined;
 }

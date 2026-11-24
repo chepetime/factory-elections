@@ -10,7 +10,9 @@ import { join } from 'node:path';
 import { run as runProcess } from '@factory/adapters-process';
 import {
   modelFailureKind,
+  PROVIDER_CAPABILITIES,
   type AgentCli,
+  type CallCleanup,
   type AgentEvent,
   type Effort,
   type HeadlessTurn,
@@ -266,12 +268,21 @@ export function parseCodexLine(line: string): AgentEvent[] {
   }
 }
 
+/** Why a stopped Codex call cannot be called clean (docs/runtime-baseline.md, finding 1). */
+export const CODEX_STOP_CLEANUP: CallCleanup = {
+  status: 'uncertain',
+  reason: 'codex was stopped, and a stopped codex exec can leave its shell command running',
+};
+
 export class CodexRunError extends Error {
   readonly costUsd = null;
   readonly kind: ModelFailure;
-  constructor(message: string, kind: ModelFailure = modelFailureKind(message)) {
+  /** Set when the call was stopped early; see ADR 0005. */
+  readonly cleanup: CallCleanup | undefined;
+  constructor(message: string, kind: ModelFailure = modelFailureKind(message), cleanup?: CallCleanup) {
     super(message);
     this.kind = kind;
+    this.cleanup = cleanup;
   }
 }
 
@@ -283,6 +294,7 @@ export interface CodexRunnerOptions {
 
 export class CodexRunner implements ModelRunner {
   readonly options: CodexRunnerOptions;
+  readonly capabilities = PROVIDER_CAPABILITIES.codex;
   constructor(options: CodexRunnerOptions = {}) {
     this.options = options;
   }
@@ -368,16 +380,22 @@ export class CodexRunner implements ModelRunner {
       });
       if (pending) take(pending);
       if (out.stopped === 'timeout')
-        throw new CodexRunError('model run stopped: it reached its time limit', 'timeout');
+        throw new CodexRunError(
+          'model run stopped: it reached its time limit',
+          'timeout',
+          CODEX_STOP_CLEANUP,
+        );
       if (out.stopped === 'aborted')
         throw stalled
           ? new CodexRunError(
               'model run stopped: no message from the model within the stall limit',
               'stalled',
+              CODEX_STOP_CLEANUP,
             )
           : new CodexRunError(
               'model run stopped: the backend is shutting down or the run was cancelled',
               'aborted',
+              CODEX_STOP_CLEANUP,
             );
       if (!result || !result.ok || out.code !== 0) {
         const detail =

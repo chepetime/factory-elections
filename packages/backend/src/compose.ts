@@ -2,7 +2,7 @@
 import { access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ProviderRouter, type ModelRunner } from '@factory/core';
+import { PROVIDER_CAPABILITIES, ProviderRouter, type ModelRunner } from '@factory/core';
 import * as fsAdapter from '@factory/adapters-fs';
 import { storageFor } from '@factory/adapters-data';
 import * as git from '@factory/adapters-git';
@@ -18,13 +18,16 @@ const step = (name: string): StepPaths => ({
 /** Every provider behind one ModelRunner; the model reference picks the provider. */
 export function providerRunner(log: (line: string) => void = () => {}): ModelRunner {
   return new ProviderRouter({
+    // Lazy imports keep the SDK out of CLI startup; the capabilities match each adapter's own.
     claude: {
+      capabilities: PROVIDER_CAPABILITIES.claude,
       async run(request) {
         const { ClaudeAgentRunner } = await import('@factory/adapters-claude');
         return new ClaudeAgentRunner({ onProgress: log }).run(request);
       },
     },
     codex: {
+      capabilities: PROVIDER_CAPABILITIES.codex,
       async run(request) {
         const { CodexRunner } = await import('@factory/adapters-codex');
         return new CodexRunner({ onProgress: log }).run(request);
