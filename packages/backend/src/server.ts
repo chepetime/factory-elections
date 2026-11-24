@@ -345,6 +345,7 @@ export async function startBackend(options: ServerOptions) {
           await Promise.all([
             service.drain(),
             Promise.resolve(service.reviews.stopSweeping()),
+            service.reviews.close(),
             Promise.resolve(service.features.stopTicking()),
             Promise.resolve(service.tending.stopTicking()),
             new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),

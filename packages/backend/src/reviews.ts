@@ -9,7 +9,14 @@ import type { PrReviewStore } from './pr-review-records.ts';
 // Chat records live in the data root:
 //   <root>/<project>/reviews/<N>/run.json        PR, session and user turns
 //   <root>/<project>/reviews/<N>/turn-<K>.jsonl  stream-json output of turn K (+ turn-<K>.exit)
+//
+// A Claude turn runs in this process on the Agent SDK (ADR 0005, phase 3): the backend owns its
+// abort and result, and writes the same log and exit files. A turn whose owner is not this
+// backend instance and has no exit file was interrupted. FACTORY_REVIEW_TRANSPORT=cli, and other
+// providers, still run turns as detached CLI processes with a PID.
 //   <root>/<project>/reviews/<N>/payload.json    the report payload the agent writes
+import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
 import { mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +59,12 @@ import {
 } from '@factory/adapters-git';
 import { githubLogin, openPullRequestNodes, pullRequestHead } from '@factory/adapters-github';
 import { isAlive, spawnDetached, stopGroup } from '@factory/adapters-process';
-import { claudeCli } from '@factory/adapters-claude';
+import {
+  claudeCli,
+  runClaudeTurn,
+  type ClaudeTurnRequest,
+  type ClaudeTurnResult,
+} from '@factory/adapters-claude';
 import { Conflict } from './conflict.ts';
 import type { DelegationServer, Grant } from './delegation.ts';
 import type { MemoryService } from './memory.ts';
@@ -101,7 +113,10 @@ const Turn = z.object({
   at: z.string(),
   text: z.string(),
   label: z.string().optional(),
-  pid: z.number().int().positive(),
+  /** The detached CLI process group of the turn. */
+  pid: z.number().int().positive().optional(),
+  /** The backend instance that runs the turn in-process; a new instance has not started it. */
+  owner: z.string().max(100).optional(),
   stopped: z.boolean().optional(),
   /** Set when the backend stopped the turn, not the user. */
   stop_reason: z.enum(['stalled']).optional(),
@@ -170,12 +185,15 @@ export interface ReviewDeps {
   /** The provider that runs review turns. Automated turns need its deny rules. */
   agent: AgentCli;
   skillDir: string;
+  /** Runs a Claude turn in-process on the SDK. Absent: Claude turns run as detached CLI processes. */
+  claudeTurn?: (request: ClaudeTurnRequest) => Promise<ClaudeTurnResult>;
 }
 
 export const defaultReviewDeps: ReviewDeps = {
   github: { login: githubLogin, nodes: openPullRequestNodes, pull: pullRequestHead },
   agent: claudeCli,
   skillDir: SKILL_DIR,
+  ...(process.env.FACTORY_REVIEW_TRANSPORT === 'cli' ? {} : { claudeTurn: runClaudeTurn }),
 };
 
 export function reviewWorktree(repo: string, branch: string) {
@@ -283,6 +301,11 @@ export class ReviewService {
   reviewRecords?: PrReviewStore;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, Grant>();
+  /** This backend instance, the owner of the in-process turns it starts. */
+  readonly instance = randomUUID();
+  /** In-process turns that run now, by PR. */
+  private readonly turnsRunning = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  private closing = false;
   constructor(
     root: string,
     projects: ProjectStore,
@@ -329,7 +352,7 @@ export class ReviewService {
         );
         const last = Math.max(Date.parse(turn.at), log?.mtimeMs ?? 0);
         if (Date.now() - last < stallMs) continue;
-        stopGroup(turn.pid);
+        this.stopTurn(project.name, number, turn);
         const turns = [...record.turns];
         turns[k] = { ...turn, stopped: true, stop_reason: 'stalled' };
         await writeJsonAtomic(join(this.dir(project.name, number), 'run.json'), { ...record, turns });
@@ -530,7 +553,12 @@ export class ReviewService {
       status.finished_at = done.mtime.toISOString();
       status.state = turn.stopped ? 'stopped' : status.exit_code === 0 ? 'completed' : 'failed';
     } else if (turn.stopped) status.state = 'stopped';
-    else status.state = isAlive(turn.pid) ? 'running' : 'interrupted';
+    else if (turn.owner)
+      status.state =
+        turn.owner === this.instance && this.turnsRunning.has(`${project}#${number}`)
+          ? 'running'
+          : 'interrupted';
+    else status.state = turn.pid && isAlive(turn.pid) ? 'running' : 'interrupted';
     if (turn.stop_reason) status.stop_reason = turn.stop_reason;
     void key;
     return status;
@@ -722,12 +750,15 @@ export class ReviewService {
       ...(grant ? { mcp: grant.endpoint } : {}),
       ...(pruned.length && known.length ? { tools: known.filter((t) => !pruned.includes(t)) } : {}),
     };
-    const pid = spawnDetached(agent.command, agent.args(turn, { systemPrompt }), {
-      cwd: record.worktree,
-      env: { ...agentEnv(), ...agent.env?.(turn) },
-      logPath: join(dir, `turn-${k}.jsonl`),
-      exitPath: join(dir, `turn-${k}.exit`),
-    });
+    const inProcess = agent.id === 'claude' && this.deps.claudeTurn;
+    const pid = inProcess
+      ? undefined
+      : spawnDetached(agent.command, agent.args(turn, { systemPrompt }), {
+          cwd: record.worktree,
+          env: { ...agentEnv(), ...agent.env?.(turn) },
+          logPath: join(dir, `turn-${k}.jsonl`),
+          exitPath: join(dir, `turn-${k}.exit`),
+        });
     const next: RunFile = {
       ...record,
       session_id: resume ?? record.session_id,
@@ -737,13 +768,79 @@ export class ReviewService {
           at: new Date().toISOString(),
           text: message.text,
           label: message.label,
-          pid,
+          ...(pid ? { pid } : { owner: this.instance }),
           trace_id: traceId,
           span_id: spanId,
         },
       ],
     };
+    // The turn is recorded before an in-process turn starts, so status sees it as running.
     await writeJsonAtomic(join(dir, 'run.json'), next);
+    if (inProcess) this.runInProcess(key, dir, k, inProcess, { turn, systemPrompt, cwd: record.worktree });
+  }
+
+  /**
+   * Runs a Claude turn in this process. Its SDK messages go to the turn log; the exit file says
+   * how it ended (0 or 1). A turn that the backend aborted at shutdown writes no exit file, so it
+   * reads as interrupted, and a reply can continue its saved session.
+   */
+  private runInProcess(
+    key: string,
+    dir: string,
+    k: number,
+    run: NonNullable<ReviewDeps['claudeTurn']>,
+    request: Pick<ClaudeTurnRequest, 'turn' | 'systemPrompt' | 'cwd'>,
+  ): void {
+    const controller = new AbortController();
+    const done = (async () => {
+      const log = createWriteStream(join(dir, `turn-${k}.jsonl`), { flags: 'a' });
+      let result: ClaudeTurnResult;
+      try {
+        result = await run({
+          ...request,
+          env: agentEnv(),
+          signal: controller.signal,
+          onLine: (line) => log.write(`${line}\n`),
+        });
+      } catch (error) {
+        result = {
+          ok: false,
+          aborted: controller.signal.aborted,
+          reported: false,
+          error: (error as Error).message,
+        };
+      }
+      // A failure the SDK did not report as a result message still shows in the chat.
+      if (!result.reported && !result.aborted && result.error)
+        log.write(
+          `${JSON.stringify({ type: 'result', subtype: 'error', is_error: true, errors: [result.error] })}\n`,
+        );
+      await new Promise<void>((resolveEnd) => log.end(resolveEnd));
+      if (!this.closing) await writeFile(join(dir, `turn-${k}.exit`), result.ok ? '0\n' : '1\n');
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.turnsRunning.get(key)?.controller === controller) this.turnsRunning.delete(key);
+      });
+    this.turnsRunning.set(key, { controller, done });
+  }
+
+  /** Stops a turn on whichever path it runs: the in-process abort, or the detached group. */
+  private stopTurn(project: string, number: number, turn: RunFile['turns'][number]): void {
+    const live = this.turnsRunning.get(`${project}#${number}`);
+    if (turn.owner === this.instance && live) live.controller.abort();
+    else if (turn.pid) stopGroup(turn.pid);
+  }
+
+  /**
+   * Ends the in-process turns at shutdown and waits for their logs to close. They write no exit
+   * file, so the next backend reads them as interrupted.
+   */
+  async close(): Promise<void> {
+    this.closing = true;
+    const live = [...this.turnsRunning.values()];
+    for (const turn of live) turn.controller.abort();
+    await Promise.all(live.map((turn) => turn.done));
   }
 
   /**
@@ -886,7 +983,7 @@ export class ReviewService {
     if (!record) throw new Conflict(`PR #${number} has no review to stop`);
     const turns = [...record.turns];
     const last = turns.at(-1)!;
-    stopGroup(last.pid);
+    this.stopTurn(project, number, last);
     turns[turns.length - 1] = { ...last, stopped: true };
     await writeJsonAtomic(join(this.dir(project, number), 'run.json'), { ...record, turns });
   }

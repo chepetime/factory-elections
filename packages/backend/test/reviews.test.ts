@@ -6,7 +6,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
-import { claudeCli } from '@factory/adapters-claude';
+import { claudeCli, type ClaudeTurnRequest } from '@factory/adapters-claude';
 import { ProjectSettings } from '@factory/core';
 import {
   AUTOMATED_TURN_DENY,
@@ -55,7 +55,7 @@ else {
 }
 `;
 
-async function fixture(t: TestContext, otherAgents = () => 0) {
+async function fixture(t: TestContext, otherAgents = () => 0, claudeTurn?: ReviewDeps['claudeTurn']) {
   const base = await mkdtemp(join(tmpdir(), 'factory-reviews-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const origin = join(base, 'origin.git');
@@ -97,10 +97,17 @@ async function fixture(t: TestContext, otherAgents = () => 0) {
       args: (turn) => (turns.push(turn), [agent, turn.systemPromptFile, turn.resume ?? '-', turn.message]),
     },
     skillDir: SKILL_DIR,
+    ...(claudeTurn ? { claudeTurn } : {}),
   };
   const settings = async () =>
     ProjectSettings.parse({ task_manager: { kind: 'jira', cli: 'acli' }, review_profile: '# App profile' });
-  return { repo, root, turns, reviews: new ReviewService(root, projects, settings, deps, otherAgents) };
+  return {
+    repo,
+    root,
+    turns,
+    reviews: new ReviewService(root, projects, settings, deps, otherAgents),
+    restart: () => new ReviewService(root, projects, settings, deps, otherAgents),
+  };
 }
 
 async function settle(reviews: ReviewService, number: number) {
@@ -303,4 +310,90 @@ test('completed agent review is recorded once with verdict, findings and timing'
   assert.equal(records[0]!.verdict, 'Comment');
   assert.equal(records[0]!.findings[0]!.text, 'Edge case');
   assert.ok(records[0]!.duration_ms >= 0);
+});
+
+/**
+ * An in-process turn like AGENT, through the SDK path's contract: SDK-shaped lines, the payload,
+ * and a result. `hold` keeps the turn running until it is aborted.
+ */
+function sdkTurn(seen: ClaudeTurnRequest[], hold = () => false): NonNullable<ReviewDeps['claudeTurn']> {
+  return async (request) => {
+    seen.push(request);
+    const session = request.turn.resume ?? 'sdk-session-1';
+    const say = (e: object) => request.onLine(JSON.stringify({ session_id: session, ...e }));
+    say({ type: 'system', subtype: 'init' });
+    say({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: `resume ${request.turn.resume ?? '-'} got ${request.turn.message}` }],
+      },
+    });
+    if (hold()) {
+      await new Promise<void>((done) =>
+        request.signal.addEventListener('abort', () => done(), { once: true }),
+      );
+      return { ok: false, aborted: true, reported: false, sessionId: session, error: 'aborted' };
+    }
+    const payload = /PAYLOAD: `([^`]+)`/.exec(request.systemPrompt)![1]!;
+    await writeFile(
+      payload,
+      JSON.stringify({ meta: { decision: 'Comment', risk_level: 'low', summary: 'ok' }, findings: [] }),
+    );
+    say({ type: 'result', subtype: 'success', is_error: false, result: 'Reviewed', total_cost_usd: 0.5 });
+    return { ok: true, aborted: false, reported: true, sessionId: session, costUsd: 0.5 };
+  };
+}
+
+test('Claude turns run in-process on the SDK path: same files, same chat, resumed sessions', async (t) => {
+  const seen: ClaudeTurnRequest[] = [];
+  const { root, turns, reviews } = await fixture(t, () => 0, sdkTurn(seen));
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  const first = await settle(reviews, 7);
+  assert.equal(first.state, 'completed');
+  assert.equal(first.report, true);
+  assert.equal(turns.length, 0, 'no detached CLI process was started');
+  assert.deepEqual(seen[0]!.turn.deny, AUTOMATED_TURN_DENY);
+  assert.match(seen[0]!.systemPrompt, /^# Senior PR Review/);
+  const run = JSON.parse(await readFile(join(root, 'app', 'reviews', '7', 'run.json'), 'utf8'));
+  assert.equal(run.turns[0].pid, undefined);
+  assert.equal(run.turns[0].owner, reviews.instance);
+  assert.equal((await readFile(join(root, 'app', 'reviews', '7', 'turn-0.exit'), 'utf8')).trim(), '0');
+
+  await reviews.reply({ project: 'app', number: 7, text: 'Why?' });
+  const second = await settle(reviews, 7);
+  assert.equal(seen[1]!.turn.resume, 'sdk-session-1');
+  assert.deepEqual(seen[1]!.turn.deny, [], 'a message the user typed has no automated-turn deny rules');
+  const last = second.conversation.at(-1)!;
+  assert.equal(last.role === 'agent' && last.blocks[0]?.text, 'resume sdk-session-1 got Why?');
+});
+
+test('an in-process turn stops on request, and one cut off by shutdown reads as interrupted', async (t) => {
+  let holding = true;
+  const seen: ClaudeTurnRequest[] = [];
+  const { reviews, restart } = await fixture(
+    t,
+    () => 0,
+    sdkTurn(seen, () => holding),
+  );
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  await reviews.idle();
+  assert.equal((await reviews.detail({ project: 'app', number: 7 })).state, 'running');
+  assert.equal(await reviews.agentsInUse(), 1);
+  await reviews.stop({ project: 'app', number: 7 });
+  const stopped = await settle(reviews, 7);
+  assert.deepEqual([stopped.state, stopped.can_reply], ['stopped', true]);
+  assert.ok(seen[0]!.signal.aborted, 'stop aborted the SDK call');
+
+  await reviews.reply({ project: 'app', number: 7, text: 'go on' });
+  assert.equal((await reviews.detail({ project: 'app', number: 7 })).state, 'running');
+  await reviews.close();
+  const after = restart();
+  const interrupted = await after.detail({ project: 'app', number: 7 });
+  assert.deepEqual([interrupted.state, interrupted.can_reply], ['interrupted', true]);
+  assert.equal(await after.agentsInUse(), 0);
+  holding = false;
+  await after.reply({ project: 'app', number: 7, text: 'continue' });
+  const resumed = await settle(after, 7);
+  assert.equal(resumed.state, 'completed');
+  assert.equal(seen.at(-1)!.turn.resume, 'sdk-session-1');
 });

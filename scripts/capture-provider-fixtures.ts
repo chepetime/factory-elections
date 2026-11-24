@@ -23,8 +23,9 @@ const CLAUDE_MODEL = 'claude-haiku-5-5';
 const TOOL_PROMPT =
   'Run exactly this shell command with your Bash tool: echo fixture-ok\nThen reply with one word: done';
 const RESUME_PROMPT = 'Reply with one word: again';
+// Not a standalone sleep: Claude Code blocks that and runs it in the background instead.
 const sleepPrompt = (marker: string) =>
-  `Run exactly this shell command with your Bash tool and wait for it: sleep ${marker}\nThen reply: done`;
+  `Run exactly this shell command with your Bash tool in the foreground and wait for it: echo waiting && sleep ${marker}\nThen reply: done`;
 
 /** Replaces machine paths, ids and addresses with stable placeholders, so fixtures can be committed. */
 function sanitizer(dir: string) {

@@ -9,9 +9,9 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [x] **Lifecycle checks for the current paths:** resume, cancel during a shell tool, descendant cleanup and stderr, recorded in [docs/runtime-baseline.md](docs/runtime-baseline.md) by `scripts/capture-provider-fixtures.ts`.
 - [ ] **Cancel during model output** and a provoked rate limit: not captured yet (see the baseline's "Not covered yet").
 - [ ] **Codex cancel leaves the shell tool running** (baseline finding 1): stop the descendants or record cleanup as uncertain. Phase 2 interrupt, phase 4 cleanup record.
-- [ ] **SDK tasks get 17 skills and 53 slash commands** with `settingSources: []` (finding 2): exclude them, or show them in the manifest.
+- [x] **SDK tasks get 17 skills and 53 slash commands** with `settingSources: []` (finding 2): `skills: []` and `--disable-slash-commands` now give 0 and 0.
 - [ ] **Codex loads `~/.agents/skills`** despite `--ignore-user-config` (finding 3).
-- [ ] **A stopped detached review turn has no exit code** (finding 4): record the stop on the review record until phase 3 removes the path.
+- [x] **A stopped detached review turn has no exit code** (finding 4): in-process turns always write one, except at shutdown, where the missing file means interrupted. Detached turns still record the stop on the turn.
 - [ ] **Flaky cost assertion** in `packages/backend/test/features.test.ts:238`: once in about six full runs, the feature cost is 1.9 instead of 1.7, which suggests a step ran twice. It did not happen when the file ran alone.
 - [x] **Worktree paths with `%2F`:** `scripts/worktree.mjs` now maps `/` to `-`, and the tests use `fileURLToPath`. Vitest cannot load modules from a path with `%2F`.
 
@@ -36,11 +36,12 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 
 ## Phase 3: Claude consolidation
 
-- [ ] **Reviews and chats on the managed path:** move PR review turns from `spawnDetached` (`packages/backend/src/reviews.ts`) into the execution manager. Keep guards, sandbox and budgets.
-- [ ] **Persistent sessions by workload policy:** continuing work (implementation, research, review chats) persists and saves its session ID early. Classification and formatting calls stay disposable.
+- [x] **Reviews and chats on the managed path:** Claude review turns run in-process on the SDK (`packages/adapters-claude/src/turn.ts`), with the same flags as `claude -p`. A real run confirmed that the automated-turn deny rules hold with `bypassPermissions`. `FACTORY_REVIEW_TRANSPORT=cli` is the rollback.
+- [ ] **Review turns end at a backend restart** (they ran on before): decide whether shutdown should wait for them, or resume them on start.
+- [ ] **Persistent sessions by workload policy** (review chats persist; task steps still choose per call): continuing work (implementation, research, review chats) persists and saves its session ID early. Classification and formatting calls stay disposable.
 - [ ] **Streaming input and interruption** through the SDK, advertised only after a check on the installed SDK and CLI.
-- [ ] **Provider completion vs cleanup:** the SDK result is the outcome; stream or process cleanup after it is recorded apart.
-- [ ] **Remove the review-only lifecycle** and its detached stop helper for migrated work. Old sessions finish on their old adapter.
+- [x] **Provider completion vs cleanup:** the SDK result is the outcome; stream or process cleanup after it is recorded apart.
+- [x] **Remove the review-only lifecycle** for migrated work: Claude turns use an abort, not `stopGroup`. The detached path stays for Codex and the rollback flag. A turn started by the detached CLI keeps its PID and finishes on that path.
 
 ## Phase 4: durable operations
 
@@ -86,7 +87,7 @@ These sections follow the earlier build order. They wait until after phase 4 unl
 - [x] **Feature gate screens (UI agent):** approve the spec and the board in the browser, not only through the RPCs.
 - [ ] **Tending gaps:** thread replies post as the signed-in `gh` account. (A removed `pr-opened` worktree now stops tending cleanly with an inbox item.)
 - [x] **Span ledger on Postgres:** the `factory_trace_events` read path has no test against a live database.
-- [ ] **Tool timings for review turns:** detached turns log no tool timings. *Phase 3 moves review turns to the SDK path, which has them.*
+- [ ] **Tool timings for review turns:** the turn log has no timestamps on either path. In-process turns can now add them when they write each line.
 - [x] **Store health view:** a count of spans with unknown cost, parent links that do not resolve, and ledger write errors.
 - [ ] **More end-to-end flows:** the inbox and tending, against the seeded build. (The feature flow from grill to QA is covered.)
 

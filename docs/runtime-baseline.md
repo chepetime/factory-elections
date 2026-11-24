@@ -33,7 +33,7 @@ The time from abort to return was not measured apart from model latency. Phase 4
 ## Findings
 
 1. **Codex cancel leaves the shell tool running.** The runner stops the `codex` process group, but the command Codex started outlives it. The acceptance test "Cancel during a shell tool" fails for Codex: the descendant is not stopped, and nothing reports cleanup as uncertain. Phase 2 (native interrupt) and phase 4 (cleanup records) must close this.
-2. **SDK tasks receive skills the factory did not choose.** With `settingSources: []`, the init message lists 17 skills and 53 slash commands. The detached CLI path, with `--setting-sources project --disable-slash-commands`, lists none. Phase 4's configuration manifest must show these, and the SDK path needs an explicit way to exclude them.
+2. **(Closed in phase 3.) SDK tasks receive skills the factory did not choose.** With `settingSources: []`, the init message lists 17 skills and 53 slash commands. The detached CLI path, with `--setting-sources project --disable-slash-commands`, lists none. Phase 4's configuration manifest must show these, and the SDK path needs an explicit way to exclude them.
 3. **Codex loads user skills despite `--ignore-user-config`.** stderr shows `failed to load skill <home>/.agents/skills/…`. User-level skills reach Codex turns.
 4. **A stopped detached review turn leaves no exit code.** `spawnDetached` writes the exit file from the wrapper shell, and `stopGroup` kills that shell too. The backend cannot tell "stopped by us" from "died". Phase 3 removes this path. Until then, a stop must be recorded on the review record.
 5. **Both Claude paths load the same built-in plugins** (`cc-plugin-sec-default`, `cc-plugin-agents-md`, `cc-plugin-telemetry`, `cc-plugin-privacy`, `cc-plugin-plugin-authoring`). No setting tested here removes them.
@@ -43,6 +43,19 @@ The time from abort to return was not measured apart from model latency. Phase 4
 - Rate-limit retry now needs evidence of no activity, not `!error.costUsd`.
 - Codex progress comes only from stdout protocol events; stderr and non-JSON lines do not renew the stall timer.
 - Tool events carry native call and parent-call IDs. Tool spans and session digests pair by ID.
+
+## In-process review turns (phase 3)
+
+A real turn on 24 Nov 2026 ran `runClaudeTurn` (SDK 0.3.323, bundled Claude Code 2.1.323) with the automated-turn deny rules, on Haiku in an empty directory.
+
+| Check | Result |
+| --- | --- |
+| `gh api rate_limit` under `Bash(gh api:*)` with `bypassPermissions` | Denied: "Permission to use Bash with command gh api rate_limit has been denied." |
+| Skills and slash commands (`skills: []`, `--disable-slash-commands`) | 0 and 0 |
+| Tools | 24 (the CLI path listed 25) |
+| Cancel 2 s into a shell tool | Aborted; no leftover process after 7 s |
+
+SDK tasks now also set `skills: []` and `--disable-slash-commands`, so finding 2 is closed. The capture script runs `echo waiting && sleep <marker>`, because Claude Code 2.1.323 blocked a standalone `sleep` once and ran it in the background.
 
 ## Not covered yet
 

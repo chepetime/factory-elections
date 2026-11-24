@@ -43,6 +43,8 @@ test('a call passes its budget and abort controller to the SDK', async () => {
   const result = await runner.run({ ...request, maxBudgetUsd: 2 });
   assert.equal(result.costUsd, 0.1);
   assert.equal(seen[0]!.maxBudgetUsd, 2);
+  assert.deepEqual(seen[0]!.skills, [], 'no skill the step did not choose');
+  assert.deepEqual(seen[0]!.extraArgs, { 'disable-slash-commands': null });
   assert.ok(seen[0]!.abortController instanceof AbortController);
 });
 

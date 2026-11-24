@@ -28,6 +28,7 @@ import {
 import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, claudeMessageEvents, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
 
 export * from './cli.ts';
+export * from './turn.ts';
 
 const TOOLS: Record<ToolAccess, string[]> = {
   none: [],
@@ -257,6 +258,10 @@ export class ClaudeAgentRunner implements ModelRunner {
       // No allowedTools: pre-approved tools would bypass canUseTool and the step's guard.
       // Do not load the user's or the target repository's Claude settings, hooks or plugins.
       settingSources: [],
+      // settingSources: [] still lists built-in skills and slash commands (runtime baseline,
+      // finding 2); a workflow step gets only what its prompt gives it.
+      skills: [],
+      extraArgs: { 'disable-slash-commands': null },
       persistSession: request.persistSession === true || Boolean(request.resume),
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
