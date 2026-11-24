@@ -83,24 +83,47 @@ export function sandboxFor(
   };
 }
 
+/** What a call was seen to do before it failed: the evidence a retry decision reads. */
+export interface CallActivity {
+  /** Assistant messages received: the model accepted the turn and produced output. */
+  assistantMessages: number;
+  /** Tool calls the model made. Any one of them may have had a side effect. */
+  toolCalls: number;
+}
+
 export class ModelRunError extends Error {
   readonly costUsd: number | null;
   readonly kind: ModelFailure;
+  /** Absent when the error did not come from a call (an abort before it started). */
+  readonly activity: CallActivity | undefined;
   constructor(
     message: string,
     costUsd: number | null = null,
     kind: ModelFailure = modelFailureKind(message),
+    activity?: CallActivity,
   ) {
     super(message);
     this.costUsd = costUsd;
     this.kind = kind;
+    this.activity = activity;
   }
+}
+
+/**
+ * A rate-limited call may run again only when there is evidence it did no work: no assistant
+ * output, no tool call and no reported spend. Unknown cost is not zero cost, and zero cost is not
+ * proof of no side effect, so the activity decides and a positive cost only adds a reason not to.
+ */
+export function canRetryRateLimit(error: unknown): boolean {
+  if (!(error instanceof ModelRunError) || error.kind !== 'rate-limited' || !error.activity) return false;
+  if (error.activity.assistantMessages > 0 || error.activity.toolCalls > 0) return false;
+  return !(typeof error.costUsd === 'number' && error.costUsd > 0);
 }
 
 /** The model that judges whether a turn is stuck: small, since it reads a few failures. */
 export const LOOP_JUDGE_MODEL = process.env.FACTORY_LOOP_JUDGE_MODEL ?? 'claude-haiku-5-5';
 
-/** Waits before each retry of a rate-limited call that had not spent anything yet. */
+/** Waits before each retry of a rate-limited call that showed no activity (see canRetryRateLimit). */
 export const RATE_LIMIT_RETRY_MS = [30_000, 120_000];
 
 export interface ClaudeRunnerOptions {
@@ -144,8 +167,8 @@ export class ClaudeAgentRunner implements ModelRunner {
   }
 
   /**
-   * One call, retried only when the provider rate-limited it before anything was spent: then the
-   * model did no work, so a retry cannot repeat a side effect or pay twice.
+   * One call, retried only when the provider rate-limited it before the model produced output or
+   * called a tool: then a retry cannot repeat a side effect.
    */
   async run(request: ModelRun): Promise<ModelResult> {
     const delays = this.options.retryDelaysMs ?? RATE_LIMIT_RETRY_MS;
@@ -153,12 +176,7 @@ export class ClaudeAgentRunner implements ModelRunner {
       try {
         return await this.runOnce(request);
       } catch (error) {
-        const retry =
-          error instanceof ModelRunError &&
-          error.kind === 'rate-limited' &&
-          !error.costUsd &&
-          attempt < delays.length;
-        if (!retry) throw error;
+        if (!canRetryRateLimit(error) || attempt >= delays.length) throw error;
         this.options.onProgress?.(`  · rate limited; retrying in ${Math.round(delays[attempt]! / 1000)}s`);
         await pause(delays[attempt]!, request.signal);
       }
@@ -328,9 +346,14 @@ export class ClaudeAgentRunner implements ModelRunner {
     }
 
     let result: SDKResultMessage | undefined;
+    const activity: CallActivity = { assistantMessages: 0, toolCalls: 0 };
     try {
       for await (const message of (this.options.query ?? query)({ prompt: request.prompt, options })) {
         heard();
+        if (message.type === 'assistant') {
+          activity.assistantMessages++;
+          for (const block of message.message.content) if (block.type === 'tool_use') activity.toolCalls++;
+        }
         if (request.context && message.type === 'assistant')
           for (const event of claudeMessageEvents(message as unknown as Record<string, unknown>))
             if (event.type === 'context') {
@@ -354,9 +377,13 @@ export class ClaudeAgentRunner implements ModelRunner {
         }
       }
     } catch (error) {
-      throw new ModelRunError(`model run failed: ${(error as Error).message}`);
+      const message = `model run failed: ${(error as Error).message}`;
+      throw new ModelRunError(message, null, modelFailureKind(message), activity);
     }
-    if (!result) throw new ModelRunError('model run ended without a result');
+    if (!result) {
+      const message = 'model run ended without a result';
+      throw new ModelRunError(message, null, modelFailureKind(message), activity);
+    }
     const extra = loop?.spentUsd ?? 0;
     if (extra && typeof result.total_cost_usd === 'number') result.total_cost_usd += extra;
     if (result.subtype !== 'success' || result.is_error) {
@@ -366,6 +393,7 @@ export class ClaudeAgentRunner implements ModelRunner {
         message,
         result.total_cost_usd ?? null,
         result.subtype === 'error_max_budget_usd' ? 'budget' : modelFailureKind(message),
+        activity,
       );
     }
     return {

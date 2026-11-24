@@ -91,6 +91,59 @@ test('a rate limit before any spend is retried; one after spend is not', async (
   );
 });
 
+test('a rate limit after model output or a tool call is not retried, even at zero or unknown cost', async () => {
+  const limited = {
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    errors: ['429 rate_limit_error'],
+  };
+  const toolTurn = {
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'git push' } }] },
+  };
+  const textTurn = { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } };
+  for (const [before, cost] of [
+    [toolTurn, 0],
+    [toolTurn, undefined],
+    [textTurn, undefined],
+  ] as const) {
+    let calls = 0;
+    const query = ((...args: unknown[]) => {
+      calls++;
+      const end = cost === undefined ? limited : { ...limited, total_cost_usd: cost };
+      return (fake([before, end]) as (...a: unknown[]) => unknown)(...args);
+    }) as unknown as Query;
+    const runner = new ClaudeAgentRunner({ query, retryDelaysMs: [5] });
+    await assert.rejects(runner.run(request), (e: ModelRunError) => e.kind === 'rate-limited');
+    assert.equal(calls, 1);
+  }
+});
+
+test('a rate limit with unknown cost and no activity is retried', async () => {
+  let calls = 0;
+  const query = ((...args: unknown[]) => {
+    calls++;
+    return (
+      fake(
+        calls === 1
+          ? [
+              {
+                type: 'result',
+                subtype: 'error_during_execution',
+                is_error: true,
+                errors: ['429 rate_limit_error'],
+              },
+            ]
+          : [success()],
+      ) as (...a: unknown[]) => unknown
+    )(...args);
+  }) as unknown as Query;
+  const runner = new ClaudeAgentRunner({ query, retryDelaysMs: [5] });
+  assert.equal((await runner.run(request)).text, 'done');
+  assert.equal(calls, 2);
+});
+
 test('a budget stop and a usage limit are reported as such, with their cost', async () => {
   const budget = new ClaudeAgentRunner({
     query: fake([
