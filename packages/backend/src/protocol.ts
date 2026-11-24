@@ -1,5 +1,5 @@
 import type { ActivitySnapshot } from './activity.ts';
-import type { ExecutionPhase } from '@factory/core';
+import type { CleanupRecord, ExecutionPhase } from '@factory/core';
 import { fromJSON } from '@grpc/proto-loader';
 import type { ServiceDefinition } from '@grpc/grpc-js';
 import descriptor from './descriptor.json' with { type: 'json' };
@@ -35,6 +35,8 @@ export interface BackgroundRun {
   error?: string;
   /** While the run executes: its current command and when it last printed anything. */
   activity?: ActivitySnapshot;
+  /** Whether the run's processes are known to be gone (ADR 0005). */
+  cleanup?: CleanupRecord;
 }
 export interface Methods {
   GetDiagnostics: [{}, { json: string }];
@@ -97,6 +99,7 @@ export interface Methods {
   GetBackground: [Target, { json: string }];
   ClearLog: [Target, { text: string }];
   StopRun: [Target, { text: string }];
+  ConfirmCleanup: [Target, { text: string }];
   StartProfileCheck: [Target, { json: string }];
   GetProfileCheck: [Target, { json: string }];
 }

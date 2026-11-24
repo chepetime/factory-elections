@@ -15,6 +15,8 @@ export type ExecutionOutcome = z.infer<typeof ExecutionOutcome>;
 export const CleanupRecord = z.object({
   status: z.enum(['clean', 'uncertain']),
   reasons: z.array(z.string().max(500)).max(20).optional(),
+  /** When a person confirmed that nothing from an uncertain cleanup still runs. */
+  confirmed_at: z.string().optional(),
 });
 export type CleanupRecord = z.infer<typeof CleanupRecord>;
 
@@ -30,6 +32,16 @@ export function combineCleanup(calls: readonly CallCleanup[]): CleanupRecord {
     ...new Set(calls.filter((c) => c.status === 'uncertain').map((c) => c.reason ?? 'unknown')),
   ];
   return reasons.length ? { status: 'uncertain', reasons: reasons.slice(0, 20) } : { status: 'clean' };
+}
+
+/**
+ * Why new work on a task must wait: its last run may have left processes that still change the
+ * worktree, and a new run there would race them. Undefined when nothing blocks.
+ */
+export function cleanupBlocker(cleanup: CleanupRecord | undefined): string | undefined {
+  if (cleanup?.status !== 'uncertain' || cleanup.confirmed_at) return undefined;
+  const why = cleanup.reasons?.length ? ` (${cleanup.reasons.join('; ')})` : '';
+  return `The last run may have left processes running${why}. Check for them, then confirm the cleanup before a new run.`;
 }
 
 /** How long a provider session may continue: across a task, a conversation, a review, or not at all. */

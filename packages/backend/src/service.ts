@@ -26,6 +26,7 @@ import {
   type TaskRecord,
   type TraceScope,
   CleanupRecord,
+  cleanupBlocker,
   combineCleanup,
   errorCleanup,
   ExecutionOutcome,
@@ -436,6 +437,9 @@ export class BackendService {
       const task = await this.tasks.read(command.project, command.id);
       const blockers = taskCommandBlockers(task, command.action);
       if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
+      // A run that may have left processes behind blocks the next one on the same worktree.
+      const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
+      if (waiting) throw new Conflict(waiting);
       if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
       await readProfile(this.root, command.project);
       const record: RunRecord = {
@@ -821,6 +825,7 @@ export class BackendService {
       ...(running && this.activities.has(record.id)
         ? { activity: this.activities.get(record.id)!.snapshot() }
         : {}),
+      ...(record.cleanup ? { cleanup: record.cleanup } : {}),
       state: unfinished && !running ? 'interrupted' : record.state,
       error:
         unfinished && !running
@@ -835,8 +840,11 @@ export class BackendService {
     let gate_error: string | undefined;
     let diff_stat: string | undefined;
     let execution: TaskControls['execution'];
+    let cleanup: CleanupRecord | undefined;
     try {
-      execution = (await this.background(target, false)).phase ?? 'unavailable';
+      const run = await this.background(target, false);
+      execution = run.phase ?? 'unavailable';
+      cleanup = run.cleanup;
     } catch {
       execution = 'unavailable';
     }
@@ -856,7 +864,7 @@ export class BackendService {
       head_sha,
       diff_stat,
       gate_error,
-      actions: taskActions(task, execution, head_sha),
+      actions: taskActions(task, execution, head_sha, cleanup),
     };
   }
   /** Stops the task's active run: its model calls and commands get the abort signal. */
@@ -868,6 +876,26 @@ export class BackendService {
     if (!controller) return 'Stopping the run before it starts.';
     controller.abort();
     return 'Stopping the run.';
+  }
+  /**
+   * Records that a person checked an uncertain cleanup: nothing from the last run still runs.
+   * New runs on the task may start again. The reasons stay on the record.
+   */
+  async confirmCleanup(target: Target): Promise<string> {
+    const { project, id } = this.target(target);
+    // An active run holds the task lock for its whole life: refuse before waiting on the lock.
+    const current = await this.latest(target);
+    if (current && this.active.has(current.record.id)) throw new Conflict('A run still owns this task.');
+    return this.tasks.withLock(project, id, async () => {
+      const latest = await this.latest(target);
+      if (!latest || !cleanupBlocker(latest.record.cleanup))
+        throw new Conflict('The last run has no uncertain cleanup to confirm.');
+      await this.storage.writeDocument(join(latest.dir, 'run.json'), {
+        ...latest.record,
+        cleanup: { ...latest.record.cleanup!, confirmed_at: new Date().toISOString() },
+      });
+      return 'Cleanup confirmed; the task can run again.';
+    });
   }
   async clearLog(target: Target): Promise<void> {
     const { project, id } = this.target(target);

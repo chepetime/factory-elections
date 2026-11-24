@@ -14,6 +14,7 @@ import { DiffCodeBlock } from '@/components/diff-code-block';
 import {
   approveAndOpenPullRequest,
   approveTask,
+  confirmCleanup,
   dismissLog,
   openPullRequest,
   rejectTask,
@@ -661,6 +662,26 @@ export default async function TaskPage({
               This run has no live owner. Inspect the last output and command lock before explicitly running
               recovery. It will not restart automatically.
             </p>
+          )}
+          {!busy && run.cleanup?.status === 'uncertain' && !run.cleanup.confirmed_at && (
+            <AgentMessage>
+              <ActionForm
+                action={confirmCleanup}
+                hidden={hidden}
+                submit="Nothing is running; allow new runs"
+                pendingLabel="Confirming…"
+              >
+                <p className="text-sm">
+                  The last run may have left processes running
+                  {run.cleanup.reasons?.length ? `: ${run.cleanup.reasons.join('; ')}` : ''}. A new run in the
+                  same worktree would race them, so it waits. Check for them (for example,{' '}
+                  <code className="font-mono text-xs">
+                    ps -ef | grep {task.worktree?.path ?? 'the worktree'}
+                  </code>
+                  ), stop any you find, then confirm.
+                </p>
+              </ActionForm>
+            </AgentMessage>
           )}
 
           {canRun && (

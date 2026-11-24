@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { STAGES, TaskRecord, type Stage } from './schemas.ts';
 import { approvalBlockers, blockingFindings, openPrBlockers } from './domain.ts';
+import { cleanupBlocker, type CleanupRecord } from './execution.ts';
 
 export const TaskCommand = z.enum(['run', 'revise', 'approve', 'reject', 'open-pr']);
 export type TaskCommand = z.infer<typeof TaskCommand>;
@@ -32,7 +33,16 @@ export function executionBusy(phase: ExecutionPhase): boolean {
 }
 
 const Blocker = z.object({
-  code: z.enum(['pr-open', 'stage', 'worktree-required', 'head-unavailable', 'gate', 'busy', 'unavailable']),
+  code: z.enum([
+    'pr-open',
+    'stage',
+    'worktree-required',
+    'head-unavailable',
+    'gate',
+    'busy',
+    'unavailable',
+    'cleanup',
+  ]),
   message: z.string(),
 });
 export type CommandBlocker = z.infer<typeof Blocker>;
@@ -80,9 +90,18 @@ export const TaskControls = z.object({
 export type TaskControls = z.infer<typeof TaskControls>;
 
 /** Advisory snapshot only: commands still lock and recheck the live worktree before acting. */
-export function taskActions(task: TaskRecord, phase: ExecutionPhase, headSha?: string) {
+export function taskActions(
+  task: TaskRecord,
+  phase: ExecutionPhase,
+  headSha?: string,
+  /** The latest run's cleanup: an unconfirmed uncertain one blocks run and revise. */
+  cleanup?: CleanupRecord,
+) {
+  const waiting = cleanupBlocker(cleanup);
   return TaskCommand.options.map((action): z.infer<typeof ActionAvailability> => {
     const blockers = taskCommandBlockers(task, action);
+    if (waiting && (action === 'run' || action === 'revise'))
+      blockers.push({ code: 'cleanup', message: waiting });
     if (executionBusy(phase)) blockers.unshift({ code: 'busy', message: 'A run still owns this task.' });
     if (phase === 'unavailable')
       blockers.unshift({

@@ -270,6 +270,7 @@ export async function startBackend(options: ServerOptions) {
       StartRun: async (request: Command) => ({ json: JSON.stringify(await service.start(request)) }),
       GetBackground: async (request: Target) => ({ json: JSON.stringify(await service.background(request)) }),
       StopRun: async (request: Target) => ({ text: await service.stopRun(request) }),
+      ConfirmCleanup: async (request: Target) => ({ text: await service.confirmCleanup(request) }),
       StartProfileCheck: async (request: Target) => ({
         json: JSON.stringify(await service.profileChecks.start(ProjectName.parse(request.project))),
       }),

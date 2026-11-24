@@ -57,7 +57,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 - [ ] **Usage checkpoints:** cumulative vs turn-local counters, reported vs estimated vs unavailable cost. Repeated snapshots are not counted twice.
 - [ ] **Stop and Halt** (below) on the new cancellation contract: Stop is a request, and the app says "stopped" only after evidence.
 - [x] **Review turns drain at shutdown** like task runs: they get `FACTORY_DRAIN_GRACE_MS`, then end as interrupted. A reply resumes them; nothing replays them.
-- [ ] **Block new work while cleanup is uncertain** (ADR 0005, deferred): refuse a new run on a task whose last run's cleanup is `uncertain`, until a person confirms.
+- [x] **Block new work while cleanup is uncertain:** run and revise wait while the last run's cleanup is `uncertain` (a `cleanup` blocker in the task controls). A person confirms with `factory task confirm-cleanup` or the task page button. The reasons stay on the record.
 
 ## Evidence receipts
 

@@ -650,6 +650,23 @@ test('a stopped call that cannot vouch for its processes leaves the run cleanup 
   const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
   assert.equal(record.outcome, 'cancelled');
   assert.deepEqual(record.cleanup, { status: 'uncertain', reasons: ['the shell command may still run'] });
+
+  // The next run waits until a person confirms that nothing from this one still runs.
+  const controls = JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json);
+  const run_ = controls.actions.find((a: { action: string }) => a.action === 'run');
+  assert.equal(run_.allowed, false);
+  assert.equal(run_.blockers.at(-1).code, 'cleanup');
+  await assert.rejects(
+    backendCall('StartRun', { project: 'demo', id, action: 'run' }),
+    /may have left processes running \(the shell command may still run\)/,
+  );
+  assert.match((await backendCall('ConfirmCleanup', { project: 'demo', id })).text, /confirmed/);
+  await assert.rejects(backendCall('ConfirmCleanup', { project: 'demo', id }), /no uncertain cleanup/);
+  const confirmed = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+  assert.equal(confirmed.cleanup.status, 'uncertain', 'the reasons stay on the record');
+  assert.ok(confirmed.cleanup.confirmed_at);
+  const after = JSON.parse((await backendCall('GetTaskControls', { project: 'demo', id })).json);
+  assert.equal(after.actions.find((a: { action: string }) => a.action === 'run').allowed, true);
 });
 
 test('a profile check runs in the background and keeps its last result', async (t) => {

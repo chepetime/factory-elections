@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import {
   addProjectRequest,
   clearBackgroundLog,
+  confirmRunCleanup,
   stopBackgroundRun,
   executeTask,
   isProjectName,
@@ -158,6 +159,14 @@ export async function stopTask(_prev: ActionState, form: FormData): Promise<Acti
   const t = target(form);
   if ('error' in t) return t;
   const result = await stopBackgroundRun(t.project, t.id);
+  refresh(t.project, t.id);
+  return result.ok ? { message: result.value } : { error: result.error };
+}
+
+export async function confirmCleanup(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const t = target(form);
+  if ('error' in t) return t;
+  const result = await confirmRunCleanup(t.project, t.id);
   refresh(t.project, t.id);
   return result.ok ? { message: result.value } : { error: result.error };
 }

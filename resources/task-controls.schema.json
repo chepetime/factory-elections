@@ -31,7 +31,8 @@
                     "head-unavailable",
                     "gate",
                     "busy",
-                    "unavailable"
+                    "unavailable",
+                    "cleanup"
                   ]
                 },
                 "message": { "type": "string" }

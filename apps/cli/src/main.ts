@@ -44,6 +44,7 @@ Workflow
   task revise --project <p> --id <id> --note <text>      Ask for changes; reruns coder, verify, review
   task reject --project <p> --id <id> --note <text>      Decline the change
   task open-pr --project <p> --id <id> [--draft]         Push the branch and open the PR (approved tasks only)
+  task confirm-cleanup --project <p> --id <id>           After you checked: nothing from the last run still runs
   receipt issue --project <p> --id <id>                  Sign the evidence receipt: what is proven, what is not
   receipt verify --project <p> --id <id> [--rerun]       Check the receipt's signature and head; --rerun runs the checks again
 
@@ -409,6 +410,17 @@ async function taskCommand(
           TaskControls.parse(
             JSON.parse((await backendCall('GetTaskControls', { project: project(), id: id() })).json),
           ),
+        );
+        return 0;
+      } finally {
+        closeBackendClient();
+      }
+    }
+    case 'confirm-cleanup': {
+      const { backendCall, closeBackendClient } = await import('@factory/backend/client');
+      try {
+        process.stdout.write(
+          `${(await backendCall('ConfirmCleanup', { project: project(), id: id() })).text}\n`,
         );
         return 0;
       } finally {

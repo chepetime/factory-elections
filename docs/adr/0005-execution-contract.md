@@ -17,7 +17,7 @@ A run record has one `state`. A run that the user stopped is stored as `failed`.
 ## Deferred
 
 - An ownership generation for fencing, and recovery that reads cleanup records: phase 4.
-- Blocking new work while a cleanup is uncertain: phase 4. Phase 1 records and shows it.
+- Blocking new work while a cleanup is uncertain: done in phase 4. Run and revise wait until a person confirms (`ConfirmCleanup`).
 - Saving session IDs before the call ends, so that a crash keeps them: phases 3 and 4.
 - `inspect()` that reads the installed CLI version at runtime: phase 2, with the app-server adapter. Phase 1 uses the pinned `TESTED_RUNTIMES`.
 

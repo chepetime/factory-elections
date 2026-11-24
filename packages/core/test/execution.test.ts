@@ -75,3 +75,21 @@ test('the router checks the capabilities a runner declares, before the provider 
   );
   assert.equal(PROVIDER_CAPABILITIES.codex.descendantCleanup, false);
 });
+
+test('an unconfirmed uncertain cleanup blocks run and revise only', async () => {
+  const { cleanupBlocker, taskActions } = await import('../src/index.ts');
+  assert.equal(cleanupBlocker(undefined), undefined);
+  assert.equal(cleanupBlocker({ status: 'clean' }), undefined);
+  assert.equal(cleanupBlocker({ status: 'uncertain', reasons: ['x'], confirmed_at: 't' }), undefined);
+  assert.match(
+    cleanupBlocker({ status: 'uncertain', reasons: ['codex was stopped'] }) ?? '',
+    /\(codex was stopped\)/,
+  );
+  const task = { id: 't', project: 'p', repo: '/r', prompt: 'x', stage: 'failed' } as never;
+  const blocked = taskActions(task, 'failed', undefined, { status: 'uncertain' });
+  const codes = (action: string) => blocked.find((a) => a.action === action)!.blockers.map((b) => b.code);
+  assert.ok(codes('run').includes('cleanup'));
+  assert.ok(codes('revise').includes('cleanup'));
+  assert.ok(!codes('reject').includes('cleanup'), 'rejecting the task stays possible');
+  assert.equal(taskActions(task, 'failed').find((a) => a.action === 'run')!.allowed, true);
+});

@@ -387,6 +387,10 @@
                   "requestType": "Target",
                   "responseType": "Text"
                 },
+                "ConfirmCleanup": {
+                  "requestType": "Target",
+                  "responseType": "Text"
+                },
                 "StartProfileCheck": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

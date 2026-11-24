@@ -150,6 +150,13 @@ const Background = z.object({
       last_output_at: z.string().optional(),
     })
     .optional(),
+  cleanup: z
+    .object({
+      status: z.enum(['clean', 'uncertain']),
+      reasons: z.array(z.string()).optional(),
+      confirmed_at: z.string().optional(),
+    })
+    .optional(),
 });
 export type BackgroundRun = z.infer<typeof Background>;
 export async function backgroundRun(project: string, id: string): Promise<BackgroundRun> {
@@ -171,6 +178,14 @@ export async function backgroundRun(project: string, id: string): Promise<Backgr
 export async function stopBackgroundRun(project: string, id: string): Promise<Result<string>> {
   try {
     return { ok: true, value: (await backendCall('StopRun', { project, id })).text };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
+  }
+}
+/** Records that nothing from the last run's uncertain cleanup still runs, so the task can run again. */
+export async function confirmRunCleanup(project: string, id: string): Promise<Result<string>> {
+  try {
+    return { ok: true, value: (await backendCall('ConfirmCleanup', { project, id })).text };
   } catch (error) {
     return { ok: false, error: backendError(error) };
   }

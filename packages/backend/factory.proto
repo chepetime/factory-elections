@@ -79,6 +79,7 @@ service Factory {
   rpc GetBackground(Target) returns (Snapshot);
   rpc ClearLog(Target) returns (Text);
   rpc StopRun(Target) returns (Text);
+  rpc ConfirmCleanup(Target) returns (Text);
   rpc StartProfileCheck(Target) returns (Snapshot);
   rpc GetProfileCheck(Target) returns (Snapshot);
 }
