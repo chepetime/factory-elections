@@ -4,16 +4,22 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 
 ## Phase 0: baseline
 
-- [ ] **Pin versions:** record the Factory revision and the Claude Agent SDK, Claude CLI and Codex CLI versions. `factory doctor` (`apps/cli/src/doctor.ts`) shows them and warns on an unsupported version.
-- [ ] **Protocol fixtures:** capture sanitized streams from an SDK task, a detached review turn (`packages/adapters-claude/src/cli.ts`) and `codex exec --json`. Store them beside each adapter's tests. No credentials, no private repo text.
-- [ ] **Lifecycle checks for the current paths:** cancel during model output, cancel during a shell tool (descendants stop), resume after a finished turn, stderr noise with no progress, UTF-8 split across chunks. Record what each path does today, also where it is wrong.
+- [x] **Pin versions:** record the Factory revision and the Claude Agent SDK, Claude CLI and Codex CLI versions. `factory doctor` (`apps/cli/src/doctor.ts`) shows them and warns on an unsupported version.
+- [x] **Protocol fixtures:** capture sanitized streams from an SDK task, a detached review turn (`packages/adapters-claude/src/cli.ts`) and `codex exec --json`. Store them beside each adapter's tests. No credentials, no private repo text.
+- [x] **Lifecycle checks for the current paths:** resume, cancel during a shell tool, descendant cleanup and stderr, recorded in [docs/runtime-baseline.md](docs/runtime-baseline.md) by `scripts/capture-provider-fixtures.ts`.
+- [ ] **Cancel during model output** and a provoked rate limit: not captured yet (see the baseline's "Not covered yet").
+- [ ] **Codex cancel leaves the shell tool running** (baseline finding 1): stop the descendants or record cleanup as uncertain. Phase 2 interrupt, phase 4 cleanup record.
+- [ ] **SDK tasks get 17 skills and 53 slash commands** with `settingSources: []` (finding 2): exclude them, or show them in the manifest.
+- [ ] **Codex loads `~/.agents/skills`** despite `--ignore-user-config` (finding 3).
+- [ ] **A stopped detached review turn has no exit code** (finding 4): record the stop on the review record until phase 3 removes the path.
+- [ ] **Worktree paths with `%2F` break `packages/backend/test/server.test.ts`:** the CLI path gets encoded twice (`%252F`). `scripts/worktree.mjs` names worktrees this way, so the full suite fails in every agent worktree.
 
 ## Phase 1: shared contract
 
 - [ ] **Execution and provider-session identity** in core: a Factory execution ID, its task or conversation link, parent execution, owner generation, and a separate provider-session record (provider, native ID, work directory, continuity scope, validity). Native session IDs never identify a task or conversation.
-- [ ] **Tool-call and parent-call IDs** on `AgentEvent` (`packages/core/src/agents.ts`). The Claude SDK, review CLI and Codex adapters fill them.
-- [ ] **Separate Codex stdout and stderr** (`packages/adapters-codex/src/index.ts`). Only protocol events renew activity. stderr goes to diagnostics.
-- [ ] **Retry from evidence:** replace `!error.costUsd` (`packages/adapters-claude/src/index.ts:159`). Retry a rate limit only before turn acceptance and before any tool event. Unknown cost stays unknown.
+- [x] **Tool-call and parent-call IDs** on `AgentEvent` (`packages/core/src/agents.ts`). The Claude SDK, review CLI and Codex adapters fill them.
+- [x] **Separate Codex stdout and stderr** (`packages/adapters-codex/src/index.ts`). Only protocol events renew activity. stderr goes to diagnostics.
+- [x] **Retry from evidence:** replace `!error.costUsd` (`packages/adapters-claude/src/index.ts:159`). Retry a rate limit only before turn acceptance and before any tool event. Unknown cost stays unknown.
 - [ ] **Negotiated capabilities:** each adapter declares its capabilities from provider, CLI version and policy (`inspect()`). `PROVIDER_CAPABILITIES` becomes the adapter default, not a provider fact.
 - [ ] **Separate outcome and cleanup** on the terminal record: outcome (completed, failed, cancelled, interrupted) and cleanup (stop requested, native acknowledgement, process exit, descendants, uncertain). A slow cleanup never relabels a completed result as a hang.
 - [ ] **Supplement receipts:** the contract returns accepted, queued or rejected for extra input. The UI shows the receipt, not "sent".

@@ -17,7 +17,7 @@ These parts work today. The phases move them behind one contract and do not remo
 
 Pin the Factory revision and the Claude SDK, Claude CLI and Codex CLI versions. Capture sanitized protocol fixtures from each path: SDK tasks, detached review turns, `codex exec --json`. Write lifecycle checks for the current paths: cancel during output, cancel during a shell tool, resume, stderr noise.
 
-**Exit:** each existing path has documented behavior and reproducible lifecycle checks.
+**Exit:** each existing path has documented behavior and reproducible lifecycle checks. *Recorded on 24 Nov 2026 in [runtime-baseline.md](../runtime-baseline.md); two scenarios are still open.*
 
 ### Phase 1: Shared contract
 
