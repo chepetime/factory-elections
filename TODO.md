@@ -49,13 +49,32 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 
 ## Phase 4: durable operations
 
-- [ ] **Configuration manifest** per execution: provider and binary version, model, effort, work directory, instruction sources, skills, MCP tools, env variable names, credential references, limits and policy. No secret values.
+- [x] **Configuration manifest** per model call, on the run record (`manifests`): provider, runtime version, model, effort, tools, work directory, sandbox domains, MCP, guard, resume, limits, env variable names and a hash of the system prompt. No secret values. *Skills and MCP tool lists per call are not recorded yet.*
 - [ ] **Configuration precedence:** application → runtime → agent → project → execution overrides. Permission limits combine conservatively; an override never widens them.
 - [ ] **Restart reconciliation with fencing:** an ownership generation per execution. Unstarted work runs again. Running work with possible side effects becomes interrupted until reconciled. A PID alone proves nothing. This replaces the **Dead-run check** below.
 - [ ] **One scheduler:** limits per machine, provider account and agent, plus work-directory exclusivity, across tasks, chats, reviews and children. A parent that waits for children does not hold their slot.
-- [ ] **Separate timers:** startup, semantic inactivity and active-tool limits. Diagnostics never renew progress. Machine sleep does not count as silence.
+- [ ] **Separate timers** (lower priority: the default stall is 20 min and one Claude Bash call is capped at 10 min, so a quiet tool cannot stall today): startup, semantic inactivity and active-tool limits. Diagnostics never renew progress. Machine sleep does not count as silence.
 - [ ] **Usage checkpoints:** cumulative vs turn-local counters, reported vs estimated vs unavailable cost. Repeated snapshots are not counted twice.
 - [ ] **Stop and Halt** (below) on the new cancellation contract: Stop is a request, and the app says "stopped" only after evidence.
+- [x] **Review turns drain at shutdown** like task runs: they get `FACTORY_DRAIN_GRACE_MS`, then end as interrupted. A reply resumes them; nothing replays them.
+- [ ] **Block new work while cleanup is uncertain** (ADR 0005, deferred): refuse a new run on a task whose last run's cleanup is `uncertain`, until a person confirms.
+
+## Evidence receipts
+
+- [x] **Test-weakening gate:** verification fails when a change deletes a test file, adds a skip or focus marker, or removes more assertion lines than it adds (`packages/core/src/test-integrity.ts`). `allow_test_changes` on the task skips it.
+- [ ] **Allow test changes from the CLI and web**, as a person's explicit choice on revise, like `--accept-blocking`.
+- [x] **Signed receipt** per task (`receipt.json`): each claim is proven, not proven or failed, with its evidence, plus the run's manifests. Ed25519 key in `<data-root>/receipt-key/`. The PR body carries the claim list.
+- [x] **`factory receipt verify [--rerun]`:** checks the digest, the signature, this install's key and the head; `--rerun` runs the checks again.
+- [ ] **Receipt on the task page** and its digest in the PR body (the PR body has the claims, not the digest yet).
+
+## From open-inspect/background-agents
+
+A cloud, multi-user system; most of it maps to the "Later" remote-runtime work. These ideas apply locally now:
+
+- [ ] **Clean agent environment:** Claude tasks and review turns get all of `process.env`, so shell secrets (cloud keys, tokens) reach the agent. Pass an allowlist plus the one provider credential.
+- [ ] **Queue a follow-up** sent while a review turn runs, instead of refusing it; the receipt says `queued` (`SupplementReceipt`).
+- [ ] **Named boot phases:** show "fetching", "preparing worktree", "setup", "agent starting" for a review or run, not only `preparing`.
+- [ ] **Durable child grants:** a `delegate` grant is in memory, so a child cannot be checked after a restart. Store the parent–child link.
 
 ## UI: the board
 

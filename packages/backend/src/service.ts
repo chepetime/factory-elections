@@ -36,7 +36,9 @@ import {
   type CallCleanup,
   type ModelFailure,
   type ModelResult,
+  CallManifest,
 } from '@factory/core';
+import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
 import { composeDriver } from './compose.ts';
@@ -88,6 +90,8 @@ const RunRecord = z.object({
   cleanup: CleanupRecord.optional(),
   /** The provider sessions the run's model calls used, as references. */
   provider_sessions: z.array(ProviderSessionRef).optional(),
+  /** What the run's model calls were given: one entry per distinct configuration (Phase 4). */
+  manifests: z.array(CallManifest).optional(),
 });
 type RunRecord = z.infer<typeof RunRecord>;
 
@@ -407,6 +411,8 @@ export class BackendService {
           .then(async (result) => {
             if (command.action === 'open-pr')
               await this.tracePr(command.project, command.id).catch(() => undefined);
+            if (command.action === 'approve' || command.action === 'open-pr')
+              await this.issueReceipt(command.project, command.id).catch(() => undefined);
             if (before && ['approve', 'reject'].includes(command.action))
               await this.traceGate(before, command.action === 'approve' ? 'approved' : 'rejected').catch(
                 () => undefined,
@@ -504,6 +510,7 @@ export class BackendService {
     // Cleanup evidence and session references from the run's model calls (ADR 0005).
     const calls: CallCleanup[] = [];
     let sessions: ProviderSessionRef[] = [];
+    let manifests: CallManifest[] = [];
     const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
@@ -530,6 +537,7 @@ export class BackendService {
           const checked: ModelRunner = {
             async run(request) {
               if (logFailure) throw logFailure;
+              manifests = withManifest(manifests, callManifest(request));
               let result: ModelResult;
               try {
                 result = await traced.run(request);
@@ -583,10 +591,13 @@ export class BackendService {
       record.finished_at = new Date().toISOString();
       record.cleanup = combineCleanup(calls);
       if (sessions.length) record.provider_sessions = sessions;
+      if (manifests.length) record.manifests = manifests;
       if (trace) await this.traceEnd(trace, command.action, record).catch(() => undefined);
       try {
         try {
           await this.storage.writeDocument(join(dir, 'run.json'), record);
+          // The receipt reads this run's manifests, so it follows the run record.
+          await this.issueReceipt(command.project, command.id).catch(() => undefined);
         } finally {
           await evidence?.close();
         }
@@ -682,6 +693,16 @@ export class BackendService {
       },
     );
     await this.traces.flush();
+  }
+  /**
+   * Saves the evidence receipt of the task's newest commit with evidence: the PR head, the
+   * approved commit, or the verified commit. A task without any of them gets no receipt.
+   */
+  async issueReceipt(project: string, id: string) {
+    const task = await this.tasks.read(project, id);
+    const head = task.pr?.head_sha ?? task.approval?.head_sha ?? task.verification?.head_sha;
+    if (!head) return undefined;
+    return saveTaskReceipt(this.root, this.storage, project, id, head);
   }
   /** Marks the moment a task's PR opened, so the task's traces join to the PR. */
   private async tracePr(project: string, id: string): Promise<void> {

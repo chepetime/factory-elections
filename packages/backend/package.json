@@ -8,7 +8,8 @@
     "./compose": "./src/compose.ts",
     "./protocol": "./src/protocol.ts",
     "./diagnostics": "./src/diagnostics.ts",
-    "./lifecycle": "./src/lifecycle.ts"
+    "./lifecycle": "./src/lifecycle.ts",
+    "./receipts": "./src/receipts.ts"
   },
   "dependencies": {
     "@factory/core": "workspace:*",

@@ -189,3 +189,38 @@ test('setup links factory into the bin directory and is safe to rerun', async ()
   });
   assert.equal(refused.status, 1);
 });
+
+test('receipt issue signs what the task proves; verify catches an edit', async () => {
+  const { root, repo } = await env();
+  const id = factory(root, 'intake', '--project', 'demo', '--repo', repo, 'Fix it').stdout.trim();
+  const path = join(root, 'demo', 'tasks', id, 'task.json');
+  const head = 'c'.repeat(40);
+  const task = JSON.parse(await readFile(path, 'utf8'));
+  await writeFile(
+    path,
+    JSON.stringify({
+      ...task,
+      verification: {
+        passed: true,
+        head_sha: head,
+        at: task.created_at,
+        output_tail: '',
+        test_integrity: 'checked',
+      },
+    }),
+  );
+  assert.equal(factory(root, 'receipt', 'verify', '--project', 'demo', '--id', id).code, 1, 'no receipt yet');
+  const issued = factory(root, 'receipt', 'issue', '--project', 'demo', '--id', id);
+  assert.equal(issued.code, 0, issued.stderr);
+  assert.match(issued.stdout, /\*\*PROVEN\*\* The test and full-check commands pass/);
+  assert.match(issued.stdout, /\*\*NOT PROVEN\*\* A person approved this exact commit/);
+  const ok = factory(root, 'receipt', 'verify', '--project', 'demo', '--id', id);
+  assert.equal(ok.code, 0, ok.stdout + ok.stderr);
+  const receiptPath = join(root, 'demo', 'tasks', id, 'receipt.json');
+  const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+  receipt.claims.find((c: { id: string }) => c.id === 'approved').status = 'proven';
+  await writeFile(receiptPath, JSON.stringify(receipt));
+  const edited = factory(root, 'receipt', 'verify', '--project', 'demo', '--id', id);
+  assert.equal(edited.code, 1);
+  assert.match(edited.stdout, /FAIL {2}digest/);
+});

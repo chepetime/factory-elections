@@ -833,10 +833,17 @@ export class ReviewService {
   }
 
   /**
-   * Ends the in-process turns at shutdown and waits for their logs to close. They write no exit
-   * file, so the next backend reads them as interrupted.
+   * Shutdown, like a task run's drain: in-process turns get `graceMs` to finish on their own.
+   * Then the rest are aborted. They write no exit file, so the next backend reads them as
+   * interrupted, and a reply continues their session. Nothing replays them automatically.
    */
-  async close(): Promise<void> {
+  async close(graceMs = 0): Promise<void> {
+    const running = [...this.turnsRunning.values()];
+    if (graceMs > 0 && running.length)
+      await Promise.race([
+        Promise.all(running.map((turn) => turn.done)),
+        new Promise((done) => setTimeout(done, graceMs).unref()),
+      ]);
     this.closing = true;
     const live = [...this.turnsRunning.values()];
     for (const turn of live) turn.controller.abort();

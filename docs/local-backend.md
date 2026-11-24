@@ -24,6 +24,8 @@ PR review turns on Claude run in the backend process on the Agent SDK, with the 
 
 ### Providers and child tasks
 
+**Evidence receipts.** After a run, an approval and a PR open, the backend saves `receipt.json` beside the task. Each claim is proven, not proven or failed, with its evidence, and only evidence for the exact commit counts. The receipt holds the run's configuration manifests and is signed with this install's Ed25519 key (`<data-root>/receipt-key/`). The signature shows that this install wrote it and that nobody changed it; it is not a third-party attestation. `factory receipt verify --project <p> --id <id> [--rerun]` checks it again. Verification also refuses a change that weakens tests (deleted test files, skip or focus markers, fewer assertions), unless a person set `allow_test_changes` on the task.
+
 All model calls go through one port (`ModelRunner`, `packages/core/src/ports.ts`) and one router (`ProviderRouter`, `packages/core/src/agents.ts`). A ladder rung or step names its provider in `model`: a `claude-…` id runs on the Claude Agent SDK, and `codex` or `codex:<model>` runs `codex exec --json` with the machine's Codex sign-in. Review turns write the same JSONL log on both paths, and the chat reads it with the provider's `AgentCli` parser, so it reads any provider.
 
 Each provider states what it enforces (`PROVIDER_CAPABILITIES`). The router refuses a call that needs a missing capability instead of running it with weaker controls:

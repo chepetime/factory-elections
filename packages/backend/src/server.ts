@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { ProjectName, type ModelRunner } from '@factory/core';
 import { isReadableDirectory } from '@factory/adapters-fs';
 import { DriverError } from '@factory/driver';
-import { BackendService, Conflict } from './service.ts';
+import { BackendService, Conflict, DRAIN_GRACE_MS } from './service.ts';
 import type { ReviewDeps } from './reviews.ts';
 import type { SettingsDetector } from './settings.ts';
 import { Evidence } from './evidence.ts';
@@ -345,7 +345,7 @@ export async function startBackend(options: ServerOptions) {
           await Promise.all([
             service.drain(),
             Promise.resolve(service.reviews.stopSweeping()),
-            service.reviews.close(),
+            service.reviews.close(DRAIN_GRACE_MS),
             Promise.resolve(service.features.stopTicking()),
             Promise.resolve(service.tending.stopTicking()),
             new Promise<void>((done, reject) => rpc.tryShutdown((error) => (error ? reject(error) : done()))),

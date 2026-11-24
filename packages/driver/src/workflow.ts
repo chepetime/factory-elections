@@ -593,6 +593,7 @@ export class Driver {
     headSha: string;
     runtime?: RuntimeVerdict;
     notRunLocally?: string[];
+    testIntegrity?: 'checked' | 'allowed';
   }> {
     const task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
@@ -725,6 +726,7 @@ export class Driver {
       passed: true,
       output,
       headSha,
+      testIntegrity: task.allow_test_changes === true ? 'allowed' : 'checked',
       ...(runtime ? { runtime } : {}),
       ...(notRunLocally.length ? { notRunLocally } : {}),
     };
@@ -751,6 +753,7 @@ export class Driver {
       output_tail: tail(result.output),
       ...(result.runtime ? { runtime: result.runtime } : {}),
       ...(result.notRunLocally ? { not_run_locally: result.notRunLocally } : {}),
+      ...(result.testIntegrity ? { test_integrity: result.testIntegrity } : {}),
     };
     const updated = result.passed
       ? withEvent(

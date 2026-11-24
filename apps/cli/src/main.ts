@@ -10,12 +10,15 @@ import {
   currentPrDraft,
   describeIssues,
   readinessDecision,
+  receiptMarkdown,
   type TaskRecord,
 } from '@factory/core';
+import { headSha } from '@factory/adapters-git';
 import * as fsAdapter from '@factory/adapters-fs';
 import { storageFor } from '@factory/adapters-data';
 import { Driver, DriverError, type StepPaths } from '@factory/driver';
 import { composeDriver as createDriver } from '@factory/backend/compose';
+import { saveTaskReceipt, verifyTaskReceipt } from '@factory/backend/receipts';
 import { serveHealth } from './serve.ts';
 import { doctor } from './doctor.ts';
 
@@ -41,6 +44,8 @@ Workflow
   task revise --project <p> --id <id> --note <text>      Ask for changes; reruns coder, verify, review
   task reject --project <p> --id <id> --note <text>      Decline the change
   task open-pr --project <p> --id <id> [--draft]         Push the branch and open the PR (approved tasks only)
+  receipt issue --project <p> --id <id>                  Sign the evidence receipt: what is proven, what is not
+  receipt verify --project <p> --id <id> [--rerun]       Check the receipt's signature and head; --rerun runs the checks again
 
 Individual steps
   task show | list | readiness | classify | prepare-worktree | verify | review | draft-pr | record-verdict | prepare-classifier
@@ -73,6 +78,7 @@ const OPTIONS = {
   draft: { type: 'boolean' },
   'max-attempts': { type: 'string' },
   quiet: { type: 'boolean', short: 'q' },
+  rerun: { type: 'boolean' },
   json: { type: 'boolean' },
 } as const;
 
@@ -243,6 +249,36 @@ export async function main(argv: string[]): Promise<number> {
       }
       case 'doctor':
         return (await doctor(root)) ? 0 : 1;
+      case 'receipt': {
+        const storage = storageFor(root);
+        const [p, i] = [project(), id()];
+        const task = await tasks.read(p, i);
+        const head = task.worktree ? await headSha(task.worktree.path).catch(() => undefined) : undefined;
+        if (sub === 'issue') {
+          const covered = task.pr?.head_sha ?? task.approval?.head_sha ?? task.verification?.head_sha ?? head;
+          if (!covered) throw new UsageError('the task has no commit with evidence yet');
+          const receipt = await saveTaskReceipt(root, storage, p, i, covered);
+          process.stdout.write(`${receiptMarkdown(receipt.claims, receipt.digest)}\n`);
+          return 0;
+        }
+        if (sub === 'verify') {
+          const rerun = v.rerun
+            ? await driver.verify(p, i).then((r) => ({
+                passed: r.passed,
+                detail: r.passed
+                  ? `passed on ${r.headSha.slice(0, 12)}`
+                  : r.output.split('\n').slice(-3).join(' '),
+              }))
+            : undefined;
+          const check = await verifyTaskReceipt(root, storage, p, i, {
+            ...(head ? { currentHead: head } : {}),
+            ...(rerun ? { rerun } : {}),
+          });
+          process.stdout.write(`${check.lines.join('\n')}\n`);
+          return check.ok ? 0 : 1;
+        }
+        break;
+      }
       case 'task': {
         const execute = () => taskCommand(sub, { driver, tasks, project, id, v, root });
         const exclusive = new Set([

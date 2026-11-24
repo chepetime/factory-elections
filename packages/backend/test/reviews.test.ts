@@ -397,3 +397,24 @@ test('an in-process turn stops on request, and one cut off by shutdown reads as 
   assert.equal(resumed.state, 'completed');
   assert.equal(seen.at(-1)!.turn.resume, 'sdk-session-1');
 });
+
+test('shutdown lets an in-process turn finish within the drain grace', async (t) => {
+  let holding = true;
+  const seen: ClaudeTurnRequest[] = [];
+  const { reviews, restart } = await fixture(
+    t,
+    () => 0,
+    sdkTurn(seen, () => holding),
+  );
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  await reviews.idle();
+  assert.equal((await reviews.detail({ project: 'app', number: 7 })).state, 'running');
+  // The held turn ends on abort; release it shortly after close starts, within the grace.
+  setTimeout(() => {
+    holding = false;
+    seen[0]!.signal.dispatchEvent(new Event('abort'));
+  }, 50);
+  await reviews.close(5_000);
+  const after = await restart().detail({ project: 'app', number: 7 });
+  assert.notEqual(after.state, 'interrupted', 'a turn that ended within the grace wrote its exit file');
+});

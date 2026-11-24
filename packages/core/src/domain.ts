@@ -1,4 +1,5 @@
 // Pure task rules: readiness, gates and record updates. No I/O; time is passed in.
+import { receiptClaims, receiptMarkdown } from './receipt.ts';
 import type { ClassifierVerdict, ReadinessDecision, RepoProfile, Stage, TaskRecord } from './schemas.ts';
 import type { ModelFailure } from './ports.ts';
 
@@ -166,6 +167,7 @@ export function prBody(task: TaskRecord, headSha: string): string {
       lines.push(`  - **${f.severity}**${f.file ? ` \`${f.file}\`` : ''}: ${oneLine(f.message)}`);
   }
   if (task.approval?.note) lines.push(`- Approval note: ${oneLine(task.approval.note)}`);
+  lines.push('', receiptMarkdown(receiptClaims(task, headSha)));
   lines.push('', '</details>', '', 'Opened by factory-elections after human approval.');
   return lines.join('\n');
 }

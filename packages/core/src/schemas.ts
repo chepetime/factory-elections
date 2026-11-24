@@ -206,6 +206,8 @@ export const TaskRecord = z.looseObject({
       runtime: RuntimeVerdict.optional(),
       /** Checks that refused the change as too broad for this machine; CI must run them. */
       not_run_locally: z.array(NonEmpty).optional(),
+      /** Whether the test-weakening check ran (`checked`) or a person allowed test changes. */
+      test_integrity: z.enum(['checked', 'allowed']).optional(),
     })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
@@ -219,6 +221,8 @@ export const TaskRecord = z.looseObject({
     })
     .optional(),
   revision_notes: z.array(z.looseObject({ at: Iso, note: NonEmpty })).optional(),
+  /** A person allowed this task to delete, skip or loosen tests (see test-integrity.ts). */
+  allow_test_changes: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
   events: z.array(TaskEvent).optional(),
 });
