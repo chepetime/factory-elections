@@ -33,6 +33,8 @@ import {
   contextStatus,
   digestSession,
   missingCapabilities,
+  agentEnvironment,
+  envNames,
   newSpanId,
   newTraceId,
   spanTokens,
@@ -245,12 +247,13 @@ async function headLines(path: string, bytes = 64 * 1024): Promise<string[]> {
   }
 }
 
-/** The agent must not think it is nested inside the session that started the backend. */
-function agentEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of Object.keys(env))
-    if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
-  return env;
+/**
+ * The agent allowlist (packages/core/src/agent-env.ts), not the backend's environment. It also
+ * keeps out CLAUDECODE and CLAUDE_CODE_*, so the agent does not think it is nested in the session
+ * that started the backend.
+ */
+function agentEnv(provider: AgentCli['id']): NodeJS.ProcessEnv {
+  return agentEnvironment(provider, process.env, envNames(process.env.FACTORY_AGENT_ENV_ALLOW));
 }
 
 /** The review model, for its context limit. */
@@ -755,7 +758,7 @@ export class ReviewService {
       ? undefined
       : spawnDetached(agent.command, agent.args(turn, { systemPrompt }), {
           cwd: record.worktree,
-          env: { ...agentEnv(), ...agent.env?.(turn) },
+          env: { ...agentEnv(agent.id), ...agent.env?.(turn) },
           logPath: join(dir, `turn-${k}.jsonl`),
           exitPath: join(dir, `turn-${k}.exit`),
         });
@@ -798,7 +801,7 @@ export class ReviewService {
       try {
         result = await run({
           ...request,
-          env: agentEnv(),
+          env: agentEnv('claude'),
           signal: controller.signal,
           onLine: (line) => log.write(`${line}\n`),
         });

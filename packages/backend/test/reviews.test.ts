@@ -201,7 +201,12 @@ test('a review is a chat: kickoff in a worktree with the skill injected, then fo
 test('a running review blocks duplicates, replies and removal, and can be stopped', async (t) => {
   const { reviews } = await fixture(t);
   process.env.AGENT_SLEEP = '1';
-  t.after(() => delete process.env.AGENT_SLEEP);
+  // Agents get an allowlisted environment; the fake reads AGENT_SLEEP, so allow it.
+  process.env.FACTORY_AGENT_ENV_ALLOW = 'AGENT_SLEEP';
+  t.after(() => {
+    delete process.env.AGENT_SLEEP;
+    delete process.env.FACTORY_AGENT_ENV_ALLOW;
+  });
   assert.deepEqual(await reviews.start({ project: 'app', numbers: [7], mode: 'review' }), [
     { number: 7, ok: true },
   ]);
@@ -267,7 +272,12 @@ test('reviews share one agent limit with task runs', async (t) => {
 test('a review turn with no output for the stall limit is stopped and says why', async (t) => {
   const { reviews } = await fixture(t);
   process.env.AGENT_SLEEP = '1';
-  t.after(() => delete process.env.AGENT_SLEEP);
+  // Agents get an allowlisted environment; the fake reads AGENT_SLEEP, so allow it.
+  process.env.FACTORY_AGENT_ENV_ALLOW = 'AGENT_SLEEP';
+  t.after(() => {
+    delete process.env.AGENT_SLEEP;
+    delete process.env.FACTORY_AGENT_ENV_ALLOW;
+  });
   await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
   await reviews.idle();
   assert.deepEqual(await reviews.sweep(60_000), []);

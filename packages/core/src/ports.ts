@@ -23,6 +23,8 @@ export interface ModelRun {
   sandbox?: { allowed_domains?: string[]; allow_write?: string[] };
   /** Extra environment for the agent and its commands, e.g. a staged registry npmrc. */
   env?: Record<string, string>;
+  /** Host variables to pass beyond the agent allowlist (a profile's `sandbox.pass_env`). */
+  passEnv?: string[];
   guard?: ToolGuard;
   outputSchema?: Record<string, unknown>;
   maxTurns?: number;

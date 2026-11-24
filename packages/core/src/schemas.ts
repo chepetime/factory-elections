@@ -277,6 +277,14 @@ export const RepoProfile = z.looseObject({
       /** Fixed, non-secret environment variables for the coder, e.g. a repository's agent-runner flag. */
       env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
       /**
+       * Host variables the coder may read beyond the agent allowlist (packages/core/src/agent-env.ts),
+       * e.g. a tool's home directory. Each one is a deliberate choice: an agent can print what it reads.
+       */
+      pass_env: z
+        .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
+        .max(50)
+        .optional(),
+      /**
        * Short-lived npm registry tokens. Before each coder call the host runs `command` (it prints
        * the token) and the coder gets a private npmrc with `<registry>:_authToken=<token>` through
        * NPM_CONFIG_USERCONFIG. The file is removed after the call; the token is never logged.

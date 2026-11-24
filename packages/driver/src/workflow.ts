@@ -899,6 +899,7 @@ export class Driver {
         step: 'coder',
         sandbox,
         ...(access.env ? { env: access.env } : {}),
+        ...(profile.sandbox?.pass_env?.length ? { passEnv: [...profile.sandbox.pass_env] } : {}),
         model: rung.model,
         effort: rung.effort,
         tools: 'edit',

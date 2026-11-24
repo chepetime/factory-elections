@@ -7,6 +7,8 @@
 // process group, and checks that the commands the server started are gone.
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
+  agentEnvironment,
+  envNames,
   PROVIDER_CAPABILITIES,
   type AgentEvent,
   type CallCleanup,
@@ -574,7 +576,10 @@ export class CodexAppServerRunner implements ModelRunner {
       {
         ...(request.cwd ? { cwd: request.cwd } : {}),
         env: {
-          ...process.env,
+          ...agentEnvironment('codex', process.env, [
+            ...envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
+            ...(request.passEnv ?? []),
+          ]),
           ...request.env,
           ...(request.mcp ? { [CODEX_TOKEN_ENV]: request.mcp.token } : {}),
         },

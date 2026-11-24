@@ -71,7 +71,7 @@ The tasks that remain to fulfill the [product vision](VISION.md), grouped by pha
 
 A cloud, multi-user system; most of it maps to the "Later" remote-runtime work. These ideas apply locally now:
 
-- [ ] **Clean agent environment:** Claude tasks and review turns get all of `process.env`, so shell secrets (cloud keys, tokens) reach the agent. Pass an allowlist plus the one provider credential.
+- [x] **Clean agent environment:** every agent launch (Claude tasks, review turns, Codex exec and app-server) gets an allowlist plus its own provider's credential (`packages/core/src/agent-env.ts`). Before, it got the backend's whole environment, including `.env` storage credentials. A profile adds names with `sandbox.pass_env`; `FACTORY_AGENT_ENV_ALLOW` adds names for every agent. A real Claude and Codex turn could not read a planted variable. Verification commands still run with the full shell environment.
 - [ ] **Queue a follow-up** sent while a review turn runs, instead of refusing it; the receipt says `queued` (`SupplementReceipt`).
 - [ ] **Named boot phases:** show "fetching", "preparing worktree", "setup", "agent starting" for a review or run, not only `preparing`.
 - [ ] **Durable child grants:** a `delegate` grant is in memory, so a child cannot be checked after a restart. Store the parent–child link.

@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run as runProcess } from '@factory/adapters-process';
 import {
+  agentEnvironment,
+  envNames,
   PROVIDER_CAPABILITIES,
   type AgentCli,
   type AgentEvent,
@@ -289,7 +291,10 @@ export class CodexRunner implements ModelRunner {
       const out = await runProcess(this.options.command ?? 'codex', args, {
         cwd: request.cwd,
         env: {
-          ...process.env,
+          ...agentEnvironment('codex', process.env, [
+            ...envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
+            ...(request.passEnv ?? []),
+          ]),
           ...request.env,
           ...(request.mcp ? { [CODEX_TOKEN_ENV]: request.mcp.token } : {}),
         },

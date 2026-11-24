@@ -245,11 +245,22 @@ test('loop guard and context warning reach the agent through SDK hooks; the judg
   assert.equal(result.costUsd, 0.1 + 0.002);
 });
 
-test('a call adds its extra environment on top of the process environment', async () => {
+test('a call gets the agent allowlist plus its extra environment, never other host secrets', async (t) => {
+  process.env.FACTORY_DATABASE_URL = 'postgres://u:secret@db';
+  process.env.AWS_SECRET_ACCESS_KEY = 'aws-secret';
+  process.env.OPENAI_API_KEY = 'other-provider';
+  process.env.TOOL_HOME = '/opt/tool';
+  t.after(() => {
+    for (const k of ['FACTORY_DATABASE_URL', 'AWS_SECRET_ACCESS_KEY', 'OPENAI_API_KEY', 'TOOL_HOME'])
+      delete process.env[k];
+  });
   const seen: Record<string, unknown>[] = [];
   const runner = new ClaudeAgentRunner({ query: fake([success()], 0, seen) });
-  await runner.run({ ...request, env: { NPM_CONFIG_USERCONFIG: '/tmp/x/.npmrc' } });
+  await runner.run({ ...request, env: { NPM_CONFIG_USERCONFIG: '/tmp/x/.npmrc' }, passEnv: ['TOOL_HOME'] });
   const env = seen[0]!.env as Record<string, string>;
   assert.equal(env.NPM_CONFIG_USERCONFIG, '/tmp/x/.npmrc');
-  assert.equal(env.PATH, process.env.PATH, 'the process environment stays');
+  assert.equal(env.PATH, process.env.PATH, 'tools are still found');
+  assert.equal(env.TOOL_HOME, '/opt/tool', 'a profile may pass a named variable');
+  for (const k of ['FACTORY_DATABASE_URL', 'AWS_SECRET_ACCESS_KEY', 'OPENAI_API_KEY'])
+    assert.equal(env[k], undefined, `${k} must not reach the agent`);
 });

@@ -23,3 +23,4 @@ export * from './environment.ts';
 export * from './execution.ts';
 export * from './test-integrity.ts';
 export * from './receipt.ts';
+export * from './agent-env.ts';

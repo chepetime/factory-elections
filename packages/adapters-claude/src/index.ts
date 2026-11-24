@@ -18,6 +18,8 @@ import {
   LoopGuard,
   modelFailureKind,
   PROVIDER_CAPABILITIES,
+  agentEnvironment,
+  envNames,
   type LoopJudgement,
   type ModelFailure,
   type ModelResult,
@@ -275,7 +277,10 @@ export class ClaudeAgentRunner implements ModelRunner {
           ? request.systemPrompt
           : { type: 'preset', preset: 'claude_code', append: request.systemPrompt },
       env: {
-        ...process.env,
+        ...agentEnvironment('claude', process.env, [
+          ...envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
+          ...(request.passEnv ?? []),
+        ]),
         ...request.env,
         CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0',
         MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS),
