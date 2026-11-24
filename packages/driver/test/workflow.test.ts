@@ -396,6 +396,33 @@ test('verification rejects more than 400 non-test changed lines', async () => {
   assert.match((await store.read('demo', task.id)).verification!.output_tail, /401 non-test lines/);
 });
 
+test('verification refuses a change that weakens tests, unless a person allowed test changes', async () => {
+  const writeSkipped: Script = async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'line\n');
+    await writeFile(join(r.cwd!, 'feature.test.ts'), "test.skip('feature', () => {});\n");
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const refused = await setup({ classifier: [ready], coder: [writeSkipped] });
+  await assert.rejects(
+    refused.driver.run('demo', refused.task.id, { maxAttempts: 1 }),
+    /verification still failing/,
+  );
+  assert.match(
+    (await refused.store.read('demo', refused.task.id)).verification!.output_tail,
+    /weakens tests: skips or focuses a test in feature\.test\.ts/,
+  );
+
+  const allowed = await setup({ classifier: [ready], coder: [writeSkipped], reviewer: [approveReview] });
+  await allowed.store.write({
+    ...(await allowed.store.read('demo', allowed.task.id)),
+    allow_test_changes: true,
+  });
+  assert.equal(
+    (await allowed.driver.run('demo', allowed.task.id, { maxAttempts: 1 })).stage,
+    'awaiting-approval',
+  );
+});
+
 test('test lines do not count toward the 400 line limit', async () => {
   const writeTests: Script = async (r) => {
     await writeFile(join(r.cwd!, 'feature.txt'), 'line\n'.repeat(400));

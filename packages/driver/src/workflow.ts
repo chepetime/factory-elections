@@ -13,6 +13,8 @@ import {
   DEFAULT_TASK_LIMITS,
   environmentFailure,
   tooBroadForLocalCheck,
+  isTestPath,
+  testWeakening,
   ReviewOutput,
   approvalBlockers,
   blockingFindings,
@@ -597,15 +599,22 @@ export class Driver {
     const { path, base } = await this.checkedWorktree(task);
     const startingHead = await this.deps.git.headSha(path);
     const changes = await this.deps.git.diffLineCounts(path, base);
-    const isTest = (file: string) =>
-      /(^|\/)(__tests__|tests?|specs?)(\/|$)/i.test(file) || /(?:^|[._-])(?:test|spec)\.[^/]+$/i.test(file);
     const nonTestLines = changes
-      .filter((change) => !isTest(change.path))
+      .filter((change) => !isTestPath(change.path))
       .reduce((sum, change) => sum + (change.added ?? 0) + (change.deleted ?? 0), 0);
     if (nonTestLines > 400)
       return {
         passed: false,
         output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
+        headSha: startingHead,
+      };
+    // Passing tests prove nothing if the change made them easier to pass.
+    const weakened =
+      task.allow_test_changes === true ? [] : testWeakening(await this.deps.git.diffSince(path, base));
+    if (weakened.length)
+      return {
+        passed: false,
+        output: `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`,
         headSha: startingHead,
       };
     const limits = checkLimits(profile);
