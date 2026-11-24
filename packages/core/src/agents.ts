@@ -100,14 +100,24 @@ export interface Usage {
   cacheWriteInputTokens?: number;
 }
 
+/**
+ * Native identity of a tool call, where the provider gives one. `callId` pairs a call with its
+ * result; `parentCallId` is the call (a subagent's Agent tool call) that the event runs under.
+ * Both are absent in events recorded before they existed.
+ */
+export interface ToolCallIds {
+  callId?: string;
+  parentCallId?: string;
+}
+
 /** What any provider's event stream means, in one shape. */
 export type AgentEvent =
   | { type: 'session'; id: string }
   /** `sub`: from a subagent, not the main agent. */
   | { type: 'text'; text: string; sub?: boolean }
-  | { type: 'tool'; name: string; input: Record<string, unknown>; sub?: boolean }
+  | ({ type: 'tool'; name: string; input: Record<string, unknown>; sub?: boolean } & ToolCallIds)
   /** A tool call's outcome. `ok: false` is a failed call (an error, or a command's non-zero exit). */
-  | { type: 'tool-result'; ok: boolean; text: string; sub?: boolean }
+  | ({ type: 'tool-result'; ok: boolean; text: string; sub?: boolean } & ToolCallIds)
   /** Tokens the model read for one request: the session's context size at that point. */
   | { type: 'context'; tokens: number }
   /** A loop-guard judgement: a small model decided whether the turn is stuck. */

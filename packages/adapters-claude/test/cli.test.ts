@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { claudeCli, parseClaudeLine } from '../src/index.ts';
+import { claudeCli, claudeMessageEvents, parseClaudeLine } from '../src/index.ts';
 
 test('Claude stream-json becomes the shared events, marking subagent output', () => {
   const lines = [
@@ -59,4 +59,28 @@ test('a turn that may delegate gets the backend MCP server, with its token in a 
     headers: { Authorization: 'Bearer tok' },
   });
   assert.deepEqual(args.slice(-2), ['--', 'hi']);
+});
+
+test('Claude tool events carry the tool_use id and the parent call id', () => {
+  const call = claudeMessageEvents({
+    type: 'assistant',
+    parent_tool_use_id: 'toolu_parent',
+    message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } }] },
+  });
+  assert.deepEqual(call, [
+    {
+      type: 'tool',
+      name: 'Bash',
+      input: { command: 'ls' },
+      sub: true,
+      callId: 'toolu_1',
+      parentCallId: 'toolu_parent',
+    },
+  ]);
+  const result = claudeMessageEvents({
+    type: 'user',
+    parent_tool_use_id: null,
+    message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] },
+  });
+  assert.deepEqual(result, [{ type: 'tool-result', ok: true, text: 'ok', callId: 'toolu_1' }]);
 });

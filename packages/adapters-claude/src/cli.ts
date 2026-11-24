@@ -67,6 +67,7 @@ export function parseClaudeLine(line: string): AgentEvent[] {
 export function claudeMessageEvents(e: Record<string, unknown>): AgentEvent[] {
   const events: AgentEvent[] = [];
   const sub = Boolean(e.parent_tool_use_id);
+  const parent = typeof e.parent_tool_use_id === 'string' ? { parentCallId: e.parent_tool_use_id } : {};
   if (e.type === 'system' && e.subtype === 'init' && typeof e.session_id === 'string')
     events.push({ type: 'session', id: e.session_id });
   if (e.type === 'user') {
@@ -79,6 +80,8 @@ export function claudeMessageEvents(e: Record<string, unknown>): AgentEvent[] {
             ok: part.is_error !== true,
             text: resultText(part.content),
             ...(sub ? { sub } : {}),
+            ...(typeof part.tool_use_id === 'string' ? { callId: part.tool_use_id } : {}),
+            ...parent,
           });
   }
   if (e.type === 'assistant') {
@@ -103,6 +106,8 @@ export function claudeMessageEvents(e: Record<string, unknown>): AgentEvent[] {
             name: part.name,
             input: (part.input as Record<string, unknown>) ?? {},
             ...(sub ? { sub } : {}),
+            ...(typeof part.id === 'string' ? { callId: part.id } : {}),
+            ...parent,
           });
       }
   } else if (e.type === 'result') {

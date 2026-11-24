@@ -46,3 +46,22 @@ test('span helpers: ids, task class and record validation', () => {
   assert.equal(SpanRecord.parse(span).cost_usd, null, 'a missing cost stays null, never 0');
   assert.throws(() => SpanRecord.parse({ ...span, type: 'nope' }));
 });
+
+test('tool results close the call with their call id, even out of order', () => {
+  let now = 0;
+  const tools = new ToolSpans(() => now);
+  tools.event({ type: 'tool', name: 'Bash', input: { command: 'slow' }, callId: 'a' });
+  tools.event({ type: 'tool', name: 'Read', input: { file_path: 'x' }, callId: 'b' });
+  now = 10;
+  tools.event({ type: 'tool-result', ok: false, text: 'read failed', callId: 'b' });
+  now = 50;
+  tools.event({ type: 'tool-result', ok: true, text: '', callId: 'a' });
+  const spans = tools.finish();
+  assert.deepEqual(
+    spans.map((s) => [s.name, s.outcome, s.duration_ms]),
+    [
+      ['Read', 'failed', 10],
+      ['Bash', 'completed', 50],
+    ],
+  );
+});

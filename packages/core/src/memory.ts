@@ -72,15 +72,19 @@ export function digestSession(
   const failures: SessionDigest['failures'] = [];
   const tools = new Set<string>();
   let last: { name: string; input: string } | undefined;
+  const byId = new Map<string, { name: string; input: string }>();
   let ok = false;
   let result = '';
   for (const e of events) {
     if (e.type === 'tool') {
       tools.add(e.name);
       last = { name: e.name, input: toolInput(e.input) };
+      if (e.callId) byId.set(e.callId, last);
       if (e.name === 'Bash' && last.input) commands.push(last.input);
-    } else if (e.type === 'tool-result' && !e.ok && last) {
-      failures.push({ tool: last.name, input: last.input, error: clip(e.text, 300) });
+    } else if (e.type === 'tool-result' && !e.ok) {
+      // Pair by call id when there is one; parallel calls can finish in any order.
+      const call = (e.callId && byId.get(e.callId)) || last;
+      if (call) failures.push({ tool: call.name, input: call.input, error: clip(e.text, 300) });
     } else if (e.type === 'result') {
       ok = e.ok;
       result = clip(e.text, 400);

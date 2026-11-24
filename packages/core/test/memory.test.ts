@@ -145,3 +145,13 @@ test('the loop guard asks the judge after repeated failures, redirects once, the
   for (let i = 0; i < 2; i++) await broken.failure('Bash', 'x', 'e');
   assert.equal(await broken.failure('Bash', 'x', 'e'), undefined, 'a judge failure never disturbs the turn');
 });
+
+test('a session digest pairs a failure with its call id when parallel calls finish out of order', () => {
+  const digest = digestSession({ id: 's', at: 't', kind: 'coder', provider: 'claude' }, [
+    { type: 'tool', name: 'Bash', input: { command: 'pnpm test' }, callId: 'a' },
+    { type: 'tool', name: 'Read', input: { file_path: 'x.ts' }, callId: 'b' },
+    { type: 'tool-result', ok: false, text: 'tests failed', callId: 'a' },
+    { type: 'result', ok: false, text: 'done' },
+  ]);
+  assert.equal(digest.failures[0]!.tool, 'Bash');
+});

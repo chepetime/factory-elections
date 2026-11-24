@@ -149,7 +149,17 @@ export const codexCli: AgentCli = {
   parse: parseCodexLine,
 };
 
+/** The item id, which pairs a Codex tool start with its completion. */
+function itemId(item: Record<string, unknown>): { callId?: string } {
+  return typeof item.id === 'string' ? { callId: item.id } : {};
+}
+
 function itemTool(item: Record<string, unknown>): AgentEvent | undefined {
+  const tool = itemToolEvent(item);
+  return tool ? { ...tool, ...itemId(item) } : undefined;
+}
+
+function itemToolEvent(item: Record<string, unknown>): AgentEvent | undefined {
   switch (item.type) {
     case 'command_execution':
       return { type: 'tool', name: 'Bash', input: { command: String(item.command ?? '') } };
@@ -215,6 +225,7 @@ export function parseCodexLine(line: string): AgentEvent[] {
             type: 'tool-result',
             ok: item.exit_code === 0,
             text: String(item.aggregated_output ?? '').slice(-2000),
+            ...itemId(item),
           },
         ];
       if (item.type === 'mcp_tool_call')
@@ -223,6 +234,7 @@ export function parseCodexLine(line: string): AgentEvent[] {
             type: 'tool-result',
             ok: item.status !== 'failed',
             text: JSON.stringify(item.error ?? item.result ?? '').slice(0, 2000),
+            ...itemId(item),
           },
         ];
       const tool = item.type === 'file_change' || item.type === 'web_search' ? itemTool(item) : undefined;

@@ -29,8 +29,8 @@ test('codex JSONL becomes the shared events; a command shows once, when it start
   assert.deepEqual(LINES.flatMap(parseCodexLine), [
     { type: 'session', id: 't-1' },
     { type: 'text', text: 'Looking.' },
-    { type: 'tool', name: 'Bash', input: { command: '/bin/zsh -lc ls' } },
-    { type: 'tool-result', ok: true, text: 'a\n' },
+    { type: 'tool', name: 'Bash', input: { command: '/bin/zsh -lc ls' }, callId: 'item_1' },
+    { type: 'tool-result', ok: true, text: 'a\n', callId: 'item_1' },
     { type: 'text', text: '{"ok":true}' },
     {
       type: 'result',

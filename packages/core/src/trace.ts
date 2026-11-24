@@ -144,15 +144,16 @@ export function toolSummary(input: Record<string, unknown>): string | undefined 
 
 export interface OpenTool {
   name: string;
+  callId?: string;
   summary?: string;
   started: number;
   sub: boolean;
 }
 
 /**
- * Turns a provider's event stream into tool spans. Events carry no call ids, so a result closes
- * the oldest open call of the same agent (main or subagent). Calls without a result end as failed
- * when the stream ends.
+ * Turns a provider's event stream into tool spans. A result closes the open call with its call id.
+ * Events without ids (older adapters, recorded logs) close the oldest open call of the same agent
+ * (main or subagent). Calls without a result end as failed when the stream ends.
  */
 export class ToolSpans {
   private readonly open: OpenTool[] = [];
@@ -166,12 +167,15 @@ export class ToolSpans {
       const summary = toolSummary(event.input);
       this.open.push({
         name: event.name,
+        ...(event.callId ? { callId: event.callId } : {}),
         ...(summary ? { summary } : {}),
         started: this.clock(),
         sub: !!event.sub,
       });
     } else if (event.type === 'tool-result') {
-      const at = this.open.findIndex((t) => t.sub === !!event.sub);
+      const at = event.callId
+        ? this.open.findIndex((t) => t.callId === event.callId)
+        : this.open.findIndex((t) => t.sub === !!event.sub);
       if (at < 0) return;
       const [call] = this.open.splice(at, 1);
       this.close(call!, event.ok ? 'completed' : 'failed', event.ok ? undefined : event.text);
