@@ -166,6 +166,32 @@ export async function startBackend(options: ServerOptions) {
           await service.features.act({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      ListIssues: async (request) => ({ json: JSON.stringify(await service.issues.list(request.project)) }),
+      GetIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.get({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      CreateIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.create({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      UpdateIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.update({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      MoveIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.move({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      CommentIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.comment({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
       GetTrace: async (request) => ({
         json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
       }),

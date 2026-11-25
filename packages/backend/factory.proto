@@ -56,6 +56,12 @@ service Factory {
   rpc GetFeature(Target) returns (Snapshot);
   rpc CreateFeature(SettingsUpdate) returns (Snapshot);
   rpc FeatureAction(SettingsUpdate) returns (Snapshot);
+  rpc ListIssues(Target) returns (Snapshot);
+  rpc GetIssue(SettingsUpdate) returns (Snapshot);
+  rpc CreateIssue(SettingsUpdate) returns (Snapshot);
+  rpc UpdateIssue(SettingsUpdate) returns (Snapshot);
+  rpc MoveIssue(SettingsUpdate) returns (Snapshot);
+  rpc CommentIssue(SettingsUpdate) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);

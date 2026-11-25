@@ -295,6 +295,30 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ListIssues": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "CreateIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "UpdateIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "MoveIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "CommentIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"

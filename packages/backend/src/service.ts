@@ -46,6 +46,7 @@ import { composeDriver } from './compose.ts';
 import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
+import { IssueService } from './issues.ts';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
@@ -153,6 +154,7 @@ export class BackendService {
   readonly memory: MemoryService;
   /** Grill → spec → board → implement → QA. */
   readonly features: FeatureService;
+  readonly issues: IssueService;
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
   readonly experiments: ExperimentStore;
@@ -232,6 +234,15 @@ export class BackendService {
       startRun: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
+    });
+    this.issues = new IssueService({
+      root,
+      storage: this.storage,
+      tasks: this.tasks,
+      settings: (p) => this.settings.get(p),
+      submit: (input) => this.submit(input),
+      run: (project, id) => this.start({ project, id, action: 'run' } as Command),
+      reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
     });
     this.tending = new TendingService({
       projects: this.projects,

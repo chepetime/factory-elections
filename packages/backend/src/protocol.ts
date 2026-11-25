@@ -71,6 +71,13 @@ export interface Methods {
   CreateFeature: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ id, action, … }`, see FeatureAction in packages/backend/src/features.ts. */
   FeatureAction: [{ project: string; json: string }, { json: string }];
+  /** Board tasks (issues), see packages/backend/src/issues.ts. `json` carries the call's fields. */
+  ListIssues: [Target, { json: string }];
+  GetIssue: [{ project: string; json: string }, { json: string }];
+  CreateIssue: [{ project: string; json: string }, { json: string }];
+  UpdateIssue: [{ project: string; json: string }, { json: string }];
+  MoveIssue: [{ project: string; json: string }, { json: string }];
+  CommentIssue: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */
