@@ -1,8 +1,9 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Folder, GitPullRequest } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { statusFromStage, type Stage, type TaskRecord } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
@@ -14,8 +15,9 @@ import {
   IssueTitle,
 } from '@/components/issue-editor';
 import { StageBadge } from '@/components/stage-badge';
+import { STATUS } from '@/components/task-status';
 import { Fact, Facts, money, renderRun, Section } from '@/components/task-run';
-import { isProjectName, isTaskId } from '@/lib/factory';
+import { isProjectName, isTaskId, showTask } from '@/lib/factory';
 import { getIssue, type IssueView } from '@/lib/issues';
 import { clip, projectLabel } from '@/lib/page-title';
 import { cn } from '@/lib/utils';
@@ -59,6 +61,63 @@ function Comment({ at, body }: { at: string; body: string }) {
       <div className="mt-1.5 text-sm">
         <Markdown text={body} />
       </div>
+    </li>
+  );
+}
+
+const stageLabel = (stage: Stage) => stage.charAt(0).toUpperCase() + stage.slice(1).replace(/-/g, ' ');
+
+/** `https://github.com/o/r/pull/12` reads `o/r#12`; any other URL stays as it is. */
+function prLabel(url: string): string {
+  const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
+  return m ? `${m[1]}#${m[2]}` : url;
+}
+
+/** Known spend across runs; a run with an unpriced attempt marks the total as partial. */
+function totalCost(records: TaskRecord[]): string | undefined {
+  const attempts = records.flatMap((r) => r.attempts ?? []);
+  if (!attempts.length) return undefined;
+  const sum = attempts.reduce((total, a) => total + (a.cost_usd ?? 0), 0);
+  return `${attempts.some((a) => a.cost_usd === null) ? 'at least ' : ''}$${sum.toFixed(2)}`;
+}
+
+function RunRow({
+  href,
+  index,
+  record,
+  current,
+  latest,
+}: {
+  href: string;
+  index: number;
+  record: TaskRecord | undefined;
+  current: boolean;
+  latest: boolean;
+}) {
+  const look = record ? STATUS[statusFromStage(record.stage)] : undefined;
+  const Icon = look?.icon;
+  return (
+    <li>
+      <Link
+        href={href}
+        aria-current={current ? 'true' : undefined}
+        className={cn(
+          '-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted',
+          current && 'bg-muted',
+        )}
+      >
+        {Icon ? (
+          <Icon className={cn('size-4 shrink-0', look.tone)} aria-hidden />
+        ) : (
+          <span className="size-4 shrink-0" aria-hidden />
+        )}
+        <span className={cn('shrink-0', current && 'font-medium')}>Run {index}</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {record ? stageLabel(record.stage) : 'Unavailable'}
+          {latest && ' · latest'}
+        </span>
+        <span className="shrink-0 text-muted-foreground tabular-nums">{record ? money(record) : ''}</span>
+      </Link>
     </li>
   );
 }
@@ -123,6 +182,21 @@ export default async function TaskPage({
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
+  const [label, ...loaded] = await Promise.all([
+    projectLabel(project),
+    ...issue.runs.map((rid) =>
+      rid === runId && run?.ok
+        ? Promise.resolve(run.value.task)
+        : showTask(project, rid).then((r) => (r.ok ? r.value : undefined)),
+    ),
+  ]);
+  const records = loaded as (TaskRecord | undefined)[];
+  const runHref = (rid: string) =>
+    `/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`;
+  const pulls = records.flatMap((r) => (r?.pr ? [r.pr] : [])).reverse();
+  const cost = totalCost(records.filter((r): r is TaskRecord => !!r));
+  const rows = issue.runs.map((rid, i) => ({ rid, index: i + 1, record: records[i] })).reverse();
+  const [latestRow, ...pastRows] = rows;
 
   return (
     <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -202,16 +276,97 @@ export default async function TaskPage({
                 id="issue-priority"
               />
             </Fact>
+            <Fact label="Project">
+              <span className="inline-flex items-center gap-1.5">
+                <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                {label}
+              </span>
+            </Fact>
             {issue.jira_key && (
               <Fact label="Jira">
                 <span className="font-mono text-xs">{issue.jira_key}</span>
               </Fact>
             )}
-            {run?.ok && (
-              <Fact label="Cost">
-                <span className="tabular-nums">{money(run.value.task)}</span>
-              </Fact>
-            )}
+          </Facts>
+        </Section>
+
+        <Section title="Pull requests">
+          {pulls.length ? (
+            <ul className="flex flex-col gap-2 text-sm">
+              {pulls.map((pr) => (
+                <li key={pr.url} className="flex items-start gap-2">
+                  <GitPullRequest className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="min-w-0">
+                    <a
+                      href={pr.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium underline-offset-2 hover:underline"
+                    >
+                      {prLabel(pr.url)}
+                    </a>
+                    <span
+                      className="block truncate font-mono text-xs text-muted-foreground"
+                      title={pr.branch}
+                    >
+                      {pr.branch} · {pr.head_sha.slice(0, 12)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No pull request yet. A run opens one after you approve its change.
+            </p>
+          )}
+        </Section>
+
+        <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
+          {latestRow ? (
+            <ol className="flex flex-col">
+              <RunRow
+                href={runHref(latestRow.rid)}
+                index={latestRow.index}
+                record={latestRow.record}
+                current={latestRow.rid === runId}
+                latest={pastRows.length > 0}
+              />
+              {pastRows.length > 0 && (
+                <li>
+                  <details open={pastRows.some((r) => r.rid === runId)} className="group/past">
+                    <summary className="-mx-2 flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                      <ChevronRight
+                        aria-hidden
+                        className="size-3.5 transition-transform duration-150 ease-out group-open/past:rotate-90 motion-reduce:transition-none"
+                      />
+                      Past runs ({pastRows.length})
+                    </summary>
+                    <ol className="flex flex-col">
+                      {pastRows.map((r) => (
+                        <RunRow
+                          key={r.rid}
+                          href={runHref(r.rid)}
+                          index={r.index}
+                          record={r.record}
+                          current={r.rid === runId}
+                          latest={false}
+                        />
+                      ))}
+                    </ol>
+                  </details>
+                </li>
+              )}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No runs yet. Move the task to In progress to start one.
+            </p>
+          )}
+        </Section>
+
+        <Section title="Details">
+          <Facts>
             <Fact label="Created">
               <LocalTime iso={issue.created_at} format="date-time" />
             </Fact>
@@ -220,31 +375,6 @@ export default async function TaskPage({
             </Fact>
           </Facts>
         </Section>
-
-        {issue.runs.length > 0 && (
-          <Section title="Runs">
-            <ol className="flex flex-col text-sm">
-              {issue.runs.map((rid, i) => (
-                <li key={rid}>
-                  <Link
-                    href={`/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`}
-                    aria-current={rid === runId ? 'true' : undefined}
-                    className={cn(
-                      '-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted',
-                      rid === runId && 'bg-muted font-medium',
-                    )}
-                  >
-                    Run {i + 1}
-                    {rid === issue.run?.id && <span className="text-xs text-muted-foreground">latest</span>}
-                    <span className="ml-auto truncate font-mono text-xs text-muted-foreground">
-                      {rid.slice(0, 8)}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </Section>
-        )}
 
         {run?.ok && run.value.sections}
       </aside>

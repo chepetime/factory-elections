@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, CircleCheck } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, CircleCheck } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 import {
@@ -54,8 +54,6 @@ export function money(task: TaskRecord): string {
   return `$${attempts.reduce((sum, a) => sum + (a.cost_usd ?? 0), 0).toFixed(2)}`;
 }
 
-/* ---------- Right panel ---------- */
-
 export function Section({
   title,
   aside,
@@ -71,14 +69,20 @@ export function Section({
 }) {
   const id = `panel-${title.toLowerCase().replace(/\W+/g, '-')}`;
   return (
-    <section aria-labelledby={id} className={cn('border-b py-4 last:border-b-0', flush ? 'px-0' : 'px-5')}>
-      <div className={cn('mb-3 flex items-baseline justify-between gap-3', flush && 'px-5')}>
-        <h2 id={id} className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-          {title}
-        </h2>
-        {aside && <span className="text-xs text-muted-foreground">{aside}</span>}
-      </div>
-      {children}
+    <section aria-labelledby={id} className="py-3">
+      <details open className="group/section">
+        <summary className="mx-5 flex cursor-pointer list-none items-center gap-3 rounded-md py-1 select-none focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+          <h2 id={id} className="flex items-center gap-1 text-sm font-medium">
+            {title}
+            <ChevronDown
+              aria-hidden
+              className="size-3.5 text-muted-foreground transition-transform duration-150 ease-out -rotate-90 group-open/section:rotate-0 motion-reduce:transition-none"
+            />
+          </h2>
+          {aside && <span className="ml-auto text-sm text-muted-foreground">{aside}</span>}
+        </summary>
+        <div className={cn('pt-3 pb-2', flush ? 'px-0' : 'px-5')}>{children}</div>
+      </details>
     </section>
   );
 }
@@ -86,9 +90,7 @@ export function Section({
 /** Label and value rows with one label column, so every panel section lines up. */
 export function Facts({ children }: { children: ReactNode }) {
   return (
-    <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-sm">
-      {children}
-    </dl>
+    <dl className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 text-sm">{children}</dl>
   );
 }
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -698,23 +700,6 @@ export async function renderRun(
           now: Date.now(),
         }).map((step): Checkpoint => step)}
       />
-
-      {task.pr && (
-        <Section title="Pull request">
-          <a
-            href={task.pr.url}
-            className="text-sm font-medium break-all underline underline-offset-2"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {task.pr.url}
-          </a>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Opened from <span className="font-mono">{task.pr.head_sha.slice(0, 12)}</span> on{' '}
-            <span className="font-mono">{task.pr.branch}</span>
-          </p>
-        </Section>
-      )}
 
       {gate && task.stage === 'awaiting-approval' && !busy && phase !== 'unavailable' && (
         <Section title="Your decision">

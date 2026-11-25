@@ -9,12 +9,9 @@ export function StageTimeline({ checkpoints }: { checkpoints: Checkpoint[] }) {
   const [expanded, setExpanded] = useState(false);
   const hidden = compactCheckpoints(checkpoints).hidden;
   return (
-    <section aria-labelledby="panel-stages" className="border-b py-4 last:border-b-0">
-      <div className="mb-2 flex items-baseline justify-between gap-3 px-5">
-        <h2
-          id="panel-stages"
-          className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase"
-        >
+    <section aria-labelledby="panel-stages" className="py-3">
+      <div className="mb-2 flex items-center justify-between gap-3 px-5 py-1">
+        <h2 id="panel-stages" className="text-sm font-medium">
           Stages
         </h2>
         <span className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">

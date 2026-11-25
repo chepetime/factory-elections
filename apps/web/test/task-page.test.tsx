@@ -12,7 +12,9 @@ vi.mock('@/lib/factory', () => ({
   readDiff: vi.fn(),
   isProjectName: () => true,
   isTaskId: (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id),
+  showTask: vi.fn(async () => ({ ok: false, error: 'not loaded in this test' })),
 }));
+vi.mock('@/lib/page-title', () => ({ projectLabel: async (p: string) => p, clip: (t: string) => t }));
 vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
 vi.mock('@/components/issue-editor', () => ({
   IssueTitle: ({ title }: { title: string }) => <h1>{title}</h1>,
@@ -388,4 +390,25 @@ it('a task without a run shows its description and takes comments', async () => 
   expect(page).toContain('comment-box');
   expect(page).not.toContain('composer:');
   expect(vi.mocked(readTaskControls)).not.toHaveBeenCalled();
+});
+
+it('lists the runs and pull requests in the side panel', async () => {
+  observe('completed', 'coding');
+  let page = await html();
+  expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
+  expect(page).toContain('No pull request yet.');
+  expect(page).toMatch(/Project[\s\S]*demo/);
+
+  const opened = {
+    ...task,
+    stage: 'pr-opened' as const,
+    pr: { url: 'https://github.com/o/r/pull/12', head_sha: 'abcdef1234567890', branch: 'factory/test' },
+  };
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: opened, execution: 'completed', actions: taskActions(opened, 'completed') },
+  });
+  page = await html();
+  expect(page).toContain('o/r#12');
+  expect(page).not.toContain('No pull request yet.');
 });
