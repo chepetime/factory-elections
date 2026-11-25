@@ -78,6 +78,15 @@ const CommentInput = z.object({
   key: Key,
   body: z.string().trim().min(1).max(20_000),
   parent: z.string().min(1).optional(),
+  /** Set by the factory for an agent's comment; people always comment as `you`. */
+  author: z.string().min(1).optional(),
+});
+const StatusInput = z.object({
+  project: ProjectName,
+  key: Key,
+  status: IssueStatus,
+  /** Who set it, for the activity feed, e.g. the agent's name. */
+  by: z.string().min(1),
 });
 
 function firstLine(text: string): string {
@@ -270,7 +279,7 @@ export class IssueService {
   }
 
   async comment(raw: unknown): Promise<IssueView> {
-    const { project, key, body, parent } = CommentInput.parse(raw);
+    const { project, key, body, parent, author = 'you' } = CommentInput.parse(raw);
     return this.change(project, key, (issue, at) => {
       const target = parent ? issue.comments.find((c) => c.id === parent) : undefined;
       if (parent && !target) throw new Conflict('The comment you replied to is gone.');
@@ -280,10 +289,34 @@ export class IssueService {
         ...issue,
         comments: [
           ...issue.comments,
-          { id: randomUUID(), at, body, author: 'you', ...(root ? { parent: root } : {}) },
+          { id: randomUUID(), at, body, author, ...(root ? { parent: root } : {}) },
         ],
       };
     });
+  }
+
+  /** Sets the stored status with no command: for an agent reporting where its work stands. */
+  async setStatus(raw: unknown): Promise<IssueView> {
+    const { project, key, status, by } = StatusInput.parse(raw);
+    return this.change(project, key, (issue, at) =>
+      issue.status === status
+        ? issue
+        : {
+            ...issue,
+            status,
+            status_at: at,
+            events: [
+              ...issue.events,
+              {
+                at,
+                kind: `move:${status}`,
+                message: `${by} changed status from ${ISSUE_STATUS_LABELS[issue.status]} to ${ISSUE_STATUS_LABELS[status]}`,
+                from: issue.status,
+                to: status,
+              },
+            ],
+          },
+    );
   }
 
   /** Applies a board drop. Returns what it did, so the board can say so. */

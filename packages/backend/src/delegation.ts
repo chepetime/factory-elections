@@ -35,6 +35,23 @@ const CHILD_SYSTEM_PROMPT = [
   'End with a final answer that tells the parent agent what you found or changed.',
 ].join('\n');
 
+/** A factory tool that one grant serves, e.g. `comment` for an agent working a task. */
+export interface FactoryTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  call(args: unknown): Promise<{ text: string; isError?: boolean }>;
+}
+
+/** A tool's JSON schema from its Zod input, in the draft MCP clients read. */
+export function toolSchema(schema: z.ZodType): Record<string, unknown> {
+  const { $schema: _, ...json } = z.toJSONSchema(schema, { io: 'input', target: 'draft-7' }) as Record<
+    string,
+    unknown
+  >;
+  return json;
+}
+
 export interface GrantOptions {
   /** For logs, e.g. `coder change-elections/t1` or `review change-elections#12`. */
   label: string;
@@ -48,6 +65,8 @@ export interface GrantOptions {
   /** Runs the children; pass a traced runner to see them in the parent's trace. */
   runner?: ModelRunner;
   depth?: number;
+  /** Tools besides `delegate`. Children never get them. */
+  tools?: readonly FactoryTool[];
 }
 
 export interface Grant {
@@ -136,7 +155,11 @@ export class DelegationServer {
     const state: GrantState = { ...options, token, depth, left: options.budgetUsd, spentUsd: 0 };
     this.grants.set(token, state);
     return {
-      endpoint: { url: this.address, token },
+      endpoint: {
+        url: this.address,
+        token,
+        ...(options.tools?.length ? { tools: options.tools.map((t) => t.name) } : {}),
+      },
       spent: () => state.spentUsd,
       revoke: () => this.grants.delete(token),
     };
@@ -196,9 +219,25 @@ export class DelegationServer {
                 `you give it. It runs in your working directory and counts against the factory's agent limit and your budget ($${grant.left.toFixed(2)} left).`,
               inputSchema: DELEGATE_SCHEMA,
             },
+            ...(grant.tools ?? []).map((t) => ({
+              name: t.name,
+              description: t.description,
+              inputSchema: t.inputSchema,
+            })),
           ],
         });
       case 'tools/call': {
+        const tool = grant.tools?.find((t) => t.name === message.params?.name);
+        if (tool) {
+          try {
+            const { text, isError = false } = await tool.call(message.params?.arguments ?? {});
+            this.deps.log?.(`  · ${tool.name} ${grant.label}${isError ? ' (refused)' : ''}`);
+            return ok({ content: [{ type: 'text', text }], isError });
+          } catch (error) {
+            const text = error instanceof Error ? error.message : String(error);
+            return ok({ content: [{ type: 'text', text }], isError: true });
+          }
+        }
         if (message.params?.name !== 'delegate')
           return { jsonrpc: '2.0', id: message.id, error: { code: -32602, message: 'unknown tool' } };
         const { text, isError } = await this.delegate(grant, message.params.arguments);
@@ -233,8 +272,9 @@ export class DelegationServer {
         text: 'Every agent slot is in use. Do this part yourself, or try again later.',
         isError: true,
       };
+    const { tools: _parentTools, ...inherited } = grant;
     const child = this.grant({
-      ...grant,
+      ...inherited,
       depth: grant.depth + 1,
       budgetUsd: budget,
       label: `${grant.label} > ${provider}`,

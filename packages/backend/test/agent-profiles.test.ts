@@ -60,15 +60,15 @@ test('a task takes an active agent as its assignee, and can drop it', async (t) 
   await agents.create({ name: 'Mika' });
   await issues.create({ project: 'demo', title: 'Write the README' });
 
-  const assigned = await issues.update({ project: 'demo', key: 'DE-1', assignee: 'mika' });
+  const assigned = await issues.update({ project: 'demo', key: 'DEM-1', assignee: 'mika' });
   assert.equal(assigned.assignee, 'mika');
   assert.equal(assigned.events.at(-1)?.message, 'Assigned to Mika');
 
-  await assert.rejects(issues.update({ project: 'demo', key: 'DE-1', assignee: 'ghost' }), /not found/);
+  await assert.rejects(issues.update({ project: 'demo', key: 'DEM-1', assignee: 'ghost' }), /not found/);
   await agents.archive({ id: 'mika', archived: true });
-  await assert.rejects(issues.update({ project: 'demo', key: 'DE-1', assignee: 'mika' }), /archived/);
+  await assert.rejects(issues.update({ project: 'demo', key: 'DEM-1', assignee: 'mika' }), /archived/);
 
-  const cleared = await issues.update({ project: 'demo', key: 'DE-1', assignee: null });
+  const cleared = await issues.update({ project: 'demo', key: 'DEM-1', assignee: null });
   assert.equal(cleared.assignee, undefined);
   assert.equal(cleared.events.at(-1)?.message, 'Removed the agent');
 });

@@ -249,8 +249,12 @@ export class ClaudeAgentRunner implements ModelRunner {
     heard: () => void,
   ): Promise<ModelResult> {
     const tools = TOOLS[request.tools];
-    // `delegate` is an MCP tool, so it is allowed by name; the step guard still screens it.
-    const allowed = request.mcp ? [...tools, CLAUDE_DELEGATE_TOOL] : tools;
+    // Factory and agent MCP tools are allowed by name or server prefix; the step guard still screens them.
+    const allowed: string[] = request.mcp
+      ? [...tools, CLAUDE_DELEGATE_TOOL, ...(request.mcp.tools ?? []).map((t) => `mcp__factory__${t}`)]
+      : [...tools];
+    const external = (request.mcpServers ?? []).map((s) => `mcp__${s.name}__`);
+    const permitted = (name: string) => allowed.includes(name) || external.some((p) => name.startsWith(p));
     const guard = request.guard;
     const sandbox = sandboxFor(request.tools, homedir(), request.sandbox);
     const options: Options = {
@@ -267,7 +271,7 @@ export class ClaudeAgentRunner implements ModelRunner {
       persistSession: request.persistSession === true || Boolean(request.resume),
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
-        if (!allowed.includes(toolName))
+        if (!permitted(toolName))
           return { behavior: 'deny', message: `${toolName} is not available to this step` };
         const denial = guard?.check(toolName, input);
         return denial ? { behavior: 'deny', message: denial } : { behavior: 'allow', updatedInput: input };
@@ -291,8 +295,20 @@ export class ClaudeAgentRunner implements ModelRunner {
       ...(request.cwd ? { cwd: request.cwd } : {}),
       ...(request.maxTurns ? { maxTurns: request.maxTurns } : {}),
       ...(request.resume ? { resume: request.resume } : {}),
-      ...(request.mcp
-        ? { mcpServers: (JSON.parse(claudeMcpConfig(request.mcp)) as Pick<Options, 'mcpServers'>).mcpServers }
+      ...(request.mcp || request.mcpServers?.length
+        ? {
+            mcpServers: {
+              ...Object.fromEntries(
+                (request.mcpServers ?? []).map((s) => [
+                  s.name,
+                  { type: 'http' as const, url: s.url, ...(s.headers ? { headers: s.headers } : {}) },
+                ]),
+              ),
+              ...(request.mcp
+                ? (JSON.parse(claudeMcpConfig(request.mcp)) as Pick<Options, 'mcpServers'>).mcpServers
+                : {}),
+            },
+          }
         : {}),
       ...(request.outputSchema
         ? { outputFormat: { type: 'json_schema', schema: request.outputSchema } }

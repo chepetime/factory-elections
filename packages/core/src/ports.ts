@@ -1,5 +1,12 @@
 // Interfaces the driver needs; adapters implement them.
-import type { AgentEvent, ContextStatus, McpEndpoint, ProviderCapabilities, Usage } from './agents.ts';
+import type {
+  AgentEvent,
+  ContextStatus,
+  ExternalMcpServer,
+  McpEndpoint,
+  ProviderCapabilities,
+  Usage,
+} from './agents.ts';
 import type { CallCleanup } from './execution.ts';
 import type { TraceScope } from './trace.ts';
 import type { Effort } from './schemas.ts';
@@ -42,6 +49,8 @@ export interface ModelRun {
   persistSession?: boolean;
   /** The backend's MCP server, when this call may start child tasks with `delegate`. */
   mcp?: McpEndpoint;
+  /** A workspace agent's own MCP servers; all their tools are allowed, and the guard still screens them. */
+  mcpServers?: readonly ExternalMcpServer[];
   /** For a delegate child: the span it hangs under, in its parent's trace. */
   traceParent?: TraceScope;
   /** Receives the call's events as they happen. */

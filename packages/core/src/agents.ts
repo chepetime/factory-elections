@@ -208,6 +208,15 @@ export interface HeadlessTurn {
 export interface McpEndpoint {
   url: string;
   token: string;
+  /** Factory tools this grant serves besides `delegate`, e.g. `comment` and `set_status`. */
+  tools?: readonly string[];
+}
+
+/** An agent's own HTTP MCP server. The token is resolved on the backend, never stored. */
+export interface ExternalMcpServer {
+  name: string;
+  url: string;
+  headers?: Record<string, string>;
 }
 
 /** A provider's headless CLI: how to start a turn, and how to read what it writes. */
