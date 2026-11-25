@@ -342,8 +342,17 @@ export default async function TaskPage({
 
   const runId = query.run && issue.runs.includes(query.run) ? query.run : issue.run?.id;
   const comment = <IssueCommentBox project={project} issueKey={issue.key} />;
+  const roster = await listAgents();
+  const assigned =
+    roster.ok && issue.assignee ? roster.value.find((a) => a.id === issue.assignee) : undefined;
+  // In the Run tab the same box replies to the waiting agent: a comment there wakes its session.
+  const reply = assigned ? (
+    <IssueCommentBox project={project} issueKey={issue.key} placeholder={`Reply to ${assigned.name}…`} />
+  ) : (
+    comment
+  );
   const run = runId
-    ? await renderRun(project, runId, { startFailed: query.start === 'failed', fallback: comment })
+    ? await renderRun(project, runId, { startFailed: query.start === 'failed', fallback: reply })
     : undefined;
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
   const feed = feedItems(issue);
@@ -358,7 +367,7 @@ export default async function TaskPage({
   const session = runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
   const [label, agentList, detailsWidth, ...loaded] = await Promise.all([
     projectLabel(project),
-    listAgents(),
+    Promise.resolve(roster),
     paneWidth(TASK_DETAILS_PANE),
     ...issue.runs.map((rid) =>
       rid === runId && run?.ok

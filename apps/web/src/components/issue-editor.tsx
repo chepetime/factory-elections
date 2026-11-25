@@ -331,7 +331,15 @@ export function IssueStatusField({
   );
 }
 
-export function IssueCommentBox({ project, issueKey }: { project: string; issueKey: string }) {
+export function IssueCommentBox({
+  project,
+  issueKey,
+  placeholder = 'Leave a comment…',
+}: {
+  project: string;
+  issueKey: string;
+  placeholder?: string;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
   const [text, setText] = useState('');
   const form = useRef<HTMLFormElement>(null);
@@ -353,7 +361,7 @@ export function IssueCommentBox({ project, issueKey }: { project: string; issueK
             name="body"
             rows={2}
             value={text}
-            placeholder="Leave a comment…"
+            placeholder={placeholder}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim() && !pending) {

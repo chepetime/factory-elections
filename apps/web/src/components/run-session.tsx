@@ -18,6 +18,14 @@ type Session = { entries: Entry[]; live: boolean };
 
 const POLL_MS = 1500;
 
+/** `mcp__factory__comment` reads "Factory · comment"; built-in tools keep their names. */
+function toolName(name: string): string {
+  const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name);
+  if (!mcp) return name;
+  const server = mcp[1] === 'factory' ? 'Factory' : mcp[1]!;
+  return `${server} · ${mcp[2]!.replace(/_/g, ' ')}`;
+}
+
 /** A tool call with its result, which the log stores as two entries joined by the call id. */
 function ToolCall({
   tool,
@@ -50,7 +58,7 @@ function ToolCall({
               aria-label="Done"
             />
           )}
-          <span className="shrink-0 font-medium">{tool.tool}</span>
+          <span className="shrink-0 font-medium">{toolName(tool.tool)}</span>
           <span className="min-w-0 truncate font-mono text-muted-foreground" title={tool.input}>
             {tool.input}
           </span>
