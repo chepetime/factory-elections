@@ -84,6 +84,13 @@ export interface Methods {
   GetProfileStatus: [Target, { json: string }];
   DraftProfile: [Target, { json: string }];
   ApproveProfile: [Target, { json: string }];
+  /** Workspace agents. Each request is `{json}` with the agent fields or `{id}`. */
+  ListAgents: [{}, { json: string }];
+  GetAgent: [{ json: string }, { json: string }];
+  CreateAgent: [{ json: string }, { json: string }];
+  UpdateAgent: [{ json: string }, { json: string }];
+  ArchiveAgent: [{ json: string }, { json: string }];
+  GetAgentStats: [{ json: string }, { json: string }];
   /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */

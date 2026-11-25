@@ -67,6 +67,12 @@ service Factory {
   rpc GetProfileStatus(Target) returns (Snapshot);
   rpc DraftProfile(Target) returns (Snapshot);
   rpc ApproveProfile(Target) returns (Snapshot);
+  rpc ListAgents(Empty) returns (Snapshot);
+  rpc GetAgent(Snapshot) returns (Snapshot);
+  rpc CreateAgent(Snapshot) returns (Snapshot);
+  rpc UpdateAgent(Snapshot) returns (Snapshot);
+  rpc ArchiveAgent(Snapshot) returns (Snapshot);
+  rpc GetAgentStats(Snapshot) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);

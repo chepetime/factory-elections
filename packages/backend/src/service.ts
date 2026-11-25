@@ -38,6 +38,7 @@ import {
   type ModelFailure,
   type ModelResult,
   CallManifest,
+  taskSpend,
 } from '@factory/core';
 import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -47,6 +48,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
+import { AgentService } from './agent-profiles.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
@@ -157,6 +159,7 @@ export class BackendService {
   /** Grill → spec → board → implement → QA. */
   readonly features: FeatureService;
   readonly issues: IssueService;
+  readonly agents: AgentService;
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
   readonly experiments: ExperimentStore;
@@ -244,7 +247,9 @@ export class BackendService {
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.agents = new AgentService({ root, storage: this.storage });
     this.issues = new IssueService({
+      agentName: async (id) => (await this.agents.active(id)).name,
       root,
       storage: this.storage,
       tasks: this.tasks,
@@ -397,6 +402,57 @@ export class BackendService {
         );
       });
     });
+  }
+  /** An agent's tasks across projects, its recent runs, and its last 30 days. */
+  async agentStats(raw: unknown) {
+    const agent = await this.agents.get(raw);
+    const projects = await this.projects.list();
+    const since = Date.now() - 30 * 86_400_000;
+    const per = await Promise.all(
+      projects.map(async ({ name }) => {
+        const [board, tasks] = await Promise.all([this.issues.list(name), this.tasks.list(name)]);
+        const owner = new Map(board.items.flatMap((i) => i.runs.map((r) => [r, i] as const)));
+        return {
+          work: board.items
+            .filter((i) => i.assignee === agent.id && !i.archived_at)
+            .map((i) => ({
+              project: name,
+              key: i.key,
+              title: i.title,
+              status: i.status,
+              priority: i.priority,
+              updated_at: i.updated_at,
+            })),
+          runs: tasks
+            .filter((t) => t.agent === agent.id)
+            .map((t) => ({
+              project: name,
+              id: t.id,
+              stage: t.stage,
+              created_at: t.created_at ?? '',
+              updated_at: t.updated_at ?? t.created_at ?? '',
+              cost_usd: taskSpend(t),
+              key: owner.get(t.id)?.key,
+              title: owner.get(t.id)?.title ?? t.name ?? t.prompt.split('\n')[0]!.slice(0, 100),
+            })),
+        };
+      }),
+    );
+    const runs = per.flatMap((p) => p.runs).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const recent = runs.filter((r) => Date.parse(r.updated_at) > since);
+    return {
+      agent,
+      work: per.flatMap((p) => p.work),
+      running: runs.filter((r) => r.stage === 'coding' || r.stage === 'reviewing' || r.stage === 'queued'),
+      runs: runs.slice(0, 10),
+      last30: {
+        runs: recent.length,
+        completed: recent.filter(
+          (r) => r.stage === 'awaiting-approval' || r.stage === 'approved' || r.stage === 'pr-opened',
+        ).length,
+        cost_usd: recent.reduce((sum, r) => sum + r.cost_usd, 0),
+      },
+    };
   }
   async profileStatus(raw: unknown) {
     const { project } = z.object({ project: ProjectName }).parse(raw);

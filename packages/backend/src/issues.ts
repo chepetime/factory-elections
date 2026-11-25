@@ -49,6 +49,8 @@ export type IssueDeps = {
   reject: (project: string, id: string, note: string) => Promise<unknown>;
   /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
   deleteRun: (project: string, id: string) => Promise<void>;
+  /** The name of an agent that may take work; it throws for a missing or archived agent. */
+  agentName?: (id: string) => Promise<string>;
   now?: () => Date;
 };
 
@@ -67,6 +69,8 @@ const UpdateInput = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(100_000).optional(),
   priority: IssuePriority.optional(),
+  /** An agent id, or null to unassign. */
+  assignee: z.string().min(1).nullable().optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
 const CommentInput = z.object({
@@ -238,20 +242,30 @@ export class IssueService {
   }
 
   async update(raw: unknown): Promise<IssueView> {
-    const { project, key, ...patch } = UpdateInput.parse(raw);
+    const { project, key, assignee, ...patch } = UpdateInput.parse(raw);
+    if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
+    const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
     return this.change(project, key, (issue, at) => {
       const changed = Object.entries(patch).filter(
         ([field, value]) => value !== undefined && value !== issue[field as keyof Issue],
       );
-      if (!changed.length) return issue;
-      return {
-        ...issue,
-        ...Object.fromEntries(changed),
-        events: [
-          ...issue.events,
-          ...changed.map(([field]) => ({ at, kind: `edit:${field}`, message: `Changed the ${field}` })),
-        ],
-      };
+      const events = changed.map(([field]) => ({
+        at,
+        kind: `edit:${field}`,
+        message: `Changed the ${field}`,
+      }));
+      let next: Issue = { ...issue, ...Object.fromEntries(changed) };
+      if (assignee !== undefined && (assignee ?? undefined) !== issue.assignee) {
+        const { assignee: _old, ...rest } = next;
+        next = assignee ? { ...rest, assignee } : rest;
+        events.push({
+          at,
+          kind: 'edit:assignee',
+          message: assignee ? `Assigned to ${agentName}` : 'Removed the agent',
+        });
+      }
+      if (!events.length) return issue;
+      return { ...next, events: [...issue.events, ...events] };
     });
   }
 

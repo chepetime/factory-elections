@@ -205,6 +205,22 @@ export async function startBackend(options: ServerOptions) {
       GetProfileStatus: async (request) => ({ json: JSON.stringify(await service.profileStatus(request)) }),
       DraftProfile: async (request) => ({ json: JSON.stringify(await service.draftProfile(request)) }),
       ApproveProfile: async (request) => ({ json: JSON.stringify(await service.approveProfile(request)) }),
+      ListAgents: async () => ({ json: JSON.stringify(await service.agents.list()) }),
+      GetAgent: async (request) => ({
+        json: JSON.stringify(await service.agents.get(jsonObject(request.json))),
+      }),
+      CreateAgent: async (request) => ({
+        json: JSON.stringify(await service.agents.create(jsonObject(request.json))),
+      }),
+      UpdateAgent: async (request) => ({
+        json: JSON.stringify(await service.agents.update(jsonObject(request.json))),
+      }),
+      ArchiveAgent: async (request) => ({
+        json: JSON.stringify(await service.agents.archive(jsonObject(request.json))),
+      }),
+      GetAgentStats: async (request) => ({
+        json: JSON.stringify(await service.agentStats(jsonObject(request.json))),
+      }),
       GetTrace: async (request) => ({
         json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
       }),

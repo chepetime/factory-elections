@@ -339,6 +339,30 @@
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },
+                "ListAgents": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "GetAgent": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "CreateAgent": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "UpdateAgent": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "ArchiveAgent": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "GetAgentStats": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
