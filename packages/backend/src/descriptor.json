@@ -363,6 +363,34 @@
                   "requestType": "Snapshot",
                   "responseType": "Snapshot"
                 },
+                "ListChats": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "GetChat": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "StartChat": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "SendChatMessage": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "StopChat": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "RenameChat": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "DeleteChat": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"

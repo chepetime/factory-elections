@@ -23,6 +23,8 @@ export const SpanType = z.enum([
   'review',
   /** One agent step of a feature: grill, spec, critique, tickets, QA. */
   'feature-step',
+  /** One turn of a chat with a workspace agent. */
+  'chat',
   'memory-review',
   'loop-judge',
   /** Time a task waited for the human at the approval gate. */

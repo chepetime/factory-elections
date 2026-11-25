@@ -73,6 +73,13 @@ service Factory {
   rpc UpdateAgent(Snapshot) returns (Snapshot);
   rpc ArchiveAgent(Snapshot) returns (Snapshot);
   rpc GetAgentStats(Snapshot) returns (Snapshot);
+  rpc ListChats(Snapshot) returns (Snapshot);
+  rpc GetChat(Snapshot) returns (Snapshot);
+  rpc StartChat(Snapshot) returns (Snapshot);
+  rpc SendChatMessage(Snapshot) returns (Snapshot);
+  rpc StopChat(Snapshot) returns (Snapshot);
+  rpc RenameChat(Snapshot) returns (Snapshot);
+  rpc DeleteChat(Snapshot) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);

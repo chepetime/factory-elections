@@ -91,6 +91,14 @@ export interface Methods {
   UpdateAgent: [{ json: string }, { json: string }];
   ArchiveAgent: [{ json: string }, { json: string }];
   GetAgentStats: [{ json: string }, { json: string }];
+  /** Chats with agents. Send returns at once; poll GetChat for the reply (`partial` while it runs). */
+  ListChats: [{ json: string }, { json: string }];
+  GetChat: [{ json: string }, { json: string }];
+  StartChat: [{ json: string }, { json: string }];
+  SendChatMessage: [{ json: string }, { json: string }];
+  StopChat: [{ json: string }, { json: string }];
+  RenameChat: [{ json: string }, { json: string }];
+  DeleteChat: [{ json: string }, { json: string }];
   /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */

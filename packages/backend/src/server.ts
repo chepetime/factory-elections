@@ -218,6 +218,25 @@ export async function startBackend(options: ServerOptions) {
       ArchiveAgent: async (request) => ({
         json: JSON.stringify(await service.agents.archive(jsonObject(request.json))),
       }),
+      ListChats: async (request) => ({
+        json: JSON.stringify(await service.chats.list(jsonObject(request.json))),
+      }),
+      GetChat: async (request) => ({
+        json: JSON.stringify(await service.chats.get(jsonObject(request.json))),
+      }),
+      StartChat: async (request) => ({
+        json: JSON.stringify(await service.chats.start(jsonObject(request.json))),
+      }),
+      SendChatMessage: async (request) => ({
+        json: JSON.stringify(await service.chats.send(jsonObject(request.json))),
+      }),
+      StopChat: async (request) => ({ json: JSON.stringify(service.chats.stop(jsonObject(request.json))) }),
+      RenameChat: async (request) => ({
+        json: JSON.stringify(await service.chats.rename(jsonObject(request.json))),
+      }),
+      DeleteChat: async (request) => ({
+        json: JSON.stringify(await service.chats.remove(jsonObject(request.json))),
+      }),
       GetAgentStats: async (request) => ({
         json: JSON.stringify(await service.agentStats(jsonObject(request.json))),
       }),

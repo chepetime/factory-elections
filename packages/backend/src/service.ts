@@ -50,6 +50,7 @@ import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
 import { AgentService } from './agent-profiles.ts';
 import { buildAgentSession } from './agent-sessions.ts';
+import { ChatService } from './chats.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
@@ -161,6 +162,7 @@ export class BackendService {
   readonly features: FeatureService;
   readonly issues: IssueService;
   readonly agents: AgentService;
+  readonly chats: ChatService;
   /** Agent runs in progress, per workspace agent. */
   private readonly agentRuns = new Map<string, number>();
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
@@ -228,6 +230,21 @@ export class BackendService {
     this.reviews.memory = this.memory;
     this.reviews.traces = this.traces;
     this.reviews.reviewRecords = this.prReviewRecords;
+    this.chats = new ChatService({
+      root,
+      storage: this.storage,
+      agent: (id) => this.agents.get({ id }),
+      projects: () => this.projects.list(),
+      issues: {
+        create: (r) => this.issues.create(r),
+        update: (r) => this.issues.update(r),
+        list: (p) => this.issues.list(p),
+      },
+      runner: (project) =>
+        project ? this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'chat') : base,
+      slot: () => this.tryAgentSlot(),
+      delegation: this.delegation,
+    });
     this.features = new FeatureService({
       root,
       projects: this.projects,
