@@ -3,6 +3,7 @@
 | Change | Start here | Read when needed |
 | --- | --- | --- |
 | Domain rules and schemas | `packages/core/src` | `CONTEXT.md`, `GLOSSARY.md` |
+| Tasks board (issues, keys, drops) | `packages/core/src/issues.ts`, `packages/backend/src/issues.ts` | `docs/tasks-board.md` |
 | Workflow execution and gates | `packages/driver/src`, `definitions/` | `docs/state-machines.md` |
 | RPC, queue, memory, delegation | `packages/backend/src` | `docs/local-backend.md` |
 | Provider execution | `packages/adapters-claude/src`, `packages/adapters-codex/src` | `docs/agent-execution-review.md` |
