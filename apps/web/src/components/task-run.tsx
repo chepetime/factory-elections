@@ -28,6 +28,8 @@ import { OutputBlock } from '@/components/output-block';
 import { TaskChatComposer } from '@/components/task-chat';
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AgentAvatar } from '@/components/agent-avatar';
+import { listAgents } from '@/lib/agents';
 import { backgroundRun, readDiff, readTaskControls, type Gate } from '@/lib/factory';
 import { pageVersion, taskPhase } from '@/lib/live-run';
 import { lastStepId, stageTimeline, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
@@ -350,15 +352,30 @@ function DecisionOptions({
   );
 }
 
-export function AgentMessage({ at, children }: { at?: string; children: ReactNode }) {
+/** Who speaks in a run: the workspace agent for an agent run, else Factory's pipeline. */
+export type RunAuthor = { name: string; avatar: string };
+
+export function AgentMessage({
+  at,
+  author,
+  children,
+}: {
+  at?: string;
+  author?: RunAuthor;
+  children: ReactNode;
+}) {
   return (
     <div className="group/msg flex gap-3">
-      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground">
-        <Bot className="size-4" aria-hidden />
-      </span>
+      {author ? (
+        <AgentAvatar agent={author} decorative className="mt-0.5 size-7 text-sm" />
+      ) : (
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground">
+          <Bot className="size-4" aria-hidden />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="mb-1 text-xs text-muted-foreground">
-          Factory
+          {author?.name ?? 'Factory'}
           {at && (
             <span className={SHOW_ON_HOVER.msg}>
               {' '}
@@ -495,6 +512,13 @@ export async function renderRun(
   if (!shown.ok) return { ok: false, error: shown.error };
   const controls = shown.value;
   const task = controls.task;
+  const roster = task.workflow === 'agent' && task.agent ? await listAgents() : undefined;
+  const found = roster?.ok ? roster.value.find((a) => a.id === task.agent) : undefined;
+  const author: RunAuthor | undefined = found
+    ? { name: found.name, avatar: found.avatar }
+    : task.workflow === 'agent' && task.agent
+      ? { name: task.agent, avatar: '🤖' }
+      : undefined;
   const gate: Gate | undefined =
     controls.head_sha && controls.diff_stat !== undefined
       ? {
@@ -599,14 +623,14 @@ export async function renderRun(
         entry.role === 'user' ? (
           <UserMessage key={entry.id} entry={entry} />
         ) : (
-          <AgentMessage key={entry.id} at={entry.at}>
+          <AgentMessage author={author} key={entry.id} at={entry.at}>
             <StepList steps={entry.steps} extra={stepExtra} openFailure={openFailure} />
           </AgentMessage>
         ),
       )}
 
       {busy && (
-        <AgentMessage>
+        <AgentMessage author={author}>
           <LiveRun
             key={version}
             project={project}
@@ -630,7 +654,7 @@ export async function renderRun(
         </p>
       )}
       {!busy && run.cleanup?.status === 'uncertain' && !run.cleanup.confirmed_at && (
-        <AgentMessage>
+        <AgentMessage author={author}>
           <ActionForm
             action={confirmCleanup}
             hidden={hidden}
@@ -649,7 +673,7 @@ export async function renderRun(
       )}
 
       {canRun && (
-        <AgentMessage>
+        <AgentMessage author={author}>
           <ActionForm
             action={runTask}
             hidden={hidden}
@@ -670,7 +694,7 @@ export async function renderRun(
       )}
 
       {showReady && (
-        <AgentMessage>
+        <AgentMessage author={author}>
           <ReadyCard task={task} diffStat={controls.diff_stat} />
           {gate && (
             <DecisionOptions
@@ -685,7 +709,7 @@ export async function renderRun(
       )}
 
       {!run.running && run.logTail && (
-        <AgentMessage>
+        <AgentMessage author={author}>
           <details>
             <summary className="cursor-pointer text-sm text-muted-foreground">Last run output</summary>
             <OutputBlock output={run.logTail} label="Run output" />

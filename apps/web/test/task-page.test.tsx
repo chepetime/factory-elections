@@ -456,3 +456,16 @@ it('folds runs of events and shows comment threads with their replies', async ()
   expect(page).toMatch(/Devin<\/span>[\s\S]*A reply/);
   expect(page.match(/activities/g)).toHaveLength(1);
 });
+
+it('names the agent, not Factory, in an agent run', async () => {
+  const agentRun = { ...task, workflow: 'agent' as const, agent: 'devin' };
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue({ id: task.id, stage: 'coding' }) });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: agentRun, execution: 'running', actions: taskActions(agentRun, 'running') },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: true, phase: 'running' });
+  const page = await html();
+  expect(page).toMatch(/🐸[\s\S]*Devin/);
+  expect(page).not.toMatch(/>Factory</);
+});
