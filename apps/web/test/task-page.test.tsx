@@ -437,8 +437,8 @@ it('folds runs of events and shows comment threads with their replies', async ()
         { at: at(5), kind: 'edit:title', message: 'Changed the title' },
       ],
       comments: [
-        { id: 'c1', at: at(3), body: 'First thought' },
-        { id: 'c2', at: at(4), body: 'A reply', parent: 'c1' },
+        { id: 'c1', at: at(3), body: 'First thought', author: 'you' },
+        { id: 'c2', at: at(4), body: 'A reply', parent: 'c1', author: 'you' },
       ],
     },
   });

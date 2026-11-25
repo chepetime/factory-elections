@@ -31,8 +31,11 @@ export function approvalBlockers(task: TaskRecord, headSha: string): string[] {
   if (!task.worktree) reasons.push('the task has no worktree');
   if (!task.verification?.passed) reasons.push('verification has not passed');
   else if (task.verification.head_sha !== headSha) reasons.push('verification is for an older commit');
-  if (!task.review) reasons.push('the reviewer has not reviewed the change');
-  else if (task.review.head_sha !== headSha) reasons.push('the review is for an older commit');
+  // An agent run has no reviewer step; the person reviews the change before approving it.
+  if (task.workflow !== 'agent') {
+    if (!task.review) reasons.push('the reviewer has not reviewed the change');
+    else if (task.review.head_sha !== headSha) reasons.push('the review is for an older commit');
+  }
   if (task.pr) reasons.push('a pull request is already open');
   return reasons;
 }

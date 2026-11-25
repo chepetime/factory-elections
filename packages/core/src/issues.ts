@@ -46,6 +46,8 @@ export const Issue = z.object({
   /** Factory runs this issue started or wraps, oldest first. */
   runs: z.array(TaskId).default([]),
   jira_key: z.string().trim().min(1).max(100).optional(),
+  /** The agent that works this task; moving it to In progress starts that agent's session. */
+  assignee: z.string().min(1).optional(),
   comments: z
     .array(
       z.object({
@@ -54,6 +56,8 @@ export const Issue = z.object({
         body: z.string().trim().min(1).max(20_000),
         /** The thread's first comment; replies are one level deep. */
         parent: z.string().min(1).optional(),
+        /** `you`, or the id of the agent that wrote it. */
+        author: z.string().min(1).default('you'),
       }),
     )
     .default([]),

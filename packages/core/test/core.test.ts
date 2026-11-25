@@ -105,6 +105,26 @@ test('pull request requires approval bound to the current commit', () => {
   );
 });
 
+test('an agent run needs verification but no reviewer before approval', () => {
+  const now = '2026-01-01T00:00:00Z';
+  const task = TaskRecord.parse({
+    ...base,
+    stage: 'awaiting-approval',
+    worktree: { path: '/w', branch: `factory/${id}`, base_branch: 'main' },
+    verification: { passed: true, head_sha: 'abc', at: now, output_tail: '' },
+  });
+  assert.ok(
+    approvalBlockers(task, 'abc').some((r) => r.includes('reviewer')),
+    'the pipeline needs a review',
+  );
+  assert.deepEqual(approvalBlockers({ ...task, workflow: 'agent' }, 'abc'), []);
+  assert.ok(
+    approvalBlockers({ ...task, workflow: 'agent', verification: undefined }, 'abc').some((r) =>
+      r.includes('verification'),
+    ),
+  );
+});
+
 test('forbidden paths and commands', () => {
   assert.equal(isForbiddenPath('secrets/key.pem', ['secrets/']), true);
   assert.equal(isForbiddenPath('src/env.txt', ['src/*.env', '.env']), false);

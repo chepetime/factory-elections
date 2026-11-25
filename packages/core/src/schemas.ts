@@ -225,6 +225,11 @@ export const TaskRecord = z.looseObject({
   allow_test_changes: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
   events: z.array(TaskEvent).optional(),
+  /** `agent`: one open session by a workspace agent, with no reviewer step. Absent means the pipeline. */
+  workflow: z.enum(['pipeline', 'agent']).optional(),
+  /** The agent working an `agent` run, and its provider session for resumes. */
+  agent: NonEmpty.optional(),
+  agent_session: NonEmpty.optional(),
 });
 export type TaskRecord = z.infer<typeof TaskRecord>;
 

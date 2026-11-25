@@ -264,7 +264,10 @@ export class IssueService {
       const root = target?.parent ?? target?.id;
       return {
         ...issue,
-        comments: [...issue.comments, { id: randomUUID(), at, body, ...(root ? { parent: root } : {}) }],
+        comments: [
+          ...issue.comments,
+          { id: randomUUID(), at, body, author: 'you', ...(root ? { parent: root } : {}) },
+        ],
       };
     });
   }
