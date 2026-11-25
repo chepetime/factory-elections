@@ -3,6 +3,9 @@ plain_modules
 dist
 .turri
 apps/web/.next
+apps/docs/.next
+apps/docs/.source
+apps/docs/next-env.d.ts
 *.md
 *.plain
 

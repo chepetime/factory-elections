@@ -6,7 +6,9 @@
     "packages/affect-ui/upstream/**",
     "packages/affect-ui/dist/**",
     "apps/web/storybook-static/**",
-    "apps/web/test-results/**"
+    "apps/web/test-results/**",
+    "apps/docs/.next/**",
+    "apps/docs/.source/**"
   ],
   "rules": {},
   "overrides": [
