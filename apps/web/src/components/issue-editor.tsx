@@ -1,6 +1,6 @@
 'use client';
 // Editable parts of a board task's page: title, description, priority, status and comments.
-import { ArchiveRestore, Pencil } from 'lucide-react';
+import { ArchiveRestore, ArrowUp, LoaderCircle, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from 'react';
 import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
@@ -329,6 +329,70 @@ export function IssueCommentBox({ project, issueKey }: { project: string; issueK
         </div>
       </form>
     </div>
+  );
+}
+
+/** The reply line at the foot of a comment thread. Enter sends; Shift+Enter starts a new line. */
+export function IssueReplyBox({
+  project,
+  issueKey,
+  parent,
+}: {
+  project: string;
+  issueKey: string;
+  parent: string;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
+  const [text, setText] = useState('');
+  const form = useRef<HTMLFormElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (state.message) setText('');
+  }, [state]);
+  return (
+    <form ref={form} action={action} className="border-t bg-muted/30 px-4 py-2">
+      <input type="hidden" name="project" value={project} />
+      <input type="hidden" name="key" value={issueKey} />
+      <input type="hidden" name="parent" value={parent} />
+      <div className="flex items-end gap-2">
+        <label htmlFor={id} className="sr-only">
+          Reply
+        </label>
+        <Textarea
+          id={id}
+          name="body"
+          rows={1}
+          value={text}
+          placeholder="Leave a reply…"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (text.trim() && !pending) form.current?.requestSubmit();
+            }
+          }}
+          className="field-sizing-content max-h-40 min-h-8 resize-none border-0 bg-transparent px-0 py-1.5 shadow-none focus-visible:ring-0 dark:bg-transparent"
+        />
+        <Button
+          type="submit"
+          size="icon-sm"
+          aria-label="Send the reply"
+          disabled={!text.trim() || pending}
+          className="mb-0.5 shrink-0 rounded-full"
+        >
+          {pending ? (
+            <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+          ) : (
+            <ArrowUp aria-hidden />
+          )}
+        </Button>
+      </div>
+      {state.error && (
+        <p role="alert" className="pb-1 text-xs text-destructive">
+          {state.error}
+        </p>
+      )}
+    </form>
   );
 }
 

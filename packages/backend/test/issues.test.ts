@@ -158,6 +158,27 @@ test('updates record what changed, and comments append', async (t) => {
   const commented = await service.comment({ project: 'change-elections', key: 'CE-1', body: 'Looks right' });
   assert.equal(commented.comments.at(-1)?.body, 'Looks right');
   await assert.rejects(service.comment({ project: 'change-elections', key: 'CE-1', body: '  ' }));
+
+  const root = commented.comments.at(-1)!.id;
+  const reply = await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: 'Agreed',
+    parent: root,
+  });
+  const first = reply.comments.at(-1)!;
+  assert.equal(first.parent, root);
+  const nested = await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: 'Same thread',
+    parent: first.id,
+  });
+  assert.equal(nested.comments.at(-1)?.parent, root, 'a reply to a reply joins the thread');
+  await assert.rejects(
+    service.comment({ project: 'change-elections', key: 'CE-1', body: 'Lost', parent: 'missing' }),
+    /replied to is gone/,
+  );
 });
 
 test('moving without a run only sets the status', async (t) => {
@@ -166,6 +187,16 @@ test('moving without a run only sets the status', async (t) => {
   const moved = await service.move({ project: 'change-elections', key: 'CE-1', to: 'todo' });
   assert.equal(moved.action, 'set-status');
   assert.equal(moved.issue.status, 'todo');
+  assert.deepEqual(
+    { ...moved.issue.events.at(-1), at: undefined },
+    {
+      at: undefined,
+      kind: 'move:todo',
+      message: 'Changed status from Backlog to Todo',
+      from: 'backlog',
+      to: 'todo',
+    },
+  );
   assert.deepEqual(calls, []);
   await assert.rejects(service.move({ project: 'change-elections', key: 'CE-1', to: 'in_review' }), Conflict);
 });

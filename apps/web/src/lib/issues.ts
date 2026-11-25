@@ -51,8 +51,15 @@ export function updateIssueRun(project: string, input: object): Promise<Result<I
 export function moveIssueRun(project: string, key: string, to: IssueStatus) {
   return attempt(async () => MoveResult.parse(await call('MoveIssue', project, { key, to })));
 }
-export function commentIssueRun(project: string, key: string, body: string): Promise<Result<IssueView>> {
-  return attempt(async () => IssueView.parse(await call('CommentIssue', project, { key, body })));
+export function commentIssueRun(
+  project: string,
+  key: string,
+  body: string,
+  parent?: string,
+): Promise<Result<IssueView>> {
+  return attempt(async () =>
+    IssueView.parse(await call('CommentIssue', project, { key, body, ...(parent ? { parent } : {}) })),
+  );
 }
 export function archiveIssueRun(project: string, key: string, archived: boolean): Promise<Result<IssueView>> {
   return attempt(async () => IssueView.parse(await call('ArchiveIssue', project, { key, archived })));

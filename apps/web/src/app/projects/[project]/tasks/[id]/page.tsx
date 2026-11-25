@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { statusFromStage, type Stage, type TaskRecord } from '@factory/core';
+import { statusFromStage, type IssueStatus, type Stage, type TaskRecord } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
@@ -11,6 +11,7 @@ import {
   IssueCommentBox,
   IssueDescription,
   IssuePriorityField,
+  IssueReplyBox,
   IssueStatusField,
   IssueTitle,
 } from '@/components/issue-editor';
@@ -37,32 +38,132 @@ export async function generateMetadata({
   return { title: issue.ok ? `${issue.value.key} ${clip(issue.value.title)} · ${label}` : `Task · ${label}` };
 }
 
-/** One entry in the activity feed: something that happened to the task itself. */
-function Happening({ at, children }: { at: string; children: ReactNode }) {
+type IssueEvent = IssueView['events'][number];
+type IssueComment = IssueView['comments'][number];
+type FeedItem =
+  | { at: string; kind: 'event'; event: IssueEvent }
+  | { at: string; kind: 'thread'; root: IssueComment; replies: IssueComment[] };
+
+/** Status changes show the new status icon; older events only carry it in their kind. */
+function eventStatus(event: IssueEvent): IssueStatus | undefined {
+  const to = event.to ?? (event.kind.startsWith('move:') ? event.kind.slice(5) : undefined);
+  return to && to in STATUS ? (to as IssueStatus) : undefined;
+}
+
+function Happening({ event }: { event: IssueEvent }) {
+  const status = eventStatus(event);
+  const look = status ? STATUS[status] : undefined;
   return (
-    <li className="flex items-baseline gap-3 py-1.5 text-sm text-muted-foreground">
-      <span
-        className="size-1.5 shrink-0 translate-y-[-1px] rounded-full bg-muted-foreground/40"
-        aria-hidden
-      />
-      <span className="min-w-0 flex-1">{children}</span>
-      <LocalTime iso={at} format="date-time" className="shrink-0 text-xs tabular-nums" />
+    <li className="flex items-center gap-2.5 py-1.5 text-sm text-muted-foreground">
+      {look ? (
+        <look.icon className={cn('size-4 shrink-0', look.tone)} aria-hidden />
+      ) : (
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+          <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">{event.message}</span>
+      <LocalTime iso={event.at} format="date-time" className="shrink-0 text-xs tabular-nums" />
     </li>
   );
 }
 
-function Comment({ at, body }: { at: string; body: string }) {
+/** Two or more events in a row fold under one "N activities" line. */
+function Happenings({ events }: { events: IssueEvent[] }) {
+  const rows = events.map((e, i) => <Happening key={`${e.at}-${e.kind}-${i}`} event={e} />);
+  if (events.length === 1) return <ol>{rows}</ol>;
   return (
-    <li className="my-2 rounded-xl border bg-card px-4 py-3 shadow-xs">
+    <details open className="group/acts">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-1 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          className="size-3.5 transition-transform duration-150 ease-out group-open/acts:rotate-90 motion-reduce:transition-none"
+        />
+        {events.length} activities
+      </summary>
+      <ol>{rows}</ol>
+    </details>
+  );
+}
+
+function CommentBody({ comment, reply }: { comment: IssueComment; reply?: boolean }) {
+  return (
+    <div className={cn('px-4 py-3', reply && 'border-t')}>
       <p className="flex items-baseline gap-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">You</span>
-        <LocalTime iso={at} format="date-time" />
+        <span className="text-sm font-medium text-foreground">You</span>
+        <LocalTime iso={comment.at} format="date-time" />
       </p>
       <div className="mt-1.5 text-sm">
-        <Markdown text={body} />
+        <Markdown text={comment.body} />
       </div>
-    </li>
+    </div>
   );
+}
+
+function Thread({
+  project,
+  issueKey,
+  root,
+  replies,
+}: {
+  project: string;
+  issueKey: string;
+  root: IssueComment;
+  replies: IssueComment[];
+}) {
+  return (
+    <article
+      aria-label={`Comment thread, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+      className="overflow-hidden rounded-xl border bg-card shadow-xs"
+    >
+      <CommentBody comment={root} />
+      {replies.map((r) => (
+        <CommentBody key={r.id} comment={r} reply />
+      ))}
+      <IssueReplyBox project={project} issueKey={issueKey} parent={root.id} />
+    </article>
+  );
+}
+
+/** Issue events and comment threads, oldest first. A thread sorts by its first comment. */
+function feedItems(issue: IssueView): FeedItem[] {
+  const roots = issue.comments.filter((c) => !c.parent || !issue.comments.some((r) => r.id === c.parent));
+  return [
+    ...issue.events.map((event): FeedItem => ({ at: event.at, kind: 'event', event })),
+    ...roots.map((root): FeedItem => ({
+      at: root.at,
+      kind: 'thread',
+      root,
+      replies: issue.comments.filter((c) => c.parent === root.id),
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+function Feed({ items, project, issueKey }: { items: FeedItem[]; project: string; issueKey: string }) {
+  const blocks: ReactNode[] = [];
+  let events: IssueEvent[] = [];
+  const flush = () => {
+    if (events.length) blocks.push(<Happenings key={`acts-${blocks.length}`} events={events} />);
+    events = [];
+  };
+  for (const item of items) {
+    if (item.kind === 'event') {
+      events.push(item.event);
+      continue;
+    }
+    flush();
+    blocks.push(
+      <Thread
+        key={item.root.id}
+        project={project}
+        issueKey={issueKey}
+        root={item.root}
+        replies={item.replies}
+      />,
+    );
+  }
+  flush();
+  return blocks.length ? <div className="mt-3 flex flex-col gap-3">{blocks}</div> : null;
 }
 
 const stageLabel = (stage: Stage) => stage.charAt(0).toUpperCase() + stage.slice(1).replace(/-/g, ' ');
@@ -122,21 +223,6 @@ function RunRow({
   );
 }
 
-/** Issue events and comments, oldest first, with the time each one happened. */
-function happenings(issue: IssueView) {
-  return [
-    ...issue.events.map((e) => ({
-      at: e.at,
-      node: (
-        <Happening key={`e-${e.at}-${e.kind}`} at={e.at}>
-          {e.message}
-        </Happening>
-      ),
-    })),
-    ...issue.comments.map((c) => ({ at: c.at, node: <Comment key={c.id} at={c.at} body={c.body} /> })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-}
-
 export default async function TaskPage({
   params,
   searchParams,
@@ -178,7 +264,7 @@ export default async function TaskPage({
     ? await renderRun(project, runId, { startFailed: query.start === 'failed', fallback: comment })
     : undefined;
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
-  const feed = happenings(issue);
+  const feed = feedItems(issue);
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
@@ -225,7 +311,7 @@ export default async function TaskPage({
             </div>
 
             <h2 className="mt-10 border-t pt-6 text-base font-semibold">Activity</h2>
-            <ol className="mt-3">{before.map((h) => h.node)}</ol>
+            <Feed items={before} project={project} issueKey={issue.key} />
 
             {runId && run && !run.ok && (
               <p role="alert" className="mt-3 text-sm text-destructive">
@@ -249,7 +335,7 @@ export default async function TaskPage({
                 <div className="flex flex-col gap-5">{run.value.activity}</div>
               </div>
             )}
-            <ol className="mt-3">{after.map((h) => h.node)}</ol>
+            <Feed items={after} project={project} issueKey={issue.key} />
           </div>
         </div>
 

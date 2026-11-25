@@ -16,6 +16,16 @@ export const ISSUE_STATUSES = [
 export const IssueStatus = z.enum(ISSUE_STATUSES);
 export type IssueStatus = z.infer<typeof IssueStatus>;
 
+export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
+  backlog: 'Backlog',
+  todo: 'Todo',
+  in_progress: 'In progress',
+  in_review: 'In review',
+  done: 'Done',
+  blocked: 'Blocked',
+  cancelled: 'Cancelled',
+};
+
 export const IssuePriority = z.enum(['none', 'low', 'medium', 'high', 'urgent']);
 export type IssuePriority = z.infer<typeof IssuePriority>;
 
@@ -37,9 +47,28 @@ export const Issue = z.object({
   runs: z.array(TaskId).default([]),
   jira_key: z.string().trim().min(1).max(100).optional(),
   comments: z
-    .array(z.object({ id: z.string().min(1), at: Iso, body: z.string().trim().min(1).max(20_000) }))
+    .array(
+      z.object({
+        id: z.string().min(1),
+        at: Iso,
+        body: z.string().trim().min(1).max(20_000),
+        /** The thread's first comment; replies are one level deep. */
+        parent: z.string().min(1).optional(),
+      }),
+    )
     .default([]),
-  events: z.array(z.object({ at: Iso, kind: z.string().min(1), message: z.string() })).default([]),
+  events: z
+    .array(
+      z.object({
+        at: Iso,
+        kind: z.string().min(1),
+        message: z.string(),
+        /** Set on status changes, so the feed can show the new status icon. */
+        from: IssueStatus.optional(),
+        to: IssueStatus.optional(),
+      }),
+    )
+    .default([]),
   /** Archived tasks leave the board and the sidebar; they come back with Restore. */
   archived_at: Iso.optional(),
   created_at: Iso,

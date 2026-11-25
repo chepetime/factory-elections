@@ -9,6 +9,7 @@ import {
   dropAction,
   Issue,
   IssueBoard,
+  ISSUE_STATUS_LABELS,
   IssuePriority,
   IssueStatus,
   issueKey,
@@ -68,7 +69,12 @@ const UpdateInput = z.object({
   priority: IssuePriority.optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
-const CommentInput = z.object({ project: ProjectName, key: Key, body: z.string().trim().min(1).max(20_000) });
+const CommentInput = z.object({
+  project: ProjectName,
+  key: Key,
+  body: z.string().trim().min(1).max(20_000),
+  parent: z.string().min(1).optional(),
+});
 
 function firstLine(text: string): string {
   const line =
@@ -250,11 +256,17 @@ export class IssueService {
   }
 
   async comment(raw: unknown): Promise<IssueView> {
-    const { project, key, body } = CommentInput.parse(raw);
-    return this.change(project, key, (issue, at) => ({
-      ...issue,
-      comments: [...issue.comments, { id: randomUUID(), at, body }],
-    }));
+    const { project, key, body, parent } = CommentInput.parse(raw);
+    return this.change(project, key, (issue, at) => {
+      const target = parent ? issue.comments.find((c) => c.id === parent) : undefined;
+      if (parent && !target) throw new Conflict('The comment you replied to is gone.');
+      // A reply to a reply joins the same thread.
+      const root = target?.parent ?? target?.id;
+      return {
+        ...issue,
+        comments: [...issue.comments, { id: randomUUID(), at, body, ...(root ? { parent: root } : {}) }],
+      };
+    });
   }
 
   /** Applies a board drop. Returns what it did, so the board can say so. */
@@ -277,7 +289,16 @@ export class IssueService {
           ...issue,
           status: action.status,
           status_at: at,
-          events: [...issue.events, event(`Moved to ${to}`)],
+          events: [
+            ...issue.events,
+            {
+              ...event(
+                `Changed status from ${ISSUE_STATUS_LABELS[view.status]} to ${ISSUE_STATUS_LABELS[action.status]}`,
+              ),
+              from: view.status,
+              to: action.status,
+            },
+          ],
         };
       if (action.kind === 'start-run') {
         runId = await this.deps.submit({ project, prompt: issuePrompt(issue), jiraKey: issue.jira_key });

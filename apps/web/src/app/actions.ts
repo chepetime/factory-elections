@@ -413,10 +413,12 @@ export async function commentIssue(_prev: ActionState, form: FormData): Promise<
   const key = field(form, 'key');
   const body = field(form, 'body');
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
-  if (!body.trim()) return { error: 'Write a comment first.' };
-  const commented = await commentIssueRun(project, key, body);
+  const parent = field(form, 'parent') || undefined;
+  if (!body.trim()) return { error: parent ? 'Write a reply first.' : 'Write a comment first.' };
+  const commented = await commentIssueRun(project, key, body, parent);
   revalidatePath(`/projects/${project}/tasks/${key}`);
-  return commented.ok ? { message: 'Comment added.' } : { error: commented.error };
+  if (!commented.ok) return { error: commented.error };
+  return { message: parent ? 'Reply added.' : 'Comment added.' };
 }
 
 /** Archives a board task, or restores it with `archived: false`. */

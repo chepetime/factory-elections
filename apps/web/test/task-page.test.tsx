@@ -22,6 +22,7 @@ vi.mock('@/components/issue-editor', () => ({
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
   IssueCommentBox: () => <span>comment-box</span>,
+  IssueReplyBox: ({ parent }: { parent: string }) => <span>reply-box:{parent}</span>,
   IssueArchivedBanner: () => <span>archived-banner</span>,
 }));
 vi.mock('@/app/actions', () => ({
@@ -416,4 +417,34 @@ it('lists the runs and pull requests in the side panel', async () => {
   page = await html();
   expect(page).toContain('o/r#12');
   expect(page).not.toContain('No pull request yet.');
+});
+
+it('folds runs of events and shows comment threads with their replies', async () => {
+  const at = (m: number) => `2026-01-01T00:${String(m).padStart(2, '0')}:00.000Z`;
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: {
+      ...issue(),
+      events: [
+        { at: at(1), kind: 'created', message: 'Created' },
+        {
+          at: at(2),
+          kind: 'move:todo',
+          message: 'Changed status from Backlog to Todo',
+          from: 'backlog',
+          to: 'todo',
+        },
+        { at: at(5), kind: 'edit:title', message: 'Changed the title' },
+      ],
+      comments: [
+        { id: 'c1', at: at(3), body: 'First thought' },
+        { id: 'c2', at: at(4), body: 'A reply', parent: 'c1' },
+      ],
+    },
+  });
+  const page = await html();
+  expect(page).toMatch(/2 activities[\s\S]*Created[\s\S]*Backlog to Todo/);
+  expect(page).toMatch(/First thought[\s\S]*A reply[\s\S]*reply-box:c1[\s\S]*Changed the title/);
+  expect(page).toContain('1 reply');
+  expect(page.match(/activities/g)).toHaveLength(1);
 });
