@@ -92,9 +92,13 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
       .map((l) => l.trim())
       .find(Boolean) ??
       prompt);
+  // The description is your text. A preset that changes the job (a ticket, a review) adds its
+  // instructions below it; the default "work on task" preset adds nothing an agent lacks.
+  const body = field(form, 'body') || prompt;
+  const instructions = field(form, 'instructions');
   const issue = await createIssueRun(project, {
     title: line.length > 200 ? `${line.slice(0, 199)}…` : line,
-    description: prompt,
+    description: instructions ? `${body}\n\n**Instructions:** ${instructions}` : body,
     status,
     jira_key: jiraKey,
   });

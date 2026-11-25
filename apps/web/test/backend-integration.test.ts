@@ -53,6 +53,7 @@ describe('web/backend reintegration', () => {
           project: 'demo',
           prompt: `Implement it.\n\n${prompt}`,
           title: '--help "literal task"',
+          body: prompt,
           start: 'on',
         }),
       ),
@@ -61,12 +62,47 @@ describe('web/backend reintegration', () => {
       project: 'demo',
       json: JSON.stringify({
         title: '--help "literal task"',
-        description: `Implement it.\n\n${prompt}`,
+        description: prompt,
         status: 'todo',
       }),
     });
     expect(rpc).not.toHaveBeenCalledWith('SubmitTask', expect.anything());
     expect(rpc).not.toHaveBeenCalledWith('StartRun', expect.anything());
+  });
+  it('keeps a ticket or review preset as instructions under your text', async () => {
+    rpc.mockResolvedValueOnce({
+      json: JSON.stringify({
+        number: 4,
+        key: 'DE-4',
+        title: 'Find slow pages',
+        description: 'x',
+        status: 'backlog',
+        stored_status: 'backlog',
+        status_at: '2026-01-01T00:00:00.000Z',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      }),
+    });
+    await expect(
+      submitTask(
+        {},
+        form({
+          project: 'demo',
+          prompt: 'Create a ticket.\n\nFind slow pages',
+          title: 'Find slow pages',
+          body: 'Find slow pages',
+          instructions: 'Create a ticket. Do not change code.',
+        }),
+      ),
+    ).rejects.toThrow('redirect:/projects/demo/tasks/DE-4');
+    expect(rpc).toHaveBeenCalledWith('CreateIssue', {
+      project: 'demo',
+      json: JSON.stringify({
+        title: 'Find slow pages',
+        description: 'Find slow pages\n\n**Instructions:** Create a ticket. Do not change code.',
+        status: 'backlog',
+      }),
+    });
   });
   it('puts a task in Backlog when Start is off, and never starts a run', async () => {
     const prompt = '--help "literal task"\nmore detail';

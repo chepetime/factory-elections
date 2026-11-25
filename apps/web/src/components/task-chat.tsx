@@ -161,18 +161,24 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
       {props.mode === 'revise' && <input type="hidden" name="id" value={props.id} />}
       <input type="hidden" name={isNew ? 'prompt' : 'note'} value={message} />
       {isNew && start && <input type="hidden" name="start" value="on" />}
-      {/* The title is your first line, not the preset's instructions in front of it. */}
+      {/* The task keeps your words; the preset's instructions go along separately, for the agent. */}
       {isNew && (
-        <input
-          type="hidden"
-          name="title"
-          value={
-            body
-              .split('\n')
-              .find((l) => l.trim())
-              ?.trim() ?? ''
-          }
-        />
+        <>
+          <input
+            type="hidden"
+            name="title"
+            value={
+              body
+                .split('\n')
+                .find((l) => l.trim())
+                ?.trim() ?? ''
+            }
+          />
+          <input type="hidden" name="body" value={body} />
+          {type !== 'work' && preset.preamble && (
+            <input type="hidden" name="instructions" value={preset.preamble} />
+          )}
+        </>
       )}
 
       {isNew && (
