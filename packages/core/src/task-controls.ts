@@ -54,6 +54,10 @@ const COMMAND_STAGES: Record<TaskCommand, readonly Stage[]> = {
   reject: STAGES,
   'open-pr': ['approved'],
 };
+/** Whether a task in `stage` accepts `command`, before the worktree, lock and PR checks. */
+export function commandAllowedIn(command: TaskCommand, stage: Stage): boolean {
+  return COMMAND_STAGES[command].includes(stage);
+}
 const COMMAND_RESULT: Record<TaskCommand, string> = {
   run: 'run; use revise for requested changes',
   revise: 'revised',

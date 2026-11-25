@@ -7,6 +7,7 @@ export * from './pull-requests.ts';
 export * from './agents.ts';
 export * from './memory.ts';
 export * from './features.ts';
+export * from './issues.ts';
 export * from './trace.ts';
 export * from './metrics.ts';
 export * from './inbox.ts';
