@@ -50,3 +50,5 @@ The board asks before any drop that starts, reruns or cancels a run. No drop can
 - **Archive** (card menu or the task's status menu) takes a task off the board and the sidebar. Its runs stay. A task whose run is coding or reviewing cannot be archived. The sidebar's Archived link, above Project settings, lists archived tasks with Restore and Delete.
 - **Delete** works only on archived tasks. It removes the task and each run's worktree, branch and records, under the run's lock, so a working run refuses. Traces and cost history in telemetry stay. The board keeps the deleted run ids, so a run whose removal failed never comes back as a new task, and task numbers are never reused.
 - Composer "Add to board" creates a task in Todo with no run; "Run now" creates the task and starts its first run.
+
+A task can have an agent. Moving it to In progress then starts that agent's session instead of the pipeline. See [Workspace agents](workspace-agents.md).
