@@ -3,15 +3,9 @@ import { DocsBody, DocsPage, MarkdownCopyButton } from 'fumadocs-ui/layouts/docs
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
-import { createRelativeLink } from 'fumadocs-ui/mdx';
 import type { ComponentProps } from 'react';
-
-// The docs use bare relative links (`local-backend.md`). Fumadocs resolves
-// file links only when they start with `./` or `../`.
-function fileHref(href: string | undefined): string | undefined {
-  if (!href || /^([a-z][a-z0-9+.-]*:|\/|#|\.)/i.test(href)) return href;
-  return `./${href}`;
-}
+import Link from 'fumadocs-core/link';
+import { siteHref } from '@/lib/links';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -19,8 +13,10 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   if (!page) notFound();
 
   const MDX = page.data.body;
-  const RelativeLink = createRelativeLink(source, page);
-  const a = (props: ComponentProps<'a'>) => <RelativeLink {...props} href={fileHref(props.href)} />;
+  // Links stay relative file paths in the Markdown, so agents can follow them too.
+  const a = (props: ComponentProps<'a'>) => (
+    <Link {...props} href={siteHref(`docs/${page.path}`, props.href)} />
+  );
 
   // The Markdown body carries its own `# ` title, so the page renders no
   // separate title, and the table of contents skips that heading.
