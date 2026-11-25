@@ -167,6 +167,20 @@ export class BackendService {
   readonly chats: ChatService;
   /** Starts Todo tasks assigned to free agents. The server starts it; tests call `tick`. */
   readonly pickup: AgentPickup;
+  /** What the run's steps are, for the progress line: an agent run has no classifier or reviewer. */
+  private async runLabel(task: TaskRecord, action: string): Promise<string> {
+    if (task.workflow === 'agent') {
+      const name = task.agent
+        ? ((await this.agents.get({ id: task.agent }).catch(() => undefined))?.name ?? task.agent)
+        : 'Agent';
+      return action === 'run'
+        ? `${name}: session → commit → checks`
+        : `${name} read your reply: session → commit → checks`;
+    }
+    return action === 'run'
+      ? 'Running classify → code → verify → review'
+      : 'Revising: code → verify → review';
+  }
   /** Runs queued or working in this backend, per `project/task id`. */
   private readonly scheduled = new Map<string, number>();
   /** Whether this backend has a run queued or working for the task. */
@@ -652,10 +666,7 @@ export class BackendService {
         task_id: command.id,
         action: command.action,
         command,
-        label:
-          command.action === 'run'
-            ? 'Running classify → code → verify → review'
-            : 'Revising: code → verify → review',
+        label: await this.runLabel(task, command.action),
         state: 'queued',
         created_at: new Date().toISOString(),
       };
