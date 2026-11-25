@@ -50,7 +50,7 @@ export function useConfirm(): [Confirm, ReactNode] {
           className="fixed top-1/2 left-1/2 z-[60] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-background p-5 text-foreground shadow-2xl outline-none motion-safe:transition-[opacity,scale] motion-safe:duration-150 data-starting-style:scale-[0.98] data-starting-style:opacity-0 data-ending-style:scale-[0.98] data-ending-style:opacity-0"
         >
           <AlertDialog.Title className="text-base font-semibold">{request?.title}</AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-sm text-muted-foreground">
+          <AlertDialog.Description render={<div />} className="mt-2 text-sm text-muted-foreground">
             {request?.body}
           </AlertDialog.Description>
           <div className="mt-5 flex flex-wrap justify-end gap-2">

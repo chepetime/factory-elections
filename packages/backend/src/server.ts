@@ -204,6 +204,7 @@ export async function startBackend(options: ServerOptions) {
       }),
       GetProfileStatus: async (request) => ({ json: JSON.stringify(await service.profileStatus(request)) }),
       DraftProfile: async (request) => ({ json: JSON.stringify(await service.draftProfile(request)) }),
+      ApproveProfile: async (request) => ({ json: JSON.stringify(await service.approveProfile(request)) }),
       GetTrace: async (request) => ({
         json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
       }),

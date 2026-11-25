@@ -51,7 +51,17 @@ export function detectProjectSettingsRun(project: string): Promise<Result<Settin
 
 export const ProfileStatus = z.discriminatedUnion('state', [
   z.object({ state: z.literal('missing'), path: z.string() }),
-  z.object({ state: z.literal('draft'), path: z.string() }),
+  z.object({
+    state: z.literal('draft'),
+    path: z.string(),
+    summary: z.object({
+      base_branch: z.string(),
+      setup: z.string().optional(),
+      test: z.string(),
+      full_check: z.string(),
+      forbidden_paths: z.array(z.string()),
+    }),
+  }),
   z.object({ state: z.literal('approved'), path: z.string(), approved_at: z.string() }),
   z.object({ state: z.literal('invalid'), path: z.string(), error: z.string() }),
 ]);
@@ -65,5 +75,11 @@ export function profileStatus(project: string): Promise<Result<ProfileStatus>> {
 export function draftProfileRun(project: string): Promise<Result<ProfileStatus>> {
   return attempt(async () =>
     ProfileStatus.parse(JSON.parse((await backendCall('DraftProfile', { project })).json)),
+  );
+}
+/** Approves a valid draft with today's date; the backend refuses an invalid one. */
+export function approveProfileRun(project: string): Promise<Result<ProfileStatus>> {
+  return attempt(async () =>
+    ProfileStatus.parse(JSON.parse((await backendCall('ApproveProfile', { project })).json)),
   );
 }

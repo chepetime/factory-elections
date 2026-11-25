@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend/client';
-import { checkProjectSetup } from '@/app/actions';
+import { approveProfile, checkProjectSetup } from '@/app/actions';
 import { ProfileCheckView } from '@/components/profile-check';
+import { ProfileStatusRow } from '@/components/profile-status';
 
 vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -66,5 +67,40 @@ describe('Check setup', () => {
     );
     expect(page).toMatch(/aria-label="Live output"[\s\S]*Progress: 10/);
     expect(page).toContain('Checking');
+  });
+
+  it('waits for an approved profile before the check can run', () => {
+    const page = renderToStaticMarkup(
+      <ProfileCheckView
+        project="demo"
+        state={{ running: false, steps: [] }}
+        blocked="Approve the repo profile first."
+      />,
+    );
+    expect(page).toContain('Approve the repo profile first.');
+    expect(page).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Check setup/);
+  });
+
+  it('shows the draft values and approves through the backend', async () => {
+    const summary = {
+      base_branch: 'main',
+      test: 'pnpm test',
+      full_check: 'pnpm check',
+      forbidden_paths: ['.env'],
+    };
+    const page = renderToStaticMarkup(
+      <ProfileStatusRow
+        project="demo"
+        status={{ state: 'draft', path: '/data/demo/profile.yaml', summary }}
+      />,
+    );
+    expect(page).toMatch(/Full check[\s\S]*pnpm check/);
+    expect(page).toContain('Approve profile');
+
+    rpc.mockResolvedValue({
+      json: JSON.stringify({ state: 'approved', path: '/data/demo/profile.yaml', approved_at: '2026-11-25' }),
+    });
+    expect(await approveProfile('demo')).toEqual({ message: 'Approved the profile.' });
+    expect(rpc).toHaveBeenCalledWith('ApproveProfile', { project: 'demo' });
   });
 });

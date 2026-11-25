@@ -16,7 +16,16 @@ const OUTCOME = {
   skipped: { label: 'Skipped', icon: CircleDashed, className: 'text-muted-foreground' },
 } as const;
 
-export function ProfileCheckView({ project, state }: { project: string; state: ProfileCheckState }) {
+export function ProfileCheckView({
+  project,
+  state,
+  blocked,
+}: {
+  project: string;
+  state: ProfileCheckState;
+  /** Why the check cannot run now, e.g. the profile is not approved. */
+  blocked?: string;
+}) {
   const finished = !state.running && state.finished_at;
   return (
     <div className="flex flex-col gap-4">
@@ -40,7 +49,7 @@ export function ProfileCheckView({ project, state }: { project: string; state: P
               : 'No check has run yet. Run one before the first task to catch login and install problems.'}
           </p>
         )}
-        <ProfileCheckButton project={project} running={state.running} />
+        <ProfileCheckButton project={project} running={state.running} blocked={blocked} />
       </div>
 
       {state.error && (

@@ -34,7 +34,15 @@ export async function ProjectSettingsScreen({ project }: { project: string }) {
             </p>
           )}
           {check.ok ? (
-            <ProfileCheckView project={project} state={check.value} />
+            <ProfileCheckView
+              project={project}
+              state={check.value}
+              blocked={
+                profile.ok && profile.value.state !== 'approved'
+                  ? 'Approve the repo profile first.'
+                  : undefined
+              }
+            />
           ) : (
             <p role="alert" className="text-sm text-destructive">
               Setup check unavailable: {check.error}

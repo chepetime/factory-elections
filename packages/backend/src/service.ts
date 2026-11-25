@@ -47,7 +47,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
-import { ensureProfileDraft, profileStatus } from './profile-draft.ts';
+import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
@@ -177,7 +177,14 @@ export class BackendService {
     this.profileChecks = new ProfileChecks({
       root,
       storage: this.storage,
-      repo: async (project) => (await this.projects.read(project)).repo,
+      repo: async (project) => {
+        const { repo } = await this.projects.read(project);
+        const status = await profileStatus(root, project);
+        if (status.state === 'missing') throw new Conflict('There is no repo profile. Draft one first.');
+        if (status.state === 'draft') throw new Conflict('Approve the repo profile first.');
+        if (status.state === 'invalid') throw new Conflict(`Fix the repo profile first: ${status.error}`);
+        return repo;
+      },
       driver: (log, signal) => this.driver(log, this.runner, signal),
     });
     this.environment = environment ?? (() => environmentChecks(root));
@@ -403,6 +410,16 @@ export class BackendService {
     const draft = await ensureProfileDraft(this.root, project, repo);
     if (draft.status === 'failed') throw new Conflict(`Could not draft the profile: ${draft.error}`);
     return profileStatus(this.root, project);
+  }
+  /** Approves a valid draft with today's local date. */
+  async approveProfile(raw: unknown) {
+    const { project } = z.object({ project: ProjectName }).parse(raw);
+    await this.projects.read(project);
+    return approveProfile(this.root, project, new Date().toLocaleDateString('en-CA')).catch(
+      (error: unknown) => {
+        throw new Conflict(error instanceof Error ? error.message : String(error));
+      },
+    );
   }
   async submit(raw: unknown): Promise<string> {
     const { project, prompt, jiraKey } = z

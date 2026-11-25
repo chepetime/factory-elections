@@ -66,6 +66,7 @@ service Factory {
   rpc DeleteIssue(SettingsUpdate) returns (Snapshot);
   rpc GetProfileStatus(Target) returns (Snapshot);
   rpc DraftProfile(Target) returns (Snapshot);
+  rpc ApproveProfile(Target) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);

@@ -25,6 +25,7 @@ import {
 } from '@/lib/reviews';
 import {
   detectProjectSettingsRun,
+  approveProfileRun,
   draftProfileRun,
   saveProjectSettingsRun,
   type SettingsProposal,
@@ -308,8 +309,16 @@ export async function draftProfile(project: string): Promise<ActionState> {
   const result = await draftProfileRun(project);
   revalidatePath(`/projects/${project}/settings`);
   return result.ok
-    ? { message: 'Drafted the profile. Review it, then set approved_at.' }
+    ? { message: 'Drafted the profile. Review it, then approve it.' }
     : { error: result.error };
+}
+
+/** Approves the repo profile draft, so runs and the setup check can use it. */
+export async function approveProfile(project: string): Promise<ActionState> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const result = await approveProfileRun(project);
+  revalidatePath(`/projects/${project}/settings`);
+  return result.ok ? { message: 'Approved the profile.' } : { error: result.error };
 }
 
 export async function featureGateAction(_prev: ActionState, form: FormData): Promise<ActionState> {

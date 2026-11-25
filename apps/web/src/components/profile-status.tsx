@@ -1,17 +1,16 @@
 'use client';
-// The repo profile's state in the Setup check pane, with a button that drafts a missing profile.
+// The repo profile's state in the Setup check pane: draft a missing profile, or review and approve a draft.
 import { CircleAlert, CircleCheck, CircleDashed, FileText, LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { draftProfile } from '@/app/actions';
+import { approveProfile, draftProfile, type ActionState } from '@/app/actions';
+import { useConfirm } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
+import type { ProfileStatus } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
-export type ProfileState =
-  | { state: 'missing'; path: string }
-  | { state: 'draft'; path: string }
-  | { state: 'approved'; path: string; approved_at: string }
-  | { state: 'invalid'; path: string; error: string };
+export type ProfileState = ProfileStatus;
+type Summary = Extract<ProfileStatus, { state: 'draft' }>['summary'];
 
 const LOOK = {
   missing: { icon: CircleDashed, tone: 'text-muted-foreground', label: 'No repo profile' },
@@ -20,13 +19,55 @@ const LOOK = {
   invalid: { icon: CircleAlert, tone: 'text-destructive', label: 'Profile invalid' },
 } as const;
 
+function SummaryList({ summary }: { summary: Summary }) {
+  const rows: [string, string][] = [
+    ['Base branch', summary.base_branch],
+    ...(summary.setup ? ([['Setup', summary.setup]] as [string, string][]) : []),
+    ['Test', summary.test],
+    ['Full check', summary.full_check],
+    ['Forbidden paths', summary.forbidden_paths.join(', ') || 'None'],
+  ];
+  return (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-mono text-xs leading-5 break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ProfileStatusRow({ project, status }: { project: string; status: ProfileState }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [error, setError] = useState<string>();
+  const [result, setResult] = useState<ActionState>({});
+  const [confirm, confirmDialog] = useConfirm();
   const { icon: Icon, tone, label } = LOOK[status.state];
+  const act = (run: () => Promise<ActionState>) =>
+    start(async () => {
+      setResult(await run());
+      router.refresh();
+    });
+  const approve = async () => {
+    if (status.state !== 'draft') return;
+    const yes = await confirm({
+      title: 'Approve this profile?',
+      body: (
+        <span className="flex flex-col gap-3">
+          <span>Every run uses these values. To change one, edit the file first.</span>
+          <SummaryList summary={status.summary} />
+        </span>
+      ),
+      confirm: 'Approve',
+    });
+    if (yes) act(() => approveProfile(project));
+  };
+
   return (
-    <div className="flex flex-col gap-2 border-b pb-4">
+    <div className="flex flex-col gap-3 border-b pb-4">
+      {confirmDialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-center gap-2 text-sm">
           <Icon className={cn('size-4 shrink-0', tone)} aria-hidden />
@@ -41,13 +82,7 @@ export function ProfileStatusRow({ project, status }: { project: string; status:
             variant="outline"
             size="sm"
             disabled={pending}
-            onClick={() =>
-              start(async () => {
-                const result = await draftProfile(project);
-                setError(result.error);
-                router.refresh();
-              })
-            }
+            onClick={() => act(() => draftProfile(project))}
           >
             {pending ? (
               <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
@@ -57,24 +92,38 @@ export function ProfileStatusRow({ project, status }: { project: string; status:
             {pending ? 'Drafting…' : 'Draft profile'}
           </Button>
         )}
+        {status.state === 'draft' && (
+          <Button size="sm" disabled={pending} onClick={approve}>
+            {pending ? (
+              <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+            ) : (
+              <CircleCheck aria-hidden />
+            )}
+            {pending ? 'Approving…' : 'Approve profile'}
+          </Button>
+        )}
       </div>
       <p className="text-sm text-muted-foreground">
         {status.state === 'missing'
           ? 'Every run needs an approved profile: the base branch, the test and check commands, and the paths the coder may not touch. Draft one from the repository; no model is called.'
           : status.state === 'draft'
-            ? 'Review the draft, fix any command that is wrong, then set approved_at to today’s date. Runs and the setup check wait until then.'
+            ? 'Check these values. To change one, edit the file, then reload this page. Runs and the setup check wait until you approve.'
             : status.state === 'invalid'
               ? status.error
               : 'Runs use this profile. Edit the file to change it.'}
       </p>
+      {status.state === 'draft' && <SummaryList summary={status.summary} />}
       {status.state !== 'missing' && (
         <p className="truncate font-mono text-xs text-muted-foreground" title={status.path}>
           {status.path}
         </p>
       )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
+      {(result.error || result.message) && (
+        <p
+          role={result.error ? 'alert' : 'status'}
+          className={cn('text-sm', result.error ? 'text-destructive' : 'text-muted-foreground')}
+        >
+          {result.error ?? result.message}
         </p>
       )}
     </div>

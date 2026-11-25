@@ -1,7 +1,8 @@
 // Drafts a repository profile from repository evidence. The draft is unapproved until a human sets approved_at.
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parse, stringify } from 'yaml';
+import { parse, parseDocument, stringify } from 'yaml';
+import { describeIssues, RepoProfile } from '@factory/core';
 import { run } from '@factory/adapters-process';
 import { profilePath, readProfile, writeProfileDraft } from '@factory/adapters-fs';
 
@@ -105,11 +106,45 @@ export async function ensureProfileDraft(root: string, project: string, repo: st
   }
 }
 
+/** What a person checks before approving: the values a run depends on. */
+export interface ProfileSummary {
+  base_branch: string;
+  setup?: string;
+  test: string;
+  full_check: string;
+  forbidden_paths: string[];
+}
+
 export type ProfileStatus =
   | { state: 'missing'; path: string }
-  | { state: 'draft'; path: string }
+  | { state: 'draft'; path: string; summary: ProfileSummary }
   | { state: 'approved'; path: string; approved_at: string }
   | { state: 'invalid'; path: string; error: string };
+
+function summarize(profile: RepoProfile): ProfileSummary {
+  return {
+    base_branch: profile.repo.base_branch.value,
+    ...(profile.commands.setup ? { setup: profile.commands.setup } : {}),
+    test: profile.commands.test,
+    full_check: profile.commands.full_check,
+    forbidden_paths: profile.confirmed.forbidden_paths,
+  };
+}
+
+/** Checks everything except approved_at, so a draft is either ready to approve or reports what is wrong. */
+function checkDraft(
+  value: unknown,
+  project: string,
+): { ok: true; profile: RepoProfile } | { ok: false; error: string } {
+  const parsed = RepoProfile.safeParse({ ...(value as object), approved_at: 'pending' });
+  if (!parsed.success) return { ok: false, error: `invalid profile: ${describeIssues(parsed.error)}` };
+  if (parsed.data.project !== project)
+    return { ok: false, error: `profile project "${parsed.data.project}" does not match "${project}"` };
+  return { ok: true, profile: parsed.data };
+}
+
+const unset = (approved: unknown) =>
+  approved === undefined || approved === null || String(approved).trim() === '';
 
 /** Whether the project's profile is missing, an unapproved draft, approved, or broken. */
 export async function profileStatus(root: string, project: string): Promise<ProfileStatus> {
@@ -125,14 +160,34 @@ export async function profileStatus(root: string, project: string): Promise<Prof
     const profile = await readProfile(root, project);
     return { state: 'approved', path, approved_at: String(profile.approved_at) };
   } catch (error) {
-    let approved: unknown;
+    let value: unknown;
     try {
-      approved = (parse(text) as { approved_at?: unknown } | null)?.approved_at;
+      value = parse(text);
     } catch {
-      approved = 'unreadable';
+      return { state: 'invalid', path, error: error instanceof Error ? error.message : String(error) };
     }
-    if (approved === undefined || approved === null || String(approved).trim() === '')
-      return { state: 'draft', path };
-    return { state: 'invalid', path, error: error instanceof Error ? error.message : String(error) };
+    if (!unset((value as { approved_at?: unknown } | null)?.approved_at))
+      return { state: 'invalid', path, error: error instanceof Error ? error.message : String(error) };
+    const draft = checkDraft(value, project);
+    return draft.ok
+      ? { state: 'draft', path, summary: summarize(draft.profile) }
+      : { state: 'invalid', path, error: draft.error };
   }
+}
+
+/**
+ * Sets approved_at on a valid draft and keeps the file's comments. `today` is the local date,
+ * YYYY-MM-DD. Throws with the reason when there is no draft or the draft is invalid.
+ */
+export async function approveProfile(root: string, project: string, today: string): Promise<ProfileStatus> {
+  const status = await profileStatus(root, project);
+  if (status.state === 'approved') return status;
+  if (status.state === 'missing') throw new Error('There is no profile to approve. Draft one first.');
+  if (status.state === 'invalid') throw new Error(`Fix the profile first: ${status.error}`);
+  const doc = parseDocument(await readFile(status.path, 'utf8'));
+  doc.set('approved_at', today);
+  const temp = `${status.path}.approving`;
+  await writeFile(temp, doc.toString());
+  await rename(temp, status.path);
+  return profileStatus(root, project);
 }

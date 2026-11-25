@@ -335,6 +335,10 @@
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },
+                "ApproveProfile": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"

@@ -83,6 +83,7 @@ export interface Methods {
   /** Repo profile: missing, draft, approved or invalid, with its path. DraftProfile drafts a missing one. */
   GetProfileStatus: [Target, { json: string }];
   DraftProfile: [Target, { json: string }];
+  ApproveProfile: [Target, { json: string }];
   /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */
