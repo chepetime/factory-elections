@@ -185,3 +185,20 @@ test('a dirty checkout does not block: the worktree starts from main, and uncomm
   assert.ok(notes.some((m) => /uncommitted changes \(README\.md\)/.test(m)));
   assert.ok(!notes.some((m) => m.includes('scratch.txt')), 'untracked files get no note');
 });
+
+test('a stopped session keeps its id, so your reply resumes the same agent memory', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-first' });
+      throw Object.assign(new Error('model run stopped'), { kind: 'aborted', costUsd: 0.3 });
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Done.', costUsd: 0.1, sessionId: 'sess-first' };
+    },
+  ]);
+  await assert.rejects(ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 }));
+  assert.equal((await ctx.store.read('demo', ctx.task.id)).agent_session, 'sess-first');
+  await ctx.driver.revise('demo', ctx.task.id, 'Keep going', { maxAttempts: 3 });
+  assert.equal(ctx.calls[1]!.resume, 'sess-first');
+});

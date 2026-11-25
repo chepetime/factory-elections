@@ -1041,6 +1041,7 @@ export class Driver {
       let error: string | undefined;
       let costUsd: number | null = null;
       let sessionId = task.agent_session;
+      let saving: Promise<void> = Promise.resolve();
       try {
         const result = await this.deps.runner.run({
           ...limits,
@@ -1059,6 +1060,16 @@ export class Driver {
           persistSession: true,
           ...(task.agent_session ? { resume: task.agent_session } : {}),
           ...(grant ? { mcp: grant.endpoint } : {}),
+          // Save the session as soon as it exists: a stopped or crashed call must still resume it,
+          // or the next reply starts an agent that remembers nothing of its own work.
+          onEvent: (event) => {
+            if (event.type !== 'session' || event.id === sessionId) return;
+            sessionId = event.id;
+            saving = saving.then(async () => {
+              const current = await this.deps.tasks.read(project, id);
+              await this.deps.tasks.write({ ...current, agent_session: event.id });
+            });
+          },
         });
         costUsd = result.costUsd;
         sessionId = result.sessionId ?? sessionId;
@@ -1069,6 +1080,7 @@ export class Driver {
       } finally {
         grant?.revoke();
         await access.cleanup();
+        await saving.catch(() => undefined);
       }
       const childCost = grant?.spent() ?? 0;
       if (childCost) costUsd = (costUsd ?? 0) + childCost;
