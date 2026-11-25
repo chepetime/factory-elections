@@ -46,6 +46,9 @@ service Factory {
   rpc SendReviewMessage(ReviewMessage) returns (Text);
   rpc StopReview(ReviewTarget) returns (Text);
   rpc RemoveReview(ReviewTarget) returns (Text);
+  rpc GetUserSettings(Empty) returns (Snapshot);
+  rpc SaveUserSettings(Snapshot) returns (Snapshot);
+  rpc GetUserEnvironment(Empty) returns (Snapshot);
   rpc GetProjectSettings(Target) returns (Snapshot);
   rpc SaveProjectSettings(SettingsUpdate) returns (Snapshot);
   rpc DetectProjectSettings(Target) returns (Snapshot);
