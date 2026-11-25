@@ -255,6 +255,18 @@
                   "requestType": "ReviewTarget",
                   "responseType": "Text"
                 },
+                "GetUserSettings": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "SaveUserSettings": {
+                  "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "GetUserEnvironment": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
                 "GetProjectSettings": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

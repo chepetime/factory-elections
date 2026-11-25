@@ -39,6 +39,7 @@ import {
   updateIssueRun,
 } from '@/lib/issues';
 import { IssueStatus } from '@factory/core';
+import { saveUserSettingsRun } from '@/lib/user-settings';
 
 export interface ActionState {
   error?: string;
@@ -445,4 +446,11 @@ export async function deleteIssue(project: string, key: string): Promise<ActionS
           .join('; ')}`,
       }
     : { message: `Deleted ${key} and its runs.` };
+}
+
+/** Saves the user settings: identity, providers and models, and global rules. */
+export async function saveUserSettings(settings: unknown): Promise<ActionState> {
+  const saved = await saveUserSettingsRun(settings);
+  revalidatePath('/', 'layout');
+  return saved.ok ? { message: 'Saved.' } : { error: saved.error };
 }

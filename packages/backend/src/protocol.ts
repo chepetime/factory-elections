@@ -54,6 +54,10 @@ export interface Methods {
   SendReviewMessage: [ReviewTarget & { text: string }, { text: string }];
   StopReview: [ReviewTarget, { text: string }];
   RemoveReview: [ReviewTarget, { text: string }];
+  GetUserSettings: [{}, { json: string }];
+  SaveUserSettings: [{ json: string }, { json: string }];
+  /** Git identity, the GitHub login and each provider CLI found on this machine. */
+  GetUserEnvironment: [{}, { json: string }];
   GetProjectSettings: [Target, { json: string }];
   SaveProjectSettings: [{ project: string; json: string }, { json: string }];
   DetectProjectSettings: [Target, { json: string }];

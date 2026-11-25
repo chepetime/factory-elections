@@ -313,14 +313,18 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
       >
         <Settings className="size-4" />
       </Link>
-      <div
-        className="flex size-8 items-center justify-center rounded-full bg-white/12 text-neutral-300"
-        title="Local user"
-        aria-label="Local user"
-        role="img"
+      <Link
+        href="/user"
+        title="User settings"
+        aria-label="User settings"
+        aria-current={pathname.startsWith('/user') ? 'page' : undefined}
+        className={cn(
+          'flex size-8 items-center justify-center rounded-full bg-white/12 text-neutral-300 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 pointer-coarse:size-11',
+          pathname.startsWith('/user') && 'ring-1 ring-orange-400 text-orange-300',
+        )}
       >
-        <User className="size-4" />
-      </div>
+        <User aria-hidden="true" className="size-4" />
+      </Link>
     </nav>
   );
 }

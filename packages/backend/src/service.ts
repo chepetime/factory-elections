@@ -40,6 +40,8 @@ import {
   CallManifest,
   taskSpend,
   envNames,
+  modelRefused,
+  withUserRules,
 } from '@factory/core';
 import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -65,6 +67,7 @@ import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
 import { MAX_AGENTS, ReviewService, type ReviewDeps } from './reviews.ts';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
+import { UserSettingsService } from './user-settings.ts';
 export { Conflict };
 import { TeamService } from './team.ts';
 import { TicketService } from './tickets.ts';
@@ -141,6 +144,7 @@ export class BackendService {
   readonly tickets: TicketService;
   readonly reviews: ReviewService;
   readonly settings: ProjectSettingsService;
+  readonly user: UserSettingsService;
   private readonly environment: () => Promise<Check[]>;
   readonly projects: ProjectStore;
   private readonly worker = Effect.runSync(Effect.makeSemaphore(taskWorkers()));
@@ -235,6 +239,7 @@ export class BackendService {
     this.tasks = this.storage.tasks;
     this.projects = this.storage.projects;
     this.settings = new ProjectSettingsService(root, this.storage, this.projects, detector);
+    this.user = new UserSettingsService(root, this.storage);
     this.tickets = new TicketService(this.projects, (project) => this.settings.get(project));
     this.reviews = new ReviewService(
       root,
@@ -763,9 +768,14 @@ export class BackendService {
           const base = this.runner ?? composeDriver(this.root, log).deps.runner;
           const ledger = trace ? this.traces.runner(base, () => trace.scope) : base;
           const traced = this.memory.recording(command.project, record.id, sink.runner(ledger, span));
+          // Read once per run: a change in user settings applies from the next run.
+          const user = await this.user.get();
           const checked: ModelRunner = {
-            async run(request) {
+            async run(original) {
               if (logFailure) throw logFailure;
+              const refused = modelRefused(user, original.model);
+              if (refused) throw new Conflict(`${refused}. Turn it on at /user, or pick another model.`);
+              const request = { ...original, systemPrompt: withUserRules(original.systemPrompt, user) };
               manifests = withManifest(manifests, callManifest(request));
               let result: ModelResult;
               try {

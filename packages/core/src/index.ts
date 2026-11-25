@@ -26,3 +26,4 @@ export * from './test-integrity.ts';
 export * from './receipt.ts';
 export * from './agent-env.ts';
 export * from './agent-profiles.ts';
+export * from './user-settings.ts';

@@ -132,6 +132,9 @@ export async function startBackend(options: ServerOptions) {
         return { text: 'Saved' };
       },
       ListProjects: async () => ({ json: JSON.stringify(await service.projectSummaries()) }),
+      GetUserSettings: async () => ({ json: JSON.stringify(await service.user.get()) }),
+      SaveUserSettings: async (request) => ({ json: JSON.stringify(await service.user.save(request)) }),
+      GetUserEnvironment: async () => ({ json: JSON.stringify(await service.user.environment()) }),
       GetProjectSettings: async (request) => ({
         json: JSON.stringify(await service.settings.get(request.project)),
       }),
