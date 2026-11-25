@@ -87,10 +87,10 @@ export default async function Home() {
   const cards = await Promise.all(projects.value.map(loadCard));
   return (
     <Frame count={cards.length}>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="divide-y overflow-hidden rounded-xl border bg-card">
         {cards.map((card) => (
           <li key={card.project.name} className="min-w-0">
-            <ProjectCard {...card} />
+            <ProjectRow {...card} />
           </li>
         ))}
       </ul>
@@ -98,7 +98,8 @@ export default async function Home() {
   );
 }
 
-function ProjectCard({ project, stats, profile, missing }: Card) {
+/** One project as one row: identity and activity on the left, its numbers on the right. */
+function ProjectRow({ project, stats, profile, missing }: Card) {
   const title = project.display_name || project.name;
   const note = profile ? PROFILE_NOTE[profile] : undefined;
   const numbers = [
@@ -110,9 +111,9 @@ function ProjectCard({ project, stats, profile, missing }: Card) {
   return (
     <Link
       href={`/projects/${encodeURIComponent(project.name)}`}
-      className="flex h-full flex-col gap-4 rounded-xl border bg-card p-4 transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring md:flex-row md:items-center md:gap-6"
     >
-      <div className="flex min-w-0 items-start gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background text-sm font-semibold uppercase">
           {project.icon || project.name[0]}
         </span>
@@ -121,16 +122,30 @@ function ProjectCard({ project, stats, profile, missing }: Card) {
           <p className="truncate font-mono text-xs text-muted-foreground" title={project.repo}>
             {project.repo}
           </p>
+          <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+            {stats.lastActivity ? (
+              <span>
+                Updated <LocalTime iso={stats.lastActivity} format="date-time" />
+              </span>
+            ) : (
+              <span>No activity yet</span>
+            )}
+            <span>${stats.spendThisMonth.toFixed(2)} this month</span>
+            {note && <span className="text-orange-600 dark:text-orange-400">{note}</span>}
+            {missing.length > 0 && (
+              <span className="text-destructive">Could not read {missing.join(', ')}</span>
+            )}
+          </p>
         </div>
       </div>
 
-      <dl className="grid grid-cols-4 gap-2">
+      <dl className="grid shrink-0 grid-cols-4 gap-2 md:w-80">
         {numbers.map(({ label, value, alert }) => (
-          <div key={label} className="min-w-0">
+          <div key={label} className="min-w-0 md:text-right">
             <dt className="truncate text-xs text-muted-foreground">{label}</dt>
             <dd
               className={cn(
-                'text-lg font-semibold tabular-nums',
+                'text-base font-semibold tabular-nums',
                 alert && 'text-orange-600 dark:text-orange-400',
               )}
             >
@@ -139,19 +154,6 @@ function ProjectCard({ project, stats, profile, missing }: Card) {
           </div>
         ))}
       </dl>
-
-      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {stats.lastActivity ? (
-          <span>
-            Updated <LocalTime iso={stats.lastActivity} format="date-time" />
-          </span>
-        ) : (
-          <span>No activity yet</span>
-        )}
-        <span>${stats.spendThisMonth.toFixed(2)} this month</span>
-        {note && <span className="text-orange-600 dark:text-orange-400">{note}</span>}
-        {missing.length > 0 && <span className="text-destructive">Could not read {missing.join(', ')}</span>}
-      </div>
     </Link>
   );
 }
