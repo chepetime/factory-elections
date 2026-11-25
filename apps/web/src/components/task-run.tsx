@@ -650,11 +650,20 @@ export async function renderRun(
 
       {canRun && (
         <AgentMessage>
-          <ActionForm action={runTask} hidden={hidden} submit="Run task" pendingLabel="Starting…">
+          <ActionForm
+            action={runTask}
+            hidden={hidden}
+            submit={task.workflow === 'agent' ? 'Start the agent' : 'Run task'}
+            pendingLabel="Starting…"
+          >
             <p className="text-sm">
-              {task.worktree
-                ? 'Explicitly reruns coding, verification and review in the existing worktree, then stops for approval. Inspect interrupted work before proceeding. Nothing is pushed.'
-                : "Ready when you are. I'll classify the task, code it in a new worktree, verify and review it, then stop for your approval. Nothing is pushed."}
+              {task.workflow === 'agent'
+                ? task.worktree
+                  ? 'Continues the agent session in the existing worktree, then runs the checks and stops for your approval. Nothing is pushed.'
+                  : 'The agent has not started. It works the task in one session in a new worktree, then the checks run and it stops for your approval. Nothing is pushed.'
+                : task.worktree
+                  ? 'Explicitly reruns coding, verification and review in the existing worktree, then stops for approval. Inspect interrupted work before proceeding. Nothing is pushed.'
+                  : "Ready when you are. I'll classify the task, code it in a new worktree, verify and review it, then stop for your approval. Nothing is pushed."}
             </p>
           </ActionForm>
         </AgentMessage>

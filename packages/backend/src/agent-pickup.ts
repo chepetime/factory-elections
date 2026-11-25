@@ -7,14 +7,13 @@ import type { IssueService } from './issues.ts';
 export const PICKUP_RETRY_MS = 10 * 60_000;
 export const PICKUP_INTERVAL_MS = 20_000;
 
-/** Stages in which an agent run occupies its agent. A run waiting for a person does not. */
-const WORKING = new Set(['queued', 'classified', 'coding', 'reviewing']);
-
 export type PickupDeps = {
   agents: () => Promise<AgentProfile[]>;
   projects: () => Promise<{ name: string }[]>;
   issues: Pick<IssueService, 'list' | 'move' | 'note'>;
   tasks: (project: string) => Promise<TaskRecord[]>;
+  /** Whether the backend has a run queued or working for the task. Only those occupy an agent. */
+  scheduled: (project: string, id: string) => boolean;
   accepting: () => boolean;
   now?: () => number;
   log?: (line: string) => void;
@@ -72,9 +71,11 @@ export class AgentPickup {
     for (const { name } of await this.deps.projects()) {
       const [board, tasks] = await Promise.all([this.deps.issues.list(name), this.deps.tasks(name)]);
       for (const t of tasks)
-        if (t.workflow === 'agent' && t.agent && WORKING.has(t.stage))
+        if (t.workflow === 'agent' && t.agent && this.deps.scheduled(name, t.id))
           busy.set(t.agent, (busy.get(t.agent) ?? 0) + 1);
-      for (const i of board.items)
+      const records = new Map(tasks.map((t) => [t.id, t]));
+      for (const i of board.items) {
+        const latest = i.run ? records.get(i.run.id) : undefined;
         candidates.push({
           project: name,
           key: i.key,
@@ -84,7 +85,14 @@ export class AgentPickup {
           created_at: i.created_at,
           archived: Boolean(i.archived_at),
           ...(i.run ? { run_stage: i.run.stage } : {}),
+          // An agent run that was created but never started (a refused start, a restart) can start again.
+          ...(latest?.workflow === 'agent' &&
+          latest.stage === 'queued' &&
+          !this.deps.scheduled(name, latest.id)
+            ? { restartable: true }
+            : {}),
         });
+      }
     }
     const id = (t: PickupCandidate) => `${t.project}/${t.key}`;
     const started: string[] = [];

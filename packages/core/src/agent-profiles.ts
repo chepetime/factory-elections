@@ -133,6 +133,8 @@ export type PickupCandidate = {
   archived: boolean;
   /** The latest run's stage, if the task has one. */
   run_stage?: string;
+  /** The latest run exists but never started, so it can start now. */
+  restartable?: boolean;
 };
 
 /**
@@ -156,7 +158,10 @@ export function pickupPlan(
           t.assignee === agent.id &&
           t.status === 'todo' &&
           !t.archived &&
-          (t.run_stage === undefined || t.run_stage === 'rejected' || t.run_stage === 'pr-opened') &&
+          (t.run_stage === undefined ||
+            t.run_stage === 'rejected' ||
+            t.run_stage === 'pr-opened' ||
+            t.restartable === true) &&
           !skip(t),
       )
       .sort(

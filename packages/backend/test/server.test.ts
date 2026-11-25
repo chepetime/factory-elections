@@ -694,3 +694,30 @@ test('a profile check runs in the background and keeps its last result', async (
   assert.ok(state.finished_at);
   await server.service.drain(10);
 });
+
+test('an agent start that cannot run is refused in plain words and leaves no empty run', async (t) => {
+  const { root } = await fixture(t);
+  const call = async (method: 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'GetIssue', body: object) =>
+    JSON.parse((await backendCall(method, { project: 'demo', json: JSON.stringify(body) })).json);
+  // The fixture's SubmitTask run is task DEM-1; this is DEM-2.
+  const created = await call('CreateIssue', { title: 'Add a staging link', status: 'todo' });
+  await call('UpdateIssue', { key: created.key, assignee: 'devin' });
+  const profile = join(root, 'demo', 'profile.yaml');
+  const approved = await readFile(profile, 'utf8');
+
+  await writeFile(profile, approved.replace("approved_at: '2026-11-16'", "approved_at: ''"));
+  await assert.rejects(
+    call('MoveIssue', { key: created.key, to: 'in_progress' }),
+    /repo profile is not approved/,
+  );
+  assert.deepEqual((await call('GetIssue', { key: created.key })).runs, [], 'no run was created');
+
+  await writeFile(profile, approved);
+  const repo = JSON.parse((await backendCall('ListProjects', {})).json)[0].repo as string;
+  await writeFile(join(repo, 'notes.txt'), 'draft\n');
+  await assert.rejects(
+    call('MoveIssue', { key: created.key, to: 'in_progress' }),
+    /untracked files \(notes\.txt\)/,
+  );
+  assert.deepEqual((await call('GetIssue', { key: created.key })).runs, []);
+});

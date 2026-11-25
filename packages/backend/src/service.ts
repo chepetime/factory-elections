@@ -54,7 +54,7 @@ import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
 import { AgentPickup } from './agent-pickup.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
-import { removeWorktree } from '@factory/adapters-git';
+import { dirtyFiles, removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
@@ -167,6 +167,31 @@ export class BackendService {
   readonly chats: ChatService;
   /** Starts Todo tasks assigned to free agents. The server starts it; tests call `tick`. */
   readonly pickup: AgentPickup;
+  /** Runs queued or working in this backend, per `project/task id`. */
+  private readonly scheduled = new Map<string, number>();
+  /** Whether this backend has a run queued or working for the task. */
+  isScheduled(project: string, id: string): boolean {
+    return this.scheduled.has(`${project}/${id}`);
+  }
+  /**
+   * Why a run cannot start in this project now, in words a person can act on; undefined when it can.
+   * `repoClean` also requires the repository to have no uncommitted or untracked files.
+   */
+  async runBlocker(project: string, { repoClean = false } = {}): Promise<string | undefined> {
+    const status = await profileStatus(this.root, project);
+    if (status.state === 'missing')
+      return 'There is no repo profile. Open Project settings, Setup check, and draft one.';
+    if (status.state === 'draft')
+      return 'The repo profile is not approved. Open Project settings, Setup check, and approve it.';
+    if (status.state === 'invalid')
+      return `The repo profile is invalid: ${status.error}. Fix it in ${status.path}.`;
+    if (!repoClean) return undefined;
+    const { repo } = await this.projects.read(project);
+    const dirty = await dirtyFiles(repo);
+    if (!dirty.length) return undefined;
+    const shown = dirty.slice(0, 3).join(', ');
+    return `The repository has uncommitted or untracked files (${shown}${dirty.length > 3 ? `, and ${dirty.length - 3} more` : ''}). Commit, remove or ignore them; a new worktree starts only from a clean repository.`;
+  }
   /** Agent runs in progress, per workspace agent. */
   private readonly agentRuns = new Map<string, number>();
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
@@ -290,6 +315,7 @@ export class BackendService {
       projects: () => this.projects.list(),
       issues: this.issues,
       tasks: (p) => this.tasks.list(p),
+      scheduled: (p, id) => this.isScheduled(p, id),
       accepting: () => this.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });
@@ -541,7 +567,12 @@ export class BackendService {
       })
       .parse(raw);
     if (!this.accepting) throw new Conflict('Backend is shutting down');
-    if (agent) await this.agents.active(agent);
+    if (agent) {
+      await this.agents.active(agent);
+      // Refuse before a run record exists, so a refused start leaves no empty run behind.
+      const blocked = await this.runBlocker(project, { repoClean: true });
+      if (blocked) throw new Conflict(blocked);
+    }
     const registered = await this.projects.read(project);
     const task = await this.tasks.create(project, registered.repo, prompt, new Date().toISOString(), jiraKey);
     if (agent) await this.tasks.write({ ...task, workflow: 'agent', agent });
@@ -619,6 +650,8 @@ export class BackendService {
       const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
       if (waiting) throw new Conflict(waiting);
       if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
+      const blocked = await this.runBlocker(command.project);
+      if (blocked) throw new Conflict(blocked);
       await readProfile(this.root, command.project);
       const record: RunRecord = {
         id: randomUUID(),
@@ -656,6 +689,8 @@ export class BackendService {
     unlock: () => Promise<void>,
   ): void {
     {
+      const task = `${command.project}/${command.id}`;
+      this.scheduled.set(task, (this.scheduled.get(task) ?? 0) + 1);
       const work = Effect.tryPromise({
         try: () => this.work(command, record, dir),
         catch: (error) => error,
@@ -668,6 +703,9 @@ export class BackendService {
             } finally {
               this.reservations--;
               this.active.delete(record.id);
+              const left = (this.scheduled.get(task) ?? 1) - 1;
+              if (left > 0) this.scheduled.set(task, left);
+              else this.scheduled.delete(task);
             }
           }),
         ),

@@ -17,6 +17,11 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
   const agents = new AgentService({ root, storage: storageFor(root), seed: true });
   const tasks: TaskRecord[] = [];
   let refuse: string | undefined;
+  const running = new Set<string>();
+  const finish = (i: number) => {
+    running.delete(tasks[i]!.id);
+    tasks[i] = { ...tasks[i]!, stage: 'awaiting-approval' };
+  };
   const issues = new IssueService({
     root,
     storage: storageFor(root),
@@ -40,7 +45,8 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
       tasks.push(run);
       return run.id;
     },
-    run: async () => undefined,
+    // The backend schedules the run; a test run stays scheduled until the test ends it.
+    run: async (_p, id) => void running.add(id),
     reject: async () => undefined,
     deleteRun: async () => undefined,
     agentName: async (id) => (await agents.active(id)).name,
@@ -51,6 +57,7 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
     projects: async () => [{ name: 'demo' }],
     issues,
     tasks: async () => tasks,
+    scheduled: (_p, id) => running.has(id),
     accepting: () => true,
     now: () => now,
   });
@@ -63,10 +70,10 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
 
   assert.deepEqual(await pickup.tick(), ['DEM-1'], 'one slot: the oldest Todo task');
   assert.deepEqual(await pickup.tick(), [], 'Devin is busy');
-  tasks[0] = { ...tasks[0]!, stage: 'awaiting-approval' };
+  finish(0);
   assert.deepEqual(await pickup.tick(), ['DEM-2'], 'a run waiting for you frees the agent');
 
-  tasks[1] = { ...tasks[1]!, stage: 'awaiting-approval' };
+  finish(1);
   await issues.create({ project: 'demo', title: 'Blocked by setup', status: 'todo' });
   await issues.update({ project: 'demo', key: 'DEM-4', assignee: 'devin' });
   refuse = 'Approve the repo profile first.';
@@ -87,6 +94,16 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
   await agents.update({ id: 'devin', auto_pickup: false });
   await issues.create({ project: 'demo', title: 'Manual only', status: 'todo' });
   await issues.update({ project: 'demo', key: 'DEM-5', assignee: 'devin' });
-  tasks[2] = { ...tasks[2]!, stage: 'awaiting-approval' };
+  finish(2);
   assert.deepEqual(await pickup.tick(), [], 'pickup is off for this agent');
+
+  // A run left queued and unscheduled (a refused start, a backend restart) starts again.
+  await agents.update({ id: 'devin', auto_pickup: true });
+  assert.deepEqual(await pickup.tick(), ['DEM-5']);
+  running.clear();
+  assert.equal(tasks.at(-1)!.stage, 'queued');
+  const before = tasks.length;
+  now += PICKUP_RETRY_MS + 1;
+  assert.deepEqual(await pickup.tick(), ['DEM-5'], 'the queued run is started, not replaced');
+  assert.equal(tasks.length, before);
 });
