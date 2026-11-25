@@ -71,6 +71,8 @@ it('shows the project sidebar everywhere but the homepage, and user settings hav
   expect(user).toContain('aria-label="User settings"');
   expect(user).not.toContain('aria-label="Tasks"><');
   expect(currentLinks(user)).toContain('/user/preferences');
+  route.pathname = '/settings';
+  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
   route.pathname = '/';
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
   route.pathname = '/board';

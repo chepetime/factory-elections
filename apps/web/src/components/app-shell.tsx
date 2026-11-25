@@ -142,7 +142,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // The homepage spans every project, so it has no sidebar; user settings have their own.
   const home = pathname === '/';
   const user = pathname === '/user' || pathname.startsWith('/user/');
-  const global = home;
+  // Workspace settings span every project too.
+  const global = home || pathname === '/settings' || pathname.startsWith('/settings/');
   const fullBleed =
     home ||
     pathname === '/board' ||
