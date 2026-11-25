@@ -32,6 +32,7 @@ import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
+import { SidebarLink } from '@/components/sidebar-link';
 import { cn } from '@/lib/utils';
 
 interface ProjectSummary {
@@ -54,7 +55,7 @@ const menuItem =
 // The icon rail is dark in both themes; its items use light-on-dark tones of their own.
 const railItem =
   'flex size-9 pointer-coarse:size-11 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-neutral-400';
-const railActive = 'bg-white/10 text-orange-400 hover:text-orange-300';
+const railActive = 'bg-orange-400/15 text-orange-300 ring-1 ring-orange-400 ring-inset hover:text-orange-200';
 
 const railButton =
   'flex size-9 pointer-coarse:size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring';
@@ -256,7 +257,7 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
   const tasksHref = project ? `/projects/${project}/tasks` : '/';
   const items = [
     { label: 'Board', href: '/', icon: KanbanSquare, active: pathname === '/' },
-    { label: 'Tasks', href: tasksHref, icon: ListTodo, active: /^\/projects\/[^/]+\/tasks/.test(pathname) },
+    { label: 'Tasks', href: tasksHref, icon: ListTodo, active: Boolean(project) && pathname === tasksHref },
     { label: 'Agents', href: '/agents', icon: Bot, active: pathname.startsWith('/agents') },
     { label: 'Chat', href: '/chat', icon: MessageSquare, active: pathname.startsWith('/chat') },
     { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
@@ -481,55 +482,45 @@ function Sidebar({
 
       {project && (
         <div className="flex flex-col gap-1 px-2 pb-2">
-          <Link
-            href={`/projects/${project}`}
-            aria-current={pathname === `/projects/${project}` ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
-          >
+          <SidebarLink href={`/projects/${project}`} current={pathname === `/projects/${project}`}>
             <Home className="size-4 text-muted-foreground" /> Home
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/tasks`}
-            aria-current={/^\/projects\/[^/]+\/tasks(?:\/(?!new$)|$)/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={pathname === `/projects/${project}/tasks`}
           >
             <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/team`}
-            aria-current={/^\/projects\/[^/]+\/team/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={/^\/projects\/[^/]+\/team(?:\/|$)/.test(pathname)}
           >
             <Users className="size-4 text-muted-foreground" /> Team members
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/reviews`}
-            aria-current={/^\/projects\/[^/]+\/reviews/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={/^\/projects\/[^/]+\/reviews(?:\/|$)/.test(pathname)}
           >
             <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/tickets`}
-            aria-current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
           >
             <Tickets className="size-4 text-muted-foreground" /> Tickets
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/features`}
-            aria-current={/^\/projects\/[^/]+\/features/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background"
+            current={/^\/projects\/[^/]+\/features(?:\/|$)/.test(pathname)}
           >
             <Tickets className="size-4 text-muted-foreground" /> Features
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/weekly`}
-            aria-current={/^\/projects\/[^/]+\/weekly/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background"
+            current={/^\/projects\/[^/]+\/weekly(?:\/|$)/.test(pathname)}
           >
             <span aria-hidden="true">◷</span> Weekly
-          </Link>
+          </SidebarLink>
           <div role="separator" className="my-2 h-px bg-border" />
           <Link
             href={`/projects/${project}/tasks/new`}
@@ -547,16 +538,15 @@ function Sidebar({
         ) : tasks.kind === 'failed' ? (
           <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
         ) : (
-          <SidebarWork project={project} issues={tasks.value} activeKey={activeId} />
+          <SidebarWork project={project} issues={tasks.value} activeKey={activeId} onChanged={onRefresh} />
         )}
       </div>
 
       {project && (
         <div className="flex flex-col gap-px border-t px-2 py-2">
-          <Link
+          <SidebarLink
             href={`/projects/${project}/tasks/archived`}
-            aria-current={/^\/projects\/[^/]+\/tasks\/archived$/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={pathname === `/projects/${project}/tasks/archived`}
           >
             <Archive className="size-4 text-muted-foreground" /> Archived
             {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
@@ -564,14 +554,13 @@ function Sidebar({
                 {tasks.value.filter((i) => i.archived).length}
               </span>
             )}
-          </Link>
-          <Link
+          </SidebarLink>
+          <SidebarLink
             href={`/projects/${project}/settings`}
-            aria-current={/^\/projects\/[^/]+\/settings/.test(pathname) ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+            current={/^\/projects\/[^/]+\/settings(?:\/|$)/.test(pathname)}
           >
             <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
-          </Link>
+          </SidebarLink>
         </div>
       )}
 

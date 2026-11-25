@@ -1,10 +1,16 @@
 'use client';
 // The sidebar's work lists: open board tasks, then their agents (runs) grouped by what they need.
 import { Bot, CircleAlert, LoaderCircle } from 'lucide-react';
-import Link from 'next/link';
 import type { IssueStatus, Stage } from '@factory/core';
 import { STATUS } from '@/components/task-status';
 import { cn } from '@/lib/utils';
+import { SidebarLink } from '@/components/sidebar-link';
+import { AgentAvatar } from '@/components/agent-avatar';
+import { SidebarTaskMenu } from '@/components/sidebar-task-menu';
+import { useEffect, useState } from 'react';
+
+/** Task keys stay readable on the plain row and on the tinted current row. */
+const KEY = 'shrink-0 font-mono text-xs font-medium text-foreground/60 tabular-nums';
 
 export interface IssueSummary {
   key: string;
@@ -13,6 +19,8 @@ export interface IssueSummary {
   archived: boolean;
   updated_at: string;
   run?: { stage: Stage };
+  /** The agent assigned to the task. */
+  agent?: { id: string; name: string; avatar: string };
 }
 
 type Group = 'needs' | 'working' | 'idle' | 'done';
@@ -53,19 +61,32 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-const row =
-  'flex items-center gap-2 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring';
-const current = 'bg-background shadow-xs hover:bg-background';
-
 export function SidebarWork({
   project,
   issues,
   activeKey,
+  onChanged = () => {},
 }: {
   project: string;
   issues: IssueSummary[];
   activeKey: string | undefined;
+  /** Called after a menu action changed a task, to reload the lists. */
+  onChanged?: () => void;
 }) {
+  const [notice, setNotice] = useState<{ text: string; tone: 'error' | 'status' }>();
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(undefined), notice.tone === 'error' ? 8000 : 3000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  const menu = (i: IssueSummary) => (
+    <SidebarTaskMenu
+      project={project}
+      task={{ key: i.key, title: i.title }}
+      onChanged={onChanged}
+      onNotice={(text, tone = 'status') => setNotice({ text, tone })}
+    />
+  );
   const live = issues.filter((i) => !i.archived);
   const open = live
     .filter((i) => OPEN.includes(i.status))
@@ -92,18 +113,19 @@ export function SidebarWork({
             {open.map((i) => {
               const { icon: Icon, tone, label } = STATUS[i.status];
               return (
-                <li key={i.key}>
-                  <Link
+                <li key={i.key} className="group/row relative">
+                  <SidebarLink
                     href={href(i.key)}
-                    aria-current={i.key === activeKey ? 'page' : undefined}
+                    current={i.key === activeKey}
                     title={`${i.key} ${i.title} (${label})`}
-                    className={cn(row, i.key === activeKey && current)}
+                    className="pr-8 pl-2"
                   >
                     <Icon className={cn('size-3.5 shrink-0', tone)} aria-hidden />
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground">{i.key}</span>
+                    <span className={KEY}>{i.key}</span>
                     <span className="min-w-0 flex-1 truncate">{i.title}</span>
                     <span className="sr-only">, {label}</span>
-                  </Link>
+                  </SidebarLink>
+                  {menu(i)}
                 </li>
               );
             })}
@@ -130,16 +152,22 @@ export function SidebarWork({
                 </h3>
                 <ul className="flex flex-col gap-px">
                   {members.map((i) => (
-                    <li key={i.key}>
-                      <Link
-                        href={href(i.key)}
-                        aria-current={i.key === activeKey ? 'page' : undefined}
-                        className={cn(row, i.key === activeKey && current)}
-                      >
-                        <Bot className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate">
-                          <span className="font-mono text-xs text-muted-foreground">{i.key}</span> {i.title}
-                        </span>
+                    <li key={i.key} className="group/row relative">
+                      <SidebarLink href={href(i.key)} current={i.key === activeKey} className="pr-8 pl-2">
+                        {i.agent ? (
+                          <span title={i.agent.name} className="shrink-0">
+                            <AgentAvatar agent={i.agent} size="sm" />
+                          </span>
+                        ) : (
+                          <span
+                            title="Pipeline run"
+                            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-muted/60"
+                          >
+                            <Bot className="size-3 text-muted-foreground" aria-label="Pipeline run" />
+                          </span>
+                        )}
+                        <span className={KEY}>{i.key}</span>
+                        <span className="min-w-0 flex-1 truncate">{i.title}</span>
                         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                           {ago(i.updated_at)}
                         </span>
@@ -156,7 +184,8 @@ export function SidebarWork({
                           </span>
                         )}
                         {group.id === 'done' && <span className="sr-only">, pull request opened</span>}
-                      </Link>
+                      </SidebarLink>
+                      {menu(i)}
                     </li>
                   ))}
                 </ul>
@@ -165,6 +194,17 @@ export function SidebarWork({
           })
         )}
       </section>
+      {notice && (
+        <p
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+          className={cn(
+            'mt-2 px-2 text-xs',
+            notice.tone === 'error' ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {notice.text}
+        </p>
+      )}
     </>
   );
 }
