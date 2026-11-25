@@ -80,7 +80,7 @@ export function overview(tasks: TaskRecord[], now = new Date()): Overview {
     recent: newest,
     needsYou: newest.filter((t) => NEEDS_YOU.includes(t.stage)),
     month: [
-      { label: 'Tasks started', value: String(cur.created), delta: signed(cur.created - last.created) },
+      { label: 'Runs started', value: String(cur.created), delta: signed(cur.created - last.created) },
       { label: 'Pull requests opened', value: String(cur.prs), delta: signed(cur.prs - last.prs) },
       {
         label: 'Model spend',

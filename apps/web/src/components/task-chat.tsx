@@ -236,11 +236,15 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
               role="switch"
               aria-checked={start}
               onClick={() => setStart((s) => !s)}
-              title="Classify, code, verify and review right after submitting"
+              title={
+                start
+                  ? 'Creates the task and starts a run: classify, code, verify and review'
+                  : 'Adds the task to the board in Todo, with no run yet'
+              }
               className={cn('rounded-full', !start && 'text-muted-foreground')}
             >
               <Play aria-hidden />
-              {start ? 'Run now' : 'Queue only'}
+              {start ? 'Run now' : 'Add to board'}
             </Button>
           )}
           <span className="hidden text-xs text-muted-foreground sm:inline">↵ to send · ⇧↵ new line</span>
@@ -258,7 +262,13 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
               size="icon"
               className="rounded-full pointer-coarse:size-11"
               disabled={!body || pending}
-              aria-label={isNew ? 'Start task' : 'Send revision note'}
+              aria-label={
+                isNew
+                  ? start
+                    ? 'Create the task and start a run'
+                    : 'Add the task to the board'
+                  : 'Send revision note'
+              }
             >
               {pending ? <LoaderCircle className="motion-safe:animate-spin" /> : <ArrowUp />}
             </Button>

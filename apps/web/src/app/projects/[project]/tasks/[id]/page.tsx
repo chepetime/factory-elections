@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
+  IssueArchivedBanner,
   IssueCommentBox,
   IssueDescription,
   IssuePriorityField,
@@ -140,6 +141,7 @@ export default async function TaskPage({
           <span className="font-mono text-xs text-muted-foreground">{issue.key}</span>
           <span className="min-w-0 truncate font-medium">{issue.title}</span>
         </nav>
+        {issue.archived_at && <IssueArchivedBanner project={project} issueKey={issue.key} />}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-6 py-8">

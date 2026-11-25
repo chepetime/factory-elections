@@ -27,7 +27,8 @@ async function attempt<T>(call: () => Promise<T>): Promise<Result<T>> {
   }
 }
 
-type Method = 'GetIssue' | 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'CommentIssue';
+type Method =
+  'GetIssue' | 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'CommentIssue' | 'ArchiveIssue' | 'DeleteIssue';
 async function call(method: Method, project: string, body: object): Promise<unknown> {
   return JSON.parse((await backendCall(method, { project, json: JSON.stringify(body) })).json);
 }
@@ -52,4 +53,50 @@ export function moveIssueRun(project: string, key: string, to: IssueStatus) {
 }
 export function commentIssueRun(project: string, key: string, body: string): Promise<Result<IssueView>> {
   return attempt(async () => IssueView.parse(await call('CommentIssue', project, { key, body })));
+}
+export function archiveIssueRun(project: string, key: string, archived: boolean): Promise<Result<IssueView>> {
+  return attempt(async () => IssueView.parse(await call('ArchiveIssue', project, { key, archived })));
+}
+const DeleteResult = z.object({
+  key: z.string(),
+  failed: z.array(z.object({ run: z.string(), error: z.string() })),
+});
+export function deleteIssueRun(project: string, key: string) {
+  return attempt(async () => DeleteResult.parse(await call('DeleteIssue', project, { key })));
+}
+
+/** Open and recent board tasks for the project home, newest activity first. */
+export async function recentIssues(project: string, limit = 6) {
+  const list = await listIssues(project);
+  if (!list.ok) return undefined;
+  return list.value.items
+    .filter((i) => !i.archived_at)
+    .map((i) => ({
+      key: i.key,
+      title: i.title,
+      status: i.status,
+      updated_at: i.run?.updated_at && i.run.updated_at > i.updated_at ? i.run.updated_at : i.updated_at,
+    }))
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, limit);
+}
+
+/** Names inbox items by the board task that owns their run, so they read CE-12 and link to it. */
+export async function withTaskKeys<T extends { project: string; task_id?: string; title: string }>(
+  items: T[],
+): Promise<(T & { task_key?: string })[]> {
+  const projects = [...new Set(items.filter((i) => i.task_id).map((i) => i.project))];
+  const owners = new Map<string, { key: string; title: string }>();
+  await Promise.all(
+    projects.map(async (project) => {
+      const list = await listIssues(project);
+      if (!list.ok) return;
+      for (const issue of list.value.items)
+        for (const run of issue.runs) owners.set(`${project}/${run}`, { key: issue.key, title: issue.title });
+    }),
+  );
+  return items.map((item) => {
+    const owner = item.task_id ? owners.get(`${item.project}/${item.task_id}`) : undefined;
+    return owner ? { ...item, task_key: owner.key, title: owner.title } : item;
+  });
 }

@@ -13,6 +13,8 @@ const Item = z.object({
   ticket: z.string().optional(),
   pr: z.object({ number: z.number(), url: z.string().optional() }).optional(),
   detail: z.string().optional(),
+  /** The board task that owns the item's run, filled in by the web app (see withTaskKeys). */
+  task_key: z.string().optional(),
 });
 export type InboxItem = z.infer<typeof Item>;
 const Inbox = z.object({ items: z.array(Item), dismissed: z.number() });

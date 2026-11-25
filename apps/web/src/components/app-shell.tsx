@@ -5,6 +5,7 @@
 // Affect UI source or assets.
 import { Menu } from '@base-ui/react/menu';
 import {
+  Archive,
   Blocks,
   Check,
   ChevronsUpDown,
@@ -28,7 +29,7 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import type { Stage } from '@factory/core';
+import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { cn } from '@/lib/utils';
 
 interface ProjectSummary {
@@ -36,12 +37,6 @@ interface ProjectSummary {
   repo: string;
   display_name?: string;
   icon?: string;
-}
-interface TaskSummary {
-  id: string;
-  prompt: string;
-  stage: Stage;
-  created_at?: string;
 }
 type Load<T> = { kind: 'loading' } | { kind: 'failed' } | { kind: 'loaded'; value: T };
 
@@ -83,42 +78,9 @@ function remember(name: string) {
   document.cookie = `${LAST_PROJECT}=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax`;
 }
 
-/** First non-empty line of the prompt. */
-function taskTitle(prompt: string): string {
-  return (
-    prompt
-      .split('\n')
-      .map((l) => l.trim())
-      .find(Boolean) ?? prompt.trim()
-  );
-}
-
 function repoName(repo: string): string {
   return repo.split('/').filter(Boolean).at(-1) ?? repo;
 }
-
-function ago(iso: string | undefined): string {
-  if (!iso) return '';
-  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return 'now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
-
-const STAGE_DOT: Record<Stage, string> = {
-  queued: 'bg-muted-foreground/40',
-  classified: 'bg-muted-foreground/40',
-  blocked: 'bg-destructive',
-  coding: 'bg-blue-500',
-  'verification-failed': 'bg-destructive',
-  reviewing: 'bg-blue-500',
-  'awaiting-approval': 'bg-amber-500',
-  approved: 'bg-emerald-500',
-  rejected: 'bg-muted-foreground/40',
-  'pr-opened': 'bg-emerald-500',
-  failed: 'bg-destructive',
-};
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url, { cache: 'no-store' });
@@ -141,24 +103,29 @@ function useProjects(pathname: string): Load<ProjectSummary[]> {
   return state;
 }
 
-function useTasks(project: string | undefined, pathname: string) {
-  const [state, setState] = useState<Load<TaskSummary[]>>({ kind: 'loading' });
+function useIssues(project: string | undefined, pathname: string) {
+  const [state, setState] = useState<Load<IssueSummary[]>>({ kind: 'loading' });
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!project) return;
     let live = true;
-    getJson<TaskSummary[]>(`/api/projects/${encodeURIComponent(project)}/tasks`)
-      .then((tasks) => {
-        const value = [...tasks].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
-        if (live) setState({ kind: 'loaded', value });
-      })
+    getJson<IssueSummary[]>(`/api/projects/${encodeURIComponent(project)}/issues`)
+      .then((value) => live && setState({ kind: 'loaded', value }))
       .catch(() => live && setState({ kind: 'failed' }));
     return () => {
       live = false;
     };
-    // Refetch on navigation so a new task shows up after it is created.
+    // Refetch on navigation, so a new task shows up after it is created.
   }, [project, pathname, tick]);
-  return { state, refresh: useCallback(() => setTick((t) => t + 1), []) };
+  // Agents change state on their own; poll while the tab is visible.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, []);
+  const refresh = useCallback(() => setTick((t) => t + 1), []);
+  return { state, refresh };
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -189,7 +156,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const names = projects.kind === 'loaded' ? projects.value.map((p) => p.name) : [];
   const project = params.project ?? (remembered && names.includes(remembered) ? remembered : names[0]);
   const current = projects.kind === 'loaded' ? projects.value.find((p) => p.name === project) : undefined;
-  const { state: tasks, refresh } = useTasks(project, pathname);
+  const { state: tasks, refresh } = useIssues(project, pathname);
 
   const [drawer, setDrawer] = useState(false);
   const narrow = useNarrow();
@@ -368,7 +335,7 @@ function Sidebar({
   projects: Load<ProjectSummary[]>;
   project: string | undefined;
   current: ProjectSummary | undefined;
-  tasks: Load<TaskSummary[]>;
+  tasks: Load<IssueSummary[]>;
   activeId: string | undefined;
   onPick: (name: string) => void;
   onRefresh: () => void;
@@ -569,42 +536,30 @@ function Sidebar({
         </div>
       )}
 
-      <div className="px-4 pt-2 pb-1 text-xs font-medium text-muted-foreground">Tasks</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {!project ? null : tasks.kind === 'loading' ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading tasks</p>
         ) : tasks.kind === 'failed' ? (
-          <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable</p>
-        ) : tasks.value.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">No tasks yet</p>
+          <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
         ) : (
-          <ul className="flex flex-col gap-px">
-            {tasks.value.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/projects/${project}/tasks/${t.id}`}
-                  aria-current={t.id === activeId ? 'page' : undefined}
-                  title={`${taskTitle(t.prompt)} (${t.stage})`}
-                  className={cn(
-                    'flex items-center gap-2 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring',
-                    t.id === activeId && 'bg-background shadow-xs hover:bg-background',
-                  )}
-                >
-                  <span className={cn('size-1.5 shrink-0 rounded-full', STAGE_DOT[t.stage])} aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{taskTitle(t.prompt)}</span>
-                  <span className="sr-only">, {t.stage}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {ago(t.created_at)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <SidebarWork project={project} issues={tasks.value} activeKey={activeId} />
         )}
       </div>
 
       {project && (
-        <div className="border-t px-2 py-2">
+        <div className="flex flex-col gap-px border-t px-2 py-2">
+          <Link
+            href={`/projects/${project}/tasks/archived`}
+            aria-current={/^\/projects\/[^/]+\/tasks\/archived$/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <Archive className="size-4 text-muted-foreground" /> Archived
+            {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
+              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                {tasks.value.filter((i) => i.archived).length}
+              </span>
+            )}
+          </Link>
           <Link
             href={`/projects/${project}/settings`}
             aria-current={/^\/projects\/[^/]+\/settings/.test(pathname) ? 'page' : undefined}

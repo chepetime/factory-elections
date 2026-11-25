@@ -1,5 +1,7 @@
 # Tasks board
 
+**Names.** A *task* is an item on the board. A *run* is one agent attempt at a task (a factory task record, with a UUID). A task can have several runs. The sidebar lists open tasks under Tasks, and their runs under Agents, grouped as Needs you, Working, Idle and Done.
+
 Each project has a board at `/projects/<project>/tasks`. A card is a **task** (an "issue" in code, because "task" already names a factory run). A task has a key such as `CE-12`, a title, a Markdown description, a status, a priority, comments, events, and the factory runs it started.
 
 ## Code
@@ -42,3 +44,9 @@ While a task has a run, its column follows the run's stage, unless a person set 
 | In review, Blocked | Refused: only the factory moves tasks there. |
 
 The board asks before any drop that starts, reruns or cancels a run. No drop can skip the approval gate. Every card has a "Move to" menu for keyboard and touch use.
+
+## Archive and delete
+
+- **Archive** (card menu or the task's status menu) takes a task off the board and the sidebar. Its runs stay. A task whose run is coding or reviewing cannot be archived. The sidebar's Archived link, above Project settings, lists archived tasks with Restore and Delete.
+- **Delete** works only on archived tasks. It removes the task and each run's worktree, branch and records, under the run's lock, so a working run refuses. Traces and cost history in telemetry stay. The board keeps the deleted run ids, so a run whose removal failed never comes back as a new task, and task numbers are never reused.
+- Composer "Add to board" creates a task in Todo with no run; "Run now" creates the task and starts its first run.

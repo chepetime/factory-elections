@@ -32,12 +32,41 @@ afterEach(() => vi.resetAllMocks());
 
 describe('web/backend reintegration', () => {
   it('preserves option-looking prompt text as data and submits structured fields', async () => {
-    rpc.mockResolvedValue({ text: id });
+    rpc.mockResolvedValueOnce({ text: id }).mockResolvedValueOnce({ json: JSON.stringify({ id }) });
     const prompt = '--help "literal task"';
-    await expect(submitTask({}, form({ project: 'demo', prompt }))).rejects.toThrow(
+    await expect(submitTask({}, form({ project: 'demo', prompt, start: 'on' }))).rejects.toThrow(
       `redirect:/projects/demo/tasks/${id}`,
     );
     expect(rpc).toHaveBeenCalledWith('SubmitTask', { project: 'demo', prompt });
+  });
+  it('adds a task to the board without a run when Run now is off', async () => {
+    const prompt = '--help "literal task"\nmore detail';
+    rpc.mockResolvedValueOnce({
+      json: JSON.stringify({
+        number: 3,
+        key: 'DE-3',
+        title: '--help "literal task"',
+        description: prompt,
+        status: 'todo',
+        stored_status: 'todo',
+        status_at: '2026-01-01T00:00:00.000Z',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      }),
+    });
+    await expect(submitTask({}, form({ project: 'demo', prompt, jira_key: 'VOTE-1' }))).rejects.toThrow(
+      'redirect:/projects/demo/tasks/DE-3',
+    );
+    expect(rpc).toHaveBeenCalledWith('CreateIssue', {
+      project: 'demo',
+      json: JSON.stringify({
+        title: '--help "literal task"',
+        description: prompt,
+        status: 'todo',
+        jira_key: 'VOTE-1',
+      }),
+    });
+    expect(rpc).not.toHaveBeenCalledWith('SubmitTask', expect.anything());
   });
   it('sends revision and exact approval fields to the backend', async () => {
     rpc.mockResolvedValueOnce({ json: JSON.stringify({ id }) });

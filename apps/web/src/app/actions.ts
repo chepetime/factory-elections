@@ -24,7 +24,14 @@ import {
   stopReviewRun,
 } from '@/lib/reviews';
 import { detectProjectSettingsRun, saveProjectSettingsRun, type SettingsProposal } from '@/lib/settings';
-import { commentIssueRun, createIssueRun, moveIssueRun, updateIssueRun } from '@/lib/issues';
+import {
+  archiveIssueRun,
+  commentIssueRun,
+  createIssueRun,
+  deleteIssueRun,
+  moveIssueRun,
+  updateIssueRun,
+} from '@/lib/issues';
 import { IssueStatus } from '@factory/core';
 
 export interface ActionState {
@@ -68,16 +75,32 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
   const prompt = field(form, 'prompt');
   if (!isProjectName(project)) return { error: 'Invalid project.' };
   if (!prompt) return { error: 'Describe the task.' };
-  const created = await submitTaskRequest(project, prompt, field(form, 'jira_key') || undefined);
+  const jiraKey = field(form, 'jira_key') || undefined;
+  if (form.get('start') !== 'on') {
+    // Without a run, the task waits on the board in Todo.
+    const line =
+      prompt
+        .split('\n')
+        .map((l) => l.trim())
+        .find(Boolean) ?? prompt;
+    const issue = await createIssueRun(project, {
+      title: line.length > 200 ? `${line.slice(0, 199)}…` : line,
+      description: prompt,
+      status: 'todo',
+      jira_key: jiraKey,
+    });
+    if (!issue.ok) return { error: issue.error };
+    revalidatePath(`/projects/${project}`, 'layout');
+    redirect(`/projects/${project}/tasks/${issue.value.key}`);
+  }
+  const created = await submitTaskRequest(project, prompt, jiraKey);
   if (!created.ok) return { error: created.error };
   const id = created.value;
-  if (form.get('start') === 'on') {
-    const started = await startTask({ project, id, action: 'run' });
-    if (!started.ok) {
-      // Creation succeeded. Navigate to that durable task instead of inviting duplicate submission.
-      refresh(project, id);
-      redirect(`/projects/${project}/tasks/${id}?start=failed`);
-    }
+  const started = await startTask({ project, id, action: 'run' });
+  if (!started.ok) {
+    // Creation succeeded. Navigate to that durable task instead of inviting duplicate submission.
+    refresh(project, id);
+    redirect(`/projects/${project}/tasks/${id}?start=failed`);
   }
   refresh(project, id);
   redirect(`/projects/${project}/tasks/${id}`);
@@ -364,4 +387,29 @@ export async function commentIssue(_prev: ActionState, form: FormData): Promise<
   const commented = await commentIssueRun(project, key, body);
   revalidatePath(`/projects/${project}/tasks/${key}`);
   return commented.ok ? { message: 'Comment added.' } : { error: commented.error };
+}
+
+/** Archives a board task, or restores it with `archived: false`. */
+export async function archiveIssue(project: string, key: string, archived: boolean): Promise<ActionState> {
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  const result = await archiveIssueRun(project, key, archived);
+  revalidatePath(`/projects/${project}`, 'layout');
+  return result.ok
+    ? { message: archived ? `Archived ${key}.` : `Restored ${key}.` }
+    : { error: result.error };
+}
+
+/** Deletes an archived board task and its runs (worktrees, branches and records). */
+export async function deleteIssue(project: string, key: string): Promise<ActionState> {
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  const result = await deleteIssueRun(project, key);
+  revalidatePath(`/projects/${project}`, 'layout');
+  if (!result.ok) return { error: result.error };
+  return result.value.failed.length
+    ? {
+        message: `Deleted ${key}. ${result.value.failed.length} run(s) left files behind: ${result.value.failed
+          .map((f) => f.error)
+          .join('; ')}`,
+      }
+    : { message: `Deleted ${key} and its runs.` };
 }

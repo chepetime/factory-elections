@@ -2,13 +2,20 @@
 // The project's task board: one column per status. Dragging a card, or its "Move to" menu, asks the
 // backend to apply the drop (see dropAction in packages/core/src/issues.ts).
 import { Menu } from '@base-ui/react/menu';
-import { LoaderCircle, MoreHorizontal, Plus } from 'lucide-react';
+import { Archive, LoaderCircle, MoreHorizontal, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
-import { createIssue, moveIssue } from '@/app/actions';
+import { archiveIssue, createIssue, moveIssue } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { dropAction, ISSUE_STATUSES, type DropAction, type IssueStatus, type Stage } from '@factory/core';
+import {
+  dropAction,
+  ISSUE_STATUSES,
+  runWorking,
+  type DropAction,
+  type IssueStatus,
+  type Stage,
+} from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
 import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
 import { cn } from '@/lib/utils';
@@ -196,6 +203,17 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
     });
   };
 
+  const archive = (issue: BoardIssue) =>
+    startMove(async () => {
+      const result = await archiveIssue(project, issue.key, true);
+      setNotice(
+        result.error
+          ? { kind: 'error', text: `${issue.key}: ${result.error}` }
+          : { kind: 'status', text: `${result.message} Restore it from Archived in the sidebar.` },
+      );
+      router.refresh();
+    });
+
   const onDrop = (to: IssueStatus) => (e: DragEvent) => {
     e.preventDefault();
     setOver(undefined);
@@ -318,7 +336,11 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                           · {issue.jira_key}
                         </span>
                       )}
-                      <MoveMenu issue={issue} onMove={(to) => move(issue, to)} />
+                      <MoveMenu
+                        issue={issue}
+                        onMove={(to) => move(issue, to)}
+                        onArchive={() => archive(issue)}
+                      />
                     </div>
                     {/* The link covers the card; the menu sits above it. */}
                     <Link
@@ -357,7 +379,16 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   );
 }
 
-export function MoveMenu({ issue, onMove }: { issue: BoardIssue; onMove: (to: IssueStatus) => void }) {
+export function MoveMenu({
+  issue,
+  onMove,
+  onArchive,
+}: {
+  issue: BoardIssue;
+  onMove: (to: IssueStatus) => void;
+  /** Adds an Archive item; archiving is undone from the Archived page. */
+  onArchive?: () => void;
+}) {
   return (
     <Menu.Root>
       <Menu.Trigger
@@ -396,6 +427,24 @@ export function MoveMenu({ issue, onMove }: { issue: BoardIssue; onMove: (to: Is
                 </Menu.Item>
               );
             })}
+            {onArchive && (
+              <>
+                <Menu.Separator className="my-1 h-px bg-border" />
+                <Menu.Item
+                  disabled={!!issue.run && runWorking(issue.run.stage)}
+                  title={
+                    issue.run && runWorking(issue.run.stage)
+                      ? 'Wait for the run to stop, or cancel it.'
+                      : undefined
+                  }
+                  onClick={onArchive}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-disabled:cursor-not-allowed data-disabled:opacity-50 data-highlighted:bg-muted"
+                >
+                  <Archive className="size-4 text-muted-foreground" aria-hidden />
+                  Archive
+                </Menu.Item>
+              </>
+            )}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

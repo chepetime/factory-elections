@@ -81,7 +81,7 @@ export default async function TracePage({ params }: { params: Promise<{ project:
       <Link className="text-sm underline" href={`/projects/${project}/tasks/${id}`}>
         Back to task
       </Link>
-      <h1 className="text-2xl font-semibold">Task traces</h1>
+      <h1 className="text-2xl font-semibold">Run traces</h1>
       <p className="text-sm text-muted-foreground">
         Summed span time includes overlapping parent and child spans.
       </p>

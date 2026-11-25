@@ -1,10 +1,10 @@
 'use client';
 // Editable parts of a board task's page: title, description, priority, status and comments.
-import { Pencil } from 'lucide-react';
+import { ArchiveRestore, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from 'react';
 import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
-import { commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
+import { archiveIssue, commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
 import { Markdown } from '@/components/markdown';
 import { useConfirm } from '@/components/confirm-dialog';
 import { decideDrop, MoveMenu } from '@/components/task-board';
@@ -249,7 +249,21 @@ export function IssueStatusField({
       {confirmDialog}
       <div className={cn('group flex items-center gap-1', pending && 'opacity-60')}>
         <StatusLabel status={issue.status} className="text-sm" />
-        <MoveMenu issue={{ ...issue, description: '', updated_at: '' }} onMove={move} />
+        <MoveMenu
+          issue={{ ...issue, description: '', updated_at: '' }}
+          onMove={move}
+          onArchive={() =>
+            start(async () => {
+              const result = await archiveIssue(project, issue.key, true);
+              setNotice(
+                result.error
+                  ? { kind: 'error', text: result.error }
+                  : { kind: 'status', text: result.message ?? '' },
+              );
+              router.refresh();
+            })
+          }
+        />
       </div>
       {notice && (
         <p
@@ -314,6 +328,34 @@ export function IssueCommentBox({ project, issueKey }: { project: string; issueK
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+export function IssueArchivedBanner({ project, issueKey }: { project: string; issueKey: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string>();
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-3 border-b bg-muted/50 px-6 py-2.5 text-sm">
+      <p className="min-w-0 flex-1 text-muted-foreground">
+        This task is archived. It is not on the board or in the sidebar.
+        {error && <span className="ml-2 text-destructive">{error}</span>}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            const result = await archiveIssue(project, issueKey, false);
+            setError(result.error);
+            router.refresh();
+          })
+        }
+      >
+        <ArchiveRestore aria-hidden /> {pending ? 'Restoring…' : 'Restore'}
+      </Button>
     </div>
   );
 }

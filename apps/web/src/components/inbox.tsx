@@ -53,6 +53,7 @@ function Dismiss({ item }: { item: InboxItem }) {
 function destination(item: InboxItem) {
   const project = encodeURIComponent(item.project);
   if (item.feature_id) return `/projects/${project}/features/${encodeURIComponent(item.feature_id)}`;
+  if (item.task_key) return `/projects/${project}/tasks/${encodeURIComponent(item.task_key)}`;
   if (item.task_id) return `/projects/${project}/tasks/${encodeURIComponent(item.task_id)}`;
   if (item.pr) return `/projects/${project}/reviews`;
   return `/projects/${project}`;
@@ -116,6 +117,11 @@ export function Inbox({
                     href={destination(item)}
                     className="mt-1 block text-sm font-medium outline-none after:absolute after:inset-0 group-hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
                   >
+                    {item.task_key && (
+                      <span className="mr-1.5 font-mono text-xs font-normal text-muted-foreground">
+                        {item.task_key}
+                      </span>
+                    )}
                     {item.title}
                   </Link>
                   <p className="mt-0.5 text-sm text-muted-foreground">{item.action}</p>

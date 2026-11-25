@@ -6,30 +6,13 @@ import Link from 'next/link';
 import { Inbox } from '@/components/inbox';
 import type { InboxItem } from '@/lib/inbox';
 import type { ReactNode } from 'react';
-import type { Stage, TaskRecord } from '@factory/core';
+import type { IssueStatus, TaskRecord } from '@factory/core';
 import { TaskChatComposer } from '@/components/task-chat';
 import { ACTIVITY_WEEKS, overview } from '@/lib/overview';
+import { STATUS } from '@/components/task-status';
 import { cn } from '@/lib/utils';
 
-const STAGE_DOT: Partial<Record<Stage, string>> = {
-  blocked: 'bg-destructive',
-  failed: 'bg-destructive',
-  'verification-failed': 'bg-destructive',
-  coding: 'bg-blue-500',
-  reviewing: 'bg-blue-500',
-  'awaiting-approval': 'bg-amber-500',
-  approved: 'bg-emerald-500',
-  'pr-opened': 'bg-emerald-500',
-};
-
-function taskTitle(prompt: string): string {
-  return (
-    prompt
-      .split('\n')
-      .map((l) => l.trim())
-      .find(Boolean) ?? prompt.trim()
-  );
-}
+type HomeIssue = { key: string; title: string; status: IssueStatus; updated_at: string };
 
 function greeting(now: Date): string {
   const h = now.getHours();
@@ -64,29 +47,31 @@ function Card({
   );
 }
 
-function TaskRows({
-  project,
-  tasks,
-  meta,
-}: {
-  project: string;
-  tasks: TaskRecord[];
-  meta: (t: TaskRecord) => string;
-}) {
+function StatusIcon({ status }: { status: IssueStatus }) {
+  const { icon: Icon, tone, label } = STATUS[status];
+  return (
+    <>
+      <Icon className={cn('size-3.5 shrink-0', tone)} aria-hidden />
+      <span className="sr-only">{label}:</span>
+    </>
+  );
+}
+
+function IssueRows({ project, issues, now }: { project: string; issues: HomeIssue[]; now: Date }) {
   return (
     <ul className="-mx-2 flex flex-col">
-      {tasks.map((t) => (
-        <li key={t.id}>
+      {issues.map((i) => (
+        <li key={i.key}>
           <Link
-            href={`/projects/${project}/tasks/${t.id}`}
+            href={`/projects/${project}/tasks/${i.key}`}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 pointer-coarse:py-3 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <span
-              className={cn('size-1.5 shrink-0 rounded-full', STAGE_DOT[t.stage] ?? 'bg-muted-foreground/40')}
-              aria-hidden
-            />
-            <span className="min-w-0 flex-1 truncate">{taskTitle(t.prompt)}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{meta(t)}</span>
+            <StatusIcon status={i.status} />
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">{i.key}</span>
+            <span className="min-w-0 flex-1 truncate">{i.title}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {ago(i.updated_at, now)}
+            </span>
           </Link>
         </li>
       ))}
@@ -119,11 +104,14 @@ export function ProjectHome({
   tasks,
   userName,
   inbox,
+  issues,
 }: {
   project: string;
   tasks: TaskRecord[] | undefined;
   userName?: string;
   inbox: { ok: true; value: { items: InboxItem[] } } | { ok: false };
+  /** Board tasks with the newest activity; undefined when the board is unavailable. */
+  issues?: HomeIssue[];
 }) {
   const now = new Date();
   const board = tasks ? overview(tasks, now) : undefined;
@@ -165,11 +153,11 @@ export function ProjectHome({
             <div className="grid gap-4 sm:grid-cols-2">
               <Card title="Activity">
                 <p className="mb-3 text-xs text-muted-foreground">
-                  {board.activityTotal} events in the last {ACTIVITY_WEEKS} weeks
+                  {board.activityTotal} run events in the last {ACTIVITY_WEEKS} weeks
                 </p>
                 <div
                   role="img"
-                  aria-label={`${board.activityTotal} task events in the last ${ACTIVITY_WEEKS} weeks`}
+                  aria-label={`${board.activityTotal} run events in the last ${ACTIVITY_WEEKS} weeks`}
                   className="grid grid-flow-col grid-rows-7 gap-[3px] self-start"
                 >
                   {board.activity.map((d) => (
@@ -197,26 +185,22 @@ export function ProjectHome({
                   ))}
                 </dl>
               </Card>
-              <Card
-                title="Recent tasks"
-                className="sm:col-span-2"
-                action={
-                  board.recent.length > 5 && (
+              {issues && issues.length > 0 && (
+                <Card
+                  title="Recent tasks"
+                  className="sm:col-span-2"
+                  action={
                     <Link
                       href={`/projects/${project}/tasks`}
                       className="text-xs text-muted-foreground hover:underline"
                     >
-                      {board.recent.length - 5} more
+                      Open the board
                     </Link>
-                  )
-                }
-              >
-                <TaskRows
-                  project={project}
-                  tasks={board.recent.slice(0, 5)}
-                  meta={(t) => ago(t.updated_at ?? t.created_at, now)}
-                />
-              </Card>
+                  }
+                >
+                  <IssueRows project={project} issues={issues} now={now} />
+                </Card>
+              )}
             </div>
           )}
         </div>

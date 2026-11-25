@@ -20,6 +20,7 @@ vi.mock('@/components/issue-editor', () => ({
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
   IssueCommentBox: () => <span>comment-box</span>,
+  IssueArchivedBanner: () => <span>archived-banner</span>,
 }));
 vi.mock('@/app/actions', () => ({
   approveAndOpenPullRequest: vi.fn(),

@@ -79,7 +79,7 @@ describe('overview', () => {
 
   it('compares this month with last month', () => {
     expect(overview(tasks, now).month).toEqual([
-      { label: 'Tasks started', value: '1', delta: '+0' },
+      { label: 'Runs started', value: '1', delta: '+0' },
       { label: 'Pull requests opened', value: '0', delta: '−1' },
       { label: 'Model spend', value: '$1.50', delta: '+$1.50' },
     ]);
