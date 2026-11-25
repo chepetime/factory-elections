@@ -109,6 +109,22 @@ export const CLAUDE_MODELS = [
   { id: 'claude-fable-5-2', name: 'Fable 5.2', hint: 'Long, careful work.' },
 ] as const;
 
+/** One check of a provider: installed, signed in (both free) or responds (one tiny model call). */
+export const ProviderCheck = z.object({
+  name: z.enum(['installed', 'signed_in', 'responds']),
+  ok: z.boolean(),
+  /** ISO time the check ran. */
+  checked_at: z.string(),
+  detail: z.string().optional(),
+  /** The CLI's own error text, passed through as it printed it. */
+  error: z.string().optional(),
+  /** A command that fixes a failed check. */
+  fix: z.string().optional(),
+  /** What running the check costs, when it is not free. */
+  cost_note: z.string().optional(),
+});
+export type ProviderCheck = z.infer<typeof ProviderCheck>;
+
 /** What the machine has for one provider: the CLI, its version and the models it offers. */
 export const ProviderEnvironment = z.object({
   installed: z.boolean(),
@@ -117,6 +133,8 @@ export const ProviderEnvironment = z.object({
   models: z.array(z.object({ id: z.string(), name: z.string().optional(), group: z.string().optional() })),
   /** Why the models could not be read, when they could not. */
   error: z.string().optional(),
+  /** The free checks: installed and signed in. `responds` only appears after a test. */
+  checks: z.array(ProviderCheck).default([]),
 });
 export type ProviderEnvironment = z.infer<typeof ProviderEnvironment>;
 

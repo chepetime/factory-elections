@@ -7,6 +7,7 @@ message Empty {}
 message Target { string project = 1; string id = 2; }
 message Snapshot { string json = 1; }
 message Text { string text = 1; }
+message ProviderTest { string provider = 1; }
 message Submission { string project = 1; string prompt = 2; string jira_key = 3; }
 message ProjectRegistration { string name = 1; string repo = 2; }
 message PullRequestQuery { string project = 1; bool drafts = 2; bool approved = 3; }
@@ -49,6 +50,7 @@ service Factory {
   rpc GetUserSettings(Empty) returns (Snapshot);
   rpc SaveUserSettings(Snapshot) returns (Snapshot);
   rpc GetUserEnvironment(Empty) returns (Snapshot);
+  rpc TestProvider(ProviderTest) returns (Snapshot);
   rpc GetProjectSettings(Target) returns (Snapshot);
   rpc SaveProjectSettings(SettingsUpdate) returns (Snapshot);
   rpc DetectProjectSettings(Target) returns (Snapshot);

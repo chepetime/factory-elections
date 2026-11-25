@@ -37,8 +37,14 @@ import {
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
-import { IssueStatus } from '@factory/core';
-import { saveUserSettingsRun, userSettings, type UserSettings } from '@/lib/user-settings';
+import { IssueStatus, USER_PROVIDERS } from '@factory/core';
+import {
+  saveUserSettingsRun,
+  testProviderRun,
+  userSettings,
+  type ProviderCheck,
+  type UserSettings,
+} from '@/lib/user-settings';
 
 export interface ActionState {
   error?: string;
@@ -452,6 +458,15 @@ const USER_SECTIONS = [
   'rules',
 ] as const;
 type UserSection = (typeof USER_SECTIONS)[number];
+
+/** Runs the "responds" check for one provider: one tiny model call, only when the Test button asks. */
+export async function testProvider(
+  provider: string,
+): Promise<{ check: ProviderCheck; error?: undefined } | { error: string; check?: undefined }> {
+  if (!(USER_PROVIDERS as readonly string[]).includes(provider)) return { error: 'Unknown provider.' };
+  const result = await testProviderRun(provider);
+  return result.ok ? { check: result.value } : { error: result.error };
+}
 
 /** Saves one section of the user settings and keeps the rest as stored. */
 export async function updateUserSettings<K extends UserSection>(

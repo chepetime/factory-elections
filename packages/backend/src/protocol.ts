@@ -58,6 +58,7 @@ export interface Methods {
   SaveUserSettings: [{ json: string }, { json: string }];
   /** Git identity, the GitHub login and each provider CLI found on this machine. */
   GetUserEnvironment: [{}, { json: string }];
+  TestProvider: [{ provider: string }, { json: string }];
   GetProjectSettings: [Target, { json: string }];
   SaveProjectSettings: [{ project: string; json: string }, { json: string }];
   DetectProjectSettings: [Target, { json: string }];

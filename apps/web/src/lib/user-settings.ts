@@ -3,9 +3,9 @@
 import 'server-only';
 import { z } from 'zod';
 import { backendCall } from '@factory/backend/client';
-import { UserEnvironment, UserSettings } from '@factory/core';
+import { ProviderCheck, UserEnvironment, UserSettings } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
-export type { UserEnvironment, UserSettings };
+export type { ProviderCheck, UserEnvironment, UserSettings };
 
 async function attempt<T>(call: () => Promise<T>): Promise<Result<T>> {
   try {
@@ -26,6 +26,12 @@ export function saveUserSettingsRun(settings: unknown): Promise<Result<UserSetti
     UserSettings.parse(
       JSON.parse((await backendCall('SaveUserSettings', { json: JSON.stringify(settings) })).json),
     ),
+  );
+}
+/** The "responds" check: a real one-word model call, so only ever from an explicit Test click. */
+export function testProviderRun(provider: string): Promise<Result<ProviderCheck>> {
+  return attempt(async () =>
+    ProviderCheck.parse(JSON.parse((await backendCall('TestProvider', { provider })).json)),
   );
 }
 export function userEnvironment(): Promise<Result<UserEnvironment>> {
