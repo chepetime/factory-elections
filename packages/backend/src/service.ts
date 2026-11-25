@@ -247,7 +247,7 @@ export class BackendService {
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
     });
-    this.agents = new AgentService({ root, storage: this.storage });
+    this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
       root,

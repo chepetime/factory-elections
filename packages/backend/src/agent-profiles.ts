@@ -9,8 +9,32 @@ import { Conflict } from './conflict.ts';
 /** Workspace documents live under a dotted folder: project names cannot contain a dot. */
 export const WORKSPACE_DIR = '.workspace';
 
+/** The agents a new workspace starts with. They are ordinary agents: edit or archive them. */
+export const SEED_AGENTS = [
+  {
+    id: 'devin',
+    name: 'Devin',
+    avatar: '🐸',
+    description:
+      'Developer. Takes board tasks, changes the code in a worktree, runs the checks and hands the change to you for review.',
+    model: 'claude-sonnet-5-5',
+    effort: 'high',
+  },
+  {
+    id: 'mika',
+    name: 'Mika',
+    avatar: '🦄',
+    description:
+      'Chief of staff. Turns goals into tasks, keeps the board tidy and answers questions about the work.',
+    model: 'claude-sonnet-5-5',
+    effort: 'medium',
+  },
+] as const;
+
 export type AgentDeps = {
   root: string;
+  /** Start an empty workspace with SEED_AGENTS. */
+  seed?: boolean;
   storage: Pick<DataStorage, 'readDocument' | 'writeDocument'>;
   now?: () => Date;
 };
@@ -42,8 +66,15 @@ export class AgentService {
     try {
       return AgentRoster.parse(await this.deps.storage.readDocument(this.path));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { items: [] };
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (!this.deps.seed) return { items: [] };
+      const at = this.now();
+      const seeded = {
+        items: SEED_AGENTS.map((a) => AgentProfile.parse({ ...a, created_at: at, updated_at: at })),
+      };
+      // Stored at once, so the seed keeps its dates and a deleted seed never comes back.
+      await this.write(seeded);
+      return seeded;
     }
   }
   private write(roster: AgentRoster): Promise<void> {

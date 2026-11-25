@@ -72,3 +72,21 @@ test('a task takes an active agent as its assignee, and can drop it', async (t) 
   assert.equal(cleared.assignee, undefined);
   assert.equal(cleared.events.at(-1)?.message, 'Removed the agent');
 });
+
+test('a new workspace starts with Devin and Mika, stored once', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-agents-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agents = new AgentService({ root, storage: storageFor(root), seed: true });
+  const first = await agents.list();
+  assert.deepEqual(
+    first.map((a) => [a.id, a.avatar]),
+    [
+      ['devin', '🐸'],
+      ['mika', '🦄'],
+    ],
+  );
+  await agents.archive({ id: 'mika', archived: true });
+  const again = await new AgentService({ root, storage: storageFor(root), seed: true }).list();
+  assert.equal(again.find((a) => a.id === 'mika')?.archived_at !== undefined, true);
+  assert.equal(again[0]!.created_at, first[0]!.created_at);
+});
