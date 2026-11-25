@@ -36,12 +36,25 @@ function greeting(now: Date): string {
   return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
-function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Card({
+  title,
+  action,
+  className,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
   const id = `home-${title.toLowerCase().replace(/\W+/g, '-')}`;
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col rounded-xl border bg-card p-4 shadow-xs">
+    <section
+      aria-labelledby={id}
+      className={cn('flex min-w-0 flex-col rounded-2xl border bg-card p-5 shadow-xs', className)}
+    >
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 id={id} className="text-sm font-medium">
+        <h2 id={id} className="text-sm font-semibold">
           {title}
         </h2>
         {action}
@@ -119,8 +132,9 @@ export function ProjectHome({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-5xl flex-col px-6 pt-[12vh] pb-10">
-        <div className="mx-auto w-full max-w-3xl px-6 pb-4">
+      {/* One column for every block, so the greeting, composer, inbox and cards share both edges. */}
+      <div className="mx-auto flex w-full max-w-3xl flex-col px-6 pt-[12vh] pb-12">
+        <header>
           <h1 className="text-2xl font-semibold tracking-tight">
             {greeting(now)}
             {first ? `, ${first}` : ''}
@@ -128,22 +142,27 @@ export function ProjectHome({
           <p className="mt-1 text-muted-foreground">
             What should we work on in <span className="font-medium text-foreground">{project}</span>?
           </p>
-        </div>
-        <TaskChatComposer mode="new" project={project} />
-        <Inbox items={inbox.ok ? inbox.value.items : undefined} error={!inbox.ok} />
+        </header>
+        <TaskChatComposer mode="new" project={project} className="mt-5 px-0 pb-0" />
 
-        <div className="mt-8">
+        <div className="mt-12">
+          <Inbox items={inbox.ok ? inbox.value.items : undefined} error={!inbox.ok} project={project} />
+        </div>
+
+        <div className="mt-6">
           {!board ? (
-            <p className="text-center text-sm text-destructive">Tasks unavailable</p>
+            <p role="alert" className="text-sm text-destructive">
+              Tasks unavailable. Refresh to try again.
+            </p>
           ) : tasks!.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-8 text-center">
+            <div className="rounded-2xl border border-dashed p-8 text-center">
               <p className="font-medium">Nothing here yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Your tasks, their activity and what they cost will show up here once you start one.
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Card title="Activity">
                 <p className="mb-3 text-xs text-muted-foreground">
                   {board.activityTotal} events in the last {ACTIVITY_WEEKS} weeks
@@ -163,8 +182,24 @@ export function ProjectHome({
                 </div>
               </Card>
 
+              <Card title="This month">
+                <dl className="flex flex-col gap-3">
+                  {board.month.map((s) => (
+                    <div key={s.label}>
+                      <dt className="text-xs text-muted-foreground">{s.label}</dt>
+                      <dd className="flex items-baseline gap-2">
+                        <span className="text-xl font-semibold tracking-tight tabular-nums">{s.value}</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {s.delta} vs last month
+                        </span>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </Card>
               <Card
                 title="Recent tasks"
+                className="sm:col-span-2"
                 action={
                   board.recent.length > 5 && (
                     <Link
@@ -181,22 +216,6 @@ export function ProjectHome({
                   tasks={board.recent.slice(0, 5)}
                   meta={(t) => ago(t.updated_at ?? t.created_at, now)}
                 />
-              </Card>
-
-              <Card title="This month">
-                <dl className="flex flex-col gap-3">
-                  {board.month.map((s) => (
-                    <div key={s.label}>
-                      <dt className="text-xs text-muted-foreground">{s.label}</dt>
-                      <dd className="flex items-baseline gap-2">
-                        <span className="text-lg font-semibold tabular-nums">{s.value}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {s.delta} on last month
-                        </span>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
               </Card>
             </div>
           )}

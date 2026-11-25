@@ -15,6 +15,7 @@ import {
 import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
 import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -78,9 +79,10 @@ type ComposerProps =
   | { mode: 'locked'; reason: string }
   | { mode: 'running'; project: string; id: string; reason: string };
 
-export function TaskChatComposer(props: ComposerProps) {
+/** `className` adjusts the outer frame; the home page drops its padding to share the page column. */
+export function TaskChatComposer({ className, ...props }: ComposerProps & { className?: string }) {
   return (
-    <div className="shrink-0 px-6 pb-5">
+    <div className={cn('shrink-0 px-6 pb-5', className)}>
       <div className="mx-auto max-w-3xl">
         {props.mode === 'locked' ? (
           <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
@@ -187,15 +189,20 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
       )}
 
       {isNew && type === 'work' && (
-        <label className="text-sm text-muted-foreground">
-          Jira issue key (optional)
-          <input
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <label htmlFor="jira-key" className="text-muted-foreground">
+            Jira issue key
+          </label>
+          <Input
+            id="jira-key"
             name="jira_key"
             maxLength={100}
-            className="ml-2 rounded border px-2 py-1 text-foreground"
+            spellCheck={false}
             placeholder="PROJECT-123"
+            className="h-7 w-36 font-mono md:text-xs"
           />
-        </label>
+          <span className="text-xs text-muted-foreground">Optional</span>
+        </div>
       )}
       <div className="rounded-2xl border bg-background shadow-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
         <label htmlFor="chat-input" className="sr-only">
