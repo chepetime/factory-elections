@@ -4,13 +4,22 @@ import type { ReactNode } from 'react';
 import { TaskRecord, taskActions, type ExecutionPhase } from '@factory/core';
 import TaskPage from '@/app/projects/[project]/tasks/[id]/page';
 import { backgroundRun, readDiff, readTaskControls } from '@/lib/factory';
+import { getIssue } from '@/lib/issues';
 
 vi.mock('@/lib/factory', () => ({
   readTaskControls: vi.fn(),
   backgroundRun: vi.fn(),
   readDiff: vi.fn(),
   isProjectName: () => true,
-  isTaskId: () => true,
+  isTaskId: (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id),
+}));
+vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
+vi.mock('@/components/issue-editor', () => ({
+  IssueTitle: ({ title }: { title: string }) => <h1>{title}</h1>,
+  IssueDescription: ({ description }: { description: string }) => <p>description:{description}</p>,
+  IssuePriorityField: () => <span>priority</span>,
+  IssueStatusField: () => <span>status</span>,
+  IssueCommentBox: () => <span>comment-box</span>,
 }));
 vi.mock('@/app/actions', () => ({
   approveAndOpenPullRequest: vi.fn(),
@@ -40,8 +49,27 @@ const task = TaskRecord.parse({
   stage: 'coding',
   worktree: { path: '/w', branch: 'factory/test', base_branch: 'main' },
 });
+function issue(run?: { id: string; stage: TaskRecord['stage'] }) {
+  return {
+    number: 1,
+    key: 'DE-1',
+    title: 'Fix it',
+    description: 'Fix it',
+    status: 'in_progress' as const,
+    stored_status: 'todo' as const,
+    status_at: '2026-01-01T00:00:00.000Z',
+    priority: 'none' as const,
+    runs: run ? [run.id] : [],
+    comments: [],
+    events: [],
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    run,
+  };
+}
 function observe(phase: ExecutionPhase, stage = task.stage) {
   const current = { ...task, stage };
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue({ id: task.id, stage }) });
   vi.mocked(readTaskControls).mockResolvedValue({
     ok: true,
     value: { task: current, execution: phase, actions: taskActions(current, phase) },
@@ -54,12 +82,15 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
 async function html(start?: string) {
   return renderToStaticMarkup(
     await TaskPage({
-      params: Promise.resolve({ project: 'demo', id: task.id }),
+      params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
       searchParams: Promise.resolve({ start }),
     }),
   );
 }
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue({ id: task.id, stage: task.stage }) });
+});
 
 it('stops polling an interrupted coding task and offers explicit recovery', async () => {
   observe('interrupted');
@@ -73,7 +104,7 @@ it('offers revision after approval and never unlocks commands on an unavailable 
   expect(await html()).toContain('composer:revise');
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'unavailable' });
   const page = await html();
-  expect(page).toContain('composer:locked');
+  expect(page).toContain('comment-box');
   expect(page).toContain('Execution status is unavailable');
   expect(page).not.toContain('Push and open pull request');
 });
@@ -90,7 +121,7 @@ it('does not unlock commands when the controls observation failed but a later lo
   observe('unavailable', 'approved');
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
   const page = await html();
-  expect(page).toContain('composer:locked');
+  expect(page).toContain('comment-box');
   expect(page).toContain('Execution status is unavailable');
 });
 
@@ -337,4 +368,23 @@ it('ends a successful run with a ready card, the findings, and earlier errors fo
     /Approve and open draft PR[\s\S]*Approve only[\s\S]*for="chat-input"[^>]*>Ask for changes/,
   );
   expect(page).toContain('Reject the change…');
+});
+
+it('a run id opens the task that owns it, keeping the start flag', async () => {
+  observe('completed');
+  await expect(
+    TaskPage({
+      params: Promise.resolve({ project: 'demo', id: task.id }),
+      searchParams: Promise.resolve({ start: 'failed' }),
+    }),
+  ).rejects.toMatchObject({ digest: expect.stringContaining('/projects/demo/tasks/DE-1?start=failed') });
+});
+
+it('a task without a run shows its description and takes comments', async () => {
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue() });
+  const page = await html();
+  expect(page).toContain('description:Fix it');
+  expect(page).toContain('comment-box');
+  expect(page).not.toContain('composer:');
+  expect(vi.mocked(readTaskControls)).not.toHaveBeenCalled();
 });

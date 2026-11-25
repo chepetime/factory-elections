@@ -2,25 +2,14 @@
 // The project's task board: one column per status. Dragging a card, or its "Move to" menu, asks the
 // backend to apply the drop (see dropAction in packages/core/src/issues.ts).
 import { Menu } from '@base-ui/react/menu';
-import {
-  Ban,
-  Circle,
-  CircleCheck,
-  CircleDashed,
-  CircleDot,
-  CircleX,
-  Eye,
-  LoaderCircle,
-  MoreHorizontal,
-  Plus,
-  type LucideIcon,
-} from 'lucide-react';
+import { LoaderCircle, MoreHorizontal, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
 import { createIssue, moveIssue } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { dropAction, ISSUE_STATUSES, type IssueStatus, type Stage } from '@factory/core';
+import { dropAction, ISSUE_STATUSES, type DropAction, type IssueStatus, type Stage } from '@factory/core';
+import { STATUS as COLUMNS } from '@/components/task-status';
 import { cn } from '@/lib/utils';
 
 export type BoardIssue = {
@@ -33,15 +22,6 @@ export type BoardIssue = {
   run?: { id: string; stage: Stage; updated_at?: string };
 };
 
-const COLUMNS: Record<IssueStatus, { label: string; icon: LucideIcon; tone: string }> = {
-  backlog: { label: 'Backlog', icon: CircleDashed, tone: 'text-muted-foreground' },
-  todo: { label: 'Todo', icon: Circle, tone: 'text-foreground' },
-  in_progress: { label: 'In progress', icon: CircleDot, tone: 'text-amber-600 dark:text-amber-400' },
-  in_review: { label: 'In review', icon: Eye, tone: 'text-blue-600 dark:text-blue-400' },
-  done: { label: 'Done', icon: CircleCheck, tone: 'text-emerald-600 dark:text-emerald-400' },
-  blocked: { label: 'Blocked', icon: Ban, tone: 'text-destructive' },
-  cancelled: { label: 'Cancelled', icon: CircleX, tone: 'text-muted-foreground' },
-};
 const STAGE_LABEL: Partial<Record<Stage, string>> = {
   queued: 'Queued',
   classified: 'Classified',
@@ -55,6 +35,27 @@ const STAGE_LABEL: Partial<Record<Stage, string>> = {
   failed: 'Failed',
   rejected: 'Rejected',
 };
+
+/**
+ * The drop's action once the person agrees, or its refusal. Undefined when they decline: a drop
+ * that starts, reruns or cancels paid model work never happens without a yes.
+ */
+export function decideDrop(
+  issue: Pick<BoardIssue, 'key' | 'status' | 'run'>,
+  to: IssueStatus,
+): DropAction | undefined {
+  const action = dropAction(issue.status, to, issue.run);
+  const question =
+    action.kind === 'start-run'
+      ? `Start a run for ${issue.key}? It calls the coding agent.`
+      : action.kind === 'run'
+        ? `Run ${issue.key} again? It calls the coding agent.`
+        : action.kind === 'reject'
+          ? `Cancel the open run for ${issue.key}? Its worktree is removed.`
+          : undefined;
+  if (question && !window.confirm(question)) return undefined;
+  return action;
+}
 
 function ago(iso: string, now: number): string {
   const s = Math.max(0, (now - Date.parse(iso)) / 1000);
@@ -148,25 +149,12 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   const moving = useRef(new Set<string>());
 
   const move = (issue: BoardIssue, to: IssueStatus) => {
-    const action = dropAction(issue.status, to, issue.run);
-    if (action.kind === 'none') return;
+    const action = decideDrop(issue, to);
+    if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') {
       setNotice({ kind: 'error', text: `${issue.key}: ${action.reason}` });
       return;
     }
-    // These start paid model work, so they never happen without a yes.
-    if (
-      action.kind === 'start-run' &&
-      !window.confirm(`Start a run for ${issue.key}? It calls the coding agent.`)
-    )
-      return;
-    if (action.kind === 'run' && !window.confirm(`Run ${issue.key} again? It calls the coding agent.`))
-      return;
-    if (
-      action.kind === 'reject' &&
-      !window.confirm(`Cancel the open run for ${issue.key}? Its worktree is removed.`)
-    )
-      return;
     if (moving.current.has(issue.key)) return;
     moving.current.add(issue.key);
     setNotice(undefined);
@@ -351,7 +339,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   );
 }
 
-function MoveMenu({ issue, onMove }: { issue: BoardIssue; onMove: (to: IssueStatus) => void }) {
+export function MoveMenu({ issue, onMove }: { issue: BoardIssue; onMove: (to: IssueStatus) => void }) {
   return (
     <Menu.Root>
       <Menu.Trigger
