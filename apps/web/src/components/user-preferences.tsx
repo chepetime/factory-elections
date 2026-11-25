@@ -12,7 +12,7 @@ export type UserPreferences = Pick<
 export const DEFAULT_PREFERENCES: UserPreferences = {
   identity: { emails: [] },
   preferences: { theme: 'light' },
-  tasks: { default_type: 'work', start_runs: true, jira_key_field: true },
+  tasks: { default_type: 'work', start_runs: false, jira_key_field: true },
   chat: { approval_mode: 'request' },
   notifications: { browser: false, muted: [] },
 };

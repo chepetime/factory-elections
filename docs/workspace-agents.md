@@ -30,6 +30,8 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 - A run waiting for you (in review, blocked) does not use a slot.
 - It skips Backlog tasks, archived tasks, and tasks with an open run.
 - If a start fails, the task gets one note with the reason, and the agent waits 10 minutes before it tries that task again.
+- **Routing:** a Todo task with no agent gets one from the coordinator, Mika. The coordinator makes one model call with no tools, limited to $0.10, which returns an agent from the roster and a reason. The reason shows on the task. A "none" answer adds a note and is not asked again until you edit the task. Without an active coordinator, unassigned tasks wait for you.
+- **New tasks:** a task from the prompt field goes to Backlog, or to Todo when "Start" is on. It never starts the old pipeline directly.
 - Set `FACTORY_AGENT_PICKUP=0` to turn pickup off for the whole backend.
 
 **Replies.** A comment from you wakes the agent's session, but only while the agent waits: `awaiting-approval`, `verification-failed`, `failed` or `blocked`. A comment on an approved, rejected or merged run starts nothing.

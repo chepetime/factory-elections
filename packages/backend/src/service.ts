@@ -56,6 +56,7 @@ import { AgentService } from './agent-profiles.ts';
 import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
 import { AgentPickup } from './agent-pickup.ts';
+import { routeTask } from './agent-router.ts';
 import { SessionLog, transcriptEntries, type SessionEntry } from './session-log.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
@@ -351,6 +352,15 @@ export class BackendService {
       tasks: (p) => this.tasks.list(p),
       scheduled: (p, id) => this.isScheduled(p, id),
       blocker: (p) => this.runBlocker(p),
+      route: async (task) => {
+        const base = this.runner ?? composeDriver(this.root).deps.runner;
+        const runner = this.traces.runner(
+          base,
+          () => ({ trace_id: newTraceId(), project: task.project }),
+          'model',
+        );
+        return routeTask({ task, agents: await this.agents.list(), runner });
+      },
       accepting: () => this.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });

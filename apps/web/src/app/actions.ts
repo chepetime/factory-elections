@@ -12,7 +12,6 @@ import {
   isProjectName,
   isTaskId,
   startTask,
-  submitTaskRequest,
 } from '@/lib/factory';
 import { startProfileCheck } from '@/lib/profile-check';
 import { saveAssignment } from '@/lib/team';
@@ -83,34 +82,23 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
   if (!isProjectName(project)) return { error: 'Invalid project.' };
   if (!prompt) return { error: 'Describe the task.' };
   const jiraKey = field(form, 'jira_key') || undefined;
-  if (form.get('start') !== 'on') {
-    // Without a run, the task waits on the board in Todo.
-    const line =
-      prompt
-        .split('\n')
-        .map((l) => l.trim())
-        .find(Boolean) ?? prompt;
-    const issue = await createIssueRun(project, {
-      title: line.length > 200 ? `${line.slice(0, 199)}…` : line,
-      description: prompt,
-      status: 'todo',
-      jira_key: jiraKey,
-    });
-    if (!issue.ok) return { error: issue.error };
-    revalidatePath(`/projects/${project}`, 'layout');
-    redirect(`/projects/${project}/tasks/${issue.value.key}`);
-  }
-  const created = await submitTaskRequest(project, prompt, jiraKey);
-  if (!created.ok) return { error: created.error };
-  const id = created.value;
-  const started = await startTask({ project, id, action: 'run' });
-  if (!started.ok) {
-    // Creation succeeded. Navigate to that durable task instead of inviting duplicate submission.
-    refresh(project, id);
-    redirect(`/projects/${project}/tasks/${id}?start=failed`);
-  }
-  refresh(project, id);
-  redirect(`/projects/${project}/tasks/${id}`);
+  // A new task lands on the board. "Start" puts it in Todo, where its agent (or the one the
+  // coordinator picks) takes it up; otherwise it waits in Backlog. No pipeline run starts here.
+  const status = form.get('start') === 'on' ? 'todo' : 'backlog';
+  const line =
+    prompt
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) ?? prompt;
+  const issue = await createIssueRun(project, {
+    title: line.length > 200 ? `${line.slice(0, 199)}…` : line,
+    description: prompt,
+    status,
+    jira_key: jiraKey,
+  });
+  if (!issue.ok) return { error: issue.error };
+  revalidatePath(`/projects/${project}`, 'layout');
+  redirect(`/projects/${project}/tasks/${issue.value.key}`);
 }
 
 export async function runTask(_prev: ActionState, form: FormData): Promise<ActionState> {

@@ -240,13 +240,13 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
               onClick={() => setStart((s) => !s)}
               title={
                 start
-                  ? 'Creates the task and starts a run: classify, code, verify and review'
-                  : 'Adds the task to the board in Todo, with no run yet'
+                  ? 'Adds the task to Todo: its agent, or the one Mika picks, starts it'
+                  : 'Adds the task to Backlog; move it to Todo when it is ready'
               }
               className={cn('rounded-full', !start && 'text-muted-foreground')}
             >
               <Play aria-hidden />
-              {start ? 'Run now' : 'Add to board'}
+              {start ? 'Start' : 'Backlog'}
             </Button>
           )}
           <span className="hidden text-xs text-muted-foreground sm:inline">↵ to send · ⇧↵ new line</span>

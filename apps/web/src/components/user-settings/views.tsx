@@ -305,8 +305,8 @@ export function TasksView({ initial }: { initial: UserSettings['tasks'] }) {
           )}
         </SettingRow>
         <SwitchRow
-          label="Run now"
-          hint="On: a new task starts a run at once. Off: it goes to the board in Todo."
+          label="Start new tasks"
+          hint="On: a new task goes to Todo, and an agent starts it. Off: it waits in Backlog."
           checked={value.start_runs}
           onChange={(start_runs) => save({ ...value, start_runs })}
         />

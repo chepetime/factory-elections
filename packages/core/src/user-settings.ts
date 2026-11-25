@@ -68,11 +68,11 @@ export const UserSettings = z.object({
     .object({
       default_type: z.enum(['ticket', 'work', 'review', 'general']).default('work'),
       /** New tasks start a run at once; off adds them to the board in Todo. */
-      start_runs: z.boolean().default(true),
+      start_runs: z.boolean().default(false),
       /** Show the optional Jira issue key field for "Work on task". */
       jira_key_field: z.boolean().default(true),
     })
-    .default({ default_type: 'work', start_runs: true, jira_key_field: true }),
+    .default({ default_type: 'work', start_runs: false, jira_key_field: true }),
   chat: z
     .object({ approval_mode: z.enum(['request', 'auto', 'full']).default('request') })
     .default({ approval_mode: 'request' }),
