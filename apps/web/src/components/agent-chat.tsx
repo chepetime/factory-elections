@@ -2,11 +2,19 @@
 // Chats with workspace agents: the chat list, the new-chat picker, and one conversation that polls
 // while the agent replies.
 import { Menu } from '@base-ui/react/menu';
-import { MoreHorizontal, Square } from 'lucide-react';
+import { CircleCheck, CircleX, LoaderCircle, MoreHorizontal, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useId, useState, useTransition, type ReactNode } from 'react';
-import { deleteChat, renameChat, sendChat, startChat, stopChat } from '@/app/agent-actions';
+import { useId, useState, useTransition, type ReactNode } from 'react';
+import { useChat } from '@ai-sdk/react';
+import type { DynamicToolUIPart } from 'ai';
+import { deleteChat, renameChat, startChat } from '@/app/agent-actions';
+import {
+  factoryChatTransport,
+  toMessages,
+  type ChatSnapshot,
+  type FactoryMessage,
+} from '@/lib/chat-transport';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { ChatComposer } from '@/components/chat-composer';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -166,42 +174,79 @@ export function NewChat({
   );
 }
 
-type Turn = {
-  at: string;
-  role: 'user' | 'agent';
-  text: string;
-  cost_usd?: number | null;
-  error?: string;
-  tasks_created?: { project: string; key: string }[];
-};
 type Chat = {
   id: string;
   title: string;
   project?: string;
-  turns: Turn[];
+  turns: ChatSnapshot['turns'];
   working: boolean;
-  partial?: string;
 };
 
-function AgentReply({ agent, turn }: { agent: AgentOption; turn: Turn }) {
+/** One tool step in a reply: "Read README.md", with a spinner while it runs. */
+function ToolStep({ part }: { part: DynamicToolUIPart }) {
+  const detail = (part.input as { detail?: string } | undefined)?.detail;
+  const running = part.state === 'input-available' || part.state === 'input-streaming';
+  const failed = part.state === 'output-error';
+  return (
+    <li className="flex items-center gap-2 text-xs text-muted-foreground">
+      {running ? (
+        <LoaderCircle className="size-3.5 shrink-0 motion-safe:animate-spin" aria-label="Running" />
+      ) : failed ? (
+        <CircleX className="size-3.5 shrink-0 text-destructive" aria-label="Failed" />
+      ) : (
+        <CircleCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Done" />
+      )}
+      <span className="font-medium text-foreground">{part.toolName}</span>
+      {detail && <span className="min-w-0 truncate font-mono">{detail}</span>}
+    </li>
+  );
+}
+
+function AgentReply({
+  agent,
+  message,
+  live,
+}: {
+  agent: AgentOption;
+  message: FactoryMessage;
+  live: boolean;
+}) {
+  const meta = message.metadata ?? {};
+  const tools = message.parts.filter((p): p is DynamicToolUIPart => p.type === 'dynamic-tool');
+  const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   return (
     <div className="flex gap-3">
       <AgentAvatar agent={agent} decorative className="mt-0.5" />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{agent.name}</span> · <LocalTime iso={turn.at} />
-          {typeof turn.cost_usd === 'number' && (
-            <span className="tabular-nums"> · ${turn.cost_usd.toFixed(2)}</span>
+          <span className="font-medium text-foreground">{agent.name}</span>
+          {meta.at && (
+            <>
+              {' '}
+              · <LocalTime iso={meta.at} />
+            </>
+          )}
+          {typeof meta.cost_usd === 'number' && (
+            <span className="tabular-nums"> · ${meta.cost_usd.toFixed(2)}</span>
           )}
         </p>
-        {turn.text && (
-          <div className="text-sm leading-relaxed">
-            <Markdown text={turn.text} />
-          </div>
+        {tools.length > 0 && (
+          <ul aria-label="Steps" className="flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2">
+            {tools.map((part) => (
+              <ToolStep key={part.toolCallId} part={part} />
+            ))}
+          </ul>
         )}
-        {turn.tasks_created?.length ? (
+        {text ? (
+          <div className="text-sm leading-relaxed">
+            <Markdown text={text} />
+          </div>
+        ) : live ? (
+          <p className="text-sm text-muted-foreground motion-safe:animate-pulse">{agent.name} is replying…</p>
+        ) : null}
+        {meta.tasks_created?.length ? (
           <ul className="flex flex-wrap gap-2">
-            {turn.tasks_created.map((t) => (
+            {meta.tasks_created.map((t) => (
               <li key={`${t.project}-${t.key}`}>
                 <Link
                   href={`/projects/${t.project}/tasks/${t.key}`}
@@ -213,9 +258,9 @@ function AgentReply({ agent, turn }: { agent: AgentOption; turn: Turn }) {
             ))}
           </ul>
         ) : null}
-        {turn.error && (
+        {meta.error && (
           <p role="alert" className="text-sm text-destructive">
-            {turn.error}
+            {meta.error}
           </p>
         )}
       </div>
@@ -233,43 +278,23 @@ export function ChatThread({
   archived: boolean;
 }) {
   const router = useRouter();
-  const [chat, setChat] = useState(initial);
+  const [title, setTitle] = useState(initial.title);
   const [error, setError] = useState<string>();
-  const [sending, setSending] = useState(false);
   const [confirm, dialog] = useConfirm();
   const [renaming, setRenaming] = useState(false);
   const [, start] = useTransition();
-  const working = chat.working || sending;
-
-  useEffect(() => setChat(initial), [initial]);
-  useEffect(() => {
-    if (!chat.working) return;
-    let live = true;
-    const timer = setInterval(async () => {
-      const res = await fetch(`/api/chats/${chat.id}`, { cache: 'no-store' }).catch(() => undefined);
-      if (!live || !res?.ok) return;
-      const next = (await res.json()) as Chat;
-      setChat(next);
-      if (!next.working) router.refresh();
-    }, 2000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [chat.id, chat.working, router]);
-
-  const send = async (text: string) => {
-    setSending(true);
-    setError(undefined);
-    const optimistic: Turn = { at: new Date().toISOString(), role: 'user', text };
-    setChat((c) => ({ ...c, turns: [...c.turns, optimistic], working: true }));
-    const result = await sendChat(chat.id, text);
-    setSending(false);
-    if (result.error) {
-      setError(result.error);
-      setChat((c) => ({ ...c, turns: c.turns.filter((t) => t !== optimistic), working: false }));
-    }
-  };
+  const [transport] = useState(() => factoryChatTransport(initial.id));
+  const { messages, sendMessage, stop, status } = useChat<FactoryMessage>({
+    id: initial.id,
+    messages: toMessages(initial.turns),
+    transport,
+    resume: initial.working,
+    onError: (e) => setError(e.message),
+    // The list and the title come from the server; refresh them once a reply is saved.
+    onFinish: () => router.refresh(),
+  });
+  const working = status === 'submitted' || status === 'streaming';
+  const last = messages.at(-1);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -281,13 +306,13 @@ export function ChatThread({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const title = String(new FormData(e.currentTarget).get('title') ?? '').trim();
+                const next = String(new FormData(e.currentTarget).get('title') ?? '').trim();
                 setRenaming(false);
-                if (title && title !== chat.title)
+                if (next && next !== title)
                   start(async () => {
-                    const result = await renameChat(chat.id, title);
+                    const result = await renameChat(initial.id, next);
                     if (result.error) setError(result.error);
-                    else setChat((c) => ({ ...c, title }));
+                    else setTitle(next);
                   });
               }}
             >
@@ -298,7 +323,7 @@ export function ChatThread({
                 id="chat-title"
                 name="title"
                 autoFocus
-                defaultValue={chat.title}
+                defaultValue={title}
                 maxLength={120}
                 onBlur={(e) => e.currentTarget.form?.requestSubmit()}
                 onKeyDown={(e) => e.key === 'Escape' && setRenaming(false)}
@@ -306,13 +331,13 @@ export function ChatThread({
               />
             </form>
           ) : (
-            <h2 className="truncate text-sm font-medium">{chat.title}</h2>
+            <h2 className="truncate text-sm font-medium">{title}</h2>
           )}
           <p className="truncate text-xs text-muted-foreground">
             <Link href={`/agents/${agent.id}`} className="hover:underline">
               {agent.name}
             </Link>
-            {chat.project ? ` · reads ${chat.project}` : ' · no project'}
+            {initial.project ? ` · reads ${initial.project}` : ' · no project'}
           </p>
         </div>
         <Menu.Root>
@@ -340,7 +365,7 @@ export function ChatThread({
                         tone: 'destructive',
                       })
                     ) {
-                      const result = await deleteChat(chat.id);
+                      const result = await deleteChat(initial.id);
                       if (result?.error) setError(result.error);
                     }
                   }}
@@ -354,51 +379,49 @@ export function ChatThread({
       </header>
 
       <ChatScroll>
-        {chat.turns.length === 0 && !working ? (
+        {messages.length === 0 ? (
           <div className="m-auto flex flex-col items-center gap-3 py-16 text-center">
             <AgentAvatar agent={agent} size="lg" decorative />
             <p className="text-base font-semibold">Chat with {agent.name}</p>
             <p className="max-w-sm text-sm text-pretty text-muted-foreground">{agent.description}</p>
           </div>
         ) : (
-          chat.turns.map((turn, i) =>
-            turn.role === 'user' ? (
-              <div key={i} className="flex flex-col items-end gap-1">
+          messages.map((message) =>
+            message.role === 'user' ? (
+              <div key={message.id} className="flex flex-col items-end gap-1">
                 <div className="max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap">
-                  {turn.text}
+                  {message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')}
                 </div>
-                <p className="px-1 text-xs text-muted-foreground">
-                  <LocalTime iso={turn.at} />
-                </p>
+                {message.metadata?.at && (
+                  <p className="px-1 text-xs text-muted-foreground">
+                    <LocalTime iso={message.metadata.at} />
+                  </p>
+                )}
               </div>
             ) : (
-              <AgentReply key={i} agent={agent} turn={turn} />
+              <AgentReply
+                key={message.id}
+                agent={agent}
+                message={message}
+                live={working && message === last}
+              />
             ),
           )
         )}
-        {working && (
+        {status === 'submitted' && last?.role === 'user' && (
           <div className="flex gap-3" role="status">
             <AgentAvatar agent={agent} decorative className="mt-0.5" />
-            <div className="min-w-0 flex-1 text-sm leading-relaxed">
-              {chat.partial ? (
-                <Markdown text={chat.partial} />
-              ) : (
-                <p className="text-muted-foreground motion-safe:animate-pulse">{agent.name} is replying…</p>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground motion-safe:animate-pulse">
+              {agent.name} is replying…
+            </p>
           </div>
         )}
       </ChatScroll>
 
       <div className="shrink-0 px-6 pb-5">
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
-          {chat.working && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-center"
-              onClick={() => start(async () => void (await stopChat(chat.id)))}
-            >
+          {working && (
+            <Button variant="outline" size="sm" className="self-center" onClick={() => void stop()}>
               <Square aria-hidden /> Stop
             </Button>
           )}
@@ -409,8 +432,11 @@ export function ChatThread({
           )}
           <ChatComposer
             placeholder={`Message ${agent.name}…`}
-            onSend={(message) => send(message)}
-            sending={sending}
+            onSend={async (message) => {
+              setError(undefined);
+              await sendMessage({ text: message });
+            }}
+            sending={status === 'submitted'}
             disabled={working || archived}
             {...(error ? { error } : {})}
           />
