@@ -59,7 +59,15 @@ export default function ComponentsPage() {
   );
 }
 
-function GalleryItem({ id, name, children }: { id: string; name: keyof typeof origins; children: ReactNode }) {
+function GalleryItem({
+  id,
+  name,
+  children,
+}: {
+  id: string;
+  name: keyof typeof origins;
+  children: ReactNode;
+}) {
   return (
     <article
       id={id}

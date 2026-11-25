@@ -170,9 +170,7 @@ export function FreeComponentLibrary() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h3 className="font-medium">{selected.title}</h3>
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {selected.category}
-                    </p>
+                    <p className="text-xs text-muted-foreground capitalize">{selected.category}</p>
                   </div>
                   {canSwitchStyle && (
                     <CleanSegmentedControl
@@ -213,12 +211,7 @@ export function FreeComponentLibrary() {
                     No live preview. Open its Storybook preview below.
                   </p>
                 )}
-                <CleanCodeBlock
-                  code={importExample(selected, style)}
-                  language="tsx"
-                  filename="Import"
-                  wrap
-                />
+                <CleanCodeBlock code={importExample(selected, style)} language="tsx" filename="Import" wrap />
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
                   <a
                     href={`http://127.0.0.1:6006/?path=/story/${selected.storybookId}--${variant.style}`}
