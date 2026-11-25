@@ -1521,11 +1521,21 @@ export class Driver {
   }
 
   async reject(project: string, id: string, note: string): Promise<TaskRecord> {
-    const { task, headSha } = await this.gate(project, id);
+    const task = await this.deps.tasks.read(project, id);
     const blockers = taskCommandBlockers(task, 'reject');
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
-    const approval = { decision: 'rejected' as const, head_sha: headSha, at: this.deps.now(), note };
-    const updated = withStage({ ...task, approval }, this.deps.now(), 'rejected', `Rejected: ${note}`);
+    // A run can stop before it has a worktree (at the classifier, or a refused start): it still
+    // closes, with no commit to record. A worktree removed by hand is treated the same way.
+    const headSha = task.worktree
+      ? await this.gate(project, id).then(
+          (g) => g.headSha,
+          () => undefined,
+        )
+      : undefined;
+    const approval = headSha
+      ? { approval: { decision: 'rejected' as const, head_sha: headSha, at: this.deps.now(), note } }
+      : {};
+    const updated = withStage({ ...task, ...approval }, this.deps.now(), 'rejected', `Rejected: ${note}`);
     await this.deps.tasks.write(updated);
     return updated;
   }

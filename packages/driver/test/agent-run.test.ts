@@ -202,3 +202,11 @@ test('a stopped session keeps its id, so your reply resumes the same agent memor
   await ctx.driver.revise('demo', ctx.task.id, 'Keep going', { maxAttempts: 3 });
   assert.equal(ctx.calls[1]!.resume, 'sess-first');
 });
+
+test('a run that never made a worktree can still be rejected', async () => {
+  const { driver, task, store } = await setup([]);
+  const rejected = await driver.reject('demo', task.id, 'Moved back to Todo from the task board.');
+  assert.equal(rejected.stage, 'rejected');
+  assert.equal(rejected.approval, undefined, 'no commit to record');
+  assert.equal((await store.read('demo', task.id)).stage, 'rejected');
+});

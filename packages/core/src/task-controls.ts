@@ -70,7 +70,8 @@ const COMMAND_RESULT: Record<TaskCommand, string> = {
 export function taskCommandBlockers(task: TaskRecord, action: TaskCommand): CommandBlocker[] {
   if (task.pr || task.stage === 'pr-opened')
     return [{ code: 'pr-open', message: 'A pull request is already open for this task.' }];
-  if (action !== 'run' && !task.worktree)
+  // Reject only closes the run, so a run that stopped before it made a worktree can still close.
+  if (action !== 'run' && action !== 'reject' && !task.worktree)
     return [{ code: 'worktree-required', message: 'The task has no worktree.' }];
   if (!COMMAND_STAGES[action].includes(task.stage))
     return [{ code: 'stage', message: `Task at ${task.stage} cannot be ${COMMAND_RESULT[action]}.` }];
