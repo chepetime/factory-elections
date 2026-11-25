@@ -46,12 +46,24 @@ describe('web/backend reintegration', () => {
         updated_at: '2026-01-01T00:00:00.000Z',
       }),
     });
-    await expect(submitTask({}, form({ project: 'demo', prompt, start: 'on' }))).rejects.toThrow(
-      'redirect:/projects/demo/tasks/DE-3',
-    );
+    await expect(
+      submitTask(
+        {},
+        form({
+          project: 'demo',
+          prompt: `Implement it.\n\n${prompt}`,
+          title: '--help "literal task"',
+          start: 'on',
+        }),
+      ),
+    ).rejects.toThrow('redirect:/projects/demo/tasks/DE-3');
     expect(rpc).toHaveBeenCalledWith('CreateIssue', {
       project: 'demo',
-      json: JSON.stringify({ title: '--help "literal task"', description: prompt, status: 'todo' }),
+      json: JSON.stringify({
+        title: '--help "literal task"',
+        description: `Implement it.\n\n${prompt}`,
+        status: 'todo',
+      }),
     });
     expect(rpc).not.toHaveBeenCalledWith('SubmitTask', expect.anything());
     expect(rpc).not.toHaveBeenCalledWith('StartRun', expect.anything());

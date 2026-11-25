@@ -86,10 +86,12 @@ export async function submitTask(_prev: ActionState, form: FormData): Promise<Ac
   // coordinator picks) takes it up; otherwise it waits in Backlog. No pipeline run starts here.
   const status = form.get('start') === 'on' ? 'todo' : 'backlog';
   const line =
-    prompt
+    field(form, 'title') ||
+    (prompt
       .split('\n')
       .map((l) => l.trim())
-      .find(Boolean) ?? prompt;
+      .find(Boolean) ??
+      prompt);
   const issue = await createIssueRun(project, {
     title: line.length > 200 ? `${line.slice(0, 199)}…` : line,
     description: prompt,
