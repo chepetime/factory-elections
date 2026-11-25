@@ -2,7 +2,8 @@
 // "Agent" in the UI; AgentProfile in code, since agents.ts already names the provider contracts.
 import { z } from 'zod';
 import { ModelRef } from './agents.ts';
-import { Effort, ProjectName } from './schemas.ts';
+import { runFinished } from './issues.ts';
+import { Effort, ProjectName, type Stage } from './schemas.ts';
 
 const Iso = z.string().min(1);
 
@@ -134,7 +135,7 @@ export type PickupCandidate = {
   created_at: string;
   archived: boolean;
   /** The latest run's stage, if the task has one. */
-  run_stage?: string;
+  run_stage?: Stage;
   /** The latest run exists but never started, so it can start now. */
   restartable?: boolean;
 };
@@ -160,10 +161,7 @@ export function pickupPlan(
           t.assignee === agent.id &&
           t.status === 'todo' &&
           !t.archived &&
-          (t.run_stage === undefined ||
-            t.run_stage === 'rejected' ||
-            t.run_stage === 'pr-opened' ||
-            t.restartable === true) &&
+          (t.run_stage === undefined || runFinished(t.run_stage) || t.restartable === true) &&
           !skip(t),
       )
       .sort(

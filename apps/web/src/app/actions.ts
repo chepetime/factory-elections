@@ -321,8 +321,10 @@ const FEATURE_GATE_MESSAGES: Record<string, string> = {
   grill: 'Sent. The agent reads it now.',
   'skip-grill': 'Skipped the questions.',
   'write-spec': 'Writing the specification.',
+  'save-spec': 'Saved. Approve the specification again.',
   'approve-spec': 'Approved.',
   plan: 'Planning started. Refresh to check progress.',
+  'save-board': 'Saved the board.',
   'approve-board': 'Approved.',
   'mark-merged': 'Marked as merged.',
   'retry-ticket': 'Started the ticket again.',
@@ -337,6 +339,13 @@ export async function featureGateAction(_prev: ActionState, form: FormData): Pro
   const action = field(form, 'action');
   const ticket = field(form, 'ticket');
   const text = field(form, 'text');
+  let tickets: unknown;
+  if (action === 'save-board')
+    try {
+      tickets = JSON.parse(field(form, 'tickets'));
+    } catch {
+      return { error: 'The tickets could not be read. Reload the page and try again.' };
+    }
   const message = Object.hasOwn(FEATURE_GATE_MESSAGES, action) ? FEATURE_GATE_MESSAGES[action] : undefined;
   if (!isProjectName(project) || !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) || !message)
     return { error: 'Invalid feature action.' };
@@ -348,7 +357,8 @@ export async function featureGateAction(_prev: ActionState, form: FormData): Pro
         id,
         action,
         ...(action === 'approve-board' ? { mirror: form.get('mirror') === 'on' } : {}),
-        ...(action === 'grill' && text ? { text } : {}),
+        ...((action === 'grill' || action === 'save-spec') && text ? { text } : {}),
+        ...(action === 'save-board' ? { tickets } : {}),
         ...(action === 'mark-merged' || action === 'retry-ticket' ? { ticket } : {}),
       }),
     });

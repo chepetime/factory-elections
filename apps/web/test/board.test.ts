@@ -61,7 +61,7 @@ describe('buildBoard', () => {
       { task: task({ stage: 'rejected' }) },
       { task: task({ stage: 'failed' }) },
     ];
-    const board = buildBoard({ tasks });
+    const board = buildBoard({ tasks, inbox: [] });
     const placed = Object.values(board.columns).flat();
     expect(placed).toHaveLength(4);
     expect(new Set(placed.map((c) => c.id)).size).toBe(4);
@@ -74,6 +74,12 @@ describe('buildBoard', () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it('keeps a failed task in Needs me when the inbox could not be read', () => {
+    const t = task({ stage: 'failed' });
+    expect(columnOf(buildBoard({ tasks: [{ task: t }] }), t.id)).toBe('needs-me');
+    expect(buildBoard({ tasks: [{ task: t }], inbox: [] }).archived).toBe(1);
   });
 
   it('lets a live run win over an open inbox item', () => {

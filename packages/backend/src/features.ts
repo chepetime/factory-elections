@@ -24,6 +24,7 @@ import {
   GrillReply,
   PLANNED_TICKETS_SCHEMA,
   PlannedTickets,
+  runFinished,
   ProjectName,
   startableTickets,
   Ticket,
@@ -88,6 +89,8 @@ export interface FeatureDeps {
   };
   /** Schedules a task run (queued behind the worker limit). */
   startRun(project: string, id: string): Promise<unknown>;
+  /** Ends an open run: stops it when it is live, rejects it otherwise. */
+  closeRun?(project: string, id: string, note: string): Promise<unknown>;
   /** Starts a senior-pr-review of an opened PR. */
   reviewPr?(project: string, number: number): Promise<unknown>;
   log?(line: string): void;
@@ -239,6 +242,8 @@ export class FeatureService {
     const action = Action.parse(raw);
     const { project, id } = base;
     let feature = await this.read(project, id);
+    // A second cancel is not an error: the feature is already what the caller asked for.
+    if (action.action === 'cancel' && feature.stage === 'cancelled') return feature;
     // The stage, ownership and content rules are in core, shared with the page and action discovery.
     const [blocker] = featureCommandBlockers(
       {
@@ -311,9 +316,35 @@ export class FeatureService {
         return this.background(feature, 'write-qa', () => this.writeQa(project, id));
       case 'complete':
         return this.write({ ...feature, stage: 'done' });
-      case 'cancel':
-        return this.write({ ...feature, stage: 'cancelled' });
+      case 'cancel': {
+        // An old step error says nothing about a cancelled feature.
+        feature = await this.write({ ...feature, stage: 'cancelled', error: undefined });
+        const failed = await this.closeRuns(feature);
+        return failed.length
+          ? this.write({
+              ...feature,
+              error: `Cancelled, but these runs are still open: ${failed.join('; ')}. Close them from their task pages.`,
+            })
+          : feature;
+      }
     }
+  }
+
+  /** Closes the open runs of a cancelled feature's tickets. Returns what could not be closed. */
+  private async closeRuns(feature: Feature): Promise<string[]> {
+    const failed: string[] = [];
+    for (const t of feature.tickets) {
+      if (!t.task_id || !this.deps.closeRun) continue;
+      const task = await this.deps.tasks.read(feature.project, t.task_id).catch(() => undefined);
+      // A rejected run is closed already; an open pull request is a person's to merge or close.
+      if (!task || runFinished(task.stage)) continue;
+      await this.deps
+        .closeRun(feature.project, t.task_id, `The feature "${feature.title}" was cancelled.`)
+        .catch((error: unknown) =>
+          failed.push(`${t.id}: ${error instanceof Error ? error.message : String(error)}`),
+        );
+    }
+    return failed;
   }
 
   /** Accepts an agent step and runs it in the background with an agent slot. */

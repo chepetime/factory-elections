@@ -255,6 +255,8 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
   const tasks = new TaskStore(root);
   let releaseSpec: (() => void) | undefined;
   let qaCalls = 0;
+  let refuseClose = false;
+  const closed: string[] = [];
   const one = {
     id: 'T1',
     title: 'Add the model',
@@ -285,6 +287,10 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
     facts: async () => undefined,
     tasks,
     startRun: async () => undefined,
+    closeRun: async (_project, id) => {
+      if (refuseClose) throw new Error('the run is busy');
+      closed.push(id);
+    },
   });
   const allowed = async (id: string) =>
     (await features.detail({ project: 'app', id })).actions.filter((a) => a.allowed).map((a) => a.action);
@@ -305,8 +311,13 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
   const after = await features.read('app', cancelled.id);
   assert.deepEqual([after.stage, after.cost_usd], ['cancelled', 0.5]);
   assert.deepEqual(await allowed(cancelled.id), []);
+  // A second cancel is not an error; any other command is refused.
+  assert.equal(
+    (await features.act({ project: 'app', id: cancelled.id, action: 'cancel' })).stage,
+    'cancelled',
+  );
   await assert.rejects(
-    features.act({ project: 'app', id: cancelled.id, action: 'cancel' }),
+    features.act({ project: 'app', id: cancelled.id, action: 'skip-grill' }),
     /is cancelled; it accepts no more commands/,
   );
 
@@ -336,4 +347,25 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
   await act('write-qa');
   await features.idle();
   assert.equal(qaCalls, 2);
+
+  // Cancel closes the open runs of the tickets; a run that cannot be closed is named.
+  assert.equal((await act('cancel')).error, undefined);
+  assert.deepEqual(closed, [ticket!.task_id]);
+  const other = await features.create({ project: 'app', idea: 'Cancel with a busy run' });
+  const run = await tasks.create('app', repo, 'x', 'now');
+  await writeFile(
+    join(root, 'app', 'features', other.id, 'feature.json'),
+    JSON.stringify({
+      ...other,
+      stage: 'implementing',
+      tickets: [{ ...one, task_id: run.id, state: 'running' }],
+    }),
+  );
+  refuseClose = true;
+  const left = await features.act({ project: 'app', id: other.id, action: 'cancel' });
+  assert.equal(left.stage, 'cancelled');
+  assert.match(left.error!, /T1: the run is busy/);
+  // An open pull request is not closed.
+  await tasks.write({ ...(await tasks.read('app', ticket!.task_id!)), stage: 'pr-opened' });
+  assert.equal(closed.length, 1);
 });

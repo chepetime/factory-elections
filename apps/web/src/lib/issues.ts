@@ -15,6 +15,8 @@ export const IssueView = Issue.extend({
       stage: Stage,
       updated_at: z.string().optional(),
       waiting: z.boolean().optional(),
+      /** A live run holds the task now. Absent from an older backend: the stage decides. */
+      owned: z.boolean().optional(),
     })
     .optional(),
 });

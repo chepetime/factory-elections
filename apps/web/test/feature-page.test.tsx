@@ -48,14 +48,23 @@ it('offers the commands the backend accepts in each stage, and no others', async
   expect(asked.html).toContain('name="text"');
   expect(asked.sends).toEqual(['grill', 'skip-grill', 'write-spec', 'cancel']);
 
-  expect((await page('spec', { spec: '# Spec' })).sends).toEqual(['approve-spec', 'write-spec', 'cancel']);
+  expect((await page('spec', { spec: '# Spec' })).sends).toEqual([
+    'approve-spec',
+    'write-spec',
+    'save-spec',
+    'cancel',
+  ]);
   expect((await page('spec')).sends).toEqual(['write-spec', 'cancel']);
-  expect((await page('spec-approved', { spec: '# Spec' })).sends).toEqual(['plan', 'cancel']);
+  expect((await page('spec-approved', { spec: '# Spec' })).sends).toEqual(['save-spec', 'plan', 'cancel']);
   expect((await page('board', { tickets: [ticket('T1')] })).sends).toEqual([
+    'save-board',
     'approve-board',
     'plan',
     'cancel',
   ]);
+  const board = await page('board', { tickets: [ticket('T1')] });
+  expect(board.html).toContain('aria-label="T1 title"');
+  expect(board.html).toContain('name="tickets"');
 
   const work = await page('implementing', {
     tickets: [

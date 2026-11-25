@@ -27,8 +27,11 @@ import {
 import type { DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 
-/** `waiting`: a new turn is queued until its agent has a free slot; the stage is still the old one. */
-export type IssueRun = { id: string; stage: Stage; updated_at?: string; waiting?: boolean };
+/**
+ * `waiting`: a new turn is queued until its agent has a free slot; the stage is still the old one.
+ * `owned`: a live run holds the task now, whatever its stage says.
+ */
+export type IssueRun = { id: string; stage: Stage; updated_at?: string; waiting?: boolean; owned: boolean };
 export type IssueView = Omit<Issue, 'status'> & {
   key: string;
   /** The column it shows in: the latest run's status unless a person set one since. */
@@ -43,6 +46,8 @@ export type IssueDeps = {
   root: string;
   storage: DataStorage;
   tasks: { list(project: string): Promise<TaskRecord[]> };
+  /** Whether a run of this task is accepted, running or finalizing in this backend. */
+  owned?: (project: string, id: string) => boolean;
   settings: (project: string) => Promise<ProjectSettings>;
   /** Creates a factory run and returns its id; it does not start it. */
   submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
@@ -187,7 +192,13 @@ export class IssueService {
     const task = latest ? runs.get(latest) : undefined;
     const waiting = task ? this.queued(task.project, task.id) : false;
     const run = task
-      ? { id: task.id, stage: task.stage, updated_at: task.updated_at, ...(waiting ? { waiting: true } : {}) }
+      ? {
+          id: task.id,
+          stage: task.stage,
+          updated_at: task.updated_at,
+          ...(waiting ? { waiting: true } : {}),
+          owned: this.deps.owned?.(task.project, task.id) ?? false,
+        }
       : undefined;
     return {
       ...issue,

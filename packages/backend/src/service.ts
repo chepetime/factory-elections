@@ -9,6 +9,7 @@ import {
   TaskId,
   TaskCommand,
   executionPhase,
+  runWorking,
   taskActions,
   taskCommandBlockers,
   withStage,
@@ -335,6 +336,10 @@ export class BackendService {
       facts: (p) => this.memory.prompt(p),
       tasks: this.tasks,
       startRun: (project, id) => this.start({ project, id, action: 'run' } as Command),
+      closeRun: (project, id, note) =>
+        this.isScheduled(project, id)
+          ? this.stopRun({ project, id })
+          : this.execute({ project, id, action: 'reject', note } as Command),
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
     });
@@ -346,6 +351,7 @@ export class BackendService {
       root,
       storage: this.storage,
       tasks: this.tasks,
+      owned: (p, id) => this.isScheduled(p, id),
       settings: (p) => this.settings.get(p),
       submit: (input) => this.submit(input),
       revise: (project, id, note) => this.start({ project, id, action: 'revise', note } as Command),
@@ -886,7 +892,7 @@ export class BackendService {
           : String(error);
       // A worker error must not leave the UI thinking an owned run is still coding.
       const task = await this.tasks.read(command.project, command.id);
-      if (stopped || ['coding', 'reviewing'].includes(task.stage))
+      if (stopped || runWorking(task.stage))
         await this.tasks.write(withStage(task, new Date().toISOString(), 'failed', record.error));
     } finally {
       this.controllers.delete(record.id);
@@ -1315,7 +1321,7 @@ export class BackendService {
           finished_at: new Date().toISOString(),
         });
         const current = await this.tasks.read(project.name, task.id);
-        if (['coding', 'reviewing'].includes(current.stage))
+        if (runWorking(current.stage))
           await this.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
       }
     }

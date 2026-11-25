@@ -1,8 +1,7 @@
 // Numbers for the home board, computed from a project's task records.
-import type { Stage, TaskRecord } from '@factory/core';
+import { runAttention, type TaskRecord } from '@factory/core';
 
 export const ACTIVITY_WEEKS = 12;
-export const NEEDS_YOU: Stage[] = ['awaiting-approval', 'blocked', 'verification-failed', 'failed'];
 
 export interface ActivityDay {
   date: string; // YYYY-MM-DD, local time
@@ -78,7 +77,7 @@ export function overview(tasks: TaskRecord[], now = new Date()): Overview {
     activity,
     activityTotal: activity.reduce((sum, d) => sum + d.count, 0),
     recent: newest,
-    needsYou: newest.filter((t) => NEEDS_YOU.includes(t.stage)),
+    needsYou: newest.filter((t) => runAttention(t.stage) === 'needs-you'),
     month: [
       { label: 'Runs started', value: String(cur.created), delta: signed(cur.created - last.created) },
       { label: 'Pull requests opened', value: String(cur.prs), delta: signed(cur.prs - last.prs) },

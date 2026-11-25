@@ -110,14 +110,18 @@ export function inboxItems(input: InboxInput): InboxItem[] {
         item({
           ...base,
           kind: 'blocked',
-          action: 'Answer what the classifier needs, then run again, or reject',
+          // A comment wakes an agent run; a pipeline run blocked before any code cannot continue.
+          action:
+            task.workflow === 'agent'
+              ? 'Answer the agent in a comment on the task; it continues from there'
+              : 'Read the questions, then start a new task that answers them, or cancel this one',
           ...(task.verdict?.blockers?.length
             ? { detail: task.verdict.blockers.map((b) => b.question).join('; ') }
             : {}),
         }),
       );
     // A failed feature ticket shows once, on the feature.
-    else if (['failed', 'verification-failed'].includes(task.stage) && !featureTasks.has(task.id))
+    else if ((task.stage === 'failed' || task.stage === 'verification-failed') && !featureTasks.has(task.id))
       out.push(item({ ...base, kind: 'failed', action: 'Read the log, then run again or reject' }));
   }
   for (const f of input.features) {

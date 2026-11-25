@@ -5,6 +5,7 @@ import {
   approvalBlockers,
   blockingFindings,
   executionBusy,
+  runWorking,
   taskActions,
   type TaskRecord,
 } from '@factory/core';
@@ -30,6 +31,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { listAgents } from '@/lib/agents';
+import { RunWatch } from '@/components/run-watch';
 import { backgroundRun, readDiff, readTaskControls, type Gate } from '@/lib/factory';
 import { pageVersion, taskPhase } from '@/lib/live-run';
 import { lastStepId, stageTimeline, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
@@ -542,9 +544,7 @@ export async function renderRun(
   const blocking = blockingFindings(task);
   const canRevise = allowed('revise');
   const canRun = allowed('run') && !canRevise && task.stage !== 'blocked';
-  const interrupted =
-    phase === 'interrupted' ||
-    (!busy && phase !== 'unavailable' && (task.stage === 'coding' || task.stage === 'reviewing'));
+  const interrupted = phase === 'interrupted' || (!busy && phase !== 'unavailable' && runWorking(task.stage));
 
   const runLabel =
     phase === 'queued'
@@ -727,6 +727,8 @@ export async function renderRun(
 
   const sections = (
     <>
+      {/* The Run panel polls through LiveRun; this panel has no live output, so it only watches. */}
+      {busy && <RunWatch project={project} id={id} version={version} />}
       <StageTimeline
         checkpoints={stageTimeline(task.events, {
           busy,

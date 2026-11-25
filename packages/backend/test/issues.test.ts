@@ -334,3 +334,32 @@ test('a task with a queued turn cannot be archived or deleted, so the turn never
   );
   await assert.rejects(service.move({ project: 'change-elections', key: 'CE-1', to: 'backlog' }), /queued/);
 });
+
+test('a task view says whether a live run holds its latest run', async (t) => {
+  const live = run('Live run', '2026-11-20T10:00:00.000Z', 'failed');
+  const stopped = run('Stopped run', '2026-11-21T10:00:00.000Z', 'coding');
+  const root = await mkdtemp(join(tmpdir(), 'factory-issues-owned-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const service = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => [live, stopped] },
+    owned: (_project, id) => id === live.id,
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false },
+    }),
+    submit: async () => '',
+    run: async () => undefined,
+    reject: async () => undefined,
+    deleteRun: async () => undefined,
+  } as ConstructorParameters<typeof IssueService>[0]);
+  const { items } = await service.list('change-elections');
+  assert.deepEqual(
+    items.map((i) => [i.run!.stage, i.run!.owned]),
+    [
+      ['failed', true],
+      ['coding', false],
+    ],
+  );
+});

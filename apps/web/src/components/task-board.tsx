@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import {
   dropAction,
   ISSUE_STATUSES,
+  runAttention,
+  runNeed,
   runWorking,
   type DropAction,
   type IssueStatus,
@@ -28,8 +30,8 @@ export type BoardIssue = {
   status: IssueStatus;
   jira_key?: string;
   updated_at: string;
-  /** `waiting`: a new turn is queued until its agent is free. */
-  run?: { id: string; stage: Stage; updated_at?: string; waiting?: boolean };
+  /** `waiting`: a new turn is queued until its agent is free. `owned`: a live run holds the task. */
+  run?: { id: string; stage: Stage; updated_at?: string; waiting?: boolean; owned?: boolean };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
 };
@@ -385,12 +387,14 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                     <div className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
                       {issue.run ? (
                         <span className="inline-flex items-center gap-1">
-                          {issue.run.stage === 'coding' || issue.run.stage === 'reviewing' ? (
+                          {runAttention(issue.run.stage, issue.run.owned, issue.run.waiting) === 'working' ? (
                             <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden />
                           ) : null}
                           {issue.run.waiting
                             ? 'Waiting for its agent'
-                            : (STAGE_LABEL[issue.run.stage] ?? issue.run.stage)}
+                            : runNeed(issue.run.stage, issue.run.owned) === 'interrupted'
+                              ? 'Interrupted'
+                              : (STAGE_LABEL[issue.run.stage] ?? issue.run.stage)}
                         </span>
                       ) : (
                         <span>No run yet</span>

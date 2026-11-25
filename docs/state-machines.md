@@ -119,16 +119,23 @@ Snapshots can change immediately. Submit the explicit command; on conflict, fetc
 
 The normal suite covers every durable stage's high-level actions, ownership/unavailability, exact-head gates, approved revision, moving-HEAD verification, concurrent member failures, partial intake, interrupted UI and evidence finalization. `pnpm data:test` also exercises real PG/S3. These checks require no paid model calls or real GitHub publication.
 
+## Third pass (2026-11-25)
+
+This pass closed the gaps the second pass listed.
+
+| Machine / source | States and transitions | Decision / invariant |
+| --- | --- | --- |
+| Run attention — core/backend/web | working, needs-you, waiting, done, closed | One rule, [`runAttention`](../packages/core/src/run-attention.ts), for the sidebar groups, the board card spinner and the home numbers. A live run always works. A `coding` or `reviewing` stage with no live run is interrupted and needs a person. An approved run with no pull request needs a person. `queued` and `classified` wait. The board task view carries `run.owned`. |
+| Cross-project board — web | working, needs-me, in-review, ready, archived | Keeps its own columns: they also read the inbox and pull request state. "Ready" is the part of needs-you that has one clear step (open the pull request, merge). A failed task stays in Needs me when the inbox could not be read. |
+| Task Details panel — web | watching → reload on a new page version | `RunWatch` polls while a run works, so the timeline updates outside the Run panel. |
+| Feature cancel — core/backend | open stage → cancelled; live runs stop, other open runs are rejected | A second cancel returns the cancelled feature, not an error. A done feature still refuses cancel. Open pull requests stay. A run that could not be closed is named in the feature error. |
+| Feature spec and board edit — web | view → edit → saved or refused | The page has controls for `save-spec` and `save-board`. Saving an approved specification returns it to `spec` for a new approval. The backend checks the board. |
+| Issue title and description — web | view → edit → saved | The editor starts from the text on the page now, not the first render. |
+| Inbox blocked item — core | text by workflow | An agent run continues from a comment. A pipeline run that is blocked before any code needs a new task. |
+
+Stage predicates `coding | reviewing` and `rejected | pr-opened` now use core `runWorking` and `runFinished` in the backend, agent pickup and the task page.
+
 ## Known gaps
 
-Found on 2026-11-25 and not changed. Each one is a separate decision.
-
-- **Stage groups disagree.** The sidebar, the home cards, the cross-project board and the task chat each keep a list of "working" and "needs you" stages (`sidebar-work.tsx`, `workspace-home.ts`, `overview.ts`, `board.ts`, `task-chat.ts`). An approved run with no pull request is "Needs you" in the sidebar and "Ready" on the board. One core classification must first settle which answer is correct.
-- **Working indicators read the stage, not the owner.** A run that stopped at `coding` still spins on the project board card and stays under "Working" in the sidebar. Only the task page and the cross-project board read the execution phase.
-- **Details panel does not poll.** `LiveRun` and the session view render only in the Run panel; the timeline in the Details panel does not update while a run works.
-- **Board drop.** The optimistic column for `requeue` shows In progress until the refresh (`task-board.tsx`).
-- **Cross-project board without inbox data.** A failed inbox load moves failed tasks to "archived" on the board.
-- **Inbox text for a blocked task** names "run again"; the task page hides Run at `blocked`.
-- **Issue editor drafts** keep the first title and description; a change from another source can be overwritten on save.
-- **Feature cancel** does not stop the runs its tickets started. `save-spec` and `save-board` have no page control; they are RPC only.
-- **Stage predicates** `coding | reviewing` and `rejected | pr-opened` are still written inline in `service.ts`, `agent-pickup.ts`, `agent-profiles.ts` and `task-run.tsx` next to core `runWorking` and `runFinished`.
+- The archive rule reads the stage: an interrupted run at `coding` must be rejected before its task can be archived.
+- The stage label maps (`STAGE_LABEL`, `STAGE_GLYPH`, `StageBadge`) are separate copies of the stage list. They are typed by `Stage`, so a new stage fails the compile in most of them.

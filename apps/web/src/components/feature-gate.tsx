@@ -10,8 +10,10 @@ export type FeatureGateAction =
   | 'grill'
   | 'skip-grill'
   | 'write-spec'
+  | 'save-spec'
   | 'approve-spec'
   | 'plan'
+  | 'save-board'
   | 'approve-board'
   | 'mark-merged'
   | 'retry-ticket'
@@ -26,6 +28,8 @@ export function FeatureGate({
   label,
   ticket,
   answer,
+  edit,
+  tickets,
   variant = 'default',
   confirm,
 }: {
@@ -37,15 +41,19 @@ export function FeatureGate({
   ticket?: string;
   /** Shows a required text field with this label: the answer to the agent's question. */
   answer?: string;
+  /** Shows a text field that starts with this text and keeps it after a save: the specification. */
+  edit?: { label: string; text: string };
+  /** The board to save, as JSON. */
+  tickets?: string;
   variant?: 'default' | 'outline' | 'destructive';
   /** Asks before it sends, for a command that cannot be undone. */
   confirm?: ConfirmRequest;
 }) {
   // The answer is controlled, so a refused command keeps the draft; only a sent answer clears it.
-  const [text, setText] = useState('');
+  const [text, setText] = useState(edit?.text ?? '');
   const [state, submit, pending] = useActionState<ActionState, FormData>(async (previous, form) => {
     const result = await featureGateAction(previous, form);
-    if (!result.error) setText('');
+    if (!result.error && !edit) setText('');
     return result;
   }, {});
   const [ask, dialog] = useConfirm();
@@ -62,15 +70,16 @@ export function FeatureGate({
         <input type="hidden" name="id" value={id} />
         <input type="hidden" name="action" value={action} />
         {ticket && <input type="hidden" name="ticket" value={ticket} />}
-        {answer && (
+        {tickets !== undefined && <input type="hidden" name="tickets" value={tickets} />}
+        {(answer || edit) && (
           <Textarea
             name="text"
             value={text}
             onChange={(event) => setText(event.target.value)}
             required
-            rows={3}
-            aria-label={answer}
-            placeholder={answer}
+            rows={edit ? 12 : 3}
+            aria-label={answer ?? edit?.label}
+            placeholder={answer ?? edit?.label}
             className="basis-full"
           />
         )}

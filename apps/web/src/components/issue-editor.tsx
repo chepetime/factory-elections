@@ -58,7 +58,11 @@ export function IssueTitle({
           size="icon-sm"
           aria-label="Edit the title"
           className="mt-1 text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
-          onClick={() => setEditing(true)}
+          // Start from the title on the page now, not the one from the first render.
+          onClick={() => {
+            setValue(title);
+            setEditing(true);
+          }}
         >
           <Pencil aria-hidden />
         </Button>
@@ -121,7 +125,10 @@ export function IssueDescription({
           variant="ghost"
           size="sm"
           className="mt-2 -ml-2 text-muted-foreground"
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            setValue(description);
+            setEditing(true);
+          }}
         >
           <Pencil aria-hidden /> {description.trim() ? 'Edit description' : 'Add a description'}
         </Button>

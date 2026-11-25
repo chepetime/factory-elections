@@ -75,6 +75,22 @@ describe('feature approval gates', () => {
       json: JSON.stringify({ id: 'feature-one', action: 'retry-ticket', ticket: 'T2' }),
     });
     expect(await featureGateAction({}, form('cancel'))).toEqual({ message: 'Cancelled.' });
+    const spec = form('save-spec');
+    spec.set('text', '# Spec');
+    await featureGateAction({}, spec);
+    expect(rpc).toHaveBeenLastCalledWith('FeatureAction', {
+      project: 'demo',
+      json: JSON.stringify({ id: 'feature-one', action: 'save-spec', text: '# Spec' }),
+    });
+    const board = form('save-board');
+    board.set('tickets', JSON.stringify([{ id: 'T1' }]));
+    await featureGateAction({}, board);
+    expect(rpc).toHaveBeenLastCalledWith('FeatureAction', {
+      project: 'demo',
+      json: JSON.stringify({ id: 'feature-one', action: 'save-board', tickets: [{ id: 'T1' }] }),
+    });
+    board.set('tickets', 'not json');
+    expect((await featureGateAction({}, board)).error).toBeTruthy();
   });
   it('renders an answer field and a ticket only for the commands that need them', () => {
     const answer = renderToStaticMarkup(

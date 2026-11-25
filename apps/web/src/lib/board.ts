@@ -200,6 +200,11 @@ export function buildBoard(input: BoardInput): Board {
     // 3. Archived: off the board.
     const failed = task.stage === 'failed' || task.stage === 'verification-failed';
     const prClosed = task.pr !== undefined && pulls !== undefined && !pull;
+    // A failure with no open inbox item was dismissed. With no inbox data that is unknown, so it stays.
+    if (failed && input.inbox === undefined) {
+      place('needs-me', eventLine(task, 'needs-me', 'Failed'));
+      continue;
+    }
     if (task.stage === 'rejected' || failed || prClosed) {
       archived++;
       continue;

@@ -1,6 +1,7 @@
 import { FeatureId, type FeatureCommand } from '@factory/core';
 import { notFound } from 'next/navigation';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { FeatureBoardEditor } from '@/components/feature-board-editor';
 import { FeatureGate } from '@/components/feature-gate';
 import { isProjectName } from '@/lib/factory';
 import { getFeature } from '@/lib/features';
@@ -107,6 +108,22 @@ export default async function FeaturePage({ params }: { params: Promise<{ projec
             variant={can('approve-spec') ? 'outline' : 'default'}
           />
         )}
+        {can('save-spec') && f.spec && (
+          <details className="rounded-lg border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Edit specification</summary>
+            <div className="mt-3">
+              <FeatureGate
+                {...gate}
+                // A new specification text starts a new editor.
+                key={f.spec}
+                action="save-spec"
+                label={f.stage === 'spec-approved' ? 'Save and approve again' : 'Save specification'}
+                variant="outline"
+                edit={{ label: 'Specification', text: f.spec }}
+              />
+            </div>
+          </details>
+        )}
         {can('plan') && f.tickets.length === 0 && <FeatureGate {...gate} action="plan" label="Plan board" />}
       </section>
       <section className="space-y-3 rounded-xl border p-4">
@@ -149,6 +166,14 @@ export default async function FeaturePage({ params }: { params: Promise<{ projec
             ))}
           </ul>
         )}
+        {can('save-board') && f.tickets.length > 0 && (
+          <FeatureBoardEditor
+            {...gate}
+            // A new plan starts a new editor.
+            key={f.tickets.map((t) => `${t.id}:${t.title}`).join('|')}
+            tickets={f.tickets}
+          />
+        )}
         {can('approve-board') && (
           <FeatureGate {...gate} action="approve-board" label="Approve board and start work" />
         )}
@@ -183,7 +208,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ projec
           variant="destructive"
           confirm={{
             title: 'Cancel this feature?',
-            body: 'The feature accepts no more commands. Runs that its tickets started continue; stop them from their task pages.',
+            body: 'The feature accepts no more commands. Its live runs stop and its other open runs are rejected. Pull requests that are already open stay open.',
             confirm: 'Cancel feature',
             cancel: 'Keep feature',
             tone: 'destructive',
