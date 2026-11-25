@@ -80,6 +80,8 @@ export const ChatTurn = z.object({
   role: z.enum(['user', 'agent']),
   text: z.string(),
   cost_usd: z.number().nullable().optional(),
+  /** The agent's tool calls during this turn, in order, for the person to follow. */
+  tools: z.array(z.object({ name: z.string(), detail: z.string(), ok: z.boolean().optional() })).optional(),
   /** Task keys the agent created during this turn. */
   tasks_created: z.array(z.object({ project: ProjectName, key: z.string() })).optional(),
   error: z.string().optional(),
@@ -214,4 +216,25 @@ export function taskAccess(input: { workflow: 'agent' | 'pipeline'; jiraKey?: st
     },
     ...OUTSIDE_SERVICES.map((service) => ({ service, level: 'none' as const, detail: 'Not connected.' })),
   ];
+}
+
+/** A short, human line for one tool call in a chat: "Read src/app.ts", "Created a task". */
+export function chatToolLine(
+  name: string,
+  input: Record<string, unknown>,
+  cwd?: string,
+): { name: string; detail: string } {
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const path = (v: unknown) => {
+    const p = text(v);
+    return cwd && p.startsWith(`${cwd}/`) ? p.slice(cwd.length + 1) : p;
+  };
+  const factory = /^mcp__factory__(.+)$/.exec(name)?.[1];
+  if (factory === 'create_task') return { name: 'Create task', detail: text(input.title) };
+  if (factory === 'list_tasks') return { name: 'List tasks', detail: text(input.project) };
+  if (factory === 'delegate') return { name: 'Ask another agent', detail: text(input.task).slice(0, 80) };
+  if (name === 'Read') return { name: 'Read', detail: path(input.file_path) };
+  if (name === 'Grep') return { name: 'Search', detail: text(input.pattern) };
+  if (name === 'Glob') return { name: 'Find files', detail: text(input.pattern) };
+  return { name, detail: '' };
 }

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import {
   AGENT_CHAT_INSTRUCTIONS,
   AgentChat,
+  chatToolLine,
   AgentId,
   parseModelRef,
   ProjectName,
@@ -99,6 +100,8 @@ export class ChatService {
   private readonly deps: ChatDeps;
   /** Reply text so far, per chat, while a turn runs. */
   private readonly partial = new Map<string, string>();
+  /** Tool calls so far, per chat, while a turn runs. */
+  private readonly steps = new Map<string, NonNullable<ChatTurn['tools']>>();
   private readonly controllers = new Map<string, AbortController>();
   private readonly running = new Map<string, Promise<void>>();
   constructor(deps: ChatDeps) {
@@ -161,13 +164,18 @@ export class ChatService {
     return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
-  async get(raw: unknown): Promise<AgentChat & { partial?: string }> {
+  async get(raw: unknown): Promise<AgentChat & { partial?: string; partial_tools?: ChatTurn['tools'] }> {
     const { id } = IdInput.parse(raw);
     const read = await this.read(id);
     // A reply cut off by a backend restart is not running any more.
     const chat = read.working && !this.running.has(id) ? { ...read, working: false } : read;
     const partial = this.partial.get(id);
-    return partial ? { ...chat, partial } : chat;
+    const steps = this.steps.get(id);
+    return {
+      ...chat,
+      ...(partial ? { partial } : {}),
+      ...(steps?.length ? { partial_tools: steps } : {}),
+    };
   }
 
   async start(raw: unknown): Promise<AgentChat> {
@@ -253,6 +261,7 @@ export class ChatService {
       release();
       this.running.delete(id);
       this.partial.delete(id);
+      this.steps.delete(id);
       this.controllers.delete(id);
     });
     this.running.set(id, turn);
@@ -315,8 +324,19 @@ export class ChatService {
         signal: controller.signal,
         ...(grant ? { mcp: grant.endpoint } : {}),
         onEvent: (event) => {
-          if (event.type === 'text' && !event.sub)
+          if ('sub' in event && event.sub) return;
+          if (event.type === 'text')
             this.partial.set(chat.id, `${this.partial.get(chat.id) ?? ''}${event.text}`);
+          if (event.type === 'tool')
+            this.steps.set(chat.id, [
+              ...(this.steps.get(chat.id) ?? []),
+              chatToolLine(event.name, event.input, repo),
+            ]);
+          if (event.type === 'tool-result') {
+            const list = this.steps.get(chat.id);
+            const last = list?.at(-1);
+            if (last && last.ok === undefined) last.ok = event.ok;
+          }
         },
       });
       reply = {
@@ -324,6 +344,7 @@ export class ChatService {
         role: 'agent',
         text: result.text.trim(),
         cost_usd: result.costUsd,
+        ...(this.steps.get(chat.id)?.length ? { tools: this.steps.get(chat.id) } : {}),
         ...(created.length ? { tasks_created: created } : {}),
       };
       chat = { ...chat, ...(result.sessionId ? { session_id: result.sessionId } : {}) };
@@ -333,6 +354,7 @@ export class ChatService {
         at: this.now(),
         role: 'agent',
         text: this.partial.get(chat.id) ?? '',
+        ...(this.steps.get(chat.id)?.length ? { tools: this.steps.get(chat.id) } : {}),
         ...(created.length ? { tasks_created: created } : {}),
         error: stopped ? 'Stopped by you.' : error instanceof Error ? error.message : String(error),
       };

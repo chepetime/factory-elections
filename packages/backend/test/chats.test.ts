@@ -56,6 +56,8 @@ test('a chat resumes its session, shows the reply as it grows, refuses a second 
         turn++;
         if (turn === 1) {
           r.onEvent?.({ type: 'text', text: 'Thinking about ' });
+          r.onEvent?.({ type: 'tool', name: 'Read', input: { file_path: `${root}/README.md` } });
+          r.onEvent?.({ type: 'tool-result', ok: true, text: '# demo' });
           await gate;
           // The agent creates a task through its factory tool, as a model would.
           const res = await fetch(r.mcp!.url, {
@@ -83,6 +85,7 @@ test('a chat resumes its session, shows the reply as it grows, refuses a second 
   const live = await chats.get({ id: chat.id });
   assert.equal(live.working, true);
   assert.equal(live.partial, 'Thinking about ');
+  assert.deepEqual(live.partial_tools, [{ name: 'Read', detail: 'README.md', ok: true }]);
   release();
   await chats.settled(chat.id);
 
@@ -96,6 +99,8 @@ test('a chat resumes its session, shows the reply as it grows, refuses a second 
     ],
   );
   assert.deepEqual(after.turns[1]!.tasks_created, [{ project: 'demo', key: 'DEM-1' }]);
+  assert.deepEqual(after.turns[1]!.tools, [{ name: 'Read', detail: 'README.md', ok: true }]);
+  assert.equal(after.partial_tools, undefined);
   assert.equal(after.session_id, 's-1');
   assert.equal(calls[0]!.tools, 'read-only');
   assert.ok(calls[0]!.guard);
