@@ -696,7 +696,7 @@ test('a profile check runs in the background and keeps its last result', async (
 });
 
 test('an agent start that cannot run is refused in plain words and leaves no empty run', async (t) => {
-  const { root } = await fixture(t);
+  const { root, id } = await fixture(t);
   const call = async (method: 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'GetIssue', body: object) =>
     JSON.parse((await backendCall(method, { project: 'demo', json: JSON.stringify(body) })).json);
   // The fixture's SubmitTask run is task DEM-1; this is DEM-2.
@@ -720,4 +720,9 @@ test('an agent start that cannot run is refused in plain words and leaves no emp
     /untracked files \(notes\.txt\)/,
   );
   assert.deepEqual((await call('GetIssue', { key: created.key })).runs, []);
+  // Starting a run by hand that needs a new worktree is refused the same way.
+  await assert.rejects(
+    backendCall('StartRun', { project: 'demo', id, action: 'run' }),
+    /untracked files \(notes\.txt\)/,
+  );
 });

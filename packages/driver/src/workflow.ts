@@ -354,7 +354,13 @@ export class Driver {
     }
     const repo = await git.topLevel(task.repo);
     if (!repo) throw new DriverError(`task repository is not a git repository: ${task.repo}`);
-    if (!(await git.isClean(repo))) throw new DriverError(`task repository has uncommitted changes: ${repo}`);
+    if (!(await git.isClean(repo))) {
+      const dirty = await git.dirtyFiles(repo);
+      const shown = dirty.slice(0, 3).join(', ');
+      throw new DriverError(
+        `The repository ${repo} has uncommitted or untracked files (${shown}${dirty.length > 3 ? `, and ${dirty.length - 3} more` : ''}). Commit, remove or ignore them; a new worktree starts only from a clean repository.`,
+      );
+    }
     // A ticket stacked on its blocker starts from the blocker's branch, so it builds on that work.
     const base = task.stack_on ?? profile.repo.base_branch.value;
     if (!(await git.branchExists(repo, base)))

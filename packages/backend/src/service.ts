@@ -651,7 +651,8 @@ export class BackendService {
       const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
       if (waiting) throw new Conflict(waiting);
       if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
-      const blocked = await this.runBlocker(command.project);
+      // A run without a worktree makes one, and a worktree starts only from a clean repository.
+      const blocked = await this.runBlocker(command.project, { repoClean: !task.worktree });
       if (blocked) throw new Conflict(blocked);
       await readProfile(this.root, command.project);
       const record: RunRecord = {
