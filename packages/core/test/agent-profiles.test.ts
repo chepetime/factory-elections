@@ -83,3 +83,19 @@ test('free agents pick their Todo tasks, most urgent then oldest, within their s
     ['D-6', 'D-1'],
   );
 });
+
+test('task access says what an agent or the pipeline can reach', async () => {
+  const { taskAccess } = await import('../src/index.ts');
+  const level = (list: { service: string; level: string }[], service: string) =>
+    list.find((a) => a.service === service)?.level;
+  const agent = taskAccess({ workflow: 'agent', jiraKey: 'EL-12' });
+  assert.equal(level(agent, 'Repository'), 'full');
+  assert.equal(level(agent, 'Task board'), 'limited');
+  assert.equal(level(agent, 'Jira'), 'limited');
+  assert.match(agent.find((a) => a.service === 'Jira')!.detail, /EL-12/);
+  assert.equal(level(agent, 'Slack'), 'none');
+  assert.equal(level(agent, 'GitHub'), 'none');
+  const pipeline = taskAccess({ workflow: 'pipeline' });
+  assert.equal(level(pipeline, 'Task board'), 'none');
+  assert.equal(level(pipeline, 'Jira'), 'none');
+});

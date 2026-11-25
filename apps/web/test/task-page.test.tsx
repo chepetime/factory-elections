@@ -20,6 +20,7 @@ vi.mock('@/lib/agents', () => ({
     value: [{ id: 'devin', name: 'Devin', avatar: '🐸' }],
   }),
 }));
+vi.mock('@/lib/pane-width', () => ({ paneWidth: async (spec: { default: number }) => spec.default }));
 vi.mock('@/lib/page-title', () => ({ projectLabel: async (p: string) => p, clip: (t: string) => t }));
 vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
 vi.mock('@/components/issue-editor', () => ({

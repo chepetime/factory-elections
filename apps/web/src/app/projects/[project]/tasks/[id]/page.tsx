@@ -1,9 +1,16 @@
-import { ChevronRight, Folder, GitPullRequest } from 'lucide-react';
+import { Check, ChevronRight, Folder, GitPullRequest, Minus, X } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { statusFromStage, type IssueStatus, type Stage, type TaskRecord } from '@factory/core';
+import {
+  statusFromStage,
+  taskAccess,
+  type IssueStatus,
+  type ServiceAccess,
+  type Stage,
+  type TaskRecord,
+} from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
@@ -22,6 +29,9 @@ import { Fact, Facts, money, renderRun, Section } from '@/components/task-run';
 import { isProjectName, isTaskId, showTask } from '@/lib/factory';
 import { getIssue, type IssueView } from '@/lib/issues';
 import { listAgents } from '@/lib/agents';
+import { ResizablePane } from '@/components/resizable-pane';
+import { TASK_DETAILS_PANE } from '@/lib/pane-spec';
+import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
 import { cn } from '@/lib/utils';
@@ -142,6 +152,45 @@ function Thread({
       ))}
       <IssueReplyBox project={project} issueKey={issueKey} parent={root.id} />
     </article>
+  );
+}
+
+const ACCESS_LOOK = {
+  full: { icon: Check, tone: 'text-emerald-600 dark:text-emerald-400', label: 'Full access' },
+  limited: { icon: Minus, tone: 'text-amber-600 dark:text-amber-400', label: 'Limited access' },
+  none: { icon: X, tone: 'text-muted-foreground', label: 'No access' },
+} as const;
+
+/** Which services the task's session can reach. Services with no access share one line. */
+function AccessList({ access }: { access: ServiceAccess[] }) {
+  const reachable = access.filter((a) => a.level !== 'none' || a.service === 'GitHub');
+  const off = access.filter((a) => a.level === 'none' && a.service !== 'GitHub');
+  return (
+    <ul className="flex flex-col gap-2.5 text-sm">
+      {reachable.map((a) => {
+        const look = ACCESS_LOOK[a.level];
+        return (
+          <li key={a.service} className="flex gap-2">
+            <look.icon className={cn('mt-0.5 size-4 shrink-0', look.tone)} aria-label={look.label} />
+            <span className="min-w-0">
+              <span className="font-medium">{a.service}</span>
+              <span className="block text-xs text-muted-foreground">{a.detail}</span>
+            </span>
+          </li>
+        );
+      })}
+      {off.length > 0 && (
+        <li className="flex gap-2">
+          <X className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label="No access" />
+          <span className="min-w-0">
+            <span className="font-medium">Not connected</span>
+            <span className="block text-xs text-muted-foreground">
+              {off.map((a) => a.service).join(', ')}
+            </span>
+          </span>
+        </li>
+      )}
+    </ul>
   );
 }
 
@@ -299,9 +348,10 @@ export default async function TaskPage({
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
-  const [label, agentList, ...loaded] = await Promise.all([
+  const [label, agentList, detailsWidth, ...loaded] = await Promise.all([
     projectLabel(project),
     listAgents(),
+    paneWidth(TASK_DETAILS_PANE),
     ...issue.runs.map((rid) =>
       rid === runId && run?.ok
         ? Promise.resolve(run.value.task)
@@ -311,6 +361,14 @@ export default async function TaskPage({
   const records = loaded as (TaskRecord | undefined)[];
   const agents = agentList.ok ? agentList.value : [];
   const authors: Authors = Object.fromEntries(agents.map((a) => [a.id, { name: a.name, avatar: a.avatar }]));
+  // The latest run decides who works the task; with no run yet, the assigned agent would.
+  const runRecord = run?.ok ? run.value.task : undefined;
+  const runAgentId = runRecord
+    ? runRecord.workflow === 'agent'
+      ? runRecord.agent
+      : undefined
+    : issue.assignee;
+  const runAgent = runAgentId ? agents.find((x) => x.id === runAgentId) : undefined;
   const runHref = (rid: string) =>
     `/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`;
   const pulls = records.flatMap((r) => (r?.pr ? [r.pr] : [])).reverse();
@@ -319,8 +377,11 @@ export default async function TaskPage({
   const [latestRow, ...pastRows] = rows;
 
   return (
-    <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <section aria-label="Task" className="flex min-h-0 flex-col max-lg:min-h-[85dvh] max-lg:shrink-0">
+    <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:flex-row">
+      <section
+        aria-label="Task"
+        className="flex min-h-0 flex-col max-lg:min-h-[85dvh] max-lg:shrink-0 lg:min-w-0 lg:flex-1"
+      >
         <nav
           aria-label="Breadcrumb"
           className="flex shrink-0 items-center gap-1.5 border-b px-6 py-3 text-sm"
@@ -376,8 +437,11 @@ export default async function TaskPage({
         {run?.ok ? run.value.composer : comment}
       </section>
 
-      <aside
-        aria-label="Task details"
+      <ResizablePane
+        spec={TASK_DETAILS_PANE}
+        initialWidth={detailsWidth}
+        edge="left"
+        label="Task details"
         className="min-h-0 border-t bg-muted/30 lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
         <Section title="Properties">
@@ -422,6 +486,15 @@ export default async function TaskPage({
               </Fact>
             )}
           </Facts>
+        </Section>
+
+        <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
+          <AccessList
+            access={taskAccess({
+              workflow: runAgent ? 'agent' : 'pipeline',
+              ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
+            })}
+          />
         </Section>
 
         <Section title="Pull requests">
@@ -511,7 +584,7 @@ export default async function TaskPage({
         </Section>
 
         {run?.ok && run.value.sections}
-      </aside>
+      </ResizablePane>
     </div>
   );
 }

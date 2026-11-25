@@ -4,17 +4,28 @@ import type { ReactNode } from 'react';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { ChatList } from '@/components/agent-chat';
 import { listAgents, listChats } from '@/lib/agents';
+import { ResizablePane } from '@/components/resizable-pane';
+import { CHAT_LIST_PANE } from '@/lib/pane-spec';
+import { paneWidth } from '@/lib/pane-width';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ChatLayout({ children }: { children: ReactNode }) {
-  const [chats, agents] = await Promise.all([listChats(), listAgents()]);
+  const [chats, agents, listWidth] = await Promise.all([
+    listChats(),
+    listAgents(),
+    paneWidth(CHAT_LIST_PANE),
+  ]);
   const byId = new Map((agents.ok ? agents.value : []).map((a) => [a.id, a]));
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <aside
-        aria-label="Chats"
-        className="flex min-h-0 shrink-0 flex-col border-b md:w-72 md:border-r md:border-b-0"
+      <ResizablePane
+        spec={CHAT_LIST_PANE}
+        initialWidth={listWidth}
+        edge="right"
+        breakpoint="md"
+        label="Chats"
+        className="flex min-h-0 shrink-0 flex-col border-b md:border-r md:border-b-0"
       >
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-sm font-semibold">Chat</h1>
@@ -45,7 +56,7 @@ export default async function ChatLayout({ children }: { children: ReactNode }) 
             })}
           />
         )}
-      </aside>
+      </ResizablePane>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );

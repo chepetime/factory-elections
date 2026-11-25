@@ -173,3 +173,45 @@ export function pickupPlan(
   }
   return plan;
 }
+
+export type AccessLevel = 'full' | 'limited' | 'none';
+export type ServiceAccess = { service: string; level: AccessLevel; detail: string };
+
+/** Services a person may expect a session to reach, shown even when not connected. */
+const OUTSIDE_SERVICES = ['Slack', 'Fathom', 'Confluence', 'Figma', 'Sentry'] as const;
+
+/**
+ * What a session on a task can reach. Keep it in line with what the backend grants: the run's
+ * tools, its Factory tools (agent-tools.ts) and the sandbox. Outside services are not connected yet.
+ */
+export function taskAccess(input: { workflow: 'agent' | 'pipeline'; jiraKey?: string }): ServiceAccess[] {
+  const agent = input.workflow === 'agent';
+  return [
+    {
+      service: 'Repository',
+      level: 'full',
+      detail: 'Reads, edits and runs commands in the task worktree, behind the guard and sandbox.',
+    },
+    agent
+      ? { service: 'Task board', level: 'limited', detail: 'Comments on this task and sets its status.' }
+      : { service: 'Task board', level: 'none', detail: 'Cannot comment or change status.' },
+    {
+      service: 'GitHub',
+      level: 'none',
+      detail: 'Cannot push. You open the pull request after you approve.',
+    },
+    input.jiraKey
+      ? {
+          service: 'Jira',
+          level: 'limited',
+          detail: `Sees the key ${input.jiraKey} in the task text; cannot read the ticket.`,
+        }
+      : { service: 'Jira', level: 'none', detail: 'Not connected.' },
+    {
+      service: 'Web',
+      level: 'limited',
+      detail: 'Only the domains the repo profile allows, such as the package registry.',
+    },
+    ...OUTSIDE_SERVICES.map((service) => ({ service, level: 'none' as const, detail: 'Not connected.' })),
+  ];
+}
