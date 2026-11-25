@@ -496,7 +496,10 @@ test('AddProject registers a repository and rejects invalid or duplicate registr
   const repo = await mkdtemp(join(tmpdir(), 'factory-added-'));
   t.after(() => rm(repo, { recursive: true, force: true }));
   const added = JSON.parse((await backendCall('AddProject', { name: 'second', repo })).json);
-  assert.deepEqual(added, { name: 'second', repo });
+  const { profile, ...project } = added;
+  assert.deepEqual(project, { name: 'second', repo });
+  assert.equal(profile.status, 'drafted', 'adding a project drafts its profile');
+  assert.match(profile.path, /second\/profile\.yaml$/);
   assert.deepEqual(
     JSON.parse((await backendCall('ListProjects', {})).json).map((p: { name: string }) => p.name),
     ['demo', 'second'],
