@@ -18,7 +18,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ project: s
       status: i.status,
       archived: !!i.archived_at,
       updated_at: i.run?.updated_at && i.run.updated_at > i.updated_at ? i.run.updated_at : i.updated_at,
-      run: i.run ? { stage: i.run.stage } : undefined,
+      run: i.run ? { stage: i.run.stage, ...(i.run.waiting ? { waiting: true } : {}) } : undefined,
       agent:
         i.assignee && agents.get(i.assignee)
           ? { id: i.assignee, name: agents.get(i.assignee)!.name, avatar: agents.get(i.assignee)!.avatar }

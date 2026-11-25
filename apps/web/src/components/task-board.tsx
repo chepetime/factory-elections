@@ -28,7 +28,8 @@ export type BoardIssue = {
   status: IssueStatus;
   jira_key?: string;
   updated_at: string;
-  run?: { id: string; stage: Stage; updated_at?: string };
+  /** `waiting`: a new turn is queued until its agent is free. */
+  run?: { id: string; stage: Stage; updated_at?: string; waiting?: boolean };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
 };
@@ -387,7 +388,9 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                           {issue.run.stage === 'coding' || issue.run.stage === 'reviewing' ? (
                             <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden />
                           ) : null}
-                          {STAGE_LABEL[issue.run.stage] ?? issue.run.stage}
+                          {issue.run.waiting
+                            ? 'Waiting for its agent'
+                            : (STAGE_LABEL[issue.run.stage] ?? issue.run.stage)}
                         </span>
                       ) : (
                         <span>No run yet</span>

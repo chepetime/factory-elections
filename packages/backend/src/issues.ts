@@ -27,7 +27,8 @@ import {
 import type { DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 
-export type IssueRun = { id: string; stage: Stage; updated_at?: string };
+/** `waiting`: a new turn is queued until its agent has a free slot; the stage is still the old one. */
+export type IssueRun = { id: string; stage: Stage; updated_at?: string; waiting?: boolean };
 export type IssueView = Omit<Issue, 'status'> & {
   key: string;
   /** The column it shows in: the latest run's status unless a person set one since. */
@@ -53,6 +54,8 @@ export type IssueDeps = {
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
+  /** Whether the run has a turn queued that has not started yet (its agent is busy). */
+  waiting?: (project: string, runId: string) => boolean;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
   changed?: () => void;
   now?: () => Date;
@@ -177,12 +180,16 @@ export class IssueService {
   private view(prefix: string, issue: Issue, runs: Map<string, TaskRecord>): IssueView {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
-    const run = task ? { id: task.id, stage: task.stage, updated_at: task.updated_at } : undefined;
+    const waiting = task ? this.deps.waiting?.(task.project, task.id) === true : false;
+    const run = task
+      ? { id: task.id, stage: task.stage, updated_at: task.updated_at, ...(waiting ? { waiting: true } : {}) }
+      : undefined;
     return {
       ...issue,
       key: issueKey(prefix, issue.number),
       stored_status: issue.status,
-      status: syncedStatus(issue, run),
+      // A queued turn is not blocked or in review any more: it waits in line, like a Todo task.
+      status: waiting ? 'todo' : syncedStatus(issue, run),
       run,
     };
   }

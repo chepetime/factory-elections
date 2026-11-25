@@ -211,6 +211,13 @@ export class BackendService {
   }
   /** Runs queued or working in this backend, per `project/task id`. */
   private readonly scheduled = new Map<string, number>();
+  /** Runs that started working, per `project/task id`; a scheduled run not in here waits for a slot. */
+  private readonly working = new Set<string>();
+  /** A turn is queued for the task but has not started: its agent, or every agent slot, is busy. */
+  isWaiting(project: string, id: string): boolean {
+    const key = `${project}/${id}`;
+    return this.scheduled.has(key) && !this.working.has(key);
+  }
   /** Whether this backend has a run queued or working for the task. */
   isScheduled(project: string, id: string): boolean {
     return this.scheduled.has(`${project}/${id}`);
@@ -335,6 +342,7 @@ export class BackendService {
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
       changed: () => this.pickup?.kick(),
+      waiting: (project, id) => this.isWaiting(project, id),
       root,
       storage: this.storage,
       tasks: this.tasks,
@@ -768,6 +776,8 @@ export class BackendService {
       this.executing--;
       return;
     }
+    const workingKey = `${command.project}/${command.id}`;
+    this.working.add(workingKey);
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
     if (this.stopRequests.has(record.id)) controller.abort();
@@ -883,6 +893,7 @@ export class BackendService {
       await saveSession();
       this.sessionLogs.delete(sessionKey);
       this.executing--;
+      this.working.delete(workingKey);
       own();
       // A slot is free again: an agent may take its next Todo task.
       this.pickup?.kick();

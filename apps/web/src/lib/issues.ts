@@ -9,7 +9,14 @@ export const IssueView = Issue.extend({
   key: z.string(),
   status: IssueStatus,
   stored_status: IssueStatus,
-  run: z.object({ id: z.string(), stage: Stage, updated_at: z.string().optional() }).optional(),
+  run: z
+    .object({
+      id: z.string(),
+      stage: Stage,
+      updated_at: z.string().optional(),
+      waiting: z.boolean().optional(),
+    })
+    .optional(),
 });
 export type IssueView = z.infer<typeof IssueView>;
 const IssueList = z.object({ prefix: z.string(), items: z.array(IssueView) });

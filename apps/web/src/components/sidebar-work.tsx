@@ -18,7 +18,8 @@ export interface IssueSummary {
   status: IssueStatus;
   archived: boolean;
   updated_at: string;
-  run?: { stage: Stage };
+  /** `waiting`: a new turn is queued until the agent is free. */
+  run?: { stage: Stage; waiting?: boolean };
   /** The agent assigned to the task. */
   agent?: { id: string; name: string; avatar: string };
 }
@@ -42,6 +43,10 @@ const GROUPS: { id: Group; label: string; tone: string }[] = [
   { id: 'idle', label: 'Idle', tone: 'text-muted-foreground' },
   { id: 'done', label: 'Done', tone: 'text-blue-700 dark:text-blue-400' },
 ];
+/** A queued turn waits for its agent, so it is idle work, not something that needs you. */
+const groupOf = (run: { stage: Stage; waiting?: boolean }): Group | undefined =>
+  run.waiting ? 'idle' : GROUP_OF[run.stage];
+
 const NEEDS: Partial<Record<Stage, string>> = {
   'awaiting-approval': 'review',
   approved: 'open PR',
@@ -95,8 +100,8 @@ export function SidebarWork({
     );
   const cutoff = Date.now() - DONE_DAYS * 86_400_000;
   const agents = live
-    .filter((i) => i.run && GROUP_OF[i.run.stage])
-    .filter((i) => GROUP_OF[i.run!.stage] !== 'done' || Date.parse(i.updated_at) > cutoff)
+    .filter((i) => i.run && groupOf(i.run))
+    .filter((i) => groupOf(i.run!) !== 'done' || Date.parse(i.updated_at) > cutoff)
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const href = (key: string) => `/projects/${project}/tasks/${key}`;
 
@@ -143,7 +148,7 @@ export function SidebarWork({
           </p>
         ) : (
           GROUPS.map((group) => {
-            const members = agents.filter((i) => GROUP_OF[i.run!.stage] === group.id);
+            const members = agents.filter((i) => groupOf(i.run!) === group.id);
             if (!members.length) return null;
             return (
               <div key={group.id} className="mt-1">
@@ -180,6 +185,9 @@ export function SidebarWork({
                         {/* The group already says it needs you; only a reason other than "blocked" adds anything. */}
                         {group.id === 'needs' && i.run!.stage !== 'blocked' && (
                           <span className="shrink-0 text-xs text-foreground/75">{NEEDS[i.run!.stage]}</span>
+                        )}
+                        {i.run!.waiting && (
+                          <span className="shrink-0 text-xs text-foreground/75">waiting</span>
                         )}
                         {group.id === 'done' && <span className="sr-only">, pull request opened</span>}
                       </SidebarLink>

@@ -441,7 +441,12 @@ export default async function TaskPage({
                 <p className="min-w-0 flex-1 text-sm">
                   <span className="font-medium">Run {runIndex}</span>
                   {runAuthor && <span className="text-muted-foreground"> · {runAuthor.name}</span>}
-                  <span className="text-muted-foreground"> · {stageLabel(run.value.task.stage)}</span>
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {issue.run?.waiting
+                      ? `Waiting for ${runAuthor?.name ?? 'a free agent'}`
+                      : stageLabel(run.value.task.stage)}
+                  </span>
                 </p>
                 {panel !== 'run' && (
                   <Link

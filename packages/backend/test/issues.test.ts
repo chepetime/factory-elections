@@ -27,6 +27,7 @@ async function setup(
   tasks: TaskRecord[] = [],
   settings: Partial<ProjectSettings> = {},
   failingDelete?: string,
+  waiting: Set<string> = new Set(),
 ) {
   const root = await mkdtemp(join(tmpdir(), 'factory-issues-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -79,6 +80,7 @@ async function setup(
       );
     },
     now: () => new Date((clock += 1000)),
+    waiting: (_project, id) => waiting.has(id),
   });
   return { root, service, calls, tasks };
 }
@@ -304,4 +306,16 @@ test('a run that fails to delete is reported and still stays off the board', asy
     [],
     'the leftover run is not wrapped again',
   );
+});
+
+test('a turn queued behind a busy agent shows as waiting in Todo, not as its old Blocked stage', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const waiting = new Set<string>();
+  const { service } = await setup(t, [stuck], {}, undefined, waiting);
+  assert.equal((await service.get({ project: 'change-elections', key: 'CE-1' })).status, 'blocked');
+  waiting.add(stuck.id);
+  const queued = await service.get({ project: 'change-elections', key: 'CE-1' });
+  assert.equal(queued.status, 'todo');
+  assert.equal(queued.run?.waiting, true);
+  assert.equal(queued.run?.stage, 'blocked', 'the run itself is unchanged until it starts');
 });
