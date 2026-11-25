@@ -1,9 +1,9 @@
 // Drafts a repository profile from repository evidence. The draft is unapproved until a human sets approved_at.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { run } from '@factory/adapters-process';
-import { writeProfileDraft } from '@factory/adapters-fs';
+import { profilePath, readProfile, writeProfileDraft } from '@factory/adapters-fs';
 
 async function baseBranch(repo: string): Promise<{ value: string; source: string }> {
   const remoteHead = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd: repo });
@@ -102,5 +102,37 @@ export async function ensureProfileDraft(root: string, project: string, repo: st
     const message = error instanceof Error ? error.message : String(error);
     const exists = /^profile already exists: (.+)$/.exec(message);
     return exists ? { status: 'exists', path: exists[1]! } : { status: 'failed', error: message };
+  }
+}
+
+export type ProfileStatus =
+  | { state: 'missing'; path: string }
+  | { state: 'draft'; path: string }
+  | { state: 'approved'; path: string; approved_at: string }
+  | { state: 'invalid'; path: string; error: string };
+
+/** Whether the project's profile is missing, an unapproved draft, approved, or broken. */
+export async function profileStatus(root: string, project: string): Promise<ProfileStatus> {
+  const path = profilePath(root, project);
+  let text: string;
+  try {
+    text = await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'missing', path };
+    throw error;
+  }
+  try {
+    const profile = await readProfile(root, project);
+    return { state: 'approved', path, approved_at: String(profile.approved_at) };
+  } catch (error) {
+    let approved: unknown;
+    try {
+      approved = (parse(text) as { approved_at?: unknown } | null)?.approved_at;
+    } catch {
+      approved = 'unreadable';
+    }
+    if (approved === undefined || approved === null || String(approved).trim() === '')
+      return { state: 'draft', path };
+    return { state: 'invalid', path, error: error instanceof Error ? error.message : String(error) };
   }
 }

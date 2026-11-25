@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { ensureProfileDraft } from '../src/profile-draft.ts';
+import { ensureProfileDraft, profileStatus } from '../src/profile-draft.ts';
 
 test('a new project gets a profile draft once, and an existing profile is never replaced', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'factory-draft-'));
@@ -37,4 +37,28 @@ test('a draft that cannot be written reports the failure instead of throwing', a
   await writeFile(root, 'a file where the data root should be');
   const result = await ensureProfileDraft(root, 'app', base);
   assert.equal(result.status, 'failed');
+});
+
+test('profile status reads missing, draft, approved and invalid', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-draft-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const repo = join(base, 'repo');
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  await writeFile(join(repo, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const root = join(base, 'data');
+  const path = join(root, 'app', 'profile.yaml');
+
+  assert.deepEqual(await profileStatus(root, 'app'), { state: 'missing', path });
+  await ensureProfileDraft(root, 'app', repo);
+  assert.deepEqual(await profileStatus(root, 'app'), { state: 'draft', path });
+  const draft = await readFile(path, 'utf8');
+  await writeFile(path, draft.replace('approved_at: ""', 'approved_at: "2026-11-25"'));
+  assert.deepEqual(await profileStatus(root, 'app'), { state: 'approved', path, approved_at: '2026-11-25' });
+  await writeFile(
+    path,
+    draft.replace('approved_at: ""', 'approved_at: "2026-11-25"').replace('project: app', 'project: other'),
+  );
+  const invalid = await profileStatus(root, 'app');
+  assert.equal(invalid.state, 'invalid');
+  assert.match((invalid as { error: string }).error, /does not match/);
 });

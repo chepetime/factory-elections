@@ -23,7 +23,12 @@ import {
   startReviewRuns,
   stopReviewRun,
 } from '@/lib/reviews';
-import { detectProjectSettingsRun, saveProjectSettingsRun, type SettingsProposal } from '@/lib/settings';
+import {
+  detectProjectSettingsRun,
+  draftProfileRun,
+  saveProjectSettingsRun,
+  type SettingsProposal,
+} from '@/lib/settings';
 import {
   archiveIssueRun,
   commentIssueRun,
@@ -285,10 +290,26 @@ export async function saveProjectSettings(project: string, settings: unknown): P
 /** Asks an agent to explore the repository and propose settings. Nothing is saved. */
 export async function detectProjectSettings(
   project: string,
-): Promise<{ error?: string; proposal?: SettingsProposal }> {
+): Promise<{ error?: string; proposal?: SettingsProposal; drafted?: boolean }> {
   if (!isProjectName(project)) return { error: 'Invalid project.' };
-  const detected = await detectProjectSettingsRun(project);
-  return detected.ok ? { proposal: detected.value } : { error: detected.error };
+  // A missing repo profile is part of what the repository can fill in; it is drafted, never replaced.
+  const [detected, profile] = await Promise.all([
+    detectProjectSettingsRun(project),
+    draftProfileRun(project),
+  ]);
+  if (profile.ok) revalidatePath(`/projects/${project}/settings`);
+  const drafted = profile.ok && profile.value.state === 'draft';
+  return detected.ok ? { proposal: detected.value, drafted } : { error: detected.error, drafted };
+}
+
+/** Drafts the repo profile from the repository when it is missing. */
+export async function draftProfile(project: string): Promise<ActionState> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const result = await draftProfileRun(project);
+  revalidatePath(`/projects/${project}/settings`);
+  return result.ok
+    ? { message: 'Drafted the profile. Review it, then set approved_at.' }
+    : { error: result.error };
 }
 
 export async function featureGateAction(_prev: ActionState, form: FormData): Promise<ActionState> {

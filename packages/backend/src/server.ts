@@ -202,6 +202,8 @@ export async function startBackend(options: ServerOptions) {
           await service.issues.delete({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      GetProfileStatus: async (request) => ({ json: JSON.stringify(await service.profileStatus(request)) }),
+      DraftProfile: async (request) => ({ json: JSON.stringify(await service.draftProfile(request)) }),
       GetTrace: async (request) => ({
         json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
       }),

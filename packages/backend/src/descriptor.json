@@ -327,6 +327,14 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "GetProfileStatus": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "DraftProfile": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"

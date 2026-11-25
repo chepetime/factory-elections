@@ -48,3 +48,22 @@ export function detectProjectSettingsRun(project: string): Promise<Result<Settin
     ),
   );
 }
+
+export const ProfileStatus = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('missing'), path: z.string() }),
+  z.object({ state: z.literal('draft'), path: z.string() }),
+  z.object({ state: z.literal('approved'), path: z.string(), approved_at: z.string() }),
+  z.object({ state: z.literal('invalid'), path: z.string(), error: z.string() }),
+]);
+export type ProfileStatus = z.infer<typeof ProfileStatus>;
+export function profileStatus(project: string): Promise<Result<ProfileStatus>> {
+  return attempt(async () =>
+    ProfileStatus.parse(JSON.parse((await backendCall('GetProfileStatus', { project })).json)),
+  );
+}
+/** Drafts the repo profile if it is missing; an existing one is never changed. */
+export function draftProfileRun(project: string): Promise<Result<ProfileStatus>> {
+  return attempt(async () =>
+    ProfileStatus.parse(JSON.parse((await backendCall('DraftProfile', { project })).json)),
+  );
+}

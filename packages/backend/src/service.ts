@@ -47,7 +47,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
-import { ensureProfileDraft } from './profile-draft.ts';
+import { ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
@@ -390,6 +390,19 @@ export class BackendService {
         );
       });
     });
+  }
+  async profileStatus(raw: unknown) {
+    const { project } = z.object({ project: ProjectName }).parse(raw);
+    await this.projects.read(project);
+    return profileStatus(this.root, project);
+  }
+  /** Drafts the project's profile if it has none, then returns its status. */
+  async draftProfile(raw: unknown) {
+    const { project } = z.object({ project: ProjectName }).parse(raw);
+    const { repo } = await this.projects.read(project);
+    const draft = await ensureProfileDraft(this.root, project, repo);
+    if (draft.status === 'failed') throw new Conflict(`Could not draft the profile: ${draft.error}`);
+    return profileStatus(this.root, project);
   }
   async submit(raw: unknown): Promise<string> {
     const { project, prompt, jiraKey } = z

@@ -171,7 +171,10 @@ export function ProjectSettingsForm({
     startDetect(async () => {
       const result = await detectProjectSettings(project);
       if (result.error || !result.proposal) {
-        setNotice({ kind: 'error', text: result.error ?? 'No proposal.' });
+        setNotice({
+          kind: 'error',
+          text: `${result.error ?? 'No proposal.'}${result.drafted ? ' The repo profile was drafted anyway (see Setup check).' : ''}`,
+        });
         return;
       }
       const p = result.proposal;
@@ -180,7 +183,12 @@ export function ProjectSettingsForm({
       if (!icon.trim()) setIcon(p.icon);
       setTm({ ...p.task_manager });
       setDocs((p.task_manager.docs ?? []).join('\n'));
-      setNotice({ kind: 'status', text: 'Filled from the repository. Check the fields, then save.' });
+      setNotice({
+        kind: 'status',
+        text: result.drafted
+          ? 'Filled from the repository, and drafted the repo profile (see Setup check). Check the fields, then save.'
+          : 'Filled from the repository. Check the fields, then save.',
+      });
     });
   };
 
