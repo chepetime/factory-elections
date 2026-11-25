@@ -1,6 +1,6 @@
 'use client';
 // The sidebar's work lists: open board tasks, then their agents (runs) grouped by what they need.
-import { Bot, CircleAlert, LoaderCircle } from 'lucide-react';
+import { Bot, LoaderCircle } from 'lucide-react';
 import type { IssueStatus, Stage } from '@factory/core';
 import { STATUS } from '@/components/task-status';
 import { cn } from '@/lib/utils';
@@ -10,7 +10,7 @@ import { SidebarTaskMenu } from '@/components/sidebar-task-menu';
 import { useEffect, useState } from 'react';
 
 /** Task keys stay readable on the plain row and on the tinted current row. */
-const KEY = 'shrink-0 font-mono text-xs font-medium text-foreground/60 tabular-nums';
+const KEY = 'shrink-0 font-mono text-xs font-medium text-foreground/75 tabular-nums';
 
 export interface IssueSummary {
   key: string;
@@ -103,11 +103,11 @@ export function SidebarWork({
   return (
     <>
       <section aria-labelledby="sidebar-tasks">
-        <h2 id="sidebar-tasks" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+        <h2 id="sidebar-tasks" className="px-2 pt-2 pb-1 text-xs font-medium text-foreground/75">
           Tasks
         </h2>
         {open.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">No open tasks</p>
+          <p className="px-2 py-1.5 text-sm text-foreground/75">No open tasks</p>
         ) : (
           <ul className="flex flex-col gap-px">
             {open.map((i) => {
@@ -134,11 +134,11 @@ export function SidebarWork({
       </section>
 
       <section aria-labelledby="sidebar-agents" className="mt-4">
-        <h2 id="sidebar-agents" className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+        <h2 id="sidebar-agents" className="px-2 pt-2 pb-1 text-xs font-medium text-foreground/75">
           Agents
         </h2>
         {agents.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">
+          <p className="px-2 py-1.5 text-sm text-foreground/75">
             No agent is working. Assign a Todo task to an agent to start one.
           </p>
         ) : (
@@ -148,7 +148,7 @@ export function SidebarWork({
             return (
               <div key={group.id} className="mt-1">
                 <h3 className={cn('px-2 pt-1.5 pb-0.5 text-xs font-medium', group.tone)}>
-                  {group.label} <span className="text-muted-foreground tabular-nums">{members.length}</span>
+                  {group.label} <span className="text-foreground/75 tabular-nums">{members.length}</span>
                 </h3>
                 <ul className="flex flex-col gap-px">
                   {members.map((i) => (
@@ -168,7 +168,7 @@ export function SidebarWork({
                         )}
                         <span className={KEY}>{i.key}</span>
                         <span className="min-w-0 flex-1 truncate">{i.title}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                        <span className="shrink-0 text-xs text-foreground/75 tabular-nums">
                           {ago(i.updated_at)}
                         </span>
                         {group.id === 'working' && (
@@ -177,11 +177,9 @@ export function SidebarWork({
                             aria-label="Working"
                           />
                         )}
-                        {group.id === 'needs' && (
-                          <span className="inline-flex shrink-0 items-center gap-1 text-xs text-destructive">
-                            <CircleAlert className="size-3.5" aria-hidden />
-                            {NEEDS[i.run!.stage]}
-                          </span>
+                        {/* The group already says it needs you; only a reason other than "blocked" adds anything. */}
+                        {group.id === 'needs' && i.run!.stage !== 'blocked' && (
+                          <span className="shrink-0 text-xs text-foreground/75">{NEEDS[i.run!.stage]}</span>
                         )}
                         {group.id === 'done' && <span className="sr-only">, pull request opened</span>}
                       </SidebarLink>
