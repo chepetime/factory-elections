@@ -402,7 +402,12 @@ it('lists the runs and pull requests in the side panel', async () => {
   const opened = {
     ...task,
     stage: 'pr-opened' as const,
-    pr: { url: 'https://github.com/o/r/pull/12', head_sha: 'abcdef1234567890', branch: 'factory/test' },
+    pr: {
+      url: 'https://github.com/o/r/pull/12',
+      head_sha: 'abcdef1234567890',
+      branch: 'factory/test',
+      at: '2026-01-02T00:00:00.000Z',
+    },
   };
   vi.mocked(readTaskControls).mockResolvedValue({
     ok: true,
