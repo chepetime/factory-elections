@@ -465,12 +465,9 @@ export default async function TaskPage({
         initialWidth={detailsWidth}
         edge="left"
         label="Task details"
-        className="min-h-0 border-t bg-muted/30 lg:overflow-y-auto lg:border-t-0 lg:border-l"
+        className="min-h-0 border-t bg-muted/30 lg:flex lg:flex-col lg:border-t-0 lg:border-l"
       >
-        <nav
-          aria-label="Panel"
-          className="sticky top-0 z-10 flex gap-1 border-b bg-muted/80 px-3 pt-2 backdrop-blur"
-        >
+        <nav aria-label="Panel" className="flex shrink-0 gap-1 border-b bg-muted/80 px-3 pt-2">
           {(
             [
               ['run', 'Run'],
@@ -493,7 +490,7 @@ export default async function TaskPage({
           ))}
         </nav>
         {panel === 'run' ? (
-          <div className="flex min-h-full flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             {!run ? (
               <p className="px-5 py-6 text-sm text-muted-foreground">
                 No run yet.{' '}
@@ -507,7 +504,7 @@ export default async function TaskPage({
               </p>
             ) : (
               <>
-                <div className="flex items-center gap-2 px-5 pt-4 text-sm">
+                <div className="flex shrink-0 items-center gap-2 px-5 pt-4 text-sm">
                   <span className="font-medium">Run {runIndex}</span>
                   <StageBadge stage={run.value.task.stage} />
                   {runId !== issue.run?.id && (
@@ -519,7 +516,7 @@ export default async function TaskPage({
                     </Link>
                   )}
                 </div>
-                <div data-run-scroll className="flex-1 px-5 py-4">
+                <div data-run-scroll className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                   {session?.ok ? (
                     <RunSessionView
                       project={project}
@@ -539,14 +536,12 @@ export default async function TaskPage({
                   </h3>
                   <div className="flex flex-col gap-5">{run.value.activity}</div>
                 </div>
-                <div className="sticky bottom-0 border-t bg-muted/80 pt-3 backdrop-blur">
-                  {run.value.composer}
-                </div>
+                <div className="shrink-0 border-t bg-muted/80 pt-3">{run.value.composer}</div>
               </>
             )}
           </div>
         ) : (
-          <>
+          <div className="min-h-0 flex-1 lg:overflow-y-auto">
             <Section title="Properties">
               <Facts>
                 <Fact label="Status">
@@ -687,7 +682,7 @@ export default async function TaskPage({
             </Section>
 
             {run?.ok && run.value.sections}
-          </>
+          </div>
         )}
       </ResizablePane>
     </div>

@@ -3,7 +3,7 @@
 // input, and the result under it. Polls while the run works and follows the bottom.
 import { ChevronRight, CircleCheck, CircleX, LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
@@ -122,18 +122,26 @@ export function RunSessionView({
       clearInterval(timer);
     };
   }, [project, runId, session.live, router]);
+  // Follow the newest entry while it is in view; scrolling up to read stops that. The session sits
+  // above the run's status and actions, so "in view" means its end, not the box's bottom.
+  const below = (box: HTMLElement) =>
+    end.current!.getBoundingClientRect().top - box.getBoundingClientRect().bottom;
   useEffect(() => {
-    if (pinned.current) end.current?.scrollIntoView({ block: 'end' });
-  }, [session.entries.length]);
-  useEffect(() => {
+    const box = end.current?.closest<HTMLElement>('[data-run-scroll]');
+    if (!box) return;
     const onScroll = () => {
-      const box = end.current?.closest('[data-run-scroll]');
-      if (box) pinned.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+      pinned.current = below(box) < 160;
     };
-    const box = end.current?.closest('[data-run-scroll]');
-    box?.addEventListener('scroll', onScroll);
-    return () => box?.removeEventListener('scroll', onScroll);
+    box.addEventListener('scroll', onScroll, { passive: true });
+    return () => box.removeEventListener('scroll', onScroll);
   }, []);
+  const last = session.entries.at(-1);
+  useLayoutEffect(() => {
+    const box = end.current?.closest<HTMLElement>('[data-run-scroll]');
+    if (!box || !pinned.current) return;
+    const gap = below(box) + 32;
+    if (gap > 0) box.scrollTop += gap;
+  }, [session.entries.length, last?.at, session.live]);
 
   const results = new Map(
     session.entries.flatMap((e) => (e.kind === 'result' && e.call ? [[e.call, e] as const] : [])),
