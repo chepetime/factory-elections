@@ -4,6 +4,8 @@ This audit covers application-owned code in `apps/`, `packages/` and `scripts/`,
 
 The decision: centralize task command policy and execution observation in [the pure core](../packages/core/src/task-controls.ts), use a reducer for concurrent member edits, and keep simple interactions local. No new state-machine runtime or database migration is needed. Effect continues to own execution, concurrency and traces.
 
+The second pass (2026-11-25) applies the same decision to code added after the first audit: feature command policy is in [the pure core](../packages/core/src/feature-controls.ts), the backend guard and the feature page both read it, and `GetFeature` advertises it. Machines that already had one named type and one derivation stay as they are. [Known gaps](#known-gaps) lists what this pass found and did not change.
+
 ## Separate progress, ownership and actions
 
 - **Task stage** is durable workflow progress and can outlive a crashed worker. Existing task JSON and its eleven stages remain compatible.
@@ -49,6 +51,14 @@ Execution follows `queued → running → finalizing → completed | failed`. An
 | PR draft — driver/core | absent/stale → drafting → current or unavailable | Optional and bound to HEAD. Writer failure never grants approval or blocks otherwise valid review. |
 | Human decision — driver/core | awaiting → approved/rejected; stale when commit changes | Preserve exact reviewed HEAD and explicit blocking-findings acceptance. Recheck verification/review/approval before publishing. |
 | Revision — driver | eligible task → approval cleared → code/check/review | Shared eligibility includes approved. A failed revision cannot retain previous approval. Requires a note. |
+| Feature — core/backend | grilling → spec → spec-approved → board → implementing → qa → done; any open stage → cancelled | One command table (`featureCommandBlockers`) replaces inline stage checks. `done` and `cancelled` accept no command. A step that ends after a cancel keeps its cost and text, not its stage. A failed QA step waits for a person; the loop does not pay for it again. |
+| Feature ticket — core/backend | waiting / waiting-merge → running → done or failed; failed → running on retry | State follows the ticket's task. `ticketRetryable` and `ticketAwaitsMerge` name which tickets accept `retry-ticket` and `mark-merged`. An unknown ticket id is refused. |
+| Tasks board — core/backend/web | backlog, todo, in_progress, in_review, done, blocked, cancelled; status follows the latest run when the run is newer | Keep `dropAction` as the one drop rule for board, menu and backend. Only In progress starts work; the factory alone moves work into In review and Blocked. |
+| PR review — backend/core | no review → preparing → running → completed / failed / stopped / interrupted; a reply starts a new turn | Keep one derivation (`status`) from the turn files plus live ownership. A Stop that arrives after the turn ended no longer relabels a completed review as stopped. |
+| PR tending — core/backend | open → rerun / merge-base / answer-threads / fix-ci / wait → stopped or ended | Keep `nextTendAction` as the pure decision, with the bounded fix count. |
+| Agent pickup — core/backend | todo, unassigned → routed → assigned → started, or retry later | Keep `pickupPlan` pure and the retry delay. Routing asks once per task edit. |
+| Agent chat — backend | idle → working → idle; `working` without a live reply reads as idle | Keep the in-process owner as the truth; a restart never leaves a chat working. |
+| Memory fact — core | candidate → active after confirmations; any → dropped | Keep pure promotion and drop rules. |
 | Publication — driver/GitHub | approved → push → external PR → stored PR | Explicit action, no automatic retry. External creation and local persistence are not atomic; inspect GitHub after an ambiguous failure. |
 
 ## Execution and storage inventory
@@ -75,6 +85,11 @@ Execution follows `queued → running → finalizing → completed | failed`. An
 | Machine / source | States and transitions | Decision / invariant |
 | --- | --- | --- |
 | Task detail — task page | loading/error → observed stage/owner/gates → command pending/result | Use shared policy. Poll only owned queued/running/finalizing work. Interrupted coding no longer spins forever. Unavailable observation disables commands. |
+| Task run controls — task run | policy actions → run / revise / approve controls | The page now passes the run's cleanup record to the shared policy, so it no longer offers Run or Revise that the backend refuses after an uncertain cleanup. |
+| Live run — run tab | polling → reload on a new page version → polling | The poll continues after a reload. Before, a reload that rendered the same version ended the loop and the spinner stayed. |
+| Feature page — features | advertised actions → controls; working → auto-refresh | The page keeps no stage rules. It shows a control for each allowed action, the questions, ticket states and the QA plan, so every inbox item for a feature has its action on the page. A refused command keeps the typed answer. Cancel asks first. |
+| Review list/chat — reviews | no review / preparing / running / ended; waiting for a new turn | `preparing` now disables New review and Remove, as the backend refuses them. A refused re-review shows its error, and a failed start ends the wait for a new turn. |
+| Agent chat stream — chat transport | submitted → streaming → finished / stopped / lost | A step with no recorded result closes when the reply ends or stops. After about 30 s of failed polls the stream ends with an error, not an endless "streaming". |
 | Forms — action form/task composers | draft → pending → result/error; revision success clears draft | Keep action-state feedback and pending controls. Separate intake partial success from total failure. |
 | Member assignment — team edits/table | per member idle → optimistic pending → committed/rolled back | Reducer rolls back only the affected member, ignores stale responses, serializes same-member edits and handles thrown failures. Different members can save concurrently. |
 | Team view — table | all/team/tag filter; query; grouped/flat; picker open/draft/selection | Keep independent local state. Explicit UTC date formatting avoids locale-dependent hydration changes. |
@@ -98,6 +113,22 @@ curl "http://localhost:3000/api/projects/demo/tasks/$TASK_ID/state"
 
 The gRPC equivalent is `GetTaskControls(Target)`. Run `pnpm rpc:generate` after changing the protobuf service or core action schema to refresh the descriptor and HTTP JSON Schema. Responses use the core `TaskControls` schema: `task`, `execution`, optional `head_sha`/`diff_stat`/`gate_error`, and `actions[]` containing `action`, `allowed`, `blockers[{code,message}]`, and `requires[]`. Required inputs include `note`, `head` and conditional `accept_blocking`; discovery never supplies or accepts human input automatically.
 
+Features use the same contract. `GetFeature` (project, feature id) returns the feature with `actions[]`: `action`, `allowed`, `blockers[{code,message}]`, `requires[]` (`text`, `tickets`, `ticket`) and, for `mark-merged` and `retry-ticket`, the `tickets` ids the command accepts now. Send the command with `FeatureAction`. Blocker codes are `stage`, `busy`, `answer-required`, `spec-missing`, `board-empty` and `ticket`.
+
 Snapshots can change immediately. Submit the explicit command; on conflict, fetch again. Do not infer permission from stage alone, repeat intake after a scheduling failure, auto-resume interruption or automatically repeat ambiguous PR creation. The UI can present a subset of allowed commands (for example hiding a redundant run of a blocked verdict).
 
 The normal suite covers every durable stage's high-level actions, ownership/unavailability, exact-head gates, approved revision, moving-HEAD verification, concurrent member failures, partial intake, interrupted UI and evidence finalization. `pnpm data:test` also exercises real PG/S3. These checks require no paid model calls or real GitHub publication.
+
+## Known gaps
+
+Found on 2026-11-25 and not changed. Each one is a separate decision.
+
+- **Stage groups disagree.** The sidebar, the home cards, the cross-project board and the task chat each keep a list of "working" and "needs you" stages (`sidebar-work.tsx`, `workspace-home.ts`, `overview.ts`, `board.ts`, `task-chat.ts`). An approved run with no pull request is "Needs you" in the sidebar and "Ready" on the board. One core classification must first settle which answer is correct.
+- **Working indicators read the stage, not the owner.** A run that stopped at `coding` still spins on the project board card and stays under "Working" in the sidebar. Only the task page and the cross-project board read the execution phase.
+- **Details panel does not poll.** `LiveRun` and the session view render only in the Run panel; the timeline in the Details panel does not update while a run works.
+- **Board drop.** The optimistic column for `requeue` shows In progress until the refresh (`task-board.tsx`).
+- **Cross-project board without inbox data.** A failed inbox load moves failed tasks to "archived" on the board.
+- **Inbox text for a blocked task** names "run again"; the task page hides Run at `blocked`.
+- **Issue editor drafts** keep the first title and description; a change from another source can be overwritten on save.
+- **Feature cancel** does not stop the runs its tickets started. `save-spec` and `save-board` have no page control; they are RPC only.
+- **Stage predicates** `coding | reviewing` and `rejected | pr-opened` are still written inline in `service.ts`, `agent-pickup.ts`, `agent-profiles.ts` and `task-run.tsx` next to core `runWorking` and `runFinished`.

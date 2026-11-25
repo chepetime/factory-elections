@@ -316,15 +316,29 @@ export async function approveProfile(project: string): Promise<ActionState> {
   return result.ok ? { message: 'Approved the profile.' } : { error: result.error };
 }
 
+/** What the feature page says after each command it can send. The backend decides if it is allowed. */
+const FEATURE_GATE_MESSAGES: Record<string, string> = {
+  grill: 'Sent. The agent reads it now.',
+  'skip-grill': 'Skipped the questions.',
+  'write-spec': 'Writing the specification.',
+  'approve-spec': 'Approved.',
+  plan: 'Planning started. Refresh to check progress.',
+  'approve-board': 'Approved.',
+  'mark-merged': 'Marked as merged.',
+  'retry-ticket': 'Started the ticket again.',
+  'write-qa': 'Writing the QA plan.',
+  complete: 'Completed.',
+  cancel: 'Cancelled.',
+};
+
 export async function featureGateAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const project = field(form, 'project');
   const id = field(form, 'id');
   const action = field(form, 'action');
-  if (
-    !isProjectName(project) ||
-    !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) ||
-    !['approve-spec', 'plan', 'approve-board'].includes(action)
-  )
+  const ticket = field(form, 'ticket');
+  const text = field(form, 'text');
+  const message = Object.hasOwn(FEATURE_GATE_MESSAGES, action) ? FEATURE_GATE_MESSAGES[action] : undefined;
+  if (!isProjectName(project) || !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) || !message)
     return { error: 'Invalid feature action.' };
   try {
     const { backendCall } = await import('@factory/backend/client');
@@ -334,10 +348,12 @@ export async function featureGateAction(_prev: ActionState, form: FormData): Pro
         id,
         action,
         ...(action === 'approve-board' ? { mirror: form.get('mirror') === 'on' } : {}),
+        ...(action === 'grill' && text ? { text } : {}),
+        ...(action === 'mark-merged' || action === 'retry-ticket' ? { ticket } : {}),
       }),
     });
     revalidatePath(`/projects/${project}/features/${id}`);
-    return { message: action === 'plan' ? 'Planning started. Refresh to check progress.' : 'Approved.' };
+    return { message };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Could not update feature.' };
   }

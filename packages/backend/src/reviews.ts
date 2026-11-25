@@ -993,6 +993,9 @@ export class ReviewService {
     if (!record) throw new Conflict(`PR #${number} has no review to stop`);
     const turns = [...record.turns];
     const last = turns.at(-1)!;
+    // A turn that already ended keeps its result: a late Stop must not relabel a completed review.
+    const exit = join(this.dir(project, number), `turn-${turns.length - 1}.exit`);
+    if (await stat(exit).catch(() => undefined)) return;
     this.stopTurn(project, number, last);
     turns[turns.length - 1] = { ...last, stopped: true };
     await writeJsonAtomic(join(this.dir(project, number), 'run.json'), { ...record, turns });

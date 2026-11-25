@@ -243,3 +243,97 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   assert.equal((await features.list('app'))[0]!.tickets, 3);
   assert.ok(await readFile(join(root, 'app', 'features', feature.id, 'spec.md'), 'utf8'));
 });
+
+test('feature commands follow the shared policy: ended features stay ended, a failed QA step waits', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-feature-controls-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, 'data');
+  const repo = join(base, 'repo');
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  const projects = new ProjectStore(root);
+  await projects.add('app', repo);
+  const tasks = new TaskStore(root);
+  let releaseSpec: (() => void) | undefined;
+  let qaCalls = 0;
+  const one = {
+    id: 'T1',
+    title: 'Add the model',
+    description: 'd',
+    acceptance: ['a'],
+    blocked_by: [],
+    size: 'S',
+  };
+  const runner = {
+    run: async (r: ModelRun) => {
+      if (r.step === 'feature:spec') {
+        await new Promise<void>((resolve) => (releaseSpec = resolve));
+        return { text: '# Spec', costUsd: 0.5 };
+      }
+      if (r.step === 'feature:critique') return { text: 'ok', costUsd: 0 };
+      if (r.step === 'feature:tickets') return { text: '', structured: { tickets: [one] }, costUsd: 0 };
+      if (r.step === 'feature:board-critique') return { text: '', structured: { issues: [] }, costUsd: 0 };
+      qaCalls++;
+      throw new Error('the QA model is down');
+    },
+  };
+  const features = new FeatureService({
+    root,
+    projects,
+    runner: () => runner,
+    slot: async () => () => undefined,
+    settings: async () => ProjectSettings.parse({}),
+    facts: async () => undefined,
+    tasks,
+    startRun: async () => undefined,
+  });
+  const allowed = async (id: string) =>
+    (await features.detail({ project: 'app', id })).actions.filter((a) => a.allowed).map((a) => a.action);
+  const spec = async (id: string) => {
+    await features.act({ project: 'app', id, action: 'write-spec' });
+    while (!releaseSpec) await new Promise((resolve) => setTimeout(resolve, 5));
+  };
+
+  // Cancel passes a running step; the step's late result keeps its cost and does not reopen the feature.
+  const cancelled = await features.create({ project: 'app', idea: 'Cancel me' });
+  assert.deepEqual(await allowed(cancelled.id), ['grill', 'skip-grill', 'write-spec', 'cancel']);
+  await spec(cancelled.id);
+  assert.deepEqual(await allowed(cancelled.id), ['cancel']);
+  await features.act({ project: 'app', id: cancelled.id, action: 'cancel' });
+  releaseSpec!();
+  releaseSpec = undefined;
+  await features.idle();
+  const after = await features.read('app', cancelled.id);
+  assert.deepEqual([after.stage, after.cost_usd], ['cancelled', 0.5]);
+  assert.deepEqual(await allowed(cancelled.id), []);
+  await assert.rejects(
+    features.act({ project: 'app', id: cancelled.id, action: 'cancel' }),
+    /is cancelled; it accepts no more commands/,
+  );
+
+  // The QA step fails once; later passes wait for a person to retry it.
+  const feature = await features.create({ project: 'app', idea: 'Ship it' });
+  const act = (action: string, extra: object = {}) =>
+    features.act({ project: 'app', id: feature.id, action, ...extra } as never);
+  await spec(feature.id);
+  releaseSpec!();
+  await features.idle();
+  await act('approve-spec');
+  await act('plan');
+  await features.idle();
+  await act('approve-board');
+  await features.tick();
+  await assert.rejects(act('mark-merged', { ticket: 'T9' }), /has no ticket T9/);
+  const [ticket] = (await features.read('app', feature.id)).tickets;
+  await tasks.write({ ...(await tasks.read('app', ticket!.task_id!)), stage: 'awaiting-approval' });
+  for (let pass = 0; pass < 3; pass++) {
+    await features.tick();
+    await features.idle();
+  }
+  assert.equal(qaCalls, 1, 'a failed QA step is not started again by the loop');
+  const failed = await features.detail({ project: 'app', id: feature.id });
+  assert.deepEqual([failed.stage, failed.error], ['implementing', 'the QA model is down']);
+  assert.ok((await allowed(feature.id)).includes('write-qa'), 'a person can retry it');
+  await act('write-qa');
+  await features.idle();
+  assert.equal(qaCalls, 2);
+});

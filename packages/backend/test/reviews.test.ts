@@ -232,6 +232,16 @@ test('a running review blocks duplicates, replies and removal, and can be stoppe
   await assert.rejects(reviews.detail({ project: '../x', number: 7 }));
 });
 
+test('a Stop that arrives after the turn ended keeps the review completed', async (t) => {
+  const { reviews } = await fixture(t);
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  const before = await settle(reviews, 7);
+  await reviews.stop({ project: 'app', number: 7 });
+  const after = await reviews.detail({ project: 'app', number: 7 });
+  assert.deepEqual([after.state, after.stop_reason], [before.state, undefined]);
+  assert.notEqual(after.state, 'stopped');
+});
+
 test('automated turns may not post to GitHub; a message the user typed may ask the agent to', async (t) => {
   const { reviews, turns } = await fixture(t);
   await reviews.start({ project: 'app', numbers: [7], mode: 'review' });

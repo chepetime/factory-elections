@@ -83,6 +83,47 @@ describe('chat transport', () => {
     });
   });
 
+  const send = () =>
+    factoryChatTransport('c').sendMessages({
+      trigger: 'submit-message',
+      chatId: 'c',
+      messageId: undefined,
+      messages: [{ id: 'u', role: 'user', parts: [{ type: 'text', text: 'Plan the work' }] }],
+      abortSignal: undefined,
+    });
+
+  it('closes a step that has no recorded result when the reply ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 50 });
+    const step = { name: 'Read', detail: 'README.md' };
+    serve([
+      { partial_tools: [step] },
+      {
+        working: false,
+        turns: [user, { at: 'now', role: 'agent', text: '', error: 'The model failed.', tools: [step] }],
+      },
+    ]);
+    const chunks = await read(await send());
+    expect(chunks.map((c) => c.type)).toEqual([
+      'start',
+      'tool-input-available',
+      'tool-output-available',
+      'message-metadata',
+      'finish',
+    ]);
+  });
+
+  it('ends with an error when the chat cannot be read any more', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 404 })),
+    );
+    const reading = read(await send());
+    await vi.advanceTimersByTimeAsync(60_000);
+    const chunks = await reading;
+    expect(chunks.map((c) => c.type)).toEqual(['start', 'error']);
+  });
+
   it('resumes only a reply in progress, and refuses a send the backend refuses', async () => {
     serve([{ working: false }]);
     expect(await factoryChatTransport('c').reconnectToStream({ chatId: 'c' })).toBeNull();

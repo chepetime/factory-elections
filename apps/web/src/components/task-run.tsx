@@ -535,7 +535,8 @@ export async function renderRun(
   const phase = taskPhase(controls.execution, run);
   const busy = executionBusy(phase);
   const version = pageVersion(task, phase, run.label);
-  const actions = taskActions(task, phase, controls.head_sha);
+  // The cleanup is part of the policy: an unconfirmed uncertain one blocks run and revise.
+  const actions = taskActions(task, phase, controls.head_sha, run.cleanup);
   const allowed = (action: string) => actions.some((a) => a.action === action && a.allowed);
   const hidden = { project, id };
   const blocking = blockingFindings(task);

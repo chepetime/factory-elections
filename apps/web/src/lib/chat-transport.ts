@@ -31,6 +31,8 @@ export type ChatSnapshot = {
 };
 
 const POLL_MS = 400;
+/** Missed polls in a row (about 30 s) before the stream ends with an error. */
+const MAX_MISSED_POLLS = 75;
 
 /** Stored turns as AI SDK messages: tool steps first, then the reply text. */
 export function toMessages(turns: Turn[]): FactoryMessage[] {
@@ -107,20 +109,48 @@ function follow(id: string, stored: number, signal?: AbortSignal): ReadableStrea
         controller.enqueue({ type: 'text-delta', id: 'reply', delta: text.slice(sentText.length) });
         sentText = text;
       };
+      // A step with no recorded result ends with the reply, as it shows after a reload.
+      const closeTools = () => {
+        tools.forEach((tool, n) => {
+          if (tool.ok !== undefined) return;
+          tool.ok = true;
+          controller.enqueue({
+            type: 'tool-output-available',
+            toolCallId: `live-${n}`,
+            output: null,
+            dynamic: true,
+          });
+        });
+      };
+      let missed = 0;
       controller.enqueue({ type: 'start' });
       for (;;) {
         if (signal?.aborted) {
+          closeTools();
           controller.enqueue({ type: 'abort', reason: 'Stopped by you.' });
           controller.close();
           return;
         }
         const chat = await snapshot(id, signal);
+        missed = chat ? 0 : missed + 1;
+        // A deleted chat or a backend that stays down must not leave the reply "streaming" for ever.
+        if (missed >= MAX_MISSED_POLLS && !signal?.aborted) {
+          closeTools();
+          if (textOpen) controller.enqueue({ type: 'text-end', id: 'reply' });
+          controller.enqueue({
+            type: 'error',
+            errorText: 'Lost the connection to the reply. Reload the page to see what was saved.',
+          });
+          controller.close();
+          return;
+        }
         if (chat) {
           const done = !chat.working && chat.turns.length > stored;
           const reply = done ? chat.turns.at(-1) : undefined;
           emitTools(reply?.tools ?? chat.partial_tools ?? []);
           emitText(reply?.text ?? chat.partial ?? '');
           if (!chat.working) {
+            closeTools();
             if (textOpen) controller.enqueue({ type: 'text-end', id: 'reply' });
             if (reply)
               controller.enqueue({

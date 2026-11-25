@@ -52,7 +52,45 @@ describe('feature approval gates', () => {
       json: JSON.stringify({ id: 'feature-one', action: 'approve-board', mirror }),
     });
   });
+  it('sends an answer, a ticket command and a cancel in the shape the backend reads', async () => {
+    rpc.mockResolvedValue({ json: '{}' });
+    const answer = form('grill');
+    answer.set('text', '  Voters, yes.  ');
+    expect((await featureGateAction({}, answer)).message).toBeTruthy();
+    expect(rpc).toHaveBeenLastCalledWith('FeatureAction', {
+      project: 'demo',
+      json: JSON.stringify({ id: 'feature-one', action: 'grill', text: 'Voters, yes.' }),
+    });
+    // The first grill turn has no answer: no empty text is sent.
+    await featureGateAction({}, form('grill'));
+    expect(rpc).toHaveBeenLastCalledWith('FeatureAction', {
+      project: 'demo',
+      json: JSON.stringify({ id: 'feature-one', action: 'grill' }),
+    });
+    const retry = form('retry-ticket');
+    retry.set('ticket', 'T2');
+    await featureGateAction({}, retry);
+    expect(rpc).toHaveBeenLastCalledWith('FeatureAction', {
+      project: 'demo',
+      json: JSON.stringify({ id: 'feature-one', action: 'retry-ticket', ticket: 'T2' }),
+    });
+    expect(await featureGateAction({}, form('cancel'))).toEqual({ message: 'Cancelled.' });
+  });
+  it('renders an answer field and a ticket only for the commands that need them', () => {
+    const answer = renderToStaticMarkup(
+      <FeatureGate project="demo" id="feature-one" action="grill" label="Send answer" answer="Your answer" />,
+    );
+    expect(answer).toContain('name="text"');
+    expect(answer).toContain('required');
+    const retry = renderToStaticMarkup(
+      <FeatureGate project="demo" id="feature-one" action="retry-ticket" ticket="T2" label="Run T2 again" />,
+    );
+    expect(retry).toContain('name="ticket"');
+    expect(retry).toContain('value="T2"');
+    expect(retry).not.toContain('name="text"');
+  });
   it('rejects invalid actions and reports backend failures', async () => {
+    expect((await featureGateAction({}, form('constructor'))).error).toBeTruthy();
     expect((await featureGateAction({}, form('delete'))).error).toBeTruthy();
     expect(rpc).not.toHaveBeenCalled();
     rpc.mockRejectedValue(new Error('Board is busy'));

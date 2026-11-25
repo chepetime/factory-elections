@@ -355,7 +355,9 @@ export function PullRequestReviews({
                 const status = pr.review;
                 const failure = failures[pr.number];
                 const hasChat = status.turns > 0;
-                const removable = status.state !== 'running' && (hasChat || status.worktree);
+                // The backend refuses a new review and a removal while it prepares or runs one.
+                const preparing = status.state === 'preparing';
+                const removable = status.state !== 'running' && !preparing && (hasChat || status.worktree);
                 const chatHref = `/projects/${project}/reviews/${pr.number}`;
                 return [
                   <tr
@@ -452,7 +454,7 @@ export function PullRequestReviews({
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={pending}
+                            disabled={pending || preparing}
                             title={
                               hasChat
                                 ? 'Start a new review chat at the latest head (the current chat is replaced)'

@@ -27,3 +27,4 @@ export * from './receipt.ts';
 export * from './agent-env.ts';
 export * from './agent-profiles.ts';
 export * from './user-settings.ts';
+export * from './feature-controls.ts';
