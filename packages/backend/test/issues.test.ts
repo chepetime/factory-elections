@@ -234,6 +234,19 @@ test('a failed run runs again, and Cancelled rejects an open run', async (t) => 
   assert.equal(cancelled.issue.status, 'cancelled');
 });
 
+test('a waiting run closes when its task goes back to Todo, and the task waits there', async (t) => {
+  const stuck = run('Stuck', '2026-11-18T10:00:00.000Z', 'blocked');
+  const { service, calls } = await setup(t, [stuck]);
+  const moved = await service.move({ project: 'change-elections', key: 'CE-1', to: 'todo' });
+  assert.equal(moved.action, 'requeue');
+  assert.deepEqual(calls, [`reject:${stuck.id}:Moved back to Todo from the task board.`]);
+  assert.equal(moved.issue.status, 'todo');
+  assert.match(moved.issue.events.at(-1)!.message, /Closed the open run and moved the task back to Todo/);
+  // The closed run has ended, so In progress starts a new one.
+  const again = await service.move({ project: 'change-elections', key: 'CE-1', to: 'in_progress' });
+  assert.equal(again.action, 'start-run');
+});
+
 test('drops that would skip the approval gate or override an open run are refused', async (t) => {
   const waiting = run('Waiting', '2026-11-18T10:00:00.000Z', 'awaiting-approval');
   const { service, calls } = await setup(t, [waiting]);

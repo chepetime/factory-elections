@@ -415,6 +415,14 @@ export class IssueService {
       if (action.kind === 'run') updated = { ...issue, events: [...issue.events, event('Ran again')] };
       if (action.kind === 'reject')
         updated = { ...issue, events: [...issue.events, event('Cancelled the run')] };
+      if (action.kind === 'requeue')
+        updated = {
+          ...issue,
+          events: [
+            ...issue.events,
+            event(`Closed the open run and moved the task back to ${ISSUE_STATUS_LABELS[action.status]}`),
+          ],
+        };
       if (updated !== issue) {
         updated = Issue.parse({ ...updated, updated_at: at });
         await this.write(project, {
@@ -427,6 +435,15 @@ export class IssueService {
 
     if ((plan.action.kind === 'start-run' || plan.action.kind === 'run') && plan.runId)
       await this.deps.run(project, plan.runId);
+    if (plan.action.kind === 'requeue' && plan.runId) {
+      const status = plan.action.status;
+      await this.deps.reject(
+        project,
+        plan.runId,
+        `Moved back to ${ISSUE_STATUS_LABELS[status]} from the task board.`,
+      );
+      await this.change(project, `N-${plan.number}`, (issue, at) => ({ ...issue, status, status_at: at }));
+    }
     if (plan.action.kind === 'reject' && plan.runId) {
       await this.deps.reject(project, plan.runId, 'Cancelled from the task board.');
       await this.change(project, `N-${plan.number}`, (issue, at) => ({

@@ -153,6 +153,8 @@ export type DropAction =
   | { kind: 'start-run' }
   | { kind: 'run' }
   | { kind: 'reject' }
+  /** Close a run that waits for a person, then put the task back in Backlog or Todo. */
+  | { kind: 'requeue'; status: 'backlog' | 'todo' }
   | { kind: 'refused'; reason: string };
 
 /**
@@ -160,6 +162,9 @@ export type DropAction =
  * latest run. Only In progress starts work, only Cancelled stops it, and the factory alone moves
  * work into In review and Blocked, so a drop can never skip the approval gate.
  */
+/** Run stages that wait for a person, so moving the task back to the queue may close the run. */
+const WAITING_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-failed', 'awaiting-approval'];
+
 export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary): DropAction {
   if (from === to) return { kind: 'none' };
   const active = run && !runFinished(run.stage);
@@ -171,6 +176,10 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
     return { kind: 'refused', reason: 'Approve, revise or reject it from the task page.' };
   }
   if (to === 'cancelled') return active ? { kind: 'reject' } : { kind: 'set-status', status: 'cancelled' };
+  // A run that waits for you (stuck, failed, or ready for review) can be closed by sending the task
+  // back to the queue; a run that is working cannot.
+  if (active && (to === 'backlog' || to === 'todo') && WAITING_STAGES.includes(run.stage))
+    return { kind: 'requeue', status: to };
   if (active)
     return {
       kind: 'refused',

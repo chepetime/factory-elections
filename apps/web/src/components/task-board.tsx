@@ -70,15 +70,26 @@ export async function decideDrop(
             body: 'The coding agent runs again in the existing worktree, then stops for your approval. This uses paid model calls.',
             confirm: 'Run again',
           }
-        : action.kind === 'reject'
+        : action.kind === 'requeue'
           ? {
-              title: `Cancel the run for ${issue.key}?`,
-              body: 'The run is rejected and the task moves to Cancelled. Its worktree and branch stay, so you can still inspect or revise them.',
-              confirm: 'Cancel run',
+              title: `Move ${issue.key} back to ${action.status === 'todo' ? 'Todo' : 'Backlog'}?`,
+              body:
+                action.status === 'todo'
+                  ? 'Its open run closes, and its branch stays for you to inspect. In Todo the task starts over: its agent, or the one Mika picks, begins a new run from the latest main.'
+                  : 'Its open run closes, and its branch stays for you to inspect. The task waits in Backlog until you move it to Todo.',
+              confirm: 'Close run and move',
               cancel: 'Keep run',
               tone: 'destructive',
             }
-          : undefined;
+          : action.kind === 'reject'
+            ? {
+                title: `Cancel the run for ${issue.key}?`,
+                body: 'The run is rejected and the task moves to Cancelled. Its worktree and branch stay, so you can still inspect or revise them.',
+                confirm: 'Cancel run',
+                cancel: 'Keep run',
+                tone: 'destructive',
+              }
+            : undefined;
   if (request && !(await confirm(request))) return undefined;
   return action;
 }

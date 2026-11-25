@@ -81,7 +81,9 @@ test('drops start, run or stop work only through In progress and Cancelled', () 
 
 test('drops never skip the approval gate or override an open run', () => {
   assert.equal(dropAction('in_review', 'done', { stage: 'awaiting-approval' }).kind, 'refused');
-  assert.equal(dropAction('blocked', 'backlog', { stage: 'failed' }).kind, 'refused');
+  assert.equal(dropAction('in_progress', 'todo', { stage: 'coding' }).kind, 'refused', 'a working run stays');
+  assert.equal(dropAction('todo', 'backlog', { stage: 'queued' }).kind, 'refused');
+  assert.equal(dropAction('done', 'todo', { stage: 'approved' }).kind, 'refused');
   assert.equal(dropAction('todo', 'in_review').kind, 'refused');
   assert.equal(dropAction('todo', 'blocked').kind, 'refused');
   assert.deepEqual(dropAction('done', 'backlog', { stage: 'pr-opened' }), {
@@ -108,4 +110,20 @@ test('a board parses without deleted runs, and only coding and reviewing count a
   assert.equal(runWorking('reviewing'), true);
   for (const stage of ['queued', 'awaiting-approval', 'failed', 'pr-opened'] as const)
     assert.equal(runWorking(stage), false);
+});
+
+test('a run that waits for you closes when you send its task back to the queue', () => {
+  assert.deepEqual(dropAction('blocked', 'todo', { stage: 'blocked' }), { kind: 'requeue', status: 'todo' });
+  assert.deepEqual(dropAction('blocked', 'backlog', { stage: 'failed' }), {
+    kind: 'requeue',
+    status: 'backlog',
+  });
+  assert.deepEqual(dropAction('in_review', 'todo', { stage: 'awaiting-approval' }), {
+    kind: 'requeue',
+    status: 'todo',
+  });
+  assert.deepEqual(dropAction('blocked', 'todo', { stage: 'verification-failed' }), {
+    kind: 'requeue',
+    status: 'todo',
+  });
 });
