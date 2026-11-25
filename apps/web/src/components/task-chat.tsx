@@ -17,6 +17,7 @@ import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/action
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useUserPreferences } from '@/components/user-preferences';
 import { cn } from '@/lib/utils';
 
 export type TaskType = 'ticket' | 'work' | 'review' | 'general';
@@ -141,8 +142,9 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
   const isNew = props.mode === 'new';
   const [state, action, pending] = useActionState<ActionState, FormData>(isNew ? submitTask : reviseTask, {});
   const [text, setText] = useState('');
-  const [type, setType] = useState<TaskType>('work');
-  const [start, setStart] = useState(true);
+  const defaults = useUserPreferences().tasks;
+  const [type, setType] = useState<TaskType>(defaults.default_type);
+  const [start, setStart] = useState(defaults.start_runs);
   const form = useRef<HTMLFormElement>(null);
   const preset = PRESETS[type];
   const body = text.trim();
@@ -188,7 +190,7 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
         </div>
       )}
 
-      {isNew && type === 'work' && (
+      {isNew && type === 'work' && defaults.jira_key_field && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <label htmlFor="jira-key" className="text-muted-foreground">
             Jira issue key

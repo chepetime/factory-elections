@@ -239,7 +239,7 @@ export class BackendService {
     this.tasks = this.storage.tasks;
     this.projects = this.storage.projects;
     this.settings = new ProjectSettingsService(root, this.storage, this.projects, detector);
-    this.user = new UserSettingsService(root, this.storage);
+    this.user = new UserSettingsService(root, this.storage, { projects: () => this.projects.list() });
     this.tickets = new TicketService(this.projects, (project) => this.settings.get(project));
     this.reviews = new ReviewService(
       root,

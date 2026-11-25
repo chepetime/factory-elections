@@ -19,6 +19,7 @@ test('user settings default, then save without empty fields', async (t) => {
   });
   const saved = await user.get();
   assert.equal(saved.identity.name, 'Ada');
+  assert.deepEqual(saved.identity.emails, []);
   assert.equal(saved.identity.github_username, undefined);
   assert.equal(saved.providers.pi.enabled, false);
   assert.equal(saved.providers.claude.enabled, true);
@@ -32,6 +33,8 @@ test('the environment reads git, gh and each CLI, and marks a missing CLI', asyn
     'claude --version': { code: 0, stdout: '2.1.331 (Claude Code)\n', stderr: '' },
     'codex --version': { code: 127, stdout: '', stderr: 'spawn codex ENOENT' },
     'pi --version': { code: 0, stdout: '1.6.0\n', stderr: '' },
+    'git -C /work config --local user.email': { code: 0, stdout: 'ada@work.example\n', stderr: '' },
+    'git -C /home config --local user.email': { code: 1, stdout: '', stderr: '' },
     'pi --list-models': {
       code: 0,
       stdout: 'provider  model  context\nanthropic  claude-opus-5-5  1M\nopenai-codex  gpt-6-sol  400K\n',
@@ -42,10 +45,18 @@ test('the environment reads git, gh and each CLI, and marks a missing CLI', asyn
   const user = new UserSettingsService(root, storageFor(root), {
     exec: async (command, args) => answers[[command, ...args].join(' ')]!,
     readCodexConfig: async () => undefined,
+    projects: async () => [
+      { name: 'work', repo: '/work' },
+      { name: 'home', repo: '/home' },
+    ],
   });
   const env = await user.environment();
   await rm(root, { recursive: true, force: true });
-  assert.deepEqual(env.git, { name: 'Ada', email: 'ada@example.com' });
+  assert.deepEqual(env.git, {
+    name: 'Ada',
+    email: 'ada@example.com',
+    project_emails: [{ project: 'work', email: 'ada@work.example' }],
+  });
   assert.equal(env.github.login, 'ada');
   assert.equal(env.providers.claude.version, '2.1.331');
   assert.equal(env.providers.codex.installed, false);
@@ -59,4 +70,13 @@ test('the Codex model comes from the top level of config.toml only', () => {
   assert.equal(codexConfiguredModel('model = "gpt-6-astra"\n[profiles.x]\nmodel = "other"'), 'gpt-6-astra');
   assert.equal(codexConfiguredModel('[profiles.x]\nmodel = "other"'), undefined);
   assert.deepEqual(parsePiModels('provider model\n'), []);
+});
+
+test('a single email saved before the list becomes the first of the emails', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-user-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const user = new UserSettingsService(root, storageFor(root));
+  await user.save({ json: JSON.stringify({ identity: { email: 'ada@example.com' } }) });
+  assert.deepEqual((await user.get()).identity.emails, ['ada@example.com']);
+  await assert.rejects(user.save({ json: JSON.stringify({ identity: { emails: ['not-an-email'] } }) }));
 });

@@ -39,7 +39,7 @@ import {
   updateIssueRun,
 } from '@/lib/issues';
 import { IssueStatus } from '@factory/core';
-import { saveUserSettingsRun } from '@/lib/user-settings';
+import { saveUserSettingsRun, userSettings, type UserSettings } from '@/lib/user-settings';
 
 export interface ActionState {
   error?: string;
@@ -448,9 +448,26 @@ export async function deleteIssue(project: string, key: string): Promise<ActionS
     : { message: `Deleted ${key} and its runs.` };
 }
 
-/** Saves the user settings: identity, providers and models, and global rules. */
-export async function saveUserSettings(settings: unknown): Promise<ActionState> {
-  const saved = await saveUserSettingsRun(settings);
+const USER_SECTIONS = [
+  'identity',
+  'preferences',
+  'tasks',
+  'chat',
+  'notifications',
+  'providers',
+  'rules',
+] as const;
+type UserSection = (typeof USER_SECTIONS)[number];
+
+/** Saves one section of the user settings and keeps the rest as stored. */
+export async function updateUserSettings<K extends UserSection>(
+  section: K,
+  value: UserSettings[K],
+): Promise<ActionState> {
+  if (!USER_SECTIONS.includes(section)) return { error: 'Unknown settings section.' };
+  const current = await userSettings();
+  if (!current.ok) return { error: current.error };
+  const saved = await saveUserSettingsRun({ ...current.value, [section]: value });
   revalidatePath('/', 'layout');
-  return saved.ok ? { message: 'Saved.' } : { error: saved.error };
+  return saved.ok ? { message: 'Saved' } : { error: saved.error };
 }

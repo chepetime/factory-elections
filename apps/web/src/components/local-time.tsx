@@ -2,6 +2,7 @@
 // A time in the viewer's own locale and time zone. The server can't know either, so the text is filled in
 // only after hydration; the server and the first client render both leave it empty and so always match.
 import { useSyncExternalStore } from 'react';
+import { useUserPreferences } from '@/components/user-preferences';
 
 const never = () => () => {};
 
@@ -25,10 +26,13 @@ export function LocalTime({
     () => false,
   );
   const d = iso ? new Date(iso) : undefined;
+  // A time zone chosen in user settings wins over the browser's own.
+  const timeZone = useUserPreferences().preferences.time_zone;
   if (!d || Number.isNaN(d.getTime())) return null;
+  const zone = timeZone ? { timeZone } : {};
   return (
-    <time dateTime={iso} title={hydrated ? d.toLocaleString() : undefined} className={className}>
-      {hydrated ? d.toLocaleString([], FORMATS[format]) : ''}
+    <time dateTime={iso} title={hydrated ? d.toLocaleString([], zone) : undefined} className={className}>
+      {hydrated ? d.toLocaleString([], { ...FORMATS[format], ...zone }) : ''}
     </time>
   );
 }

@@ -45,15 +45,22 @@ export class UserSettingsService {
   private readonly path: string;
   private readonly storage: DataStorage;
   private readonly exec: Exec;
+  private readonly projects: () => Promise<readonly { name: string; repo: string }[]>;
   private readonly readCodexConfig: () => Promise<string | undefined>;
   constructor(
     root: string,
     storage: DataStorage,
-    options: { exec?: Exec; readCodexConfig?: () => Promise<string | undefined> } = {},
+    options: {
+      exec?: Exec;
+      readCodexConfig?: () => Promise<string | undefined>;
+      /** Registered projects, to read the email each repository sets for itself. */
+      projects?: () => Promise<readonly { name: string; repo: string }[]>;
+    } = {},
   ) {
     this.path = join(root, 'user-settings.json');
     this.storage = storage;
     this.exec = options.exec ?? exec;
+    this.projects = options.projects ?? (async () => []);
     this.readCodexConfig =
       options.readCodexConfig ??
       (() =>
@@ -83,7 +90,7 @@ export class UserSettingsService {
   /** Reads git identity, the GitHub login and each provider CLI, all at once. */
   async environment(): Promise<UserEnvironment> {
     const x = (command: string, ...args: string[]) => this.exec(command, args);
-    const [name, email, gh, claude, codex, pi, piModels, codexConfig] = await Promise.all([
+    const [name, email, gh, claude, codex, pi, piModels, codexConfig, projectEmails] = await Promise.all([
       x('git', 'config', '--global', 'user.name'),
       x('git', 'config', '--global', 'user.email'),
       x('gh', 'api', 'user', '--jq', '.login'),
@@ -92,6 +99,7 @@ export class UserSettingsService {
       x('pi', '--version'),
       x('pi', '--list-models'),
       this.readCodexConfig(),
+      this.projectEmails(),
     ]);
     const version = (r: ProcessResult) => {
       const text = out(r);
@@ -101,7 +109,7 @@ export class UserSettingsService {
     const configured = codexConfig ? codexConfiguredModel(codexConfig) : undefined;
     const ghLogin = out(gh);
     return UserEnvironment.parse({
-      git: { name: out(name), email: out(email) },
+      git: { name: out(name), email: out(email), project_emails: projectEmails },
       github: ghLogin ? { login: ghLogin } : { error: installed(gh) ? fail(gh) : 'gh is not installed' },
       providers: {
         claude: {
@@ -122,5 +130,17 @@ export class UserSettingsService {
         },
       },
     });
+  }
+
+  /** The `user.email` each project repository sets in its own git config, when it sets one. */
+  private async projectEmails(): Promise<{ project: string; email: string }[]> {
+    const projects = await this.projects().catch(() => []);
+    const found = await Promise.all(
+      projects.map(async (p) => ({
+        project: p.name,
+        email: out(await this.exec('git', ['-C', p.repo, 'config', '--local', 'user.email'])),
+      })),
+    );
+    return found.filter((f): f is { project: string; email: string } => Boolean(f.email));
   }
 }

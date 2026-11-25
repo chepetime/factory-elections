@@ -65,7 +65,12 @@ it.each([
   expect(html).toContain('aria-label="Software Factory home"');
 });
 
-it('shows the project sidebar everywhere but the homepage', () => {
+it('shows the project sidebar everywhere but the homepage, and user settings have their own', () => {
+  route.pathname = '/user/preferences';
+  const user = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  expect(user).toContain('aria-label="User settings"');
+  expect(user).not.toContain('aria-label="Tasks"><');
+  expect(currentLinks(user)).toContain('/user/preferences');
   route.pathname = '/';
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
   route.pathname = '/board';

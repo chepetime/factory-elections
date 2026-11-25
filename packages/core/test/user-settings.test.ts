@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { modelRefused, UserSettings, withUserRules } from '../src/index.ts';
+import { modelRefused, NOTIFY_KINDS, UserSettings, withUserRules, type InboxKind } from '../src/index.ts';
 
 test('user settings default to every provider and model on, and no rules', () => {
   const settings = UserSettings.parse({});
@@ -29,4 +29,19 @@ test('a GitHub username is checked', () => {
     UserSettings.parse({ identity: { github_username: 'octo-cat' } }).identity.github_username,
     'octo-cat',
   );
+});
+
+test('what the person wrote about themselves comes before their rules', () => {
+  const settings = UserSettings.parse({ identity: { about: 'Backend engineer.' }, rules: 'Small PRs.' });
+  assert.equal(
+    withUserRules('Base', settings),
+    'Base\n\n## About the person you work for\n\nBackend engineer.\n\n## Rules from the person who runs this factory\n\nSmall PRs.',
+  );
+});
+
+test('notification settings name every inbox kind', () => {
+  // Fails to compile when the inbox gains a kind the settings cannot mute.
+  const covered: Exclude<InboxKind, (typeof NOTIFY_KINDS)[number]> extends never ? true : false = true;
+  assert.equal(covered, true);
+  assert.deepEqual(UserSettings.parse({}).notifications, { browser: false, muted: [] });
 });

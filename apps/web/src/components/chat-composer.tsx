@@ -18,6 +18,7 @@ import {
 import { ComposerMenu, composerMenuRow as menuRow } from '@/components/composer-menu';
 import { ChatComposerAddMenu, type ChatAddAction } from '@/components/chat-composer-add-menu';
 import { ApprovalModePicker, type ApprovalMode } from '@/components/approval-mode-picker';
+import { useUserPreferences } from '@/components/user-preferences';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -109,7 +110,8 @@ export function ChatComposer({
   const [ownFolder, setOwnFolder] = useState<string | null>(null);
   const [ownApps, setOwnApps] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
-  const [ownApprovalMode, setOwnApprovalMode] = useState<ApprovalMode>('request');
+  const defaultApproval = useUserPreferences().chat.approval_mode;
+  const [ownApprovalMode, setOwnApprovalMode] = useState<ApprovalMode>(defaultApproval);
   const [failure, setFailure] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const sendLock = useRef(false);

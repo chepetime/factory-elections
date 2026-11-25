@@ -8,6 +8,20 @@ export const USER_PROVIDERS = ['claude', 'codex', 'pi'] as const;
 export const UserProvider = z.enum(USER_PROVIDERS);
 export type UserProvider = z.infer<typeof UserProvider>;
 
+/** Inbox item kinds, in the order the notification settings list them. */
+export const NOTIFY_KINDS = [
+  'gate',
+  'blocked',
+  'failed',
+  'question',
+  'approve-spec',
+  'approve-board',
+  'qa',
+  'merge',
+  'review',
+  'tending',
+] as const;
+
 export const ProviderSettings = z.object({
   enabled: z.boolean().default(true),
   /** Models the factory must not use. A deny list, so a model the CLI adds later starts enabled. */
@@ -21,15 +35,55 @@ export type ProviderSettings = z.infer<typeof ProviderSettings>;
 
 export const UserSettings = z.object({
   identity: z
+    .preprocess(
+      // Settings saved before `emails` had one `email`.
+      (v) => {
+        if (!v || typeof v !== 'object' || !('email' in v)) return v;
+        const { email, ...rest } = v as { email?: unknown; emails?: unknown };
+        return { ...rest, emails: rest.emails ?? (typeof email === 'string' && email ? [email] : []) };
+      },
+      z.object({
+        name: z.string().max(200).optional(),
+        /** Every email the person commits with, e.g. personal and work. The first is the primary one. */
+        emails: z.array(z.email().max(320)).max(20).default([]),
+        github_username: z
+          .string()
+          .regex(/^[A-Za-z\d](?:[A-Za-z\d-]{0,38})$/, 'use a GitHub username, without @')
+          .optional(),
+        /** Who the person is and how they like to work; agents get it with the rules. */
+        about: z.string().max(2000).optional(),
+      }),
+    )
+    .default({ emails: [] }),
+  preferences: z
     .object({
-      name: z.string().max(200).optional(),
-      email: z.string().max(320).optional(),
-      github_username: z
-        .string()
-        .regex(/^[A-Za-z\d](?:[A-Za-z\d-]{0,38})$/, 'use a GitHub username, without @')
-        .optional(),
+      /** Light by default: the app was light-only before this setting. */
+      theme: z.enum(['system', 'light', 'dark']).default('light'),
+      /** An IANA zone for times in the app. Absent means the browser's own zone. */
+      time_zone: z.string().max(100).optional(),
     })
-    .default({}),
+    .default({ theme: 'light' }),
+  /** Defaults for the new-task composer. */
+  tasks: z
+    .object({
+      default_type: z.enum(['ticket', 'work', 'review', 'general']).default('work'),
+      /** New tasks start a run at once; off adds them to the board in Todo. */
+      start_runs: z.boolean().default(true),
+      /** Show the optional Jira issue key field for "Work on task". */
+      jira_key_field: z.boolean().default(true),
+    })
+    .default({ default_type: 'work', start_runs: true, jira_key_field: true }),
+  chat: z
+    .object({ approval_mode: z.enum(['request', 'auto', 'full']).default('request') })
+    .default({ approval_mode: 'request' }),
+  notifications: z
+    .object({
+      /** Browser banners for new inbox items while the app tab is in the background. */
+      browser: z.boolean().default(false),
+      /** Inbox kinds that never raise a banner. They still show in the inbox. */
+      muted: z.array(z.enum(NOTIFY_KINDS)).default([]),
+    })
+    .default({ browser: false, muted: [] }),
   providers: z
     .object({
       claude: ProviderSettings.default(ProviderSettings.parse({})),
@@ -68,7 +122,12 @@ export type ProviderEnvironment = z.infer<typeof ProviderEnvironment>;
 
 /** What the factory found on this machine, to fill in and check the user settings. */
 export const UserEnvironment = z.object({
-  git: z.object({ name: z.string().optional(), email: z.string().optional() }),
+  git: z.object({
+    name: z.string().optional(),
+    email: z.string().optional(),
+    /** Emails the project repositories set in their own git config, e.g. a work email. */
+    project_emails: z.array(z.object({ project: z.string(), email: z.string() })).default([]),
+  }),
   github: z.object({ login: z.string().optional(), error: z.string().optional() }),
   providers: z.object({ claude: ProviderEnvironment, codex: ProviderEnvironment, pi: ProviderEnvironment }),
 });
@@ -83,11 +142,14 @@ export function modelRefused(settings: UserSettings, ref: string): string | unde
   return undefined;
 }
 
-/** The system prompt with the user's global rules after it, when there are any. */
+/** The system prompt with what the person wrote about themselves and their rules, when there is any. */
 export function withUserRules(systemPrompt: string, settings: UserSettings): string {
+  const about = settings.identity.about?.trim();
   const rules = settings.rules.trim();
-  if (!rules) return systemPrompt;
-  return `${systemPrompt}\n\n## Rules from the person who runs this factory\n\n${rules}`;
+  let out = systemPrompt;
+  if (about) out += `\n\n## About the person you work for\n\n${about}`;
+  if (rules) out += `\n\n## Rules from the person who runs this factory\n\n${rules}`;
+  return out;
 }
 
 export const PROVIDER_NAMES: Record<UserProvider, string> = {

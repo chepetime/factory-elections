@@ -50,7 +50,7 @@ function Dismiss({ item }: { item: InboxItem }) {
   );
 }
 
-function destination(item: InboxItem) {
+export function inboxDestination(item: InboxItem) {
   const project = encodeURIComponent(item.project);
   if (item.feature_id) return `/projects/${project}/features/${encodeURIComponent(item.feature_id)}`;
   if (item.task_key) return `/projects/${project}/tasks/${encodeURIComponent(item.task_key)}`;
@@ -114,7 +114,7 @@ export function Inbox({
                   </p>
                   {/* The link covers the whole row; Dismiss sits above it. */}
                   <Link
-                    href={destination(item)}
+                    href={inboxDestination(item)}
                     className="mt-1 block text-sm font-medium outline-none after:absolute after:inset-0 group-hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
                   >
                     {item.task_key && (

@@ -1,17 +1,12 @@
 'use client';
-// User settings: identity, the agent providers and models the factory may use, and global rules.
-// The backend refuses a run on a provider or model turned off here, and adds the rules to every
-// agent's system prompt.
-import { LoaderCircle, Plus, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useId, useMemo, useState, useTransition, type ReactNode } from 'react';
-import { saveUserSettings } from '@/app/actions';
+// Agent providers and their models. The backend refuses a run on a provider or model turned off here.
+import { Plus, X } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { PROVIDER_NAMES, USER_PROVIDERS, type UserProvider } from '@factory/core';
 import type { UserEnvironment, UserSettings } from '@/lib/user-settings';
+import { SettingsPage, Switch, useSection } from '@/components/user-settings/settings-ui';
 import { cn } from '@/lib/utils';
 
 type Model = UserEnvironment['providers']['claude']['models'][number];
@@ -22,53 +17,6 @@ const PROVIDER_HINTS: Record<UserProvider, string> = {
     'Runs coding steps. Codex cannot list its models: the configured one shows here, and you can add more by id.',
   pi: 'Models come from pi --list-models. The factory cannot run Pi yet, so these settings take effect when it can.',
 };
-
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id} className="mt-8">
-      <h2 id={id} className="text-base font-semibold">
-        {title}
-      </h2>
-      <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: ReactNode;
-  children: (id: string, hintId: string | undefined) => ReactNode;
-}) {
-  const id = useId();
-  const hintId = useId();
-  return (
-    <div className="grid gap-x-8 gap-y-2 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] sm:items-center">
-      <div className="min-w-0">
-        <Label htmlFor={id}>{label}</Label>
-        {hint && (
-          <p id={hintId} className="mt-1 text-xs text-muted-foreground">
-            {hint}
-          </p>
-        )}
-      </div>
-      <div className="min-w-0">{children(id, hint ? hintId : undefined)}</div>
-    </div>
-  );
-}
 
 /** Every model to show for a provider: what the CLI offers, what you added, and what you turned off. */
 function modelsFor(found: readonly Model[], p: UserSettings['providers']['claude']): Model[] {
@@ -86,10 +34,10 @@ function ProviderCard({
 }: {
   provider: UserProvider;
   env: UserEnvironment['providers']['claude'] | undefined;
-  settings: UserSettings;
+  settings: UserSettings['providers'];
   onChange: (next: UserSettings['providers']['claude']) => void;
 }) {
-  const p = settings.providers[provider];
+  const p = settings[provider];
   const [filter, setFilter] = useState('');
   const [adding, setAdding] = useState('');
   const toggleId = useId();
@@ -134,15 +82,7 @@ function ProviderCard({
           </p>
           <p className="mt-1 max-w-prose text-xs text-muted-foreground">{PROVIDER_HINTS[provider]}</p>
         </div>
-        <input
-          id={toggleId}
-          type="checkbox"
-          role="switch"
-          aria-checked={p.enabled}
-          className="mt-1 size-4 cursor-pointer accent-primary"
-          checked={p.enabled}
-          onChange={(e) => onChange({ ...p, enabled: e.target.checked })}
-        />
+        <Switch id={toggleId} checked={p.enabled} onChange={(enabled) => onChange({ ...p, enabled })} />
       </div>
 
       {p.enabled && (
@@ -256,161 +196,36 @@ function ProviderCard({
   );
 }
 
-export function UserSettingsForm({
+export function ProvidersView({
   initial,
   environment,
   environmentError,
 }: {
-  initial: UserSettings;
+  initial: UserSettings['providers'];
   environment: UserEnvironment | undefined;
   environmentError: string | undefined;
 }) {
-  const router = useRouter();
-  const [settings, setSettings] = useState(initial);
-  const [saved, setSaved] = useState(initial);
-  const [status, setStatus] = useState<{ error?: string; message?: string }>({});
-  const [saving, startSaving] = useTransition();
-  const comparable = (s: UserSettings) => JSON.stringify({ ...s, updated_at: undefined });
-  const dirty = comparable(settings) !== comparable(saved);
-  const identity = settings.identity;
-  const setIdentity = (patch: Partial<UserSettings['identity']>) =>
-    setSettings((s) => ({ ...s, identity: { ...s.identity, ...patch } }));
-  const login = environment?.github.login;
-
+  const { value, save, status } = useSection('providers', initial);
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        setStatus({});
-        startSaving(async () => {
-          const result = await saveUserSettings(settings);
-          setStatus(result);
-          if (result.error) return;
-          setSaved(settings);
-          router.refresh();
-        });
-      }}
+    <SettingsPage
+      title="Providers and models"
+      description="Turn off a provider or a model and the factory refuses runs that ask for it, in every project."
+      status={status}
     >
       {environmentError && (
-        <p className="mt-4 text-sm text-destructive">Could not check this machine: {environmentError}</p>
+        <p className="text-sm text-destructive">Could not check this machine: {environmentError}</p>
       )}
-
-      <Section title="Profile" description="How the factory names you in commits, PRs and team views.">
-        <div className="divide-y border-y">
-          <Field label="Name" hint={environment?.git.name ? `Git uses ${environment.git.name}` : undefined}>
-            {(id, hint) => (
-              <Input
-                id={id}
-                aria-describedby={hint}
-                value={identity.name ?? ''}
-                placeholder={environment?.git.name}
-                onChange={(e) => setIdentity({ name: e.target.value })}
-              />
-            )}
-          </Field>
-          <Field
-            label="Email"
-            hint={environment?.git.email ? `Git uses ${environment.git.email}` : undefined}
-          >
-            {(id, hint) => (
-              <Input
-                id={id}
-                type="email"
-                aria-describedby={hint}
-                value={identity.email ?? ''}
-                placeholder={environment?.git.email}
-                onChange={(e) => setIdentity({ email: e.target.value })}
-              />
-            )}
-          </Field>
-          <Field
-            label="GitHub username"
-            hint={
-              login ? (
-                <>
-                  gh is signed in as {login}
-                  {identity.github_username !== login && (
-                    <>
-                      {' · '}
-                      <button
-                        type="button"
-                        className="cursor-pointer underline underline-offset-2 hover:text-foreground"
-                        onClick={() => setIdentity({ github_username: login })}
-                      >
-                        Use {login}
-                      </button>
-                    </>
-                  )}
-                </>
-              ) : environment?.github.error ? (
-                `gh: ${environment.github.error}`
-              ) : undefined
-            }
-          >
-            {(id, hint) => (
-              <Input
-                id={id}
-                aria-describedby={hint}
-                value={identity.github_username ?? ''}
-                placeholder={login ?? 'octocat'}
-                autoCapitalize="none"
-                spellCheck={false}
-                onChange={(e) => setIdentity({ github_username: e.target.value.replace(/^@/, '') })}
-                className="font-mono md:text-xs"
-              />
-            )}
-          </Field>
-        </div>
-      </Section>
-
-      <Section
-        title="Agent providers"
-        description="Turn off a provider or a model and the factory refuses runs that ask for it, in every project."
-      >
-        <div className="flex flex-col gap-3">
-          {USER_PROVIDERS.map((provider) => (
-            <ProviderCard
-              key={provider}
-              provider={provider}
-              env={environment?.providers[provider]}
-              settings={settings}
-              onChange={(next) =>
-                setSettings((s) => ({ ...s, providers: { ...s.providers, [provider]: next } }))
-              }
-            />
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        title="Global rules"
-        description="Markdown added to every agent's system prompt, in every project, after the project's own instructions."
-      >
-        <Textarea
-          aria-label="Global rules"
-          rows={8}
-          value={settings.rules}
-          placeholder={'- Write commit messages in the present tense.\n- Never push to main.'}
-          onChange={(e) => setSettings((s) => ({ ...s, rules: e.target.value }))}
-          className="font-mono md:text-xs"
-        />
-        <p className="mt-1 text-right text-xs text-muted-foreground tabular-nums">
-          {settings.rules.length.toLocaleString()} / 20,000
-        </p>
-      </Section>
-
-      <div className="sticky bottom-0 mt-8 flex items-center justify-end gap-3 border-t bg-background py-3">
-        <p
-          role="status"
-          className={cn('text-sm', status.error ? 'text-destructive' : 'text-muted-foreground')}
-        >
-          {status.error ?? (dirty ? 'Unsaved changes' : status.message)}
-        </p>
-        <Button type="submit" disabled={saving || !dirty}>
-          {saving && <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" />}
-          Save
-        </Button>
+      <div className="flex flex-col gap-3">
+        {USER_PROVIDERS.map((provider) => (
+          <ProviderCard
+            key={provider}
+            provider={provider}
+            env={environment?.providers[provider]}
+            settings={value}
+            onChange={(next) => save({ ...value, [provider]: next })}
+          />
+        ))}
       </div>
-    </form>
+    </SettingsPage>
   );
 }

@@ -34,6 +34,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { FactoryMark } from '@/components/factory-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
+import { UserSidebar } from '@/components/user-sidebar';
 import { cn } from '@/lib/utils';
 
 interface ProjectSummary {
@@ -138,8 +139,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const projects = useProjects(pathname);
   // Task chat screens own their columns and scrolling.
-  // The homepage spans every project, so it has no project sidebar.
+  // The homepage spans every project, so it has no sidebar; user settings have their own.
   const home = pathname === '/';
+  const user = pathname === '/user' || pathname.startsWith('/user/');
+  const global = home;
   const fullBleed =
     home ||
     pathname === '/board' ||
@@ -216,21 +219,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <Rail project={project} pathname={pathname} />
-        {!home && (
+        {!global && (
           // The sidebar and the main container form one light panel on the black frame.
           <div className="flex bg-sidebar min-[900px]:my-2 min-[900px]:rounded-l-xl">
-            <Sidebar
-              width={width}
-              setWidth={setWidth}
-              projects={projects}
-              project={project}
-              current={current}
-              tasks={tasks}
-              activeId={params.id}
-              onPick={pick}
-              onRefresh={refresh}
-              onClose={() => setDrawer(false)}
-            />
+            {user ? (
+              <UserSidebar width={width} onClose={() => setDrawer(false)} />
+            ) : (
+              <Sidebar
+                width={width}
+                setWidth={setWidth}
+                projects={projects}
+                project={project}
+                current={current}
+                tasks={tasks}
+                activeId={params.id}
+                onPick={pick}
+                onRefresh={refresh}
+                onClose={() => setDrawer(false)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -239,7 +246,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         // Same panel on every page, so the container keeps its place; only the sidebar comes and goes.
         className={cn(
           'flex min-w-0 flex-1 flex-col bg-sidebar p-2 min-[900px]:my-2 min-[900px]:mr-2',
-          home ? 'min-[900px]:rounded-xl' : 'min-[900px]:rounded-r-xl min-[900px]:pl-0',
+          global ? 'min-[900px]:rounded-xl' : 'min-[900px]:rounded-r-xl min-[900px]:pl-0',
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-xs">
@@ -254,7 +261,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <MenuIcon className="size-4" />
             </button>
             <span className="truncate text-sm font-medium">
-              {home ? 'Software Factory' : (project ?? 'Software Factory')}
+              {global ? 'Software Factory' : user ? 'User settings' : (project ?? 'Software Factory')}
             </span>
           </div>
           {fullBleed ? (
