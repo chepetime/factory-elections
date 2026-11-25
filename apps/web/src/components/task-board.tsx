@@ -10,6 +10,7 @@ import { createIssue, moveIssue } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { dropAction, ISSUE_STATUSES, type DropAction, type IssueStatus, type Stage } from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
+import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
 import { cn } from '@/lib/utils';
 
 export type BoardIssue = {
@@ -40,20 +41,35 @@ const STAGE_LABEL: Partial<Record<Stage, string>> = {
  * The drop's action once the person agrees, or its refusal. Undefined when they decline: a drop
  * that starts, reruns or cancels paid model work never happens without a yes.
  */
-export function decideDrop(
+export async function decideDrop(
   issue: Pick<BoardIssue, 'key' | 'status' | 'run'>,
   to: IssueStatus,
-): DropAction | undefined {
+  confirm: Confirm,
+): Promise<DropAction | undefined> {
   const action = dropAction(issue.status, to, issue.run);
-  const question =
+  const request: ConfirmRequest | undefined =
     action.kind === 'start-run'
-      ? `Start a run for ${issue.key}? It calls the coding agent.`
+      ? {
+          title: `Start a run for ${issue.key}?`,
+          body: 'The coding agent classifies, codes, verifies and reviews the task in a new worktree, then stops for your approval. This uses paid model calls.',
+          confirm: 'Start run',
+        }
       : action.kind === 'run'
-        ? `Run ${issue.key} again? It calls the coding agent.`
+        ? {
+            title: `Run ${issue.key} again?`,
+            body: 'The coding agent runs again in the existing worktree, then stops for your approval. This uses paid model calls.',
+            confirm: 'Run again',
+          }
         : action.kind === 'reject'
-          ? `Cancel the open run for ${issue.key}? Its worktree is removed.`
+          ? {
+              title: `Cancel the run for ${issue.key}?`,
+              body: 'The run is rejected and the task moves to Cancelled. Its worktree and branch stay, so you can still inspect or revise them.',
+              confirm: 'Cancel run',
+              cancel: 'Keep run',
+              tone: 'destructive',
+            }
           : undefined;
-  if (question && !window.confirm(question)) return undefined;
+  if (request && !(await confirm(request))) return undefined;
   return action;
 }
 
@@ -148,8 +164,9 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
   const moving = useRef(new Set<string>());
 
-  const move = (issue: BoardIssue, to: IssueStatus) => {
-    const action = decideDrop(issue, to);
+  const [confirm, confirmDialog] = useConfirm();
+  const move = async (issue: BoardIssue, to: IssueStatus) => {
+    const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') {
       setNotice({ kind: 'error', text: `${issue.key}: ${action.reason}` });
@@ -190,6 +207,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {confirmDialog}
       <header className="flex flex-wrap items-end justify-between gap-3 px-6 pt-6 pb-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>

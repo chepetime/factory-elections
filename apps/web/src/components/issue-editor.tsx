@@ -6,6 +6,7 @@ import { useActionState, useEffect, useId, useRef, useState, useTransition } fro
 import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
 import { commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
 import { Markdown } from '@/components/markdown';
+import { useConfirm } from '@/components/confirm-dialog';
 import { decideDrop, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
@@ -230,8 +231,9 @@ export function IssueStatusField({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
-  const move = (to: IssueStatus) => {
-    const action = decideDrop(issue, to);
+  const [confirm, confirmDialog] = useConfirm();
+  const move = async (to: IssueStatus) => {
+    const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') return setNotice({ kind: 'error', text: action.reason });
     start(async () => {
@@ -244,6 +246,7 @@ export function IssueStatusField({
   };
   return (
     <div>
+      {confirmDialog}
       <div className={cn('group flex items-center gap-1', pending && 'opacity-60')}>
         <StatusLabel status={issue.status} className="text-sm" />
         <MoveMenu issue={{ ...issue, description: '', updated_at: '' }} onMove={move} />
