@@ -31,6 +31,7 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { FactoryMark } from '@/components/factory-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { cn } from '@/lib/utils';
@@ -138,7 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const projects = useProjects(pathname);
   // Task chat screens own their columns and scrolling.
   const fullBleed =
-    pathname === '/' ||
+    pathname === '/board' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
     /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname) ||
     /^\/chat(\/[^/]+)?$/.test(pathname);
@@ -150,7 +151,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     // Projects remembered before the cookie existed: hand it to the server-rendered home too.
     if (saved && !document.cookie.includes(`${LAST_PROJECT}=`)) {
       remember(saved);
-      if (window.location.pathname === '/') router.refresh();
+      if (window.location.pathname === '/board') router.refresh();
     }
   }, [router]);
   useEffect(() => {
@@ -254,9 +255,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
-  const tasksHref = project ? `/projects/${project}/tasks` : '/';
+  const tasksHref = project ? `/projects/${project}/tasks` : '/board';
   const items = [
-    { label: 'Board', href: '/', icon: KanbanSquare, active: pathname === '/' },
+    { label: 'Board', href: '/board', icon: KanbanSquare, active: pathname === '/board' },
     { label: 'Tasks', href: tasksHref, icon: ListTodo, active: Boolean(project) && pathname === tasksHref },
     { label: 'Agents', href: '/agents', icon: Bot, active: pathname.startsWith('/agents') },
     { label: 'Chat', href: '/chat', icon: MessageSquare, active: pathname.startsWith('/chat') },
@@ -264,31 +265,15 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
   ];
   return (
     <nav aria-label="Main navigation" className="flex w-14 flex-col items-center gap-1 bg-neutral-950 py-3">
-      <Menu.Root>
-        <Menu.Trigger
-          aria-label="Software Factory menu"
-          className="mb-3 flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
-        >
-          SF
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Positioner side="right" align="start" sideOffset={8} className="z-50">
-            <Menu.Popup className={menuPopup}>
-              <div className="px-2.5 py-1.5">
-                <p className="text-sm font-medium">Software Factory</p>
-                <p className="text-xs text-muted-foreground">localhost</p>
-              </div>
-              <Menu.Separator className="my-1 h-px bg-border" />
-              <Menu.Item className={menuItem} render={<Link href="/" />}>
-                <KanbanSquare className="size-4" /> Board
-              </Menu.Item>
-              <Menu.Item className={menuItem} render={<Link href="/components" />}>
-                <Blocks className="size-4" /> Component library
-              </Menu.Item>
-            </Menu.Popup>
-          </Menu.Positioner>
-        </Menu.Portal>
-      </Menu.Root>
+      <Link
+        href="/"
+        aria-label="Software Factory home"
+        title="Home"
+        aria-current={pathname === '/' ? 'page' : undefined}
+        className="mb-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
+      >
+        <FactoryMark className="ring-1 ring-white/15 rounded-lg" />
+      </Link>
 
       {items.map(({ label, href, icon: Icon, active }) => (
         <Link

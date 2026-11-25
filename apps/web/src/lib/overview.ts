@@ -2,7 +2,7 @@
 import type { Stage, TaskRecord } from '@factory/core';
 
 export const ACTIVITY_WEEKS = 12;
-const NEEDS_YOU: Stage[] = ['awaiting-approval', 'blocked', 'verification-failed', 'failed'];
+export const NEEDS_YOU: Stage[] = ['awaiting-approval', 'blocked', 'verification-failed', 'failed'];
 
 export interface ActivityDay {
   date: string; // YYYY-MM-DD, local time

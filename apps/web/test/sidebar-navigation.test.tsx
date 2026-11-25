@@ -54,3 +54,13 @@ it('allows the current task and its agent entry to both be selected', () => {
   );
   expect(currentLinks(html)).toEqual(['/projects/demo/tasks/FE-1', '/projects/demo/tasks/FE-1']);
 });
+
+it.each([
+  ['/', ['/']],
+  ['/board', ['/board']],
+])('marks the logo as home and the Board rail item on %s', (pathname, expected) => {
+  route.pathname = pathname;
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  expect(currentLinks(html).filter((href) => href === '/' || href === '/board')).toEqual(expected);
+  expect(html).toContain('aria-label="Software Factory home"');
+});
