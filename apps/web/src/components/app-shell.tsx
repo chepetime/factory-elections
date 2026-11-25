@@ -236,17 +236,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <main
+        // Same panel on every page, so the container keeps its place; only the sidebar comes and goes.
         className={cn(
-          'flex min-w-0 flex-1 flex-col p-2',
-          !home && 'bg-sidebar min-[900px]:my-2 min-[900px]:mr-2 min-[900px]:rounded-r-xl min-[900px]:pl-0',
+          'flex min-w-0 flex-1 flex-col bg-sidebar p-2 min-[900px]:my-2 min-[900px]:mr-2',
+          home ? 'min-[900px]:rounded-xl' : 'min-[900px]:rounded-r-xl min-[900px]:pl-0',
         )}
       >
-        <div
-          className={cn(
-            'flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background',
-            !home && 'border shadow-xs',
-          )}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-xs">
           <div className="flex items-center gap-2 border-b px-3 py-2 min-[900px]:hidden">
             <button
               type="button"
