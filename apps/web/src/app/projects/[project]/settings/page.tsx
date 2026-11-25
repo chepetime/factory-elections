@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import ProjectHomePage from '@/app/projects/[project]/page';
 import { ProjectSettingsScreen } from '@/components/project-settings-screen';
+import { SettingsDialog } from '@/components/settings-dialog';
 import { isProjectName } from '@/lib/factory';
 import { projectTitle } from '@/lib/page-title';
 
@@ -13,13 +15,16 @@ export async function generateMetadata({
 }
 export const dynamic = 'force-dynamic';
 
-// A direct visit or a reload lands here; links inside the app open the same panel as a dialog
-// (app/@modal/(.)projects/[project]/settings).
+// A direct visit or a reload lands here: the project home with the settings dialog on top.
+// Links inside the app open the dialog over the current page instead (app/@modal/(.)projects/...).
 export default async function ProjectSettingsPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params;
   return (
-    <div className="mx-auto flex h-[calc(100dvh-7.5rem)] min-h-[32rem] max-w-5xl flex-col overflow-hidden rounded-2xl border bg-background min-[900px]:h-[calc(100dvh-4.5rem)]">
-      <ProjectSettingsScreen project={project} />
-    </div>
+    <>
+      <ProjectHomePage params={params} />
+      <SettingsDialog closeHref={`/projects/${project}`}>
+        <ProjectSettingsScreen project={project} />
+      </SettingsDialog>
+    </>
   );
 }
