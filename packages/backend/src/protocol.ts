@@ -95,6 +95,8 @@ export interface Methods {
   UpdateAgent: [{ json: string }, { json: string }];
   ArchiveAgent: [{ json: string }, { json: string }];
   GetAgentStats: [{ json: string }, { json: string }];
+  /** A task's session log: agent messages, tool calls and results, live while a run works. */
+  GetRunSession: [Target, { json: string }];
   /** Chats with agents. Send returns at once; poll GetChat for the reply (`partial` while it runs). */
   ListChats: [{ json: string }, { json: string }];
   GetChat: [{ json: string }, { json: string }];

@@ -24,12 +24,14 @@ import {
   IssueTitle,
 } from '@/components/issue-editor';
 import { StageBadge } from '@/components/stage-badge';
-import { STATUS } from '@/components/task-status';
+import { STATUS, StatusLabel } from '@/components/task-status';
 import { Fact, Facts, money, renderRun, Section } from '@/components/task-run';
 import { isProjectName, isTaskId, showTask } from '@/lib/factory';
 import { getIssue, type IssueView } from '@/lib/issues';
 import { listAgents } from '@/lib/agents';
 import { ResizablePane } from '@/components/resizable-pane';
+import { RunSessionView } from '@/components/run-session';
+import { readRunSession } from '@/lib/run-session';
 import { TASK_DETAILS_PANE } from '@/lib/pane-spec';
 import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -308,7 +310,7 @@ export default async function TaskPage({
   searchParams,
 }: {
   params: Promise<{ project: string; id: string }>;
-  searchParams?: Promise<{ start?: string; run?: string }>;
+  searchParams?: Promise<{ start?: string; run?: string; panel?: string }>;
 }) {
   const query = (await searchParams) ?? {};
   const { project, id } = await params;
@@ -348,6 +350,12 @@ export default async function TaskPage({
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
+  // The right panel shows the run when there is one; Details holds properties and run details.
+  const panel: 'run' | 'details' =
+    query.panel === 'details' || (!runId && query.panel !== 'run') ? 'details' : 'run';
+  const panelHref = (p: 'run' | 'details') =>
+    `/projects/${project}/tasks/${issue.key}?panel=${p}${query.run ? `&run=${query.run}` : ''}`;
+  const session = runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
   const [label, agentList, detailsWidth, ...loaded] = await Promise.all([
     projectLabel(project),
     listAgents(),
@@ -369,6 +377,7 @@ export default async function TaskPage({
       : undefined
     : issue.assignee;
   const runAgent = runAgentId ? agents.find((x) => x.id === runAgentId) : undefined;
+  const runAuthor = runAgent ? { name: runAgent.name, avatar: runAgent.avatar } : undefined;
   const runHref = (rid: string) =>
     `/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`;
   const pulls = records.flatMap((r) => (r?.pr ? [r.pr] : [])).reverse();
@@ -414,27 +423,32 @@ export default async function TaskPage({
               </p>
             )}
             {run?.ok && (
-              <div className="mt-4 rounded-2xl border bg-muted/30 p-4">
-                <p className="mb-3 flex items-center gap-2 text-sm font-medium">
-                  Run {runIndex}
-                  <StageBadge stage={run.value.task.stage} />
-                  {runId !== issue.run?.id && (
-                    <Link
-                      href={`/projects/${project}/tasks/${issue.key}`}
-                      className="ml-auto text-xs font-normal text-muted-foreground hover:underline"
-                    >
-                      Show the latest run
-                    </Link>
-                  )}
+              <div className="mt-4 flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-xs">
+                {runAuthor ? (
+                  <AgentAvatar agent={runAuthor} decorative />
+                ) : (
+                  <StatusLabel status={statusFromStage(run.value.task.stage)} className="text-sm" />
+                )}
+                <p className="min-w-0 flex-1 text-sm">
+                  <span className="font-medium">Run {runIndex}</span>
+                  {runAuthor && <span className="text-muted-foreground"> · {runAuthor.name}</span>}
+                  <span className="text-muted-foreground"> · {stageLabel(run.value.task.stage)}</span>
                 </p>
-                <div className="flex flex-col gap-5">{run.value.activity}</div>
+                {panel !== 'run' && (
+                  <Link
+                    href={panelHref('run')}
+                    className="shrink-0 rounded-lg border px-2.5 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    Open
+                  </Link>
+                )}
               </div>
             )}
             <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
           </div>
         </div>
 
-        {run?.ok ? run.value.composer : comment}
+        {comment}
       </section>
 
       <ResizablePane
@@ -444,146 +458,228 @@ export default async function TaskPage({
         label="Task details"
         className="min-h-0 border-t bg-muted/30 lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
-        <Section title="Properties">
-          <Facts>
-            <Fact label="Status">
-              <IssueStatusField
-                project={project}
-                issue={{ key: issue.key, title: issue.title, status: issue.status, run: issue.run }}
-              />
-            </Fact>
-            <Fact label="Agent">
-              <IssueAssigneeField
-                project={project}
-                issueKey={issue.key}
-                {...(issue.assignee ? { assignee: issue.assignee } : {})}
-                agents={agents.map((a) => ({
-                  id: a.id,
-                  name: a.name,
-                  avatar: a.avatar,
-                  archived: Boolean(a.archived_at),
-                }))}
-                id="issue-assignee"
-              />
-            </Fact>
-            <Fact label="Priority">
-              <IssuePriorityField
-                project={project}
-                issueKey={issue.key}
-                priority={issue.priority}
-                id="issue-priority"
-              />
-            </Fact>
-            <Fact label="Project">
-              <span className="inline-flex items-center gap-1.5">
-                <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                {label}
-              </span>
-            </Fact>
-            {issue.jira_key && (
-              <Fact label="Jira">
-                <span className="font-mono text-xs">{issue.jira_key}</span>
-              </Fact>
-            )}
-          </Facts>
-        </Section>
-
-        <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
-          <AccessList
-            access={taskAccess({
-              workflow: runAgent ? 'agent' : 'pipeline',
-              ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
-            })}
-          />
-        </Section>
-
-        <Section title="Pull requests">
-          {pulls.length ? (
-            <ul className="flex flex-col gap-2 text-sm">
-              {pulls.map((pr) => (
-                <li key={pr.url} className="flex items-start gap-2">
-                  <GitPullRequest className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                  <span className="min-w-0">
-                    <a
-                      href={pr.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium underline-offset-2 hover:underline"
-                    >
-                      {prLabel(pr.url)}
-                    </a>
-                    <span
-                      className="block truncate font-mono text-xs text-muted-foreground"
-                      title={pr.branch}
-                    >
-                      {pr.branch} · {pr.head_sha.slice(0, 12)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No pull request yet. A run opens one after you approve its change.
-            </p>
-          )}
-        </Section>
-
-        <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
-          {latestRow ? (
-            <ol className="flex flex-col">
-              <RunRow
-                href={runHref(latestRow.rid)}
-                index={latestRow.index}
-                record={latestRow.record}
-                current={latestRow.rid === runId}
-                latest={pastRows.length > 0}
-              />
-              {pastRows.length > 0 && (
-                <li>
-                  <details open={pastRows.some((r) => r.rid === runId)} className="group/past">
-                    <summary className="-mx-2 flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                      <ChevronRight
-                        aria-hidden
-                        className="size-3.5 transition-transform duration-150 ease-out group-open/past:rotate-90 motion-reduce:transition-none"
-                      />
-                      Past runs ({pastRows.length})
-                    </summary>
-                    <ol className="flex flex-col">
-                      {pastRows.map((r) => (
-                        <RunRow
-                          key={r.rid}
-                          href={runHref(r.rid)}
-                          index={r.index}
-                          record={r.record}
-                          current={r.rid === runId}
-                          latest={false}
-                        />
-                      ))}
-                    </ol>
-                  </details>
-                </li>
+        <nav
+          aria-label="Panel"
+          className="sticky top-0 z-10 flex gap-1 border-b bg-muted/80 px-3 pt-2 backdrop-blur"
+        >
+          {(
+            [
+              ['run', 'Run'],
+              ['details', 'Details'],
+            ] as const
+          ).map(([id, label]) => (
+            <Link
+              key={id}
+              href={panelHref(id)}
+              aria-current={panel === id ? 'page' : undefined}
+              className={cn(
+                '-mb-px border-b-2 px-3 pb-2 text-sm',
+                panel === id
+                  ? 'border-foreground font-medium text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
-            </ol>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No runs yet. Move the task to In progress to start one.
-            </p>
-          )}
-        </Section>
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        {panel === 'run' ? (
+          <div className="flex min-h-full flex-col">
+            {!run ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                No run yet.{' '}
+                {runAgent
+                  ? `${runAgent.name} starts when the task is in Todo.`
+                  : 'Move the task to In progress to start one.'}
+              </p>
+            ) : !run.ok ? (
+              <p role="alert" className="px-5 py-6 text-sm text-destructive">
+                Run unavailable: {run.error}
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 px-5 pt-4 text-sm">
+                  <span className="font-medium">Run {runIndex}</span>
+                  <StageBadge stage={run.value.task.stage} />
+                  {runId !== issue.run?.id && (
+                    <Link
+                      href={`/projects/${project}/tasks/${issue.key}?panel=run`}
+                      className="ml-auto text-xs text-muted-foreground hover:underline"
+                    >
+                      Show the latest run
+                    </Link>
+                  )}
+                </div>
+                <div data-run-scroll className="flex-1 px-5 py-4">
+                  {session?.ok ? (
+                    <RunSessionView
+                      project={project}
+                      runId={runId!}
+                      initial={session.value}
+                      author={runAuthor ?? { name: 'Factory', avatar: '🏭' }}
+                    />
+                  ) : (
+                    session && (
+                      <p role="alert" className="text-sm text-destructive">
+                        Session unavailable: {session.error}
+                      </p>
+                    )
+                  )}
+                  <h3 className="mt-6 mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Status and actions
+                  </h3>
+                  <div className="flex flex-col gap-5">{run.value.activity}</div>
+                </div>
+                <div className="sticky bottom-0 border-t bg-muted/80 pt-3 backdrop-blur">
+                  {run.value.composer}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <Section title="Properties">
+              <Facts>
+                <Fact label="Status">
+                  <IssueStatusField
+                    project={project}
+                    issue={{ key: issue.key, title: issue.title, status: issue.status, run: issue.run }}
+                  />
+                </Fact>
+                <Fact label="Agent">
+                  <IssueAssigneeField
+                    project={project}
+                    issueKey={issue.key}
+                    {...(issue.assignee ? { assignee: issue.assignee } : {})}
+                    agents={agents.map((a) => ({
+                      id: a.id,
+                      name: a.name,
+                      avatar: a.avatar,
+                      archived: Boolean(a.archived_at),
+                    }))}
+                    id="issue-assignee"
+                  />
+                </Fact>
+                <Fact label="Priority">
+                  <IssuePriorityField
+                    project={project}
+                    issueKey={issue.key}
+                    priority={issue.priority}
+                    id="issue-priority"
+                  />
+                </Fact>
+                <Fact label="Project">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    {label}
+                  </span>
+                </Fact>
+                {issue.jira_key && (
+                  <Fact label="Jira">
+                    <span className="font-mono text-xs">{issue.jira_key}</span>
+                  </Fact>
+                )}
+              </Facts>
+            </Section>
 
-        <Section title="Details">
-          <Facts>
-            <Fact label="Created">
-              <LocalTime iso={issue.created_at} format="date-time" />
-            </Fact>
-            <Fact label="Updated">
-              <LocalTime iso={issue.updated_at} format="date-time" />
-            </Fact>
-          </Facts>
-        </Section>
+            <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
+              <AccessList
+                access={taskAccess({
+                  workflow: runAgent ? 'agent' : 'pipeline',
+                  ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
+                })}
+              />
+            </Section>
 
-        {run?.ok && run.value.sections}
+            <Section title="Pull requests">
+              {pulls.length ? (
+                <ul className="flex flex-col gap-2 text-sm">
+                  {pulls.map((pr) => (
+                    <li key={pr.url} className="flex items-start gap-2">
+                      <GitPullRequest className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0">
+                        <a
+                          href={pr.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium underline-offset-2 hover:underline"
+                        >
+                          {prLabel(pr.url)}
+                        </a>
+                        <span
+                          className="block truncate font-mono text-xs text-muted-foreground"
+                          title={pr.branch}
+                        >
+                          {pr.branch} · {pr.head_sha.slice(0, 12)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No pull request yet. A run opens one after you approve its change.
+                </p>
+              )}
+            </Section>
+
+            <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
+              {latestRow ? (
+                <ol className="flex flex-col">
+                  <RunRow
+                    href={runHref(latestRow.rid)}
+                    index={latestRow.index}
+                    record={latestRow.record}
+                    current={latestRow.rid === runId}
+                    latest={pastRows.length > 0}
+                  />
+                  {pastRows.length > 0 && (
+                    <li>
+                      <details open={pastRows.some((r) => r.rid === runId)} className="group/past">
+                        <summary className="-mx-2 flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                          <ChevronRight
+                            aria-hidden
+                            className="size-3.5 transition-transform duration-150 ease-out group-open/past:rotate-90 motion-reduce:transition-none"
+                          />
+                          Past runs ({pastRows.length})
+                        </summary>
+                        <ol className="flex flex-col">
+                          {pastRows.map((r) => (
+                            <RunRow
+                              key={r.rid}
+                              href={runHref(r.rid)}
+                              index={r.index}
+                              record={r.record}
+                              current={r.rid === runId}
+                              latest={false}
+                            />
+                          ))}
+                        </ol>
+                      </details>
+                    </li>
+                  )}
+                </ol>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No runs yet. Move the task to In progress to start one.
+                </p>
+              )}
+            </Section>
+
+            <Section title="Details">
+              <Facts>
+                <Fact label="Created">
+                  <LocalTime iso={issue.created_at} format="date-time" />
+                </Fact>
+                <Fact label="Updated">
+                  <LocalTime iso={issue.updated_at} format="date-time" />
+                </Fact>
+              </Facts>
+            </Section>
+
+            {run?.ok && run.value.sections}
+          </>
+        )}
       </ResizablePane>
     </div>
   );

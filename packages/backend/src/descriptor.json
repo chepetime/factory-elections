@@ -255,18 +255,6 @@
                   "requestType": "ReviewTarget",
                   "responseType": "Text"
                 },
-                "GetUserSettings": {
-                  "requestType": "Empty",
-                  "responseType": "Snapshot"
-                },
-                "SaveUserSettings": {
-                  "requestType": "Snapshot",
-                  "responseType": "Snapshot"
-                },
-                "GetUserEnvironment": {
-                  "requestType": "Empty",
-                  "responseType": "Snapshot"
-                },
                 "GetProjectSettings": {
                   "requestType": "Target",
                   "responseType": "Snapshot"
@@ -373,6 +361,10 @@
                 },
                 "GetAgentStats": {
                   "requestType": "Snapshot",
+                  "responseType": "Snapshot"
+                },
+                "GetRunSession": {
+                  "requestType": "Target",
                   "responseType": "Snapshot"
                 },
                 "ListChats": {

@@ -141,6 +141,9 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
           },
         };
       if (request.step === 'coder') {
+        request.onEvent?.({ type: 'text', text: 'Adding the feature file.' });
+        request.onEvent?.({ type: 'tool', name: 'Write', input: { file_path: 'feature.txt' }, callId: 'w1' });
+        request.onEvent?.({ type: 'tool-result', ok: true, text: 'written', callId: 'w1' });
         await writeFile(join(request.cwd!, 'feature.txt'), 'done\n');
         return { text: 'done', costUsd: 0.1 };
       }
@@ -166,6 +169,14 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
   const task = JSON.parse((await backendCall('GetTask', { project: 'demo', id })).json);
   assert.equal(task.stage, 'awaiting-approval');
   assert.equal(task.attempts.length, 4);
+  // The run's session log survives the run: the coder's message, tool call and result, in order.
+  const session = JSON.parse((await backendCall('GetRunSession', { project: 'demo', id })).json);
+  assert.equal(session.live, false);
+  assert.deepEqual(
+    session.entries.map((e: { kind: string }) => e.kind),
+    ['run', 'text', 'tool', 'result'],
+  );
+  assert.equal(session.entries[2].input, 'feature.txt');
   assert.match(outcome.logTail, /Verifying/);
   const dir = join(dirname(server.service.tasks.taskPath('demo', id)), 'runs', accepted.id);
   const events = (await readFile(join(dir, 'events.jsonl'), 'utf8'))

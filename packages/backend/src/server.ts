@@ -240,6 +240,7 @@ export async function startBackend(options: ServerOptions) {
       DeleteChat: async (request) => ({
         json: JSON.stringify(await service.chats.remove(jsonObject(request.json))),
       }),
+      GetRunSession: async (request) => ({ json: JSON.stringify(await service.runSession(request)) }),
       GetAgentStats: async (request) => ({
         json: JSON.stringify(await service.agentStats(jsonObject(request.json))),
       }),

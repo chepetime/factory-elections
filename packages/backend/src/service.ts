@@ -42,6 +42,7 @@ import {
   envNames,
   modelRefused,
   withUserRules,
+  type AgentEvent,
 } from '@factory/core';
 import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -55,6 +56,7 @@ import { AgentService } from './agent-profiles.ts';
 import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
 import { AgentPickup } from './agent-pickup.ts';
+import { SessionLog, transcriptEntries, type SessionEntry } from './session-log.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
@@ -184,6 +186,27 @@ export class BackendService {
     return action === 'run'
       ? 'Running classify → code → verify → review'
       : 'Revising: code → verify → review';
+  }
+  /** Session logs of runs in progress, per `project/task id`. */
+  private readonly sessionLogs = new Map<string, SessionLog>();
+  private sessionPath(project: string, id: string): string {
+    return join(dirname(this.tasks.taskPath(project, id)), 'session.json');
+  }
+  private async readSession(project: string, id: string): Promise<SessionEntry[]> {
+    const doc = (await this.storage.readDocument(this.sessionPath(project, id)).catch(() => undefined)) as
+      { entries?: SessionEntry[] } | undefined;
+    if (Array.isArray(doc?.entries)) return doc.entries;
+    // Runs from before session logs: rebuild the agent's session from Claude's transcripts.
+    const task = await this.tasks.read(project, id).catch(() => undefined);
+    return task?.workflow === 'agent' && task.worktree ? transcriptEntries(task.worktree.path) : [];
+  }
+  /** A task's session: every agent message, tool call and result of its runs, live while one works. */
+  async runSession(raw: unknown): Promise<{ entries: SessionEntry[]; live: boolean }> {
+    const { project, id } = z.object({ project: ProjectName, id: TaskId }).parse(raw);
+    const live = this.sessionLogs.get(`${project}/${id}`);
+    return live
+      ? { entries: live.entries, live: true }
+      : { entries: await this.readSession(project, id), live: false };
   }
   /** Runs queued or working in this backend, per `project/task id`. */
   private readonly scheduled = new Map<string, number>();
@@ -746,6 +769,15 @@ export class BackendService {
     let sessions: ProviderSessionRef[] = [];
     let manifests: CallManifest[] = [];
     const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
+    const sessionKey = `${command.project}/${command.id}`;
+    const session = new SessionLog(await this.readSession(command.project, command.id));
+    session.run(command.action === 'revise' && command.note ? `You replied: ${command.note}` : record.label);
+    this.sessionLogs.set(sessionKey, session);
+    let savedAt = Date.now();
+    const saveSession = () =>
+      this.storage
+        .writeDocument(this.sessionPath(command.project, command.id), { entries: session.entries })
+        .catch(() => undefined);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
       record.state = 'running';
@@ -775,7 +807,19 @@ export class BackendService {
               if (logFailure) throw logFailure;
               const refused = modelRefused(user, original.model);
               if (refused) throw new Conflict(`${refused}. Turn it on at /user, or pick another model.`);
-              const request = { ...original, systemPrompt: withUserRules(original.systemPrompt, user) };
+              const request = {
+                ...original,
+                systemPrompt: withUserRules(original.systemPrompt, user),
+                onEvent: (event: AgentEvent) => {
+                  session.event(event, original.step);
+                  // Saved now and then, so a crash loses little of what the person could read.
+                  if (Date.now() - savedAt > 15_000) {
+                    savedAt = Date.now();
+                    void saveSession();
+                  }
+                  original.onEvent?.(event);
+                },
+              };
               manifests = withManifest(manifests, callManifest(request));
               let result: ModelResult;
               try {
@@ -826,6 +870,8 @@ export class BackendService {
       this.controllers.delete(record.id);
       this.activities.delete(record.id);
       this.stopRequests.delete(record.id);
+      await saveSession();
+      this.sessionLogs.delete(sessionKey);
       this.executing--;
       own();
       // A slot is free again: an agent may take its next Todo task.

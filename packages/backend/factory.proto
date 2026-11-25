@@ -73,6 +73,7 @@ service Factory {
   rpc UpdateAgent(Snapshot) returns (Snapshot);
   rpc ArchiveAgent(Snapshot) returns (Snapshot);
   rpc GetAgentStats(Snapshot) returns (Snapshot);
+  rpc GetRunSession(Target) returns (Snapshot);
   rpc ListChats(Snapshot) returns (Snapshot);
   rpc GetChat(Snapshot) returns (Snapshot);
   rpc StartChat(Snapshot) returns (Snapshot);

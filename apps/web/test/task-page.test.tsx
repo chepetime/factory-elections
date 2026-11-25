@@ -20,6 +20,9 @@ vi.mock('@/lib/agents', () => ({
     value: [{ id: 'devin', name: 'Devin', avatar: '🐸' }],
   }),
 }));
+vi.mock('@/lib/run-session', () => ({
+  readRunSession: async () => ({ ok: true, value: { entries: [], live: false } }),
+}));
 vi.mock('@/lib/pane-width', () => ({ paneWidth: async (spec: { default: number }) => spec.default }));
 vi.mock('@/lib/page-title', () => ({ projectLabel: async (p: string) => p, clip: (t: string) => t }));
 vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
@@ -91,11 +94,11 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
     phase,
   });
 }
-async function html(start?: string) {
+async function html(start?: string, panel?: 'run' | 'details') {
   return renderToStaticMarkup(
     await TaskPage({
       params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
-      searchParams: Promise.resolve({ start }),
+      searchParams: Promise.resolve({ start, ...(panel ? { panel } : {}) }),
     }),
   );
 }
@@ -167,7 +170,7 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
     ok: true,
     value: { task: withAttempts, execution: 'completed', actions: taskActions(withAttempts, 'completed') },
   });
-  const page = await html();
+  const page = await html(undefined, 'details');
   expect(page).toContain('Model attempts');
   expect(page).toMatch(/>sonnet · /);
   expect(page).toContain('codex');
@@ -179,7 +182,7 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
     ok: true,
     value: { task: unknown, execution: 'completed', actions: taskActions(unknown, 'completed') },
   });
-  expect(await html()).toContain('unknown');
+  expect(await html(undefined, 'details')).toContain('unknown');
 });
 
 it('shows the approval diff in a copyable code view and reports read errors', async () => {
@@ -199,7 +202,7 @@ it('shows the approval diff in a copyable code view and reports read errors', as
     ok: true,
     value: 'diff --git a/a b/a\n--- a/a\n+++ b/a\n-old line\n+new line\n',
   });
-  const page = await html();
+  const page = await html(undefined, 'details');
   expect(page).toContain('Full diff');
   expect(page).toContain('Changes.diff');
   expect(page).toContain('+new line');
@@ -208,7 +211,7 @@ it('shows the approval diff in a copyable code view and reports read errors', as
   expect(page).toContain(':nth-child(n+5):nth-child(-n+5){background:var(--diff-add-bg)}');
   expect(page).toContain('Copy code');
   vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
-  expect(await html()).toContain('Could not load the diff: unavailable');
+  expect(await html(undefined, 'details')).toContain('Could not load the diff: unavailable');
 });
 
 it('renders review findings and stage events through the shared components', async () => {
@@ -232,9 +235,11 @@ it('renders review findings and stage events through the shared components', asy
     ok: true,
     value: { task: reviewed, execution: 'completed', actions: taskActions(reviewed, 'completed') },
   });
+  const details = await html(undefined, 'details');
+  expect(details).toContain('Stage timeline');
+  expect(details).toMatch(/aria-current="step"[\s\S]*Review ready/);
+  // Findings sit with the run, in the Run panel.
   const page = await html();
-  expect(page).toContain('Stage timeline');
-  expect(page).toMatch(/aria-current="step"[\s\S]*Review ready/);
   expect(page).toContain('Review findings');
   expect(page).toContain('Missing check');
   expect(page).toContain('src/a.ts');
@@ -282,7 +287,7 @@ it('while a run works: a stop composer, the latest activity and the following li
   expect(page).toContain('composer:running');
   expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
   expect(page).toMatch(/aria-label="Live output"[\s\S]*Progress: resolved 3784/);
-  expect(page).toMatch(/Stage timeline[\s\S]*running/);
+  expect(await html(undefined, 'details')).toMatch(/Stage timeline[\s\S]*running/);
 });
 it('a silent command shows its elapsed time and a notice that it is still running', async () => {
   observe('running');
@@ -320,7 +325,9 @@ it('says which checks did not run locally and that CI must pass', async () => {
     value: { task: current, execution: 'completed', actions: taskActions(current, 'completed') },
   });
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
-  expect(await html()).toMatch(/Not run locally: test, full_check\.[\s\S]*CI must pass before you merge/);
+  expect(await html(undefined, 'details')).toMatch(
+    /Not run locally: test, full_check\.[\s\S]*CI must pass before you merge/,
+  );
 });
 it('ends a successful run with a ready card, the findings, and earlier errors folded', async () => {
   const at = (m: number) => `2026-11-18T00:${String(m).padStart(2, '0')}:00.000Z`;
@@ -403,7 +410,7 @@ it('a task without a run shows its description and takes comments', async () => 
 
 it('lists the runs and pull requests in the side panel', async () => {
   observe('completed', 'coding');
-  let page = await html();
+  let page = await html(undefined, 'details');
   expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
   expect(page).toContain('No pull request yet.');
   expect(page).toMatch(/Project[\s\S]*demo/);
@@ -422,7 +429,7 @@ it('lists the runs and pull requests in the side panel', async () => {
     ok: true,
     value: { task: opened, execution: 'completed', actions: taskActions(opened, 'completed') },
   });
-  page = await html();
+  page = await html(undefined, 'details');
   expect(page).toContain('o/r#12');
   expect(page).not.toContain('No pull request yet.');
 });
@@ -469,4 +476,15 @@ it('names the agent, not Factory, in an agent run', async () => {
   const page = await html();
   expect(page).toMatch(/🐸[\s\S]*Devin/);
   expect(page).not.toMatch(/>Factory</);
+});
+
+it('opens the run in the right panel, with its session, and keeps a short card in the feed', async () => {
+  observe('completed', 'awaiting-approval');
+  const page = await html();
+  expect(page).toMatch(/aria-label="Panel"[\s\S]*aria-current="page"[^>]*>Run</);
+  expect(page).toContain('No session recorded for this run yet.');
+  expect(page).toMatch(/Run 1<\/span>/);
+  const details = await html(undefined, 'details');
+  expect(details).toMatch(/href="[^"]*panel=run"[^>]*>Open</);
+  expect(details).toContain('Properties');
 });
