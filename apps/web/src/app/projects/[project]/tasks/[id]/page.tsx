@@ -443,7 +443,8 @@ export default async function TaskPage({
                   {runAuthor && <span className="text-muted-foreground"> · {runAuthor.name}</span>}
                   <span className="text-muted-foreground">
                     {' · '}
-                    {issue.run?.waiting
+                    {/* Only the latest run can have a queued turn; an older run shows its own stage. */}
+                    {issue.run?.waiting && runId === issue.run.id
                       ? `Waiting for ${runAuthor?.name ?? 'a free agent'}`
                       : stageLabel(run.value.task.stage)}
                   </span>

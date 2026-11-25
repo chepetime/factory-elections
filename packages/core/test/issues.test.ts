@@ -127,3 +127,21 @@ test('a run that waits for you closes when you send its task back to the queue',
     status: 'todo',
   });
 });
+
+test('a queued turn shows in Todo, unless a person cancelled the task since', () => {
+  const run = { stage: 'blocked' as const, updated_at: '2026-11-20T10:00:00.000Z', waiting: true };
+  assert.equal(syncedStatus({ status: 'in_progress', status_at: '2026-11-20T11:00:00.000Z' }, run), 'todo');
+  assert.equal(syncedStatus({ status: 'backlog', status_at: '2026-11-20T09:00:00.000Z' }, run), 'todo');
+  assert.equal(
+    syncedStatus({ status: 'cancelled', status_at: '2026-11-20T11:00:00.000Z' }, run),
+    'cancelled',
+  );
+});
+
+test('a queued turn refuses every drop but Cancelled, so no drop closes its run or starts a second turn', () => {
+  const run = { stage: 'blocked' as const, waiting: true };
+  for (const to of ['backlog', 'in_progress', 'done'] as const)
+    assert.equal(dropAction('todo', to, run).kind, 'refused', to);
+  assert.deepEqual(dropAction('todo', 'cancelled', run), { kind: 'reject' });
+  assert.deepEqual(dropAction('todo', 'todo', run), { kind: 'none' });
+});

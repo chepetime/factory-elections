@@ -776,8 +776,6 @@ export class BackendService {
       this.executing--;
       return;
     }
-    const workingKey = `${command.project}/${command.id}`;
-    this.working.add(workingKey);
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
     if (this.stopRequests.has(record.id)) controller.abort();
@@ -790,7 +788,8 @@ export class BackendService {
     let manifests: CallManifest[] = [];
     const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
     const sessionKey = `${command.project}/${command.id}`;
-    const session = new SessionLog(await this.readSession(command.project, command.id));
+    // A read failure here would skip the finally below and leak this run's slots: start empty.
+    const session = new SessionLog(await this.readSession(command.project, command.id).catch(() => []));
     session.run(command.action === 'revise' && command.note ? `You replied: ${command.note}` : record.label);
     this.sessionLogs.set(sessionKey, session);
     let savedAt = Date.now();
@@ -798,6 +797,9 @@ export class BackendService {
       this.storage
         .writeDocument(this.sessionPath(command.project, command.id), { entries: session.entries })
         .catch(() => undefined);
+    // Added right before the try, so its finally always removes it: a leak shows the task waiting forever.
+    const workingKey = `${command.project}/${command.id}`;
+    this.working.add(workingKey);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
       record.state = 'running';

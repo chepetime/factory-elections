@@ -177,10 +177,15 @@ export class IssueService {
     return { board: synced, runs };
   }
 
+  /** A turn is queued for the run: it will use the run's worktree once its agent is free. */
+  private queued(project: string, runId: string): boolean {
+    return this.deps.waiting?.(project, runId) === true;
+  }
+
   private view(prefix: string, issue: Issue, runs: Map<string, TaskRecord>): IssueView {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
-    const waiting = task ? this.deps.waiting?.(task.project, task.id) === true : false;
+    const waiting = task ? this.queued(task.project, task.id) : false;
     const run = task
       ? { id: task.id, stage: task.stage, updated_at: task.updated_at, ...(waiting ? { waiting: true } : {}) }
       : undefined;
@@ -188,8 +193,7 @@ export class IssueService {
       ...issue,
       key: issueKey(prefix, issue.number),
       stored_status: issue.status,
-      // A queued turn is not blocked or in review any more: it waits in line, like a Todo task.
-      status: waiting ? 'todo' : syncedStatus(issue, run),
+      status: syncedStatus(issue, run),
       run,
     };
   }
@@ -480,7 +484,7 @@ export class IssueService {
       const issue = this.find(board, key);
       const latest = issue.runs.at(-1);
       const stage = latest ? runs.get(latest)?.stage : undefined;
-      if (archived && stage && runWorking(stage))
+      if (archived && latest && ((stage && runWorking(stage)) || this.queued(project, latest)))
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
       const at = this.now();
       const updated = Issue.parse({
@@ -512,7 +516,7 @@ export class IssueService {
       if (!issue.archived_at) throw new Conflict('Archive the task before you delete it.');
       const working = issue.runs.find((id) => {
         const stage = runs.get(id)?.stage;
-        return stage && runWorking(stage);
+        return (stage && runWorking(stage)) || this.queued(project, id);
       });
       if (working)
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');

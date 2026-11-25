@@ -319,3 +319,18 @@ test('a turn queued behind a busy agent shows as waiting in Todo, not as its old
   assert.equal(queued.run?.waiting, true);
   assert.equal(queued.run?.stage, 'blocked', 'the run itself is unchanged until it starts');
 });
+
+test('a task with a queued turn cannot be archived or deleted, so the turn never starts on a removed run', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const waiting = new Set<string>();
+  const { service } = await setup(t, [stuck], {}, undefined, waiting);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: true });
+  waiting.add(stuck.id);
+  await assert.rejects(service.delete({ project: 'change-elections', key: 'CE-1' }), Conflict);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: false });
+  await assert.rejects(
+    service.archive({ project: 'change-elections', key: 'CE-1', archived: true }),
+    Conflict,
+  );
+  await assert.rejects(service.move({ project: 'change-elections', key: 'CE-1', to: 'backlog' }), /queued/);
+});

@@ -138,12 +138,18 @@ export function runFinished(stage: Stage): boolean {
   return stage === 'rejected' || stage === 'pr-opened';
 }
 
-export type RunSummary = { stage: Stage; updated_at?: string };
+/** `waiting`: a turn is queued until its agent is free; `stage` is still the stage before it. */
+export type RunSummary = { stage: Stage; updated_at?: string; waiting?: boolean };
 
-/** The status to show: the latest run's, if it changed after the issue's status was last set. */
+/**
+ * The status to show: the latest run's, if it changed after the issue's status was last set.
+ * A queued turn waits in line like a Todo task, unless a person cancelled the task since.
+ */
 export function syncedStatus(issue: Pick<Issue, 'status' | 'status_at'>, run?: RunSummary): IssueStatus {
   if (!run) return issue.status;
-  if (run.updated_at && Date.parse(run.updated_at) <= Date.parse(issue.status_at)) return issue.status;
+  const setSince = !!run.updated_at && Date.parse(run.updated_at) <= Date.parse(issue.status_at);
+  if (run.waiting) return setSince && issue.status === 'cancelled' ? 'cancelled' : 'todo';
+  if (setSince) return issue.status;
   return statusFromStage(run.stage);
 }
 
@@ -167,6 +173,9 @@ const WAITING_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-fai
 
 export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary): DropAction {
   if (from === to) return { kind: 'none' };
+  // The queued turn still uses the run: closing it or starting another turn would race it.
+  if (run?.waiting && to !== 'cancelled')
+    return { kind: 'refused', reason: 'A turn is queued for its agent. Move it to Cancelled to stop it.' };
   const active = run && !runFinished(run.stage);
   if (to === 'in_review' || to === 'blocked')
     return { kind: 'refused', reason: 'The factory moves tasks into this column.' };
