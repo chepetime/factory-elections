@@ -30,15 +30,19 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   if (!registered) notFound();
   if (!settings.ok) return <p className="p-6 text-destructive">Settings unavailable: {settings.error}</p>;
   return (
-    <>
-      <div className="mx-auto w-full max-w-3xl px-6 pt-6">
-        {check.ok ? (
+    <ProjectSettingsForm
+      project={project}
+      repo={registered.repo}
+      initial={settings.value}
+      setupCheck={
+        check.ok ? (
           <ProfileCheckView project={project} state={check.value} />
         ) : (
-          <p className="text-sm text-destructive">Setup check unavailable: {check.error}</p>
-        )}
-      </div>
-      <ProjectSettingsForm project={project} repo={registered.repo} initial={settings.value} />
-    </>
+          <p role="alert" className="text-sm text-destructive">
+            Setup check unavailable: {check.error}
+          </p>
+        )
+      }
+    />
   );
 }

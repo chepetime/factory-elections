@@ -2,13 +2,14 @@
 // Project settings: display name and icon, the task manager the factory uses to read and create
 // tickets, and the PR review profile. "Fill from repository" asks an agent to explore the repo and
 // propose values; nothing is saved until you save.
-import { LoaderCircle, Sparkles } from 'lucide-react';
+import { FolderSearch, LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useState, useTransition } from 'react';
+import { useId, useState, useTransition, type ReactNode } from 'react';
 import { detectProjectSettings, saveProjectSettings } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SettingsSection } from '@/components/settings-section';
 import { Textarea } from '@/components/ui/textarea';
 import type { ProjectSettings, SettingsProposal } from '@/lib/settings';
 
@@ -45,32 +46,17 @@ function Field({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border bg-card p-5 shadow-xs">
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="mt-0.5 mb-4 text-sm text-muted-foreground">{description}</p>
-      <div className="flex flex-col gap-4">{children}</div>
-    </section>
-  );
-}
-
 export function ProjectSettingsForm({
   project,
   repo,
   initial,
+  setupCheck,
 }: {
   project: string;
   repo: string;
   initial: ProjectSettings;
+  /** Rendered under the header. It is not part of the form, so Save does not cover it. */
+  setupCheck?: ReactNode;
 }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(initial.display_name ?? '');
@@ -124,38 +110,50 @@ export function ProjectSettingsForm({
     });
   };
 
-  const tmFields: { key: keyof TaskManager; label: string; hint?: string; mono?: boolean }[] = [
-    { key: 'cli', label: 'CLI', hint: 'The command-line tool, e.g. acli or gh.', mono: true },
-    { key: 'project_key', label: 'Project key or board', mono: true },
-    { key: 'read_ticket', label: 'Read a ticket', hint: 'Use {key} for the ticket key.', mono: true },
-    { key: 'list_tickets', label: 'List tickets', hint: "Lists the project's open tickets.", mono: true },
-    { key: 'search', label: 'Search tickets', hint: 'Use {query} for the search text.', mono: true },
-    { key: 'create_ticket', label: 'Create a ticket', hint: 'Use {summary} and {description}.', mono: true },
-    { key: 'create_epic', label: 'Create an epic', hint: 'Use {summary} and {description}.', mono: true },
+  const commandFields: { key: keyof TaskManager; label: string; hint?: string }[] = [
+    { key: 'read_ticket', label: 'Read a ticket', hint: 'Use {key} for the ticket key.' },
+    { key: 'list_tickets', label: 'List tickets', hint: "Lists the project's open tickets." },
+    { key: 'search', label: 'Search tickets', hint: 'Use {query} for the search text.' },
+    { key: 'create_ticket', label: 'Create a ticket', hint: 'Use {summary} and {description}.' },
+    { key: 'create_epic', label: 'Create an epic', hint: 'Use {summary} and {description}.' },
   ];
+
+  const textField = (key: keyof TaskManager, id: string, hint: string | undefined) => (
+    <Input
+      id={id}
+      aria-describedby={hint}
+      spellCheck={false}
+      className="font-mono md:text-xs"
+      value={(tm[key] as string | undefined) ?? ''}
+      onChange={(e) => set({ [key]: e.target.value })}
+    />
+  );
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0 flex-1 basis-72">
           <h1 className="text-2xl font-semibold tracking-tight">Project settings</h1>
-          <p className="mt-1 text-muted-foreground">
-            <span className="font-mono text-sm">{project}</span> ·{' '}
-            <span className="font-mono text-sm">{repo}</span>
+          <p className="mt-1 flex min-w-0 gap-1.5 font-mono text-xs text-muted-foreground">
+            <span className="shrink-0">{project}</span>
+            <span aria-hidden>·</span>
+            <span className="truncate" title={repo}>
+              {repo}
+            </span>
           </p>
         </div>
         <Button variant="outline" onClick={detect} disabled={detecting || saving}>
           {detecting ? (
-            <LoaderCircle className="size-4 motion-safe:animate-spin" />
+            <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden />
           ) : (
-            <Sparkles className="size-4" />
+            <FolderSearch className="size-4" aria-hidden />
           )}
           {detecting ? 'Exploring the repository…' : 'Fill from repository'}
         </Button>
-      </div>
+      </header>
 
       {proposal && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
+        <div role="status" className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
           <p>{proposal.summary}</p>
           {proposal.evidence.length > 0 && (
             <p className="mt-2 text-xs text-muted-foreground">
@@ -165,8 +163,14 @@ export function ProjectSettingsForm({
         </div>
       )}
 
-      <Section title="General" description="How this project appears in the app. The project id stays fixed.">
-        <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+      {setupCheck}
+
+      <SettingsSection
+        id="settings-general"
+        title="General"
+        description="How this project appears in the app. The project id stays fixed."
+      >
+        <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
           <Field label="Display name">
             {(id) => (
               <Input
@@ -178,7 +182,7 @@ export function ProjectSettingsForm({
               />
             )}
           </Field>
-          <Field label="Icon" hint="An emoji or two letters.">
+          <Field label="Icon" hint="Emoji or two letters.">
             {(id, hint) => (
               <Input
                 id={id}
@@ -191,54 +195,59 @@ export function ProjectSettingsForm({
             )}
           </Field>
         </div>
-      </Section>
+      </SettingsSection>
 
-      <Section
+      <SettingsSection
+        id="settings-task-manager"
         title="Task manager"
         description="Where this team tracks work. Agents use these commands to read tasks and create tickets and epics, and the PR review agent uses them to fetch a PR's ticket."
       >
-        <Field label="Kind">
-          {(id) => (
-            <select
-              id={id}
-              value={tm.kind}
-              onChange={(e) => set({ kind: e.target.value as TaskManager['kind'] })}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {KINDS.map((k) => (
-                <option key={k.value} value={k.value}>
-                  {k.label}
-                </option>
-              ))}
-            </select>
+        <div className="grid items-start gap-4 sm:grid-cols-3">
+          <Field label="Kind">
+            {(id) => (
+              <select
+                id={id}
+                value={tm.kind}
+                onChange={(e) => set({ kind: e.target.value as TaskManager['kind'] })}
+                className="h-8 w-full cursor-pointer rounded-lg border border-input bg-transparent px-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+              >
+                {KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          {tm.kind !== 'none' && (
+            <>
+              <Field label="CLI" hint="For example acli or gh.">
+                {(id, hint) => textField('cli', id, hint)}
+              </Field>
+              <Field label="Project key or board">{(id, hint) => textField('project_key', id, hint)}</Field>
+            </>
           )}
-        </Field>
+        </div>
         {tm.kind !== 'none' && (
           <>
-            {tmFields.map((f) => (
+            <h3 className="mt-1 border-t pt-5 text-sm font-semibold">Commands</h3>
+            {commandFields.map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint}>
-                {(id, hint) => (
-                  <Input
-                    id={id}
-                    aria-describedby={hint}
-                    spellCheck={false}
-                    className={f.mono ? 'font-mono' : undefined}
-                    value={(tm[f.key] as string | undefined) ?? ''}
-                    onChange={(e) => set({ [f.key]: e.target.value })}
-                  />
-                )}
+                {(id, hint) => textField(f.key, id, hint)}
               </Field>
             ))}
+            <h3 className="mt-1 border-t pt-5 text-sm font-semibold">Context for agents</h3>
             <Field
               label="Usage docs in the repository"
-              hint="One path per line, e.g. AGENTS.md or .claude/skills/jira/SKILL.md."
+              hint="One path per line, for example AGENTS.md or .claude/skills/jira/SKILL.md."
             >
               {(id, hint) => (
                 <Textarea
                   id={id}
                   aria-describedby={hint}
                   rows={3}
-                  className="font-mono"
+                  spellCheck={false}
+                  className="font-mono md:text-xs"
                   value={docs}
                   onChange={(e) => setDocs(e.target.value)}
                 />
@@ -260,31 +269,35 @@ export function ProjectSettingsForm({
             </Field>
           </>
         )}
-      </Section>
+      </SettingsSection>
 
-      <Section
+      <SettingsSection
+        id="settings-tending"
         title="PR tending"
         description="Keep open factory pull requests moving by addressing failed checks and conflicts."
       >
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm">
           <input
             type="checkbox"
+            className="size-4 cursor-pointer accent-primary"
             checked={tending.enabled}
             onChange={(e) => setTending((t) => ({ ...t, enabled: e.target.checked }))}
           />
           Enable PR tending
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm">
           <input
             type="checkbox"
+            className="size-4 cursor-pointer accent-primary"
             checked={tending.answer_threads}
             onChange={(e) => setTending((t) => ({ ...t, answer_threads: e.target.checked }))}
           />
           Answer review threads
         </label>
-      </Section>
+      </SettingsSection>
 
-      <Section
+      <SettingsSection
+        id="settings-reviews"
         title="PR reviews"
         description="The senior-pr-review profile for this repository: ticket system, test and coverage commands, high-risk paths, standards sources, and known-dismissed findings."
       >
@@ -297,15 +310,16 @@ export function ProjectSettingsForm({
               id={id}
               aria-describedby={hint}
               rows={10}
-              className="font-mono text-xs"
+              spellCheck={false}
+              className="font-mono md:text-xs"
               value={profile}
               onChange={(e) => setProfile(e.target.value)}
             />
           )}
         </Field>
-      </Section>
+      </SettingsSection>
 
-      <div className="sticky bottom-0 -mx-1 flex items-center gap-3 bg-background/95 px-1 py-3 backdrop-blur">
+      <div className="sticky bottom-0 -mx-1 flex items-center gap-3 border-t bg-background/95 px-1 py-3 backdrop-blur">
         <Button onClick={save} disabled={saving || detecting}>
           {saving ? 'Saving…' : 'Save settings'}
         </Button>
