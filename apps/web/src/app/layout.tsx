@@ -9,11 +9,15 @@ export const metadata: Metadata = {
   applicationName: 'Software Factory',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+// `modal` holds route-backed dialogs (app/@modal); it renders nothing on other routes.
+export default function RootLayout({ children, modal }: { children: ReactNode; modal: ReactNode }) {
   return (
     <html lang="en">
       <body className="font-sans text-foreground antialiased">
-        <AppShell>{children}</AppShell>
+        <AppShell>
+          {children}
+          {modal}
+        </AppShell>
       </body>
     </html>
   );

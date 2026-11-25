@@ -6,7 +6,6 @@ import { LiveOutput } from '@/components/live-output';
 import { LocalTime } from '@/components/local-time';
 import { OutputBlock } from '@/components/output-block';
 import { ProfileCheckButton } from '@/components/profile-check-button';
-import { SettingsSection } from '@/components/settings-section';
 import type { ProfileCheckState } from '@/lib/profile-check';
 import { shortDuration } from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
@@ -20,30 +19,29 @@ const OUTCOME = {
 export function ProfileCheckView({ project, state }: { project: string; state: ProfileCheckState }) {
   const finished = !state.running && state.finished_at;
   return (
-    <SettingsSection
-      id="profile-check"
-      title="Setup check"
-      description="Runs the preflight checks, then setup, test and full check on the base branch in a temporary worktree. No model is called, so it costs nothing."
-      action={<ProfileCheckButton project={project} running={state.running} />}
-    >
+    <div className="flex flex-col gap-4">
       {state.running && <AutoRefresh />}
-      {finished && (
-        <p className="text-sm">
-          <span className="text-muted-foreground">Last check: </span>
-          <span className={state.passed ? 'text-green-700 dark:text-green-400' : 'text-destructive'}>
-            {state.passed ? 'passed' : 'failed'}
-          </span>
-          <span className="text-muted-foreground">
-            {' '}
-            · <LocalTime iso={finished} format="date-time" />
-          </span>
-        </p>
-      )}
-      {!state.running && !state.finished_at && !state.error && (
-        <p className="text-sm text-muted-foreground">
-          No check has run yet. Run one before the first task to catch login and install problems.
-        </p>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        {finished ? (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Last check: </span>
+            <span className={state.passed ? 'text-green-700 dark:text-green-400' : 'text-destructive'}>
+              {state.passed ? 'passed' : 'failed'}
+            </span>
+            <span className="text-muted-foreground">
+              {' '}
+              · <LocalTime iso={finished} format="date-time" />
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {state.running
+              ? 'A check is running.'
+              : 'No check has run yet. Run one before the first task to catch login and install problems.'}
+          </p>
+        )}
+        <ProfileCheckButton project={project} running={state.running} />
+      </div>
 
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
@@ -98,6 +96,6 @@ export function ProfileCheckView({ project, state }: { project: string; state: P
           {state.log && <LiveOutput output={state.log} />}
         </div>
       )}
-    </SettingsSection>
+    </div>
   );
 }

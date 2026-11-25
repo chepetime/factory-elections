@@ -1,11 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { ProfileCheckView } from '@/components/profile-check';
-import { ProjectSettingsForm } from '@/components/project-settings-form';
-import { isProjectName, listProjects } from '@/lib/factory';
+import { ProjectSettingsScreen } from '@/components/project-settings-screen';
+import { isProjectName } from '@/lib/factory';
 import { projectTitle } from '@/lib/page-title';
-import { readProfileCheck } from '@/lib/profile-check';
-import { projectSettings } from '@/lib/settings';
 
 export async function generateMetadata({
   params,
@@ -17,32 +13,13 @@ export async function generateMetadata({
 }
 export const dynamic = 'force-dynamic';
 
+// A direct visit or a reload lands here; links inside the app open the same panel as a dialog
+// (app/@modal/(.)projects/[project]/settings).
 export default async function ProjectSettingsPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params;
-  if (!isProjectName(project)) notFound();
-  const [projects, settings, check] = await Promise.all([
-    listProjects(),
-    projectSettings(project),
-    readProfileCheck(project),
-  ]);
-  if (!projects.ok) return <p className="p-6 text-destructive">Projects unavailable: {projects.error}</p>;
-  const registered = projects.value.find((p) => p.name === project);
-  if (!registered) notFound();
-  if (!settings.ok) return <p className="p-6 text-destructive">Settings unavailable: {settings.error}</p>;
   return (
-    <ProjectSettingsForm
-      project={project}
-      repo={registered.repo}
-      initial={settings.value}
-      setupCheck={
-        check.ok ? (
-          <ProfileCheckView project={project} state={check.value} />
-        ) : (
-          <p role="alert" className="text-sm text-destructive">
-            Setup check unavailable: {check.error}
-          </p>
-        )
-      }
-    />
+    <div className="mx-auto flex h-[calc(100dvh-7.5rem)] min-h-[32rem] max-w-5xl flex-col overflow-hidden rounded-2xl border bg-background min-[900px]:h-[calc(100dvh-4.5rem)]">
+      <ProjectSettingsScreen project={project} />
+    </div>
   );
 }
