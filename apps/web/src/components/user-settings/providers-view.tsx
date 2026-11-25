@@ -1,11 +1,13 @@
 'use client';
 // Agent providers and their models. The backend refuses a run on a provider or model turned off here.
-import { Plus, X } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { CircleCheck, CircleX, Plus, X } from 'lucide-react';
+import { useId, useMemo, useState, useTransition } from 'react';
+import { testProvider } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { LocalTime } from '@/components/local-time';
 import { PROVIDER_NAMES, USER_PROVIDERS, type UserProvider } from '@factory/core';
-import type { UserEnvironment, UserSettings } from '@/lib/user-settings';
+import type { ProviderCheck, UserEnvironment, UserSettings } from '@/lib/user-settings';
 import { SettingsPage, Switch, useSection } from '@/components/user-settings/settings-ui';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +26,77 @@ function modelsFor(found: readonly Model[], p: UserSettings['providers']['claude
   for (const m of found) seen.set(m.id, m);
   for (const id of [...p.custom_models, ...p.disabled_models]) if (!seen.has(id)) seen.set(id, { id });
   return [...seen.values()];
+}
+
+const CHECK_LABELS: Record<ProviderCheck['name'], string> = {
+  installed: 'Installed',
+  signed_in: 'Signed in',
+  responds: 'Responds',
+};
+
+function CheckRow({ check }: { check: ProviderCheck }) {
+  const Icon = check.ok ? CircleCheck : CircleX;
+  return (
+    <li className="py-1 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2">
+        <Icon
+          aria-hidden="true"
+          className={cn('size-4 shrink-0', check.ok ? 'text-emerald-600' : 'text-destructive')}
+        />
+        <span className="font-medium">{CHECK_LABELS[check.name]}</span>
+        <span className="sr-only">{check.ok ? 'passed' : 'failed'}</span>
+        {check.ok && check.detail && <span className="text-muted-foreground">{check.detail}</span>}
+        <LocalTime iso={check.checked_at} className="ml-auto text-muted-foreground" />
+      </div>
+      {!check.ok && (
+        <div className="mt-1 ml-6 flex flex-col gap-1">
+          {check.error && (
+            <pre className="max-h-32 overflow-auto rounded bg-muted p-2 font-mono whitespace-pre-wrap text-destructive">
+              {check.error}
+            </pre>
+          )}
+          {check.fix && (
+            <p className="text-muted-foreground">
+              Fix: <code className="rounded bg-muted px-1 py-0.5 font-mono">{check.fix}</code>
+            </p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Installed and signed in load with the page and cost nothing; Responds runs only from the Test button. */
+function ProviderChecks({ provider, checks }: { provider: UserProvider; checks: readonly ProviderCheck[] }) {
+  const [tested, setTested] = useState<ProviderCheck>();
+  const [testError, setTestError] = useState<string>();
+  const [pending, start] = useTransition();
+  const test = () =>
+    start(async () => {
+      const result = await testProvider(provider);
+      setTestError(result.error);
+      if (result.check) setTested(result.check);
+    });
+  const label = PROVIDER_NAMES[provider];
+  return (
+    <div className="border-t px-4 py-3">
+      <ul aria-label={`${label} checks`} className="flex flex-col">
+        {checks.map((c) => (
+          <CheckRow key={c.name} check={c} />
+        ))}
+        {tested && <CheckRow check={tested} />}
+      </ul>
+      {testError && <p className="mt-1 text-xs text-destructive">Could not run the test: {testError}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={test} disabled={pending}>
+          {pending ? 'Testing…' : tested ? 'Test again' : 'Test'}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Sends one one-word prompt to the cheapest model. Costs a fraction of a cent.
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function ProviderCard({
@@ -84,6 +157,8 @@ function ProviderCard({
         </div>
         <Switch id={toggleId} checked={p.enabled} onChange={(enabled) => onChange({ ...p, enabled })} />
       </div>
+
+      {env && <ProviderChecks provider={provider} checks={env.checks} />}
 
       {p.enabled && (
         <div className="border-t px-4 py-3">

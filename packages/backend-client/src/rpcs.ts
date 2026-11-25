@@ -21,6 +21,8 @@ export const RPCS = {
   SaveUserSettings: ['Snapshot', 'Snapshot'],
   /** Git identity, the GitHub login and each provider CLI found on this machine. */
   GetUserEnvironment: ['Empty', 'Snapshot'],
+  /** One tiny model call to confirm a provider answers; `provider` is its id. */
+  TestProvider: ['ProviderTest', 'Snapshot'],
   GetProjectSettings: ['Target', 'Snapshot'],
   SaveProjectSettings: ['SettingsUpdate', 'Snapshot'],
   DetectProjectSettings: ['Target', 'Snapshot'],
