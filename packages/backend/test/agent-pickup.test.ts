@@ -17,6 +17,7 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
   const agents = new AgentService({ root, storage: storageFor(root), seed: true });
   const tasks: TaskRecord[] = [];
   let refuse: string | undefined;
+  let blocked: string | undefined;
   const running = new Set<string>();
   const finish = (i: number) => {
     running.delete(tasks[i]!.id);
@@ -58,6 +59,7 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
     issues,
     tasks: async () => tasks,
     scheduled: (_p, id) => running.has(id),
+    blocker: async () => blocked,
     accepting: () => true,
     now: () => now,
   });
@@ -90,20 +92,34 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
   refuse = undefined;
   now += PICKUP_RETRY_MS + 1;
   assert.deepEqual(await pickup.tick(), ['DEM-4']);
+  finish(2);
+
+  // A known blocker is checked first: the task gets only the note, never a "started" event.
+  await issues.create({ project: 'demo', title: 'Blocked first', status: 'todo' });
+  await issues.update({ project: 'demo', key: 'DEM-5', assignee: 'devin' });
+  blocked = 'The repo profile is not approved.';
+  const eventsBefore = (await issues.get({ project: 'demo', key: 'DEM-5' })).events.length;
+  assert.deepEqual(await pickup.tick(), []);
+  const after = await issues.get({ project: 'demo', key: 'DEM-5' });
+  assert.equal(after.events.length, eventsBefore + 1);
+  assert.deepEqual(after.runs, []);
+  blocked = undefined;
+  now += PICKUP_RETRY_MS + 1;
+  assert.deepEqual(await pickup.tick(), ['DEM-5']);
+  finish(3);
 
   await agents.update({ id: 'devin', auto_pickup: false });
   await issues.create({ project: 'demo', title: 'Manual only', status: 'todo' });
-  await issues.update({ project: 'demo', key: 'DEM-5', assignee: 'devin' });
-  finish(2);
+  await issues.update({ project: 'demo', key: 'DEM-6', assignee: 'devin' });
   assert.deepEqual(await pickup.tick(), [], 'pickup is off for this agent');
 
   // A run left queued and unscheduled (a refused start, a backend restart) starts again.
   await agents.update({ id: 'devin', auto_pickup: true });
-  assert.deepEqual(await pickup.tick(), ['DEM-5']);
+  assert.deepEqual(await pickup.tick(), ['DEM-6']);
   running.clear();
   assert.equal(tasks.at(-1)!.stage, 'queued');
   const before = tasks.length;
   now += PICKUP_RETRY_MS + 1;
-  assert.deepEqual(await pickup.tick(), ['DEM-5'], 'the queued run is started, not replaced');
+  assert.deepEqual(await pickup.tick(), ['DEM-6'], 'the queued run is started, not replaced');
   assert.equal(tasks.length, before);
 });

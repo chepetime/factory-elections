@@ -316,6 +316,7 @@ export class BackendService {
       issues: this.issues,
       tasks: (p) => this.tasks.list(p),
       scheduled: (p, id) => this.isScheduled(p, id),
+      blocker: (p) => this.runBlocker(p, { repoClean: true }),
       accepting: () => this.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });

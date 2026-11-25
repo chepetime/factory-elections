@@ -15,6 +15,8 @@ export type PickupDeps = {
   /** Whether the backend has a run queued or working for the task. Only those occupy an agent. */
   scheduled: (project: string, id: string) => boolean;
   accepting: () => boolean;
+  /** Why runs cannot start in a project now; checked first, so a refused start changes nothing. */
+  blocker?: (project: string) => Promise<string | undefined>;
   now?: () => number;
   log?: (line: string) => void;
 };
@@ -100,6 +102,8 @@ export class AgentPickup {
       if (!this.deps.accepting()) break;
       const agent = agents.find((a) => a.id === task.assignee)!;
       try {
+        const blocked = await this.deps.blocker?.(task.project);
+        if (blocked) throw new Error(blocked);
         await this.deps.issues.move({ project: task.project, key: task.key, to: 'in_progress' });
         this.retryAt.delete(id(task));
         started.push(task.key);
