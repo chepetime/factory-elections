@@ -400,11 +400,12 @@ export async function moveIssue(
 export async function updateIssue(
   project: string,
   key: string,
-  patch: { title?: string; description?: string; priority?: string },
+  patch: { title?: string; description?: string; priority?: string; assignee?: string | null },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
   const updated = await updateIssueRun(project, { key, ...patch });
   revalidatePath(`/projects/${project}/tasks`, 'layout');
+  if (patch.assignee !== undefined) revalidatePath('/agents', 'layout');
   return updated.ok ? { message: 'Saved.' } : { error: updated.error };
 }
 

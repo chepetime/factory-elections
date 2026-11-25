@@ -39,6 +39,7 @@ import {
   type ModelResult,
   CallManifest,
   taskSpend,
+  envNames,
 } from '@factory/core';
 import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -49,7 +50,7 @@ import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
 import { AgentService } from './agent-profiles.ts';
-import { buildAgentSession } from './agent-sessions.ts';
+import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
@@ -479,6 +480,9 @@ export class BackendService {
     const recent = runs.filter((r) => Date.parse(r.updated_at) > since);
     return {
       agent,
+      skills_available: await availableSkills(),
+      /** Env names the operator lets agents pass; names only, never values. */
+      env_allowed: envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
       work: per.flatMap((p) => p.work),
       running: runs.filter((r) => r.stage === 'coding' || r.stage === 'reviewing' || r.stage === 'queued'),
       runs: runs.slice(0, 10),

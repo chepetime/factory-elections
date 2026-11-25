@@ -8,6 +8,7 @@ import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
   IssueArchivedBanner,
+  IssueAssigneeField,
   IssueCommentBox,
   IssueDescription,
   IssuePriorityField,
@@ -20,6 +21,8 @@ import { STATUS } from '@/components/task-status';
 import { Fact, Facts, money, renderRun, Section } from '@/components/task-run';
 import { isProjectName, isTaskId, showTask } from '@/lib/factory';
 import { getIssue, type IssueView } from '@/lib/issues';
+import { listAgents } from '@/lib/agents';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
 import { cn } from '@/lib/utils';
 
@@ -86,11 +89,26 @@ function Happenings({ events }: { events: IssueEvent[] }) {
   );
 }
 
-function CommentBody({ comment, reply }: { comment: IssueComment; reply?: boolean }) {
+type Authors = Record<string, { name: string; avatar: string }>;
+
+function CommentBody({
+  comment,
+  reply,
+  authors,
+}: {
+  comment: IssueComment;
+  reply?: boolean;
+  authors: Authors;
+}) {
+  const agent =
+    comment.author === 'you'
+      ? undefined
+      : (authors[comment.author] ?? { name: comment.author, avatar: '🤖' });
   return (
     <div className={cn('px-4 py-3', reply && 'border-t')}>
-      <p className="flex items-baseline gap-2 text-xs text-muted-foreground">
-        <span className="text-sm font-medium text-foreground">You</span>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        {agent && <AgentAvatar agent={agent} size="sm" decorative />}
+        <span className="text-sm font-medium text-foreground">{agent?.name ?? 'You'}</span>
         <LocalTime iso={comment.at} format="date-time" />
       </p>
       <div className="mt-1.5 text-sm">
@@ -105,20 +123,22 @@ function Thread({
   issueKey,
   root,
   replies,
+  authors,
 }: {
   project: string;
   issueKey: string;
   root: IssueComment;
   replies: IssueComment[];
+  authors: Authors;
 }) {
   return (
     <article
       aria-label={`Comment thread, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
       className="overflow-hidden rounded-xl border bg-card shadow-xs"
     >
-      <CommentBody comment={root} />
+      <CommentBody comment={root} authors={authors} />
       {replies.map((r) => (
-        <CommentBody key={r.id} comment={r} reply />
+        <CommentBody key={r.id} comment={r} reply authors={authors} />
       ))}
       <IssueReplyBox project={project} issueKey={issueKey} parent={root.id} />
     </article>
@@ -139,7 +159,17 @@ function feedItems(issue: IssueView): FeedItem[] {
   ].sort((a, b) => a.at.localeCompare(b.at));
 }
 
-function Feed({ items, project, issueKey }: { items: FeedItem[]; project: string; issueKey: string }) {
+function Feed({
+  items,
+  project,
+  issueKey,
+  authors,
+}: {
+  items: FeedItem[];
+  project: string;
+  issueKey: string;
+  authors: Authors;
+}) {
   const blocks: ReactNode[] = [];
   let events: IssueEvent[] = [];
   const flush = () => {
@@ -159,6 +189,7 @@ function Feed({ items, project, issueKey }: { items: FeedItem[]; project: string
         issueKey={issueKey}
         root={item.root}
         replies={item.replies}
+        authors={authors}
       />,
     );
   }
@@ -268,8 +299,9 @@ export default async function TaskPage({
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
-  const [label, ...loaded] = await Promise.all([
+  const [label, agentList, ...loaded] = await Promise.all([
     projectLabel(project),
+    listAgents(),
     ...issue.runs.map((rid) =>
       rid === runId && run?.ok
         ? Promise.resolve(run.value.task)
@@ -277,6 +309,8 @@ export default async function TaskPage({
     ),
   ]);
   const records = loaded as (TaskRecord | undefined)[];
+  const agents = agentList.ok ? agentList.value : [];
+  const authors: Authors = Object.fromEntries(agents.map((a) => [a.id, { name: a.name, avatar: a.avatar }]));
   const runHref = (rid: string) =>
     `/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`;
   const pulls = records.flatMap((r) => (r?.pr ? [r.pr] : [])).reverse();
@@ -311,7 +345,7 @@ export default async function TaskPage({
             </div>
 
             <h2 className="mt-10 border-t pt-6 text-base font-semibold">Activity</h2>
-            <Feed items={before} project={project} issueKey={issue.key} />
+            <Feed items={before} project={project} issueKey={issue.key} authors={authors} />
 
             {runId && run && !run.ok && (
               <p role="alert" className="mt-3 text-sm text-destructive">
@@ -335,7 +369,7 @@ export default async function TaskPage({
                 <div className="flex flex-col gap-5">{run.value.activity}</div>
               </div>
             )}
-            <Feed items={after} project={project} issueKey={issue.key} />
+            <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
           </div>
         </div>
 
@@ -352,6 +386,20 @@ export default async function TaskPage({
               <IssueStatusField
                 project={project}
                 issue={{ key: issue.key, title: issue.title, status: issue.status, run: issue.run }}
+              />
+            </Fact>
+            <Fact label="Agent">
+              <IssueAssigneeField
+                project={project}
+                issueKey={issue.key}
+                {...(issue.assignee ? { assignee: issue.assignee } : {})}
+                agents={agents.map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  avatar: a.avatar,
+                  archived: Boolean(a.archived_at),
+                }))}
+                id="issue-assignee"
               />
             </Fact>
             <Fact label="Priority">

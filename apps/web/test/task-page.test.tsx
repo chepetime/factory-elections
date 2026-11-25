@@ -14,6 +14,12 @@ vi.mock('@/lib/factory', () => ({
   isTaskId: (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id),
   showTask: vi.fn(async () => ({ ok: false, error: 'not loaded in this test' })),
 }));
+vi.mock('@/lib/agents', () => ({
+  listAgents: async () => ({
+    ok: true,
+    value: [{ id: 'devin', name: 'Devin', avatar: '🐸' }],
+  }),
+}));
 vi.mock('@/lib/page-title', () => ({ projectLabel: async (p: string) => p, clip: (t: string) => t }));
 vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
 vi.mock('@/components/issue-editor', () => ({
@@ -21,6 +27,7 @@ vi.mock('@/components/issue-editor', () => ({
   IssueDescription: ({ description }: { description: string }) => <p>description:{description}</p>,
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
+  IssueAssigneeField: () => <span>assignee</span>,
   IssueCommentBox: () => <span>comment-box</span>,
   IssueReplyBox: ({ parent }: { parent: string }) => <span>reply-box:{parent}</span>,
   IssueArchivedBanner: () => <span>archived-banner</span>,
@@ -438,7 +445,7 @@ it('folds runs of events and shows comment threads with their replies', async ()
       ],
       comments: [
         { id: 'c1', at: at(3), body: 'First thought', author: 'you' },
-        { id: 'c2', at: at(4), body: 'A reply', parent: 'c1', author: 'you' },
+        { id: 'c2', at: at(4), body: 'A reply', parent: 'c1', author: 'devin' },
       ],
     },
   });
@@ -446,5 +453,6 @@ it('folds runs of events and shows comment threads with their replies', async ()
   expect(page).toMatch(/2 activities[\s\S]*Created[\s\S]*Backlog to Todo/);
   expect(page).toMatch(/First thought[\s\S]*A reply[\s\S]*reply-box:c1[\s\S]*Changed the title/);
   expect(page).toContain('1 reply');
+  expect(page).toMatch(/Devin<\/span>[\s\S]*A reply/);
   expect(page.match(/activities/g)).toHaveLength(1);
 });

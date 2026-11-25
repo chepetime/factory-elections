@@ -4,6 +4,7 @@
 import { Menu } from '@base-ui/react/menu';
 import { Archive, LoaderCircle, MoreHorizontal, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
 import { archiveIssue, createIssue, moveIssue } from '@/app/actions';
@@ -28,6 +29,8 @@ export type BoardIssue = {
   jira_key?: string;
   updated_at: string;
   run?: { id: string; stage: Stage; updated_at?: string };
+  /** The agent that works it, when one is assigned. */
+  agent?: { name: string; avatar: string };
 };
 
 const STAGE_LABEL: Partial<Record<Stage, string>> = {
@@ -334,6 +337,11 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                       {issue.jira_key && (
                         <span className="truncate font-mono text-xs text-muted-foreground">
                           · {issue.jira_key}
+                        </span>
+                      )}
+                      {issue.agent && (
+                        <span title={`Agent: ${issue.agent.name}`} className="ml-auto">
+                          <AgentAvatar agent={issue.agent} size="sm" />
                         </span>
                       )}
                       <MoveMenu

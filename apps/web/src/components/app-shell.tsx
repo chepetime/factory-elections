@@ -7,6 +7,7 @@ import { Menu } from '@base-ui/react/menu';
 import {
   Archive,
   Blocks,
+  Bot,
   Check,
   ChevronsUpDown,
   Copy,
@@ -15,6 +16,7 @@ import {
   Home,
   KanbanSquare,
   ListTodo,
+  MessageSquare,
   Users,
   Menu as MenuIcon,
   MoreHorizontal,
@@ -137,7 +139,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fullBleed =
     pathname === '/' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
-    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
+    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname) ||
+    /^\/chat(\/[^/]+)?$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -254,6 +257,8 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
   const items = [
     { label: 'Board', href: '/', icon: KanbanSquare, active: pathname === '/' },
     { label: 'Tasks', href: tasksHref, icon: ListTodo, active: /^\/projects\/[^/]+\/tasks/.test(pathname) },
+    { label: 'Agents', href: '/agents', icon: Bot, active: pathname.startsWith('/agents') },
+    { label: 'Chat', href: '/chat', icon: MessageSquare, active: pathname.startsWith('/chat') },
     { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
   ];
   return (

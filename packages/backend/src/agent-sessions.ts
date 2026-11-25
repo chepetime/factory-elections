@@ -1,5 +1,5 @@
 // Builds a workspace agent's session on a task: its instructions, the task text, its tools and limits.
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -22,6 +22,21 @@ export const AGENT_SKILLS_DIR = resolve(
   'definitions',
   'skills',
 );
+
+/** Skill names in definitions/skills that have a SKILL.md. */
+export async function availableSkills(dir = AGENT_SKILLS_DIR): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const names = entries.filter((e) => e.isDirectory() && /^[a-z0-9-]+$/.test(e.name)).map((e) => e.name);
+  const present = await Promise.all(
+    names.map((n) =>
+      readFile(join(dir, n, 'SKILL.md')).then(
+        () => n,
+        () => undefined,
+      ),
+    ),
+  );
+  return present.filter((n): n is string => !!n).sort();
+}
 
 export async function agentSkills(names: readonly string[], dir = AGENT_SKILLS_DIR): Promise<string> {
   const parts = await Promise.all(

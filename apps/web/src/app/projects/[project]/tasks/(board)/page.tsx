@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { TaskBoard } from '@/components/task-board';
 import { isProjectName } from '@/lib/factory';
 import { listIssues } from '@/lib/issues';
+import { listAgents } from '@/lib/agents';
 import { projectTitle } from '@/lib/page-title';
 
 export async function generateMetadata({
@@ -18,7 +19,10 @@ export const dynamic = 'force-dynamic';
 export default async function ProjectTasks({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params;
   if (!isProjectName(project)) notFound();
-  const issues = await listIssues(project);
+  const [issues, agentList] = await Promise.all([listIssues(project), listAgents()]);
+  const agents = new Map(
+    (agentList.ok ? agentList.value : []).map((a) => [a.id, { name: a.name, avatar: a.avatar }]),
+  );
   if (!issues.ok)
     return (
       <div className="p-6">
@@ -42,6 +46,7 @@ export default async function ProjectTasks({ params }: { params: Promise<{ proje
           jira_key: i.jira_key,
           updated_at: i.run?.updated_at && i.run.updated_at > i.updated_at ? i.run.updated_at : i.updated_at,
           run: i.run,
+          ...(i.assignee && agents.get(i.assignee) ? { agent: agents.get(i.assignee)! } : {}),
         }))}
     />
   );

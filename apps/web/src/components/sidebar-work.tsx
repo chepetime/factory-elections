@@ -116,7 +116,9 @@ export function SidebarWork({
           Agents
         </h2>
         {agents.length === 0 ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">No agents yet. Start a run from a task.</p>
+          <p className="px-2 py-1.5 text-sm text-muted-foreground">
+            No agent is working. Move a task to In progress to start one.
+          </p>
         ) : (
           GROUPS.map((group) => {
             const members = agents.filter((i) => GROUP_OF[i.run!.stage] === group.id);

@@ -221,6 +221,57 @@ export function IssuePriorityField({
   );
 }
 
+/** The agent that works this task. Moving the task to In progress starts it. */
+export function IssueAssigneeField({
+  project,
+  issueKey,
+  assignee,
+  agents,
+  id,
+}: {
+  project: string;
+  issueKey: string;
+  assignee?: string;
+  agents: { id: string; name: string; avatar: string; archived: boolean }[];
+  id: string;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string>();
+  return (
+    <>
+      <select
+        id={id}
+        value={assignee ?? ''}
+        disabled={pending}
+        onChange={(e) =>
+          start(async () => {
+            const result = await updateIssue(project, issueKey, { assignee: e.target.value || null });
+            setError(result.error);
+            router.refresh();
+          })
+        }
+        className="-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <option value="">No agent</option>
+        {agents
+          .filter((a) => !a.archived || a.id === assignee)
+          .map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.avatar} {a.name}
+              {a.archived ? ' (archived)' : ''}
+            </option>
+          ))}
+      </select>
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function IssueStatusField({
   project,
   issue,
