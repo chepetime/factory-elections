@@ -55,7 +55,7 @@ export function composeDriver(
   runner?: ModelRunner,
   signal?: AbortSignal,
   delegation?: DelegationPort,
-  extras: Pick<DriverDeps, 'repositoryFacts' | 'contextLimits'> = {},
+  extras: Pick<DriverDeps, 'repositoryFacts' | 'contextLimits' | 'agentSession'> = {},
 ): Driver {
   const tasks = storageFor(root).tasks;
   const deps: DriverDeps = {

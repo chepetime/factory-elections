@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   DelegateInput,
   parseModelRef,
+  type FactoryTool,
   type McpEndpoint,
   type ModelRun,
   type ModelRunner,
@@ -35,13 +36,7 @@ const CHILD_SYSTEM_PROMPT = [
   'End with a final answer that tells the parent agent what you found or changed.',
 ].join('\n');
 
-/** A factory tool that one grant serves, e.g. `comment` for an agent working a task. */
-export interface FactoryTool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  call(args: unknown): Promise<{ text: string; isError?: boolean }>;
-}
+export type { FactoryTool };
 
 /** A tool's JSON schema from its Zod input, in the draft MCP clients read. */
 export function toolSchema(schema: z.ZodType): Record<string, unknown> {

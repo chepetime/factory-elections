@@ -1,6 +1,8 @@
 // What the driver needs from the outside world. The CLI composes concrete adapters into these.
 import type {
   ContextLimits,
+  Effort,
+  FactoryTool,
   McpEndpoint,
   ModelLadder,
   ModelRun,
@@ -99,7 +101,28 @@ export interface DelegationPort {
     guard?: ToolGuard;
     signal?: AbortSignal;
     runner?: ModelRunner;
+    tools?: readonly FactoryTool[];
   }): { endpoint: McpEndpoint; spent(): number; revoke(): void } | undefined;
+}
+
+/** What a workspace agent's session on a task needs, built by the backend from the agent and the board. */
+export interface AgentSession {
+  /** The agent's name, for progress lines and events. */
+  name: string;
+  model: string;
+  effort: Effort;
+  /** Factory instructions, the agent's notes and its skills. */
+  systemPrompt: string;
+  /** The task with its comments; with a reply, the person's reply for a resumed session. */
+  prompt: string;
+  /** Spend limit for the whole task session, resumes included. */
+  budgetUsd: number;
+  /** Host env names to pass; the backend keeps only names its operator allows (FACTORY_AGENT_ENV_ALLOW). */
+  passEnv: readonly string[];
+  /** The factory tools for this task (comment, set_status). */
+  tools: readonly FactoryTool[];
+  /** The status the agent set with set_status during the session, read when it ends. */
+  reported(): 'in_progress' | 'in_review' | 'blocked' | undefined;
 }
 
 export interface DriverDeps {
@@ -123,6 +146,8 @@ export interface DriverDeps {
   repositoryFacts?(project: string): Promise<string | undefined>;
   /** The project's context size limits; absent: the default. */
   contextLimits?(project: string): Promise<ContextLimits | undefined>;
+  /** Builds an agent run's session; `reply` is the person's comment that resumes it. Absent: no agent runs. */
+  agentSession?(task: TaskRecord, reply?: string): Promise<AgentSession>;
 }
 
 export class DriverError extends Error {}

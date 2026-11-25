@@ -212,6 +212,14 @@ export interface McpEndpoint {
   tools?: readonly string[];
 }
 
+/** A factory tool that one MCP grant serves, e.g. `comment` for an agent working a task. */
+export interface FactoryTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  call(args: unknown): Promise<{ text: string; isError?: boolean }>;
+}
+
 /** An agent's own HTTP MCP server. The token is resolved on the backend, never stored. */
 export interface ExternalMcpServer {
   name: string;

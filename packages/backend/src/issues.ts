@@ -44,7 +44,9 @@ export type IssueDeps = {
   tasks: { list(project: string): Promise<TaskRecord[]> };
   settings: (project: string) => Promise<ProjectSettings>;
   /** Creates a factory run and returns its id; it does not start it. */
-  submit: (input: { project: string; prompt: string; jiraKey?: string }) => Promise<string>;
+  submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
+  /** Sends a person's note to a waiting run; agent runs resume their session with it. */
+  revise?: (project: string, id: string, note: string) => Promise<unknown>;
   run: (project: string, id: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
   /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
@@ -280,7 +282,7 @@ export class IssueService {
 
   async comment(raw: unknown): Promise<IssueView> {
     const { project, key, body, parent, author = 'you' } = CommentInput.parse(raw);
-    return this.change(project, key, (issue, at) => {
+    const view = await this.change(project, key, (issue, at) => {
       const target = parent ? issue.comments.find((c) => c.id === parent) : undefined;
       if (parent && !target) throw new Conflict('The comment you replied to is gone.');
       // A reply to a reply joins the same thread.
@@ -293,6 +295,30 @@ export class IssueService {
         ],
       };
     });
+    if (author === 'you') await this.wakeAgent(project, view, body);
+    return view;
+  }
+
+  /**
+   * A person's comment continues the task's agent session when the agent is waiting on them:
+   * its change is in review, its checks failed, it stopped, or it asked for help. An approved,
+   * rejected or merged run is never restarted by a comment.
+   */
+  private async wakeAgent(project: string, view: IssueView, body: string): Promise<void> {
+    if (!view.run) return;
+    const record = (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
+    if (record?.workflow !== 'agent') return;
+    const start =
+      record.stage === 'blocked'
+        ? this.deps.run(project, record.id)
+        : ['awaiting-approval', 'verification-failed', 'failed'].includes(record.stage) && this.deps.revise
+          ? this.deps.revise(project, record.id, body)
+          : undefined;
+    await start?.catch((error: unknown) =>
+      process.stderr.write(
+        `comment ${view.key}: could not wake the agent: ${error instanceof Error ? error.message : error}\n`,
+      ),
+    );
   }
 
   /** Sets the stored status with no command: for an agent reporting where its work stands. */
@@ -351,7 +377,12 @@ export class IssueService {
           ],
         };
       if (action.kind === 'start-run') {
-        runId = await this.deps.submit({ project, prompt: issuePrompt(issue), jiraKey: issue.jira_key });
+        runId = await this.deps.submit({
+          project,
+          prompt: issuePrompt(issue),
+          ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
+          ...(issue.assignee ? { agent: issue.assignee } : {}),
+        });
         updated = {
           ...issue,
           runs: [...issue.runs, runId],

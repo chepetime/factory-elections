@@ -346,9 +346,12 @@ export class Driver {
     const { git } = this.deps;
     const task = await this.deps.tasks.read(project, id);
     const profile = await this.deps.readProfile(project);
-    const decision = await this.readiness(project, id);
-    if (decision.action !== 'continue')
-      throw new DriverError(`task is not ready to code (readiness action "${decision.action}")`);
+    // An agent judges readiness itself: it comments and sets the task to blocked when unclear.
+    if (task.workflow !== 'agent') {
+      const decision = await this.readiness(project, id);
+      if (decision.action !== 'continue')
+        throw new DriverError(`task is not ready to code (readiness action "${decision.action}")`);
+    }
     const repo = await git.topLevel(task.repo);
     if (!repo) throw new DriverError(`task repository is not a git repository: ${task.repo}`);
     if (!(await git.isClean(repo))) throw new DriverError(`task repository has uncommitted changes: ${repo}`);
@@ -971,6 +974,177 @@ export class Driver {
     return task;
   }
 
+  /**
+   * A workspace agent works the task in one session under the coder's guard and sandbox, then the
+   * driver commits and verifies. A reply resumes the same session. There is no reviewer step: the
+   * person reviews the change before approving it, and only a person opens the pull request.
+   */
+  async agentRun(project: string, id: string, reply?: string): Promise<TaskRecord> {
+    if (!this.deps.agentSession) throw new DriverError('Agent runs are not available here.');
+    try {
+      await this.preflight(project, id);
+      let task = await this.deps.tasks.read(project, id);
+      task = task.worktree ? await this.setupWorktree(project, id) : await this.prepareWorktree(project, id);
+      const profile = await this.deps.readProfile(project);
+      const { path, branch } = await this.checkedWorktree(task);
+      const session = await this.deps.agentSession(task, reply);
+      const left = session.budgetUsd - taskSpend(task);
+      if (left <= 0) {
+        const message = `${session.name} spent this task's budget ($${taskSpend(task).toFixed(2)}). Raise the agent's task budget to continue.`;
+        await this.deps.tasks.write(withStage(task, this.deps.now(), 'blocked', message));
+        return await this.deps.tasks.read(project, id);
+      }
+      task = withStage(
+        task,
+        this.deps.now(),
+        'coding',
+        reply ? `${session.name} read your reply` : `${session.name} started`,
+      );
+      await this.deps.tasks.write(task);
+
+      const sandbox = {
+        allowed_domains: profile.sandbox?.allowed_domains,
+        allow_write: profile.sandbox?.allow_write,
+      };
+      const guard = this.coderGuard(path, profile);
+      const access = await this.coderAccess(project, id, task.repo, profile);
+      const limits = {
+        signal: this.deps.signal,
+        timeoutMs: 120 * MINUTE,
+        stallMs: DEFAULT_STEP_LIMITS.stall_minutes * MINUTE,
+        maxBudgetUsd: Math.max(0.01, left),
+      };
+      const grant = this.deps.delegation?.grant({
+        label: `agent ${project}/${id}`,
+        cwd: path,
+        access: 'edit',
+        sandbox,
+        budgetUsd: Math.min(left, DEFAULT_STEP_LIMITS.budget_usd),
+        guard,
+        runner: this.deps.runner,
+        tools: session.tools,
+        ...(limits.signal ? { signal: limits.signal } : {}),
+      });
+      const passEnv = [...(profile.sandbox?.pass_env ?? []), ...session.passEnv];
+      const started = this.deps.now();
+      let outcome: StepAttempt['outcome'] = 'completed';
+      let error: string | undefined;
+      let costUsd: number | null = null;
+      let sessionId = task.agent_session;
+      try {
+        const result = await this.deps.runner.run({
+          ...limits,
+          step: 'agent',
+          sandbox,
+          ...(access.env ? { env: access.env } : {}),
+          ...(passEnv.length ? { passEnv } : {}),
+          model: session.model,
+          effort: session.effort,
+          tools: 'edit',
+          cwd: path,
+          ...(await this.agentExtras(project, session.model, session.systemPrompt)),
+          prompt: session.prompt,
+          guard,
+          maxTurns: 300,
+          persistSession: true,
+          ...(task.agent_session ? { resume: task.agent_session } : {}),
+          ...(grant ? { mcp: grant.endpoint } : {}),
+        });
+        costUsd = result.costUsd;
+        sessionId = result.sessionId ?? sessionId;
+      } catch (e) {
+        outcome = 'failed';
+        error = failureText(e);
+        costUsd = errorCost(e);
+      } finally {
+        grant?.revoke();
+        await access.cleanup();
+      }
+      const childCost = grant?.spent() ?? 0;
+      if (childCost) costUsd = (costUsd ?? 0) + childCost;
+
+      let committed = false;
+      if (outcome === 'completed') {
+        const changed = await this.deps.git.stageAll(path);
+        const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+        if (forbidden.length) {
+          await this.deps.git.unstageAll(path);
+          outcome = 'failed';
+          error = `${session.name} changed forbidden paths: ${forbidden.join(', ')}`;
+        } else if (changed.length) {
+          await this.deps.git.commit(
+            path,
+            `${taskTitle(task)}\n\nFactory task ${task.id} (${session.name}).`,
+          );
+          committed = true;
+        }
+      }
+
+      task = await this.deps.tasks.read(project, id);
+      const attempt: StepAttempt = {
+        step: 'agent',
+        rung: session.name,
+        model: session.model,
+        effort: session.effort,
+        started_at: started,
+        finished_at: this.deps.now(),
+        outcome,
+        cost_usd: costUsd,
+        ...(error ? { error } : {}),
+      };
+      task = withEvent(
+        {
+          ...task,
+          attempts: [...(task.attempts ?? []), attempt],
+          ...(sessionId ? { agent_session: sessionId } : {}),
+        },
+        this.deps.now(),
+        'attempt',
+        `${session.name} ${outcome === 'failed' ? `stopped: ${error}` : 'finished'}${committed ? ` and Factory committed the rest on ${branch}` : ''}`,
+      );
+      if (outcome === 'failed') {
+        await this.deps.tasks.write(
+          withStage(task, this.deps.now(), 'failed', error ?? `${session.name} failed`),
+        );
+        throw new DriverError(error ?? 'agent failed');
+      }
+      const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
+      const asked = session.reported();
+      if (asked === 'blocked' || (await this.deps.git.commitCountSince(path, base)) === 0) {
+        const message =
+          asked === 'blocked'
+            ? `${session.name} needs you. Reply on the task to continue.`
+            : `${session.name} made no changes. Reply on the task to continue.`;
+        await this.deps.tasks.write(withStage(task, this.deps.now(), 'blocked', message));
+        return await this.deps.tasks.read(project, id);
+      }
+      await this.deps.tasks.write(task);
+      this.deps.log('Verifying…');
+      const verified = await this.verifyAndRecord(project, id);
+      if (!verified.verification?.passed) return verified;
+      const ready = withStage(
+        verified,
+        this.deps.now(),
+        'awaiting-approval',
+        `${session.name}'s change is ready for your review`,
+      );
+      await this.deps.tasks.write(ready);
+      return ready;
+    } catch (error) {
+      const current = await this.deps.tasks.read(project, id);
+      if (!['failed', 'verification-failed', 'blocked', 'awaiting-approval'].includes(current.stage))
+        await this.deps.tasks.write(
+          withStage(
+            current,
+            this.deps.now(),
+            'failed',
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+      throw error;
+    }
+  }
+
   /** Coder and verification, climbing the ladder on verification failure. */
   async codeUntilVerified(project: string, id: string, maxAttempts: number): Promise<TaskRecord> {
     const ladder = await this.deps.definitions.readLadder(this.deps.steps.coder.ladder);
@@ -1217,6 +1391,7 @@ export class Driver {
     let task = await this.deps.tasks.read(project, id);
     const blockers = taskCommandBlockers(task, 'run');
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    if (task.workflow === 'agent') return this.agentRun(project, id);
     await this.preflight(project, id);
     task = await this.deps.tasks.read(project, id);
     if (!task.verdict) task = await this.classify(project, id);
@@ -1354,6 +1529,7 @@ export class Driver {
       note,
     );
     await this.deps.tasks.write(updated);
+    if (task.workflow === 'agent') return this.agentRun(project, id, note);
     try {
       // After the approval is cleared: a failed check must never leave an approved stage behind.
       await this.preflight(project, id);

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { storageFor } from '@factory/adapters-data';
+import { TaskRecord } from '@factory/core';
 import { AgentService } from '../src/agent-profiles.ts';
 import { Conflict } from '../src/conflict.ts';
 import { IssueService } from '../src/issues.ts';
@@ -89,4 +91,58 @@ test('a new workspace starts with Devin and Mika, stored once', async (t) => {
   const again = await new AgentService({ root, storage: storageFor(root), seed: true }).list();
   assert.equal(again.find((a) => a.id === 'mika')?.archived_at !== undefined, true);
   assert.equal(again[0]!.created_at, first[0]!.created_at);
+});
+
+test('a task with an agent starts that agent, and a reply wakes it only while it waits', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-agents-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agents = new AgentService({ root, storage: storageFor(root), seed: true });
+  const tasks: TaskRecord[] = [];
+  const calls: string[] = [];
+  const issues = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => tasks },
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false },
+    }),
+    submit: async ({ prompt, agent }) => {
+      const run = TaskRecord.parse({
+        id: randomUUID(),
+        project: 'demo',
+        repo: '/r',
+        prompt,
+        stage: 'queued',
+        created_at: '2026-11-25T12:00:00.000Z',
+        updated_at: '2026-11-25T12:00:00.000Z',
+        ...(agent ? { workflow: 'agent', agent } : {}),
+      });
+      tasks.push(run);
+      calls.push(`submit:${agent ?? 'pipeline'}`);
+      return run.id;
+    },
+    run: async (_p, id) => calls.push(`run:${tasks.findIndex((x) => x.id === id)}`),
+    revise: async (_p, _id, note) => calls.push(`revise:${note}`),
+    reject: async () => undefined,
+    deleteRun: async () => undefined,
+    agentName: async (id) => (await agents.active(id)).name,
+  });
+  await issues.create({ project: 'demo', title: 'Add a staging link', status: 'todo' });
+  await issues.update({ project: 'demo', key: 'DEM-1', assignee: 'devin' });
+  await issues.move({ project: 'demo', key: 'DEM-1', to: 'in_progress' });
+  assert.deepEqual(calls, ['submit:devin', 'run:0']);
+
+  const stage = (s: TaskRecord['stage']) =>
+    (tasks[0] = { ...tasks[0]!, stage: s, updated_at: new Date().toISOString() });
+  stage('coding');
+  await issues.comment({ project: 'demo', key: 'DEM-1', body: 'Use the README intro.' });
+  stage('awaiting-approval');
+  await issues.comment({ project: 'demo', key: 'DEM-1', body: 'Also link production.' });
+  stage('blocked');
+  await issues.comment({ project: 'demo', key: 'DEM-1', body: 'Name it Staging.' });
+  stage('approved');
+  await issues.comment({ project: 'demo', key: 'DEM-1', body: 'Thanks!' });
+  await issues.comment({ project: 'demo', key: 'DEM-1', body: 'From the agent', author: 'devin' });
+  assert.deepEqual(calls, ['submit:devin', 'run:0', 'revise:Also link production.', 'run:0']);
 });

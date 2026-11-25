@@ -49,6 +49,7 @@ import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
 import { AgentService } from './agent-profiles.ts';
+import { buildAgentSession } from './agent-sessions.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
@@ -160,6 +161,8 @@ export class BackendService {
   readonly features: FeatureService;
   readonly issues: IssueService;
   readonly agents: AgentService;
+  /** Agent runs in progress, per workspace agent. */
+  private readonly agentRuns = new Map<string, number>();
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
   readonly experiments: ExperimentStore;
@@ -255,6 +258,7 @@ export class BackendService {
       tasks: this.tasks,
       settings: (p) => this.settings.get(p),
       submit: (input) => this.submit(input),
+      revise: (project, id, note) => this.start({ project, id, action: 'revise', note } as Command),
       run: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
       deleteRun: (project, id) => this.deleteRun(project, id),
@@ -363,6 +367,22 @@ export class BackendService {
     return composeDriver(this.root, log, runner, signal, this.delegation, {
       repositoryFacts: (project) => this.memory.prompt(project),
       contextLimits: async (project) => (await this.settings.get(project)).context_tokens,
+      agentSession: async (task, reply) => {
+        if (!task.agent) throw new Conflict('This run has no agent.');
+        const profile = await readProfile(this.root, task.project);
+        return buildAgentSession({
+          task,
+          ...(reply ? { reply } : {}),
+          agent: await this.agents.active(task.agent),
+          issues: this.issues,
+          profile: {
+            test: profile.commands.test,
+            full_check: profile.commands.full_check,
+            forbidden_paths: profile.confirmed.forbidden_paths,
+          },
+          allowedEnv: process.env.FACTORY_AGENT_ENV_ALLOW,
+        });
+      },
     });
   }
   /** Projects with their display name and icon from settings. */
@@ -478,16 +498,21 @@ export class BackendService {
     );
   }
   async submit(raw: unknown): Promise<string> {
-    const { project, prompt, jiraKey } = z
+    const { project, prompt, jiraKey, agent } = z
       .object({
         project: ProjectName,
         prompt: z.string().trim().min(1).max(100_000),
         jiraKey: z.string().trim().max(100).optional(),
+        /** A workspace agent: the run is one session by that agent instead of the pipeline. */
+        agent: z.string().min(1).optional(),
       })
       .parse(raw);
     if (!this.accepting) throw new Conflict('Backend is shutting down');
+    if (agent) await this.agents.active(agent);
     const registered = await this.projects.read(project);
-    return (await this.tasks.create(project, registered.repo, prompt, new Date().toISOString(), jiraKey)).id;
+    const task = await this.tasks.create(project, registered.repo, prompt, new Date().toISOString(), jiraKey);
+    if (agent) await this.tasks.write({ ...task, workflow: 'agent', agent });
+    return task.id;
   }
   private async perform(command: z.infer<typeof CommandSchema>, driver: Driver): Promise<string> {
     const { project, id, action } = command;
@@ -625,6 +650,11 @@ export class BackendService {
   private async work(command: z.infer<typeof CommandSchema>, record: RunRecord, dir: string): Promise<void> {
     // A run that had not started when shutdown began stays queued; the next start runs it.
     if (!(await this.takeAgentSlot())) return;
+    const own = await this.takeOwnAgentSlot(command.project, command.id);
+    if (!own) {
+      this.executing--;
+      return;
+    }
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
     if (this.stopRequests.has(record.id)) controller.abort();
@@ -712,6 +742,7 @@ export class BackendService {
       this.activities.delete(record.id);
       this.stopRequests.delete(record.id);
       this.executing--;
+      own();
       record.finished_at = new Date().toISOString();
       record.cleanup = combineCleanup(calls);
       if (sessions.length) record.provider_sessions = sessions;
@@ -1041,6 +1072,26 @@ export class BackendService {
       if (this.executing + reviews < MAX_AGENTS) {
         this.executing++;
         return true;
+      }
+      await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
+    }
+  }
+  /** For an agent run, waits until that agent has a free slot (its concurrency). Other runs pass at once. */
+  private async takeOwnAgentSlot(project: string, id: string): Promise<(() => void) | undefined> {
+    const task = await this.tasks.read(project, id).catch(() => undefined);
+    const name = task?.workflow === 'agent' ? task.agent : undefined;
+    if (!name) return () => {};
+    const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
+    for (;;) {
+      if (!this.accepting) return undefined;
+      const used = this.agentRuns.get(name) ?? 0;
+      if (used < limit) {
+        this.agentRuns.set(name, used + 1);
+        let released = false;
+        return () => {
+          if (!released) this.agentRuns.set(name, (this.agentRuns.get(name) ?? 1) - 1);
+          released = true;
+        };
       }
       await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
     }
