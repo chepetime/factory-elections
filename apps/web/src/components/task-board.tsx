@@ -51,6 +51,20 @@ const STAGE_LABEL: Partial<Record<Stage, string>> = {
  * The drop's action once the person agrees, or its refusal. Undefined when they decline: a drop
  * that starts, reruns or cancels paid model work never happens without a yes.
  */
+/** The column a card shows in while its move is sent: the column the backend will put it in. */
+export function optimisticStatus(action: Exclude<DropAction, { kind: 'none' | 'refused' }>): IssueStatus {
+  switch (action.kind) {
+    case 'reject':
+      return 'cancelled';
+    case 'set-status':
+    case 'requeue':
+      return action.status;
+    case 'start-run':
+    case 'run':
+      return 'in_progress';
+  }
+}
+
 export async function decideDrop(
   issue: Pick<BoardIssue, 'key' | 'status' | 'run'>,
   to: IssueStatus,
@@ -199,12 +213,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
     startMove(async () => {
       setOptimistic({
         key: issue.key,
-        to:
-          action.kind === 'reject'
-            ? 'cancelled'
-            : action.kind === 'set-status'
-              ? action.status
-              : 'in_progress',
+        to: optimisticStatus(action),
       });
       const result = await moveIssue(project, issue.key, to);
       moving.current.delete(issue.key);
