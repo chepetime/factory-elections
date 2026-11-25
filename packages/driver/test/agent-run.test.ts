@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { access, mkdtemp, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { ModelResult, ModelRun, ModelRunner } from '@factory/core';
@@ -159,4 +160,28 @@ test('an agent that changes a forbidden path fails and nothing is committed', as
     },
   ]);
   await assert.rejects(driver.run('demo', task.id, { maxAttempts: 3 }), /forbidden paths: secrets\/key/);
+});
+
+test('a dirty checkout does not block: the worktree starts from main, and uncommitted changes get a note', async () => {
+  const { driver, task, calls } = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 's' };
+    },
+  ]);
+  // Another agent's untracked file and an uncommitted edit in the main checkout.
+  await writeFile(join(task.repo, 'scratch.txt'), 'not mine\n');
+  await writeFile(join(task.repo, 'README.md'), '# demo, edited\n');
+  const done = await driver.run('demo', task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  const worktree = calls[0]!.cwd!;
+  assert.equal(existsSync(join(worktree, 'scratch.txt')), false, 'untracked files stay in the checkout');
+  assert.equal(
+    await readFile(join(worktree, 'README.md'), 'utf8'),
+    '# demo\n',
+    'the worktree has the committed file',
+  );
+  const notes = done.events!.map((e) => e.message);
+  assert.ok(notes.some((m) => /uncommitted changes \(README\.md\)/.test(m)));
+  assert.ok(!notes.some((m) => m.includes('scratch.txt')), 'untracked files get no note');
 });

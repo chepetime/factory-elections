@@ -354,13 +354,6 @@ export class Driver {
     }
     const repo = await git.topLevel(task.repo);
     if (!repo) throw new DriverError(`task repository is not a git repository: ${task.repo}`);
-    if (!(await git.isClean(repo))) {
-      const dirty = await git.dirtyFiles(repo);
-      const shown = dirty.slice(0, 3).join(', ');
-      throw new DriverError(
-        `The repository ${repo} has uncommitted or untracked files (${shown}${dirty.length > 3 ? `, and ${dirty.length - 3} more` : ''}). Commit, remove or ignore them; a new worktree starts only from a clean repository.`,
-      );
-    }
     // A ticket stacked on its blocker starts from the blocker's branch, so it builds on that work.
     const base = task.stack_on ?? profile.repo.base_branch.value;
     if (!(await git.branchExists(repo, base)))
@@ -380,12 +373,23 @@ export class Driver {
       await git.removeWorktree(repo, path, branch).catch(() => undefined);
       throw new DriverError((error as Error).message);
     }
-    const updated = withEvent(
+    // The worktree starts from the base branch's commit, so the checkout's own files never reach it.
+    // Uncommitted tracked changes get a note, in case the person expected them in the run.
+    const changed = await git.changedFiles(repo).catch(() => []);
+    const baseSha = await git.headSha(path).catch(() => undefined);
+    let updated = withEvent(
       { ...task, worktree: { path, branch, base_branch: base } },
       this.deps.now(),
       'worktree',
-      `Created ${branch} from ${base}`,
+      `Created ${branch} from ${base}${baseSha ? ` at ${baseSha.slice(0, 12)}` : ''}`,
     );
+    if (changed.length)
+      updated = withEvent(
+        updated,
+        this.deps.now(),
+        'worktree',
+        `Your checkout has uncommitted changes (${changed.slice(0, 3).join(', ')}${changed.length > 3 ? `, and ${changed.length - 3} more` : ''}). The worktree starts from ${base} and does not include them; commit them to ${base} first if the task needs them.`,
+      );
     await this.deps.tasks.write(updated);
     return this.setupWorktree(project, id);
   }

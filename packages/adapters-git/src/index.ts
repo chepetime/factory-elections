@@ -69,6 +69,11 @@ export async function isClean(dir: string): Promise<boolean> {
   return (await git(dir, ['status', '--porcelain'])).trim() === '';
 }
 
+/** Tracked paths with uncommitted changes, staged or not. Untracked files are left out. */
+export async function changedFiles(dir: string): Promise<string[]> {
+  return (await git(dir, ['diff', '--name-only', 'HEAD'])).split('\n').filter(Boolean);
+}
+
 /** Paths with uncommitted or untracked (not ignored) changes. */
 export async function dirtyFiles(dir: string): Promise<string[]> {
   return (await git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']))

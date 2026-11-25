@@ -54,7 +54,7 @@ import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
 import { AgentPickup } from './agent-pickup.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
-import { dirtyFiles, removeWorktree } from '@factory/adapters-git';
+import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
@@ -173,11 +173,8 @@ export class BackendService {
   isScheduled(project: string, id: string): boolean {
     return this.scheduled.has(`${project}/${id}`);
   }
-  /**
-   * Why a run cannot start in this project now, in words a person can act on; undefined when it can.
-   * `repoClean` also requires the repository to have no uncommitted or untracked files.
-   */
-  async runBlocker(project: string, { repoClean = false } = {}): Promise<string | undefined> {
+  /** Why a run cannot start in this project now, in words a person can act on; undefined when it can. */
+  async runBlocker(project: string): Promise<string | undefined> {
     const status = await profileStatus(this.root, project);
     if (status.state === 'missing')
       return 'There is no repo profile. Open Project settings, Setup check, and draft one.';
@@ -185,12 +182,7 @@ export class BackendService {
       return 'The repo profile is not approved. Open Project settings, Setup check, and approve it.';
     if (status.state === 'invalid')
       return `The repo profile is invalid: ${status.error}. Fix it in ${status.path}.`;
-    if (!repoClean) return undefined;
-    const { repo } = await this.projects.read(project);
-    const dirty = await dirtyFiles(repo);
-    if (!dirty.length) return undefined;
-    const shown = dirty.slice(0, 3).join(', ');
-    return `The repository has uncommitted or untracked files (${shown}${dirty.length > 3 ? `, and ${dirty.length - 3} more` : ''}). Commit, remove or ignore them; a new worktree starts only from a clean repository.`;
+    return undefined;
   }
   /** Agent runs in progress, per workspace agent. */
   private readonly agentRuns = new Map<string, number>();
@@ -316,7 +308,7 @@ export class BackendService {
       issues: this.issues,
       tasks: (p) => this.tasks.list(p),
       scheduled: (p, id) => this.isScheduled(p, id),
-      blocker: (p) => this.runBlocker(p, { repoClean: true }),
+      blocker: (p) => this.runBlocker(p),
       accepting: () => this.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });
@@ -571,7 +563,7 @@ export class BackendService {
     if (agent) {
       await this.agents.active(agent);
       // Refuse before a run record exists, so a refused start leaves no empty run behind.
-      const blocked = await this.runBlocker(project, { repoClean: true });
+      const blocked = await this.runBlocker(project);
       if (blocked) throw new Conflict(blocked);
     }
     const registered = await this.projects.read(project);
@@ -651,8 +643,7 @@ export class BackendService {
       const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
       if (waiting) throw new Conflict(waiting);
       if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
-      // A run without a worktree makes one, and a worktree starts only from a clean repository.
-      const blocked = await this.runBlocker(command.project, { repoClean: !task.worktree });
+      const blocked = await this.runBlocker(command.project);
       if (blocked) throw new Conflict(blocked);
       await readProfile(this.root, command.project);
       const record: RunRecord = {

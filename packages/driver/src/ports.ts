@@ -24,6 +24,8 @@ export interface GitPort {
   commonRepo(dir: string): Promise<string | undefined>;
   isClean(dir: string): Promise<boolean>;
   dirtyFiles(dir: string): Promise<string[]>;
+  /** Tracked paths with uncommitted changes; untracked files are left out. */
+  changedFiles(dir: string): Promise<string[]>;
   branchExists(repo: string, branch: string): Promise<boolean>;
   currentBranch(dir: string): Promise<string>;
   headSha(dir: string): Promise<string>;
