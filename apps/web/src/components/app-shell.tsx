@@ -138,7 +138,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const projects = useProjects(pathname);
   // Task chat screens own their columns and scrolling.
+  // The homepage spans every project, so it has no project sidebar.
+  const home = pathname === '/';
   const fullBleed =
+    home ||
     pathname === '/board' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
     /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname) ||
@@ -195,7 +198,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-sidebar text-foreground">
+    <div
+      className={cn(
+        'relative flex h-dvh overflow-hidden text-foreground',
+        home ? 'bg-neutral-950' : 'bg-sidebar',
+      )}
+    >
       {drawer && (
         <button
           type="button"
@@ -213,22 +221,29 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <Rail project={project} pathname={pathname} />
-        <Sidebar
-          width={width}
-          setWidth={setWidth}
-          projects={projects}
-          project={project}
-          current={current}
-          tasks={tasks}
-          activeId={params.id}
-          onPick={pick}
-          onRefresh={refresh}
-          onClose={() => setDrawer(false)}
-        />
+        {!home && (
+          <Sidebar
+            width={width}
+            setWidth={setWidth}
+            projects={projects}
+            project={project}
+            current={current}
+            tasks={tasks}
+            activeId={params.id}
+            onPick={pick}
+            onRefresh={refresh}
+            onClose={() => setDrawer(false)}
+          />
+        )}
       </div>
 
-      <main className="flex min-w-0 flex-1 flex-col p-2 min-[900px]:pl-0">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-xs">
+      <main className={cn('flex min-w-0 flex-1 flex-col p-2', !home && 'min-[900px]:pl-0')}>
+        <div
+          className={cn(
+            'flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-xs',
+            home && 'border-transparent',
+          )}
+        >
           <div className="flex items-center gap-2 border-b px-3 py-2 min-[900px]:hidden">
             <button
               type="button"
@@ -239,7 +254,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <MenuIcon className="size-4" />
             </button>
-            <span className="truncate text-sm font-medium">{project ?? 'Software Factory'}</span>
+            <span className="truncate text-sm font-medium">
+              {home ? 'Software Factory' : (project ?? 'Software Factory')}
+            </span>
           </div>
           {fullBleed ? (
             <div className="relative min-h-0 flex-1">{children}</div>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { FolderGit2, Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { AddProjectForm } from '@/components/add-project-form';
 import { LocalTime } from '@/components/local-time';
 import { listProjects, listTasks, type ProjectSummary } from '@/lib/factory';
@@ -42,35 +43,50 @@ const PROFILE_NOTE: Partial<Record<ProfileStatus['state'], string>> = {
   invalid: 'Profile is invalid',
 };
 
+/** The homepage frame: a title bar with the add action, and a scrolling body. */
+function Frame({ count, children }: { count?: number; children: ReactNode }) {
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <FolderGit2 aria-hidden="true" className="size-4 text-muted-foreground" />
+        <h1 className="text-sm font-medium">Projects</h1>
+        {count !== undefined && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
+        <Link
+          href="/projects"
+          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:h-11"
+        >
+          <Plus aria-hidden="true" className="size-4" /> Add project
+        </Link>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-5xl px-6 py-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 /** The app homepage: every registered project with its numbers. */
 export default async function Home() {
   const projects = await listProjects();
-  if (!projects.ok) return <p className="text-destructive">Projects unavailable: {projects.error}</p>;
+  if (!projects.ok)
+    return (
+      <Frame>
+        <p className="text-sm text-destructive">Projects unavailable: {projects.error}</p>
+      </Frame>
+    );
   if (projects.value.length === 0)
     return (
-      <div className="mx-auto w-full max-w-xl pt-[12vh]">
-        <h1 className="text-2xl font-semibold">No projects yet</h1>
-        <p className="mt-2 mb-6 text-muted-foreground">Add a local repository to start.</p>
-        <AddProjectForm />
-      </div>
+      <Frame count={0}>
+        <div className="mx-auto w-full max-w-xl pt-[10vh]">
+          <h2 className="text-lg font-semibold">No projects yet</h2>
+          <p className="mt-1 mb-6 text-sm text-muted-foreground">Add a local repository to start.</p>
+          <AddProjectForm />
+        </div>
+      </Frame>
     );
   const cards = await Promise.all(projects.value.map(loadCard));
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {cards.length} {cards.length === 1 ? 'project' : 'projects'} on this machine
-          </p>
-        </div>
-        <Link
-          href="/projects"
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <Plus className="size-4" /> Add project
-        </Link>
-      </header>
+    <Frame count={cards.length}>
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => (
           <li key={card.project.name} className="min-w-0">
@@ -78,7 +94,7 @@ export default async function Home() {
           </li>
         ))}
       </ul>
-    </div>
+    </Frame>
   );
 }
 

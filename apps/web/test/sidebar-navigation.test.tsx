@@ -64,3 +64,10 @@ it.each([
   expect(currentLinks(html).filter((href) => href === '/' || href === '/board')).toEqual(expected);
   expect(html).toContain('aria-label="Software Factory home"');
 });
+
+it('shows the project sidebar everywhere but the homepage', () => {
+  route.pathname = '/';
+  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
+  route.pathname = '/board';
+  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).toContain('<aside');
+});
