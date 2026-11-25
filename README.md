@@ -95,12 +95,11 @@ git -C "$TARGET_REPO" config user.name
 git -C "$TARGET_REPO" config user.email
 
 factory project add --name "$FACTORY_PROJECT" --repo "$TARGET_REPO"
-factory profile init --project "$FACTORY_PROJECT"
 ```
 
 Project names contain only letters, numbers, hyphens, and underscores. The repository needs a GitHub `origin`, an existing local base branch, and a clean working tree before running a task. Configure a Git commit name/email if the checks above return empty values.
 
-The last command prints the drafted profile path, normally `$FACTORY_ROOT/my-app/profile.yaml`. Review it against the target repository:
+Adding a project (here or in the web app) also drafts its profile and prints the path, normally `$FACTORY_ROOT/my-app/profile.yaml`. It never replaces an existing profile; `factory profile init --project <name>` drafts one if it is missing. Review it against the target repository:
 
 - `repo.base_branch.value` must name the branch to start from and target with PRs.
 - `commands.test` must install dependencies with the repository's lockfile and run its tests in a fresh worktree.

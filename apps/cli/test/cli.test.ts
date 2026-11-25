@@ -61,22 +61,27 @@ test('projects: add, duplicate, list and intake without --repo', async () => {
   assert.equal(factory(root, 'intake', '--project', 'demo', 'Do it').code, 0);
 });
 
-test('profile init drafts an unapproved profile that check rejects until approved', async () => {
+test('project add drafts an unapproved profile that check rejects until approved', async () => {
   const { root, repo } = await env();
   await writeFile(
     join(repo, 'package.json'),
     JSON.stringify({ scripts: { test: 'node --test', lint: 'oxlint' } }),
   );
-  factory(root, 'project', 'add', '--name', 'demo', '--repo', repo);
+  const added = factory(root, 'project', 'add', '--name', 'demo', '--repo', repo);
+  assert.equal(added.code, 0, added.stderr);
+  assert.match(added.stderr, /Profile drafted: .*demo\/profile\.yaml/);
   const init = factory(root, 'profile', 'init', '--project', 'demo');
   assert.equal(init.code, 0, init.stderr);
+  assert.match(init.stderr, /already exists/);
   const path = init.stdout.trim();
   const draft = await readFile(path, 'utf8');
   assert.match(draft, /npm install --no-package-lock && npm run test/);
   assert.notEqual(factory(root, 'profile', 'check', '--project', 'demo').code, 0);
-  await writeFile(path, draft.replace('approved_at: ""', 'approved_at: "2026-11-13"'));
+  const approved = draft.replace('approved_at: ""', 'approved_at: "2026-11-13"');
+  await writeFile(path, approved);
   assert.equal(factory(root, 'profile', 'check', '--project', 'demo').stdout, 'Profile valid: demo\n');
-  assert.equal(factory(root, 'profile', 'init', '--project', 'demo').code, 1);
+  assert.equal(factory(root, 'profile', 'init', '--project', 'demo').code, 0);
+  assert.equal(await readFile(path, 'utf8'), approved, 'init never replaces a profile');
 });
 
 test('shipped definitions are valid', () => {

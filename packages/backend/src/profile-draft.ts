@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { run } from '@factory/adapters-process';
+import { writeProfileDraft } from '@factory/adapters-fs';
 
 async function baseBranch(repo: string): Promise<{ value: string; source: string }> {
   const remoteHead = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd: repo });
@@ -82,4 +83,24 @@ export async function draftProfile(project: string, repo: string): Promise<strin
     '# confirmed.forbidden_commands: command substrings the coder may not run, in addition to git push/gh.',
     stringify(profile),
   ].join('\n');
+}
+
+export type ProfileDraft =
+  { status: 'drafted' | 'exists'; path: string } | { status: 'failed'; error: string };
+
+/**
+ * Drafts <root>/<project>/profile.yaml from the repository when there is none. It never replaces an
+ * existing profile, and a failure never blocks the caller (adding a project still succeeds).
+ */
+export async function ensureProfileDraft(root: string, project: string, repo: string): Promise<ProfileDraft> {
+  try {
+    return {
+      status: 'drafted',
+      path: await writeProfileDraft(root, project, await draftProfile(project, repo)),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const exists = /^profile already exists: (.+)$/.exec(message);
+    return exists ? { status: 'exists', path: exists[1]! } : { status: 'failed', error: message };
+  }
 }

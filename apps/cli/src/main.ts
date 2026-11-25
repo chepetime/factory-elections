@@ -192,6 +192,13 @@ export async function main(argv: string[]): Promise<number> {
         if (sub === 'add') {
           const created = await projects.add(required(v.name, 'name'), required(v.repo, 'repo'));
           out(`Project added: ${created.name}`);
+          const { ensureProfileDraft } = await import('@factory/backend/profile-draft');
+          const draft = await ensureProfileDraft(root, created.name, created.repo);
+          process.stderr.write(
+            draft.status === 'failed'
+              ? `Could not draft the profile: ${draft.error}. Run \`factory profile init --project ${created.name}\` to retry.\n`
+              : `Profile ${draft.status === 'drafted' ? 'drafted' : 'already exists'}: ${draft.path}\nReview it, set approved_at, then run \`factory profile check --project ${created.name}\`.\n`,
+          );
           return 0;
         }
         if (sub === 'list') return (out(await projects.list()), 0);
@@ -203,13 +210,14 @@ export async function main(argv: string[]): Promise<number> {
           return 0;
         }
         if (sub === 'init') {
-          const { draftProfile } = await import('./profile-draft.ts');
+          const { ensureProfileDraft } = await import('@factory/backend/profile-draft');
           const name = project();
           const repo = v.repo ?? (await projects.read(name)).repo;
-          const path = await fsAdapter.writeProfileDraft(root, name, await draftProfile(name, repo));
-          out(path);
+          const draft = await ensureProfileDraft(root, name, repo);
+          if (draft.status === 'failed') throw new Error(draft.error);
+          out(draft.path);
           process.stderr.write(
-            `Review the draft, set approved_at, then run \`factory profile check --project ${name}\`.\n`,
+            `${draft.status === 'exists' ? 'Profile already exists (project add drafts it); it was not changed. ' : ''}Review the draft, set approved_at, then run \`factory profile check --project ${name}\`.\n`,
           );
           return 0;
         }

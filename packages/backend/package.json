@@ -9,7 +9,8 @@
     "./protocol": "./src/protocol.ts",
     "./diagnostics": "./src/diagnostics.ts",
     "./lifecycle": "./src/lifecycle.ts",
-    "./receipts": "./src/receipts.ts"
+    "./receipts": "./src/receipts.ts",
+    "./profile-draft": "./src/profile-draft.ts"
   },
   "dependencies": {
     "@factory/core": "workspace:*",
@@ -24,6 +25,7 @@
     "@grpc/grpc-js": "^1.14.7",
     "@grpc/proto-loader": "^0.8.1",
     "zod": "^4.6.7",
-    "@factory/adapters-data": "workspace:*"
+    "@factory/adapters-data": "workspace:*",
+    "yaml": "^2.9.1"
   }
 }

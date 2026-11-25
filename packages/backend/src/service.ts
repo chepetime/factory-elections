@@ -47,6 +47,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
+import { ensureProfileDraft } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
@@ -368,7 +369,9 @@ export class BackendService {
       .object({ name: ProjectName, repo: z.string().trim().min(1).max(4096) })
       .parse(raw);
     if (!this.accepting) throw new Conflict('Backend is shutting down');
-    return this.projects.add(name, repo);
+    const project = await this.projects.add(name, repo);
+    // Every run needs an approved profile, so a new project starts with a draft to review.
+    return { ...project, profile: await ensureProfileDraft(this.root, name, project.repo) };
   }
   /**
    * Deletes a run: its worktree and branch, then its records. The task lock is held throughout, so a
