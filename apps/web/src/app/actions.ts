@@ -24,6 +24,8 @@ import {
   stopReviewRun,
 } from '@/lib/reviews';
 import { detectProjectSettingsRun, saveProjectSettingsRun, type SettingsProposal } from '@/lib/settings';
+import { commentIssueRun, createIssueRun, moveIssueRun, updateIssueRun } from '@/lib/issues';
+import { IssueStatus } from '@factory/core';
 
 export interface ActionState {
   error?: string;
@@ -305,4 +307,61 @@ export async function dismissInboxItem(_prev: ActionState, form: FormData): Prom
   } catch {
     return { error: 'Could not dismiss this item. Try again.' };
   }
+}
+
+const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9]{0,9}-\d{1,9}$/;
+
+/** Creates a board task in Backlog or Todo. */
+export async function createIssue(
+  project: string,
+  input: { title: string; description?: string; status: 'backlog' | 'todo' },
+): Promise<ActionState & { key?: string }> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  if (!input.title?.trim()) return { error: 'Give the task a title.' };
+  const created = await createIssueRun(project, input);
+  revalidatePath(`/projects/${project}/tasks`);
+  return created.ok
+    ? { message: `Created ${created.value.key}.`, key: created.value.key }
+    : { error: created.error };
+}
+
+/** Applies a board drop; the backend decides whether it sets a status, starts or reruns work, or cancels. */
+export async function moveIssue(
+  project: string,
+  key: string,
+  to: string,
+): Promise<ActionState & { action?: string }> {
+  const status = IssueStatus.safeParse(to);
+  if (!isProjectName(project) || !ISSUE_KEY.test(key) || !status.success) return { error: 'Invalid move.' };
+  const moved = await moveIssueRun(project, key, status.data);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  if (!moved.ok) return { error: moved.error };
+  const done: Record<string, string> = {
+    'start-run': `Started a run for ${key}.`,
+    run: `Running ${key} again.`,
+    reject: `Cancelled the run for ${key}.`,
+  };
+  return { action: moved.value.action, message: done[moved.value.action] ?? `Moved ${key}.` };
+}
+
+export async function updateIssue(
+  project: string,
+  key: string,
+  patch: { title?: string; description?: string; priority?: string },
+): Promise<ActionState> {
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  const updated = await updateIssueRun(project, { key, ...patch });
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return updated.ok ? { message: 'Saved.' } : { error: updated.error };
+}
+
+export async function commentIssue(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const project = field(form, 'project');
+  const key = field(form, 'key');
+  const body = field(form, 'body');
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  if (!body.trim()) return { error: 'Write a comment first.' };
+  const commented = await commentIssueRun(project, key, body);
+  revalidatePath(`/projects/${project}/tasks/${key}`);
+  return commented.ok ? { message: 'Comment added.' } : { error: commented.error };
 }

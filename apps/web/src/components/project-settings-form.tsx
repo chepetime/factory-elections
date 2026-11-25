@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { defaultPrefix, issueKey } from '@factory/core';
 import type { ProjectSettings, SettingsProposal } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -131,6 +132,7 @@ export function ProjectSettingsForm({
   const [section, setSection] = useState<SectionId>('general');
   const [displayName, setDisplayName] = useState(initial.display_name ?? '');
   const [icon, setIcon] = useState(initial.icon ?? '');
+  const [prefix, setPrefix] = useState(initial.prefix ?? '');
   const [tm, setTm] = useState<TaskManager>(initial.task_manager);
   const [docs, setDocs] = useState((initial.task_manager.docs ?? []).join('\n'));
   const [tending, setTending] = useState(initial.tending);
@@ -144,6 +146,7 @@ export function ProjectSettingsForm({
   const values = {
     display_name: displayName,
     icon,
+    prefix,
     task_manager: {
       ...tm,
       docs: docs
@@ -157,6 +160,10 @@ export function ProjectSettingsForm({
   const snapshot = JSON.stringify(values);
   const [saved, setSaved] = useState(snapshot);
   const dirty = snapshot !== saved;
+  const prefixError =
+    prefix && !/^[A-Z][A-Z0-9]{1,4}$/.test(prefix)
+      ? 'Use 2 to 5 capital letters or digits, starting with a letter.'
+      : undefined;
   useEffect(() => dialog?.setDirty(dirty), [dialog, dirty]);
 
   const detect = () => {
@@ -296,6 +303,28 @@ export function ProjectSettingsForm({
                     placeholder={project}
                     maxLength={80}
                     onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                )}
+              </Row>
+              <Row
+                label="Task prefix"
+                hint={
+                  prefixError ??
+                  `Task keys read ${issueKey(prefix || defaultPrefix(project), 12)}. Empty uses ${defaultPrefix(project)}.`
+                }
+              >
+                {(id, hint) => (
+                  <Input
+                    id={id}
+                    value={prefix}
+                    maxLength={5}
+                    spellCheck={false}
+                    autoCapitalize="characters"
+                    aria-describedby={hint}
+                    aria-invalid={!!prefixError}
+                    placeholder={defaultPrefix(project)}
+                    onChange={(e) => setPrefix(e.target.value.toUpperCase())}
+                    className="w-24 font-mono sm:ml-auto md:text-xs"
                   />
                 )}
               </Row>
@@ -483,7 +512,7 @@ export function ProjectSettingsForm({
         ) : (
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">{dirty ? 'Unsaved changes.' : ''}</p>
         )}
-        <Button onClick={save} disabled={saving || detecting || !dirty}>
+        <Button onClick={save} disabled={saving || detecting || !dirty || !!prefixError}>
           {saving ? 'Saving…' : 'Save settings'}
         </Button>
       </footer>

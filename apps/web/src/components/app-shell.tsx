@@ -170,7 +170,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fullBleed =
     pathname === '/' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
-    /^\/projects\/[^/]+\/(tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
+    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -515,6 +515,13 @@ function Sidebar({
             className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
           >
             <Home className="size-4 text-muted-foreground" /> Home
+          </Link>
+          <Link
+            href={`/projects/${project}/tasks`}
+            aria-current={/^\/projects\/[^/]+\/tasks(?:\/(?!new$)|$)/.test(pathname) ? 'page' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:shadow-xs"
+          >
+            <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
           </Link>
           <Link
             href={`/projects/${project}/team`}
