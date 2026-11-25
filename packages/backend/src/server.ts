@@ -192,6 +192,16 @@ export async function startBackend(options: ServerOptions) {
           await service.issues.comment({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      ArchiveIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.archive({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      DeleteIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.delete({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
       GetTrace: async (request) => ({
         json: JSON.stringify(await service.trace({ ...jsonObject(request.json), project: request.project })),
       }),

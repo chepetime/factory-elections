@@ -198,6 +198,19 @@ export class TaskStore {
     return true;
   }
 
+  /**
+   * Deletes the task's record and folder. It takes the task's lock first, so a command or run that
+   * holds it makes this fail; `before` runs under the lock (for example to remove the worktree).
+   */
+  async delete(project: string, id: string, before?: (task: TaskRecord) => Promise<void>): Promise<void> {
+    checkProjectName(project);
+    checkTaskId(id);
+    await this.acquireLock(project, id);
+    // The lock file is inside the folder, so removing the folder releases it.
+    await before?.(await this.read(project, id));
+    await rm(dirname(this.taskPath(project, id)), { recursive: true, force: true });
+  }
+
   async withLock<T>(project: string, id: string, action: () => Promise<T>): Promise<T> {
     const release = await this.acquireLock(project, id);
     try {

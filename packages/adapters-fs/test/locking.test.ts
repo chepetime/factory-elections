@@ -41,3 +41,26 @@ test('task lock excludes other processes, permits reads, and releases after erro
   );
   assert.equal(await store.withLock('demo', task.id, async () => 'released'), 'released');
 });
+
+test('delete removes the task under its lock, and fails while another command holds it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-delete-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new TaskStore(root);
+  const busy = await store.create('demo', root, 'busy work', new Date().toISOString());
+  await store.withLock('demo', busy.id, async () => {
+    await assert.rejects(store.delete('demo', busy.id), /locked/);
+  });
+  assert.equal((await store.read('demo', busy.id)).id, busy.id, 'a refused delete keeps the task');
+
+  const seen: string[] = [];
+  await store.delete('demo', busy.id, async (task) => {
+    seen.push(task.id);
+    await assert.rejects(
+      new TaskStore(root).withLock('demo', busy.id, async () => {}),
+      /locked/,
+    );
+  });
+  assert.deepEqual(seen, [busy.id]);
+  assert.deepEqual(await store.list('demo'), []);
+  await assert.rejects(store.read('demo', busy.id));
+});

@@ -78,6 +78,8 @@ export interface Methods {
   UpdateIssue: [{ project: string; json: string }, { json: string }];
   MoveIssue: [{ project: string; json: string }, { json: string }];
   CommentIssue: [{ project: string; json: string }, { json: string }];
+  ArchiveIssue: [{ project: string; json: string }, { json: string }];
+  DeleteIssue: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ task_id? , trace_id?, feature_id? }`; returns `{ spans, roots }` (trees with rolled-up cost). */
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */

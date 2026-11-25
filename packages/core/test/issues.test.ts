@@ -4,9 +4,11 @@ import {
   defaultPrefix,
   dropAction,
   Issue,
+  IssueBoard,
   issueKey,
   issueNumber,
   ProjectSettings,
+  runWorking,
   statusFromStage,
   syncedStatus,
 } from '../src/index.ts';
@@ -98,4 +100,12 @@ test('an issue parses with defaults for its optional lists', () => {
     updated_at: '2026-11-20T10:00:00.000Z',
   });
   assert.deepEqual([issue.description, issue.priority, issue.runs, issue.comments], ['', 'none', [], []]);
+});
+
+test('a board parses without deleted runs, and only coding and reviewing count as working', () => {
+  assert.deepEqual(IssueBoard.parse({ next: 1, items: [] }).deleted_runs, []);
+  assert.equal(runWorking('coding'), true);
+  assert.equal(runWorking('reviewing'), true);
+  for (const stage of ['queued', 'awaiting-approval', 'failed', 'pr-opened'] as const)
+    assert.equal(runWorking(stage), false);
 });

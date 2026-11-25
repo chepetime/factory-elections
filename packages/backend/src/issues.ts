@@ -14,6 +14,7 @@ import {
   issueKey,
   issueNumber,
   ProjectName,
+  runWorking,
   statusFromStage,
   syncedStatus,
   TaskId,
@@ -45,6 +46,8 @@ export type IssueDeps = {
   submit: (input: { project: string; prompt: string; jiraKey?: string }) => Promise<string>;
   run: (project: string, id: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
+  /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
+  deleteRun: (project: string, id: string) => Promise<void>;
   now?: () => Date;
 };
 
@@ -106,7 +109,7 @@ export class IssueService {
     try {
       return IssueBoard.parse(await this.deps.storage.readDocument(this.path(project)));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { next: 1, items: [] };
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { next: 1, items: [], deleted_runs: [] };
       throw error;
     }
   }
@@ -121,7 +124,7 @@ export class IssueService {
   private async sync(project: string): Promise<{ board: IssueBoard; runs: Map<string, TaskRecord> }> {
     const [board, tasks] = await Promise.all([this.read(project), this.deps.tasks.list(project)]);
     const runs = new Map(tasks.map((t) => [t.id, t]));
-    const linked = new Set(board.items.flatMap((i) => i.runs));
+    const linked = new Set([...board.items.flatMap((i) => i.runs), ...board.deleted_runs]);
     const unlinked = tasks
       .filter((t) => !linked.has(t.id))
       .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id.localeCompare(b.id));
@@ -143,7 +146,7 @@ export class IssueService {
         updated_at: task.updated_at ?? at,
       });
     });
-    const synced = { next, items: [...board.items, ...wrapped] };
+    const synced = { ...board, next, items: [...board.items, ...wrapped] };
     await this.write(project, synced);
     return { board: synced, runs };
   }
@@ -223,7 +226,7 @@ export class IssueService {
         created_at: at,
         updated_at: at,
       });
-      await this.write(input.project, { next: board.next + 1, items: [...board.items, issue] });
+      await this.write(input.project, { ...board, next: board.next + 1, items: [...board.items, issue] });
       return this.view(await this.prefix(input.project), issue, runs);
     });
   }
@@ -308,5 +311,66 @@ export class IssueService {
       }));
     }
     return { action: plan.action.kind, issue: await this.get({ project, key: `N-${plan.number}` }) };
+  }
+
+  /** Archives or restores a task. A run the factory is working on keeps its task on the board. */
+  async archive(raw: unknown): Promise<IssueView> {
+    const { project, key, archived } = z
+      .object({ project: ProjectName, key: Key, archived: z.boolean() })
+      .parse(raw);
+    return this.serial(async () => {
+      const { board, runs } = await this.sync(project);
+      const issue = this.find(board, key);
+      const latest = issue.runs.at(-1);
+      const stage = latest ? runs.get(latest)?.stage : undefined;
+      if (archived && stage && runWorking(stage))
+        throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
+      const at = this.now();
+      const updated = Issue.parse({
+        ...issue,
+        archived_at: archived ? at : undefined,
+        updated_at: at,
+        events: [
+          ...issue.events,
+          { at, kind: archived ? 'archived' : 'restored', message: archived ? 'Archived' : 'Restored' },
+        ],
+      });
+      await this.write(project, {
+        ...board,
+        items: board.items.map((i) => (i.number === issue.number ? updated : i)),
+      });
+      return this.view(await this.prefix(project), updated, runs);
+    });
+  }
+
+  /**
+   * Deletes a task and its runs: worktrees, branches and records. Only archived tasks can be deleted.
+   * The runs are marked deleted first, so a failed removal never brings them back as new tasks.
+   */
+  async delete(raw: unknown): Promise<{ key: string; failed: { run: string; error: string }[] }> {
+    const { project, key } = z.object({ project: ProjectName, key: Key }).parse(raw);
+    const removed = await this.serial(async () => {
+      const { board, runs } = await this.sync(project);
+      const issue = this.find(board, key);
+      if (!issue.archived_at) throw new Conflict('Archive the task before you delete it.');
+      const working = issue.runs.find((id) => {
+        const stage = runs.get(id)?.stage;
+        return stage && runWorking(stage);
+      });
+      if (working)
+        throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
+      await this.write(project, {
+        ...board,
+        items: board.items.filter((i) => i.number !== issue.number),
+        deleted_runs: [...new Set([...board.deleted_runs, ...issue.runs])],
+      });
+      return { issue, prefix: await this.prefix(project) };
+    });
+    const failed: { run: string; error: string }[] = [];
+    for (const run of removed.issue.runs)
+      await this.deps.deleteRun(project, run).catch((error: unknown) => {
+        failed.push({ run, error: error instanceof Error ? error.message : String(error) });
+      });
+    return { key: issueKey(removed.prefix, removed.issue.number), failed };
   }
 }

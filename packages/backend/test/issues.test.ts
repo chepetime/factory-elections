@@ -22,7 +22,12 @@ function run(prompt: string, created_at: string, stage: Stage = 'queued', extra:
   });
 }
 
-async function setup(t: TestContext, tasks: TaskRecord[] = [], settings: Partial<ProjectSettings> = {}) {
+async function setup(
+  t: TestContext,
+  tasks: TaskRecord[] = [],
+  settings: Partial<ProjectSettings> = {},
+  failingDelete?: string,
+) {
   const root = await mkdtemp(join(tmpdir(), 'factory-issues-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const calls: string[] = [];
@@ -64,6 +69,14 @@ async function setup(t: TestContext, tasks: TaskRecord[] = [], settings: Partial
         stage: 'rejected',
         updated_at: new Date((clock += 1000)).toISOString(),
       };
+    },
+    deleteRun: async (_project, id) => {
+      calls.push(`delete:${id}`);
+      if (id === failingDelete) throw new Error('git refused');
+      tasks.splice(
+        tasks.findIndex((x) => x.id === id),
+        1,
+      );
     },
     now: () => new Date((clock += 1000)),
   });
@@ -199,4 +212,52 @@ test('drops that would skip the approval gate or override an open run are refuse
     /task page/,
   );
   assert.deepEqual(calls, []);
+});
+
+test('archived tasks keep their data and can be restored, but not while a run works', async (t) => {
+  const working = run('Busy', '2026-11-18T10:00:00.000Z', 'coding');
+  const { service } = await setup(t, [working]);
+  await service.create({ project: 'change-elections', title: 'Idea' });
+  const archived = await service.archive({ project: 'change-elections', key: 'CE-2', archived: true });
+  assert.ok(archived.archived_at);
+  assert.equal((await service.list('change-elections')).items.length, 2, 'list still returns archived tasks');
+  const restored = await service.archive({ project: 'change-elections', key: 'CE-2', archived: false });
+  assert.equal(restored.archived_at, undefined);
+  assert.deepEqual(
+    restored.events.map((e) => e.kind),
+    ['created', 'archived', 'restored'],
+  );
+  await assert.rejects(
+    service.archive({ project: 'change-elections', key: 'CE-1', archived: true }),
+    Conflict,
+  );
+});
+
+test('delete needs an archived task, removes its runs, and never brings them back', async (t) => {
+  const old = run('Old run', '2026-11-18T10:00:00.000Z', 'rejected');
+  const { root, service, calls, tasks } = await setup(t, [old]);
+  await assert.rejects(service.delete({ project: 'change-elections', key: 'CE-1' }), /Archive the task/);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: true });
+  const result = await service.delete({ project: 'change-elections', key: 'CE-1' });
+  assert.deepEqual(result, { key: 'CE-1', failed: [] });
+  assert.deepEqual(calls, [`delete:${old.id}`]);
+  assert.equal(tasks.length, 0);
+  assert.deepEqual((await service.list('change-elections')).items, []);
+  const stored = JSON.parse(await readFile(join(root, 'change-elections', 'issues.json'), 'utf8'));
+  assert.deepEqual(stored.deleted_runs, [old.id]);
+  const next = await service.create({ project: 'change-elections', title: 'After' });
+  assert.equal(next.key, 'CE-2', 'numbers are never reused');
+});
+
+test('a run that fails to delete is reported and still stays off the board', async (t) => {
+  const stuck = run('Stuck run', '2026-11-18T10:00:00.000Z', 'failed');
+  const { service } = await setup(t, [stuck], {}, stuck.id);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: true });
+  const result = await service.delete({ project: 'change-elections', key: 'CE-1' });
+  assert.deepEqual(result.failed, [{ run: stuck.id, error: 'git refused' }]);
+  assert.deepEqual(
+    (await service.list('change-elections')).items,
+    [],
+    'the leftover run is not wrapped again',
+  );
 });

@@ -319,6 +319,14 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ArchiveIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "DeleteIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "GetTrace": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"

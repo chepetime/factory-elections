@@ -342,3 +342,40 @@ test('Postgres span ledger reads and filters persisted spans', { skip: !enabled 
     ['span-c'],
   );
 });
+
+test(
+  'Postgres delete removes the task row and its documents, and waits for no lock holder',
+  { skip: !enabled },
+  async (t) => {
+    const { storage, root, config } = await setup(t);
+    await storage.projects.add('demo', root);
+    const task = await storage.tasks.create('demo', root, 'do work', new Date().toISOString(), 'VOTE-1');
+    assert.equal((await storage.tasks.read('demo', task.id)).jira_key, 'VOTE-1');
+    const keep = await storage.tasks.create('demo', root, 'keep me', new Date().toISOString());
+    const runDoc = join(root, 'demo', 'tasks', task.id, 'runs', 'r1', 'run.json');
+    const otherDoc = join(root, 'demo', 'tasks', keep.id, 'runs', 'r1', 'run.json');
+    await storage.writeDocuments([
+      [runDoc, { state: 'done' }],
+      [otherDoc, { state: 'done' }],
+    ]);
+    const second = new DataStorage(root, config);
+    const release = await second.tasks.acquireLock('demo', task.id);
+    try {
+      await assert.rejects(storage.tasks.delete('demo', task.id), /locked/);
+    } finally {
+      await release();
+    }
+    const seen: string[] = [];
+    await storage.tasks.delete('demo', task.id, async (record) => {
+      seen.push(record.id);
+    });
+    assert.deepEqual(seen, [task.id]);
+    assert.deepEqual(
+      (await storage.tasks.list('demo')).map((x) => x.id),
+      [keep.id],
+    );
+    await assert.rejects(storage.readDocument(runDoc), { code: 'ENOENT' });
+    assert.deepEqual(await storage.readDocument(otherDoc), { state: 'done' });
+    await second.close();
+  },
+);

@@ -47,6 +47,7 @@ import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
+import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
 import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
@@ -243,6 +244,7 @@ export class BackendService {
       submit: (input) => this.submit(input),
       run: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
+      deleteRun: (project, id) => this.deleteRun(project, id),
     });
     this.tending = new TendingService({
       projects: this.projects,
@@ -367,6 +369,24 @@ export class BackendService {
       .parse(raw);
     if (!this.accepting) throw new Conflict('Backend is shutting down');
     return this.projects.add(name, repo);
+  }
+  /**
+   * Deletes a run: its worktree and branch, then its records. The task lock is held throughout, so a
+   * run or command in progress makes this fail. Traces and cost history in telemetry stay.
+   */
+  async deleteRun(project: string, id: string): Promise<void> {
+    ProjectName.parse(project);
+    TaskId.parse(id);
+    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    await this.tasks.delete(project, id, async (task) => {
+      if (!task.worktree) return;
+      await removeWorktree(task.repo, task.worktree.path, task.worktree.branch).catch((error: unknown) => {
+        // Best effort: the records go even if git refuses (a worktree already removed by hand).
+        process.stderr.write(
+          `deleteRun ${id}: worktree cleanup: ${error instanceof Error ? error.message : error}\n`,
+        );
+      });
+    });
   }
   async submit(raw: unknown): Promise<string> {
     const { project, prompt, jiraKey } = z

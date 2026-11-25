@@ -1,7 +1,7 @@
 // Host-side storage adapter: Postgres state and S3 artifacts. Containers own persisted bytes.
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { Client, Pool } from 'pg';
 import { S3Client, HeadBucketCommand, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -333,7 +333,13 @@ class PgTasks extends fs.TaskStore {
     super(storage.root);
     this.storage = storage;
   }
-  override async create(project: string, repo: string, prompt: string, now: string): Promise<Task> {
+  override async create(
+    project: string,
+    repo: string,
+    prompt: string,
+    now: string,
+    jiraKey?: string,
+  ): Promise<Task> {
     fs.checkProjectName(project);
     await fs.checkRepoDirectory(repo);
     const task = TaskRecord.parse({
@@ -341,6 +347,7 @@ class PgTasks extends fs.TaskStore {
       project,
       repo,
       prompt,
+      ...(jiraKey ? { jira_key: jiraKey } : {}),
       stage: 'queued',
       created_at: now,
       updated_at: now,
@@ -382,6 +389,30 @@ class PgTasks extends fs.TaskStore {
     return (
       await this.storage.pool!.query('SELECT data FROM factory_tasks WHERE project=$1 ORDER BY id', [project])
     ).rows.map((row) => TaskRecord.parse(row.data));
+  }
+  override async delete(project: string, id: string, before?: (task: Task) => Promise<void>): Promise<void> {
+    fs.checkProjectName(project);
+    fs.checkTaskId(id);
+    const release = await this.acquireLock(project, id);
+    try {
+      await before?.(await this.read(project, id));
+      const prefix = `${this.storage.key(join(this.storage.root, project, 'tasks', id))}/`;
+      const client = await this.storage.pool!.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM factory_tasks WHERE project=$1 AND id=$2', [project, id]);
+        await client.query('DELETE FROM factory_documents WHERE starts_with(path, $1)', [prefix]);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      await rm(join(this.storage.root, project, 'tasks', id), { recursive: true, force: true });
+    } finally {
+      await release();
+    }
   }
   /** Advisory locks end with the session that held them, so there is never a dead lock to clear. */
   override async clearDeadLock(): Promise<boolean> {

@@ -40,12 +40,19 @@ export const Issue = z.object({
     .array(z.object({ id: z.string().min(1), at: Iso, body: z.string().trim().min(1).max(20_000) }))
     .default([]),
   events: z.array(z.object({ at: Iso, kind: z.string().min(1), message: z.string() })).default([]),
+  /** Archived tasks leave the board and the sidebar; they come back with Restore. */
+  archived_at: Iso.optional(),
   created_at: Iso,
   updated_at: Iso,
 });
 export type Issue = z.infer<typeof Issue>;
 
-export const IssueBoard = z.object({ next: z.number().int().min(1), items: z.array(Issue) });
+export const IssueBoard = z.object({
+  next: z.number().int().min(1),
+  items: z.array(Issue),
+  /** Runs of deleted tasks. Sync never wraps them again, even if removing their records failed. */
+  deleted_runs: z.array(TaskId).default([]),
+});
 export type IssueBoard = z.infer<typeof IssueBoard>;
 
 export function issueKey(prefix: string, number: number): string {
@@ -86,6 +93,11 @@ const STAGE_STATUS: Record<Stage, IssueStatus> = {
 
 export function statusFromStage(stage: Stage): IssueStatus {
   return STAGE_STATUS[stage];
+}
+
+/** A run the factory is working on right now; it cannot be archived or deleted. */
+export function runWorking(stage: Stage): boolean {
+  return stage === 'coding' || stage === 'reviewing';
 }
 
 /** A run that has ended: nothing more happens to it unless a person revises it. */

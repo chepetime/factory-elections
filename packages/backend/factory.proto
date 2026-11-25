@@ -62,6 +62,8 @@ service Factory {
   rpc UpdateIssue(SettingsUpdate) returns (Snapshot);
   rpc MoveIssue(SettingsUpdate) returns (Snapshot);
   rpc CommentIssue(SettingsUpdate) returns (Snapshot);
+  rpc ArchiveIssue(SettingsUpdate) returns (Snapshot);
+  rpc DeleteIssue(SettingsUpdate) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);
