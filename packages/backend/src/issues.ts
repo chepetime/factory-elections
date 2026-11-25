@@ -53,6 +53,8 @@ export type IssueDeps = {
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
+  /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
+  changed?: () => void;
   now?: () => Date;
 };
 
@@ -232,7 +234,7 @@ export class IssueService {
 
   async create(raw: unknown): Promise<IssueView> {
     const input = CreateInput.parse(raw);
-    return this.serial(async () => {
+    const created = await this.serial(async () => {
       const { board, runs } = await this.sync(input.project);
       const at = this.now();
       const issue = Issue.parse({
@@ -250,13 +252,15 @@ export class IssueService {
       await this.write(input.project, { ...board, next: board.next + 1, items: [...board.items, issue] });
       return this.view(await this.prefix(input.project), issue, runs);
     });
+    this.deps.changed?.();
+    return created;
   }
 
   async update(raw: unknown): Promise<IssueView> {
     const { project, key, assignee, ...patch } = UpdateInput.parse(raw);
     if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
     const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
-    return this.change(project, key, (issue, at) => {
+    const updated = await this.change(project, key, (issue, at) => {
       const changed = Object.entries(patch).filter(
         ([field, value]) => value !== undefined && value !== issue[field as keyof Issue],
       );
@@ -278,6 +282,8 @@ export class IssueService {
       if (!events.length) return issue;
       return { ...next, events: [...issue.events, ...events] };
     });
+    this.deps.changed?.();
+    return updated;
   }
 
   async comment(raw: unknown): Promise<IssueView> {
@@ -318,6 +324,23 @@ export class IssueService {
       process.stderr.write(
         `comment ${view.key}: could not wake the agent: ${error instanceof Error ? error.message : error}\n`,
       ),
+    );
+  }
+
+  /** Adds an event for the activity feed, unless the last event says the same. */
+  async note(raw: unknown): Promise<IssueView> {
+    const { project, key, kind, message } = z
+      .object({
+        project: ProjectName,
+        key: Key,
+        kind: z.string().min(1),
+        message: z.string().min(1).max(2000),
+      })
+      .parse(raw);
+    return this.change(project, key, (issue, at) =>
+      issue.events.at(-1)?.message === message
+        ? issue
+        : { ...issue, events: [...issue.events, { at, kind, message }] },
     );
   }
 
@@ -412,6 +435,7 @@ export class IssueService {
         status_at: at,
       }));
     }
+    this.deps.changed?.();
     return { action: plan.action.kind, issue: await this.get({ project, key: `N-${plan.number}` }) };
   }
 

@@ -132,7 +132,10 @@ function Overview({ stats }: { stats: AgentStats }) {
             </ul>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
-              {agent.name} is not working on anything. Assign a task, then move it to In progress.
+              {agent.name} is not working on anything.{' '}
+              {agent.auto_pickup
+                ? 'Assign it a Todo task and it starts when it has a free slot.'
+                : 'Assign it a task, then move the task to In progress.'}
             </p>
           )}
         </section>
@@ -485,6 +488,7 @@ export default async function AgentPage({
                     effort: agent.effort,
                     concurrency: agent.concurrency,
                     task_budget_usd: agent.task_budget_usd,
+                    auto_pickup: agent.auto_pickup,
                   }}
                 />
                 <ArchiveAgent id={agent.id} name={agent.name} archived={archived} />

@@ -52,6 +52,7 @@ import { IssueService } from './issues.ts';
 import { AgentService } from './agent-profiles.ts';
 import { availableSkills, buildAgentSession } from './agent-sessions.ts';
 import { ChatService } from './chats.ts';
+import { AgentPickup } from './agent-pickup.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TraceLog } from './traces.ts';
@@ -164,6 +165,8 @@ export class BackendService {
   readonly issues: IssueService;
   readonly agents: AgentService;
   readonly chats: ChatService;
+  /** Starts Todo tasks assigned to free agents. The server starts it; tests call `tick`. */
+  readonly pickup: AgentPickup;
   /** Agent runs in progress, per workspace agent. */
   private readonly agentRuns = new Map<string, number>();
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
@@ -271,6 +274,7 @@ export class BackendService {
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
+      changed: () => this.pickup?.kick(),
       root,
       storage: this.storage,
       tasks: this.tasks,
@@ -280,6 +284,14 @@ export class BackendService {
       run: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
       deleteRun: (project, id) => this.deleteRun(project, id),
+    });
+    this.pickup = new AgentPickup({
+      agents: () => this.agents.list(),
+      projects: () => this.projects.list(),
+      issues: this.issues,
+      tasks: (p) => this.tasks.list(p),
+      accepting: () => this.accepting,
+      log: (line) => process.stderr.write(`${line}\n`),
     });
     this.tending = new TendingService({
       projects: this.projects,
@@ -764,6 +776,8 @@ export class BackendService {
       this.stopRequests.delete(record.id);
       this.executing--;
       own();
+      // A slot is free again: an agent may take its next Todo task.
+      this.pickup?.kick();
       record.finished_at = new Date().toISOString();
       record.cleanup = combineCleanup(calls);
       if (sessions.length) record.provider_sessions = sessions;
@@ -1131,6 +1145,7 @@ export class BackendService {
   }
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     this.accepting = false;
+    this.pickup.stop();
     this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
       for (const controller of this.controllers.values()) controller.abort();

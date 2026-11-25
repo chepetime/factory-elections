@@ -44,3 +44,42 @@ test('a chat starts empty, and issue comments default to you', () => {
   assert.equal(issue.comments[0]!.author, 'you');
   assert.equal(issue.assignee, undefined);
 });
+
+test('free agents pick their Todo tasks, most urgent then oldest, within their slots', async () => {
+  const { pickupPlan } = await import('../src/index.ts');
+  const agents = [
+    { id: 'devin', concurrency: 2, auto_pickup: true },
+    { id: 'mika', concurrency: 1, auto_pickup: false },
+    { id: 'old', concurrency: 1, auto_pickup: true, archived_at: at },
+  ];
+  const task = (key: string, extra: Record<string, unknown> = {}) => ({
+    project: 'demo',
+    key,
+    assignee: 'devin',
+    status: 'todo',
+    priority: 'none' as const,
+    created_at: `2026-11-0${key.slice(-1)}T00:00:00.000Z`,
+    archived: false,
+    ...extra,
+  });
+  const tasks = [
+    task('D-1'),
+    task('D-2', { priority: 'urgent' }),
+    task('D-3'),
+    task('D-4', { status: 'backlog' }),
+    task('D-5', { run_stage: 'awaiting-approval' }),
+    task('D-6', { run_stage: 'rejected', priority: 'high' }),
+    task('D-7', { archived: true }),
+    task('D-8', { assignee: 'mika' }),
+    task('D-9', { assignee: 'old' }),
+  ];
+  const keys = (busy: Map<string, number>, skip?: (t: { key: string }) => boolean) =>
+    pickupPlan(agents, tasks, busy, skip).map((t) => t.key);
+  assert.deepEqual(keys(new Map()), ['D-2', 'D-6']);
+  assert.deepEqual(keys(new Map([['devin', 1]])), ['D-2']);
+  assert.deepEqual(keys(new Map([['devin', 2]])), []);
+  assert.deepEqual(
+    keys(new Map(), (t) => t.key === 'D-2'),
+    ['D-6', 'D-1'],
+  );
+});

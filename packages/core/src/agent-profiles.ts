@@ -38,6 +38,8 @@ export const AgentProfile = z.object({
   pass_env: z.array(EnvName).max(20).default([]),
   /** Runs this agent may work at once. */
   concurrency: z.number().int().min(1).max(5).default(1),
+  /** Starts Todo tasks assigned to it on its own when it has a free slot. */
+  auto_pickup: z.boolean().default(true),
   /** Spend limit for one task's session, its resumes included. */
   task_budget_usd: z.number().positive().max(100).default(10),
   archived_at: Iso.optional(),
@@ -118,3 +120,51 @@ export const AGENT_CHAT_INSTRUCTIONS = `You are chatting with a person about the
 - Use the factory tools to look at tasks (list_tasks) and to create tasks (create_task). A task you create goes to Todo; it does not start any work.
 - Before you create tasks, say what you will create. Write each task with a short title and a description with acceptance criteria.
 - Answer briefly and plainly.`;
+
+const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low', 'none'] as const;
+
+export type PickupCandidate = {
+  project: string;
+  key: string;
+  assignee?: string;
+  status: string;
+  priority: (typeof PRIORITY_ORDER)[number];
+  created_at: string;
+  archived: boolean;
+  /** The latest run's stage, if the task has one. */
+  run_stage?: string;
+};
+
+/**
+ * Which tasks each free agent starts now: Todo tasks assigned to it with no open run, most urgent
+ * first, then oldest, up to the agent's free slots. `busy` counts the runs each agent is working.
+ */
+export function pickupPlan(
+  agents: readonly Pick<AgentProfile, 'id' | 'concurrency' | 'auto_pickup' | 'archived_at'>[],
+  tasks: readonly PickupCandidate[],
+  busy: ReadonlyMap<string, number>,
+  skip: (task: PickupCandidate) => boolean = () => false,
+): PickupCandidate[] {
+  const plan: PickupCandidate[] = [];
+  for (const agent of agents) {
+    if (!agent.auto_pickup || agent.archived_at) continue;
+    const free = agent.concurrency - (busy.get(agent.id) ?? 0);
+    if (free <= 0) continue;
+    const ready = tasks
+      .filter(
+        (t) =>
+          t.assignee === agent.id &&
+          t.status === 'todo' &&
+          !t.archived &&
+          (t.run_stage === undefined || t.run_stage === 'rejected' || t.run_stage === 'pr-opened') &&
+          !skip(t),
+      )
+      .sort(
+        (a, b) =>
+          PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority) ||
+          a.created_at.localeCompare(b.created_at),
+      );
+    plan.push(...ready.slice(0, free));
+  }
+  return plan;
+}

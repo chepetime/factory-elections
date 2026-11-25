@@ -129,7 +129,8 @@ export function AssignWork({
             <div>
               <Dialog.Title className="text-base font-semibold">Assign work to {agent.name}</Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-                Pick a Backlog or Todo task. {agent.name} starts when you move it to In progress.
+                Pick a Backlog or Todo task. {agent.name} starts a Todo task by itself when it has a free
+                slot; a Backlog task waits until you move it to Todo.
               </Dialog.Description>
             </div>
             <Dialog.Close render={<Button variant="ghost" size="icon-sm" aria-label="Close" />}>
@@ -274,6 +275,7 @@ type General = {
   effort: string;
   concurrency: number;
   task_budget_usd: number;
+  auto_pickup: boolean;
 };
 
 function Row({
@@ -372,6 +374,22 @@ export function GeneralForm({ id, initial }: { id: string; initial: General }) {
               </option>
             ))}
           </select>
+        </Row>
+        <Row
+          label="Pick up Todo tasks"
+          hint="Starts Todo tasks assigned to it when it has a free slot, most urgent first."
+          htmlFor={`${f}-pickup`}
+        >
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              id={`${f}-pickup`}
+              type="checkbox"
+              className="size-4"
+              checked={value.auto_pickup}
+              onChange={(e) => set('auto_pickup', e.target.checked)}
+            />
+            {value.auto_pickup ? 'On' : 'Off: start each task yourself'}
+          </label>
         </Row>
         <Row label="Concurrency" hint="Tasks it works at the same time, 1 to 5." htmlFor={`${f}-concurrency`}>
           <Input

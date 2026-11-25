@@ -10,6 +10,7 @@ An agent is a named collaborator, such as Devin (üê∏, a developer) or Mika (ü¶
 - Model: `model` (a Claude model), `effort`.
 - Context: `instructions` (your notes) and `skills` (folders in `definitions/skills/` with a `SKILL.md`).
 - Limits: `concurrency` (tasks at the same time, 1 to 5), `task_budget_usd` (one task's session, replies included).
+- `auto_pickup`: starts its Todo tasks by itself (on by default).
 - `pass_env`: env var names. Values are never stored.
 
 The backend keeps all agents in one document, `<data root>/.workspace/agents.json`. Chats are in `.workspace/chats/<id>.json`, with an index in `.workspace/chats.json`. Project names cannot contain a dot, so `.workspace` never collides with a project.
@@ -17,12 +18,19 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 ## Agent runs
 
 1. Set the task's **Agent** on the task page, or use **Assign work** on the agent's page.
-2. Move the task to **In progress**. The run is a factory run with `workflow: agent`. The driver's `agentRun` in `packages/driver/src/workflow.ts` runs it:
+2. Put the task in **Todo**. The agent starts it when it has a free slot (see Pickup below). You can also move the task to **In progress** to start it now. The run is a factory run with `workflow: agent`. The driver's `agentRun` in `packages/driver/src/workflow.ts` runs it:
    - It prepares the worktree, with no classifier step.
    - It runs one model session with `tools: edit`, the coder guard (`worktreeGuard`), the OS sandbox and the agent's budget. The session persists, so later turns resume it.
    - It commits what the agent left, then runs the profile's checks (verify).
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
+
+**Pickup.** `AgentPickup` (`packages/backend/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
+- It starts the Todo tasks of each agent with "Pick up Todo tasks" on, up to the agent's free slots. The order is priority, then the oldest task.
+- A run waiting for you (in review, blocked) does not use a slot.
+- It skips Backlog tasks, archived tasks, and tasks with an open run.
+- If a start fails, the task gets one note with the reason, and the agent waits 10 minutes before it tries that task again.
+- Set `FACTORY_AGENT_PICKUP=0` to turn pickup off for the whole backend.
 
 **Replies.** A comment from you wakes the agent's session, but only while the agent waits: `awaiting-approval`, `verification-failed`, `failed` or `blocked`. A comment on an approved, rejected or merged run starts nothing.
 

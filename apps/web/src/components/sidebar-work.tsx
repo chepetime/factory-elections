@@ -117,7 +117,7 @@ export function SidebarWork({
         </h2>
         {agents.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No agent is working. Move a task to In progress to start one.
+            No agent is working. Assign a Todo task to an agent to start one.
           </p>
         ) : (
           GROUPS.map((group) => {

@@ -403,6 +403,7 @@ export async function startBackend(options: ServerOptions) {
     trace.record('server.started', { port, effect: true });
     // This process owns the data root now, so runs left by a previous backend can be settled.
     const recovered = await service.recover();
+    if (process.env.FACTORY_AGENT_PICKUP !== '0') service.pickup.start();
     service.reviews.startSweeping();
     service.features.startTicking();
     service.tending.startTicking();
