@@ -14,36 +14,50 @@ import { taskTools, type SessionReport } from './agent-tools.ts';
 import { Conflict } from './conflict.ts';
 import type { IssueService, IssueView } from './issues.ts';
 
-export const AGENT_SKILLS_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
-  'definitions',
-  'skills',
-);
+const FACTORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+/** Where agent skills come from, first match wins: Factory's own definitions, then the skills this repo ships for Claude. */
+export const AGENT_SKILL_DIRS = [
+  join(FACTORY_ROOT, 'definitions', 'skills'),
+  join(FACTORY_ROOT, '.claude', 'skills'),
+];
 
-/** Skill names in definitions/skills that have a SKILL.md. */
-export async function availableSkills(dir = AGENT_SKILLS_DIR): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-  const names = entries.filter((e) => e.isDirectory() && /^[a-z0-9-]+$/.test(e.name)).map((e) => e.name);
-  const present = await Promise.all(
-    names.map((n) =>
-      readFile(join(dir, n, 'SKILL.md')).then(
-        () => n,
-        () => undefined,
-      ),
-    ),
-  );
-  return present.filter((n): n is string => !!n).sort();
+const SKILL_NAME = /^[a-z0-9-]+$/;
+const skillFile = (dir: string, name: string) => join(dir, name, 'SKILL.md');
+
+/** Skill names with a SKILL.md in any skill folder, sorted and without duplicates. */
+export async function availableSkills(dirs: readonly string[] = AGENT_SKILL_DIRS): Promise<string[]> {
+  const found = new Set<string>();
+  for (const dir of dirs) {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (!e.isDirectory() || !SKILL_NAME.test(e.name)) continue;
+      if (
+        await readFile(skillFile(dir, e.name)).then(
+          () => true,
+          () => false,
+        )
+      )
+        found.add(e.name);
+    }
+  }
+  return [...found].sort();
 }
 
-export async function agentSkills(names: readonly string[], dir = AGENT_SKILLS_DIR): Promise<string> {
+/** The named skills' SKILL.md files, for a system prompt. A missing skill is left out. */
+export async function agentSkills(
+  names: readonly string[],
+  dirs: readonly string[] = AGENT_SKILL_DIRS,
+): Promise<string> {
   const parts = await Promise.all(
-    names.map(async (name) => {
-      const text = await readFile(join(dir, name, 'SKILL.md'), 'utf8').catch(() => undefined);
-      return text ? `## Skill: ${name}\n\n${text.trim()}` : undefined;
-    }),
+    names
+      .filter((n) => SKILL_NAME.test(n))
+      .map(async (name) => {
+        for (const dir of dirs) {
+          const text = await readFile(skillFile(dir, name), 'utf8').catch(() => undefined);
+          if (text) return `## Skill: ${name}\n\n${text.trim()}`;
+        }
+        return undefined;
+      }),
   );
   return parts.filter(Boolean).join('\n\n');
 }

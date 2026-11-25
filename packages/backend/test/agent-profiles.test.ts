@@ -85,8 +85,13 @@ test('a new workspace starts with Devin and Mika, stored once', async (t) => {
     [
       ['devin', '🐸'],
       ['mika', '🦄'],
+      ['acosta', '🧭'],
+      ['magda', '🎨'],
+      ['sherlock', '🔍'],
+      ['lumix', '📋'],
     ],
   );
+  assert.deepEqual(first.find((a) => a.id === 'sherlock')?.skills, ['senior-pr-review']);
   await agents.archive({ id: 'mika', archived: true });
   const again = await new AgentService({ root, storage: storageFor(root), seed: true }).list();
   assert.equal(again.find((a) => a.id === 'mika')?.archived_at !== undefined, true);
