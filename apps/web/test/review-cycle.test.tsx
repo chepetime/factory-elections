@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { ReviewTicketCard, SelfReviewCard } from '@/components/review-cycle';
+import { ReviewTicketCard, SelfReviewStopped } from '@/components/review-cycle';
+import { ReviewOutcomeCard } from '@/components/review-outcome';
+import { TaskPrLink } from '@/components/task-pr-link';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock('@/app/actions', () => ({ decideReview: vi.fn(), moveIssue: vi.fn(), restartSelfReview: vi.fn() }));
@@ -91,35 +93,58 @@ describe('review ticket card', () => {
   });
 });
 
-describe('self-review card', () => {
-  it('lists each round with what went back to the agent, and a stop reason', () => {
+describe('self-review in the activity', () => {
+  it('shows a review round as an outcome card: decision, summary, counts, next step and report link', () => {
     const html = renderToStaticMarkup(
-      <SelfReviewCard
+      <ReviewOutcomeCard
+        project="demo"
+        at="2026-11-26T23:16:46.794Z"
+        outcome={{
+          source: 'self',
+          pr: 5,
+          round: 1,
+          decision: 'Comment',
+          summary: 'The API mapping reads correctly.',
+          counts: { 'should-fix': 2, 'must-fix': 1 },
+          next: 'Nothing critical or must-fix. The PR is ready for review.',
+        }}
+      />,
+    );
+    expect(html).toMatch(/Self-review · round 1 of #5[\s\S]*Comment/);
+    expect(html).toContain('The API mapping reads correctly.');
+    expect(html.indexOf('1 must-fix')).toBeLessThan(html.indexOf('2 should-fix'));
+    expect(html).toContain('The PR is ready for review.');
+    expect(html).toContain('href="/projects/demo/reviews/5"');
+  });
+  it('says why a self-review stopped and offers to run it again, after the newest activity', () => {
+    const html = renderToStaticMarkup(
+      <SelfReviewStopped
         project="demo"
         runId="11111111-2222-4333-8444-555555555555"
         loop={{
           pr: 4,
           state: 'stopped',
-          round: 2,
-          fixes: 1,
+          round: 1,
+          fixes: 0,
           cycle: 1,
           recheck: false,
           resumed: 0,
           notes: [],
           sent: [],
-          history: [
-            { at: 'a', round: 1, decision: 'Request changes', sent: 2, left: 1 },
-            { at: 'b', round: 2, decision: 'Comment', sent: 0, left: 3 },
-          ],
+          history: [],
           reason: 'The senior PR review ended without a report.',
           updated_at: 'c',
         }}
       />,
     );
-    expect(html).toMatch(/Round 1[\s\S]*Request changes[\s\S]*2 sent back to the agent · 1 noted for people/);
-    expect(html).toMatch(/Round 2[\s\S]*nothing sent back/);
+    expect(html).toContain('Self-review of #4 stopped');
     expect(html).toContain('The senior PR review ended without a report.');
     expect(html).toContain('Review again');
-    expect(html).toContain('href="/projects/demo/reviews/4"');
+  });
+  it('keeps the PR link under the description, with its state', () => {
+    const merged = renderToStaticMarkup(<TaskPrLink url="https://github.com/o/r/pull/5" state="MERGED" />);
+    expect(merged).toContain('href="https://github.com/o/r/pull/5"');
+    expect(merged).toContain('o/r#5');
+    expect(merged).toContain('Merged');
   });
 });

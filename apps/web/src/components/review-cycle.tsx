@@ -172,72 +172,32 @@ export function ReviewTicketCard({
   );
 }
 
-const LOOP_STATE: Record<ReviewLoopState['state'], string> = {
-  reviewing: 'Reviewing',
-  fixing: 'The agent fixes the findings',
-  ready: 'Ready for review',
-  stopped: 'Stopped',
-};
-
-/** The factory's own agent PR: its self-review loop, round by round. */
-export function SelfReviewCard({
+/** A self-review that stopped, after the newest activity: why, and how to run it again. */
+export function SelfReviewStopped({
   project,
   runId,
   loop,
 }: {
   project: string;
-  /** The run whose PR this is; with it, a stopped loop offers to review again. */
-  runId?: string;
+  runId: string;
   loop: ReviewLoopState;
 }) {
   return (
-    <Frame
-      title="Self-review"
-      aside={
-        <span className="flex items-center gap-3 text-sm">
-          <span
-            className={cn('text-xs', loop.state === 'stopped' ? 'text-destructive' : 'text-muted-foreground')}
-          >
-            {LOOP_STATE[loop.state]}
-            {loop.cycle > 1 ? ` · cycle ${loop.cycle}` : ''}
-          </span>
-          <Link
-            href={`/projects/${project}/reviews/${loop.pr}`}
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-          >
-            <MessageSquare aria-hidden className="size-3.5" /> Report
-          </Link>
-        </span>
-      }
+    <section
+      aria-label="Self-review stopped"
+      className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3"
     >
-      <p className="text-xs text-muted-foreground">
-        A senior PR review of the draft PR. Critical and must-fix findings go back to the agent; the PR leaves
-        draft when nothing important is left, or after the last fix round.
-      </p>
-      {loop.history.length > 0 && (
-        <ol className="mt-3 flex flex-col gap-2" aria-label="Self-review rounds">
-          {loop.history.map((h) => (
-            <li key={`${h.at}-${h.round}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-              <span className="font-medium">Round {h.round}</span>
-              <DecisionChip decision={h.decision || undefined} />
-              <span className="text-xs text-muted-foreground">
-                {h.sent ? `${h.sent} sent back to the agent` : 'nothing sent back'}
-                {h.left ? ` · ${h.left} noted for people` : ''} · <LocalTime iso={h.at} format="date-time" />
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {loop.state === 'stopped' && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-          {loop.reason && (
-            <p role="alert" className="text-sm text-destructive">
-              {loop.reason}
-            </p>
-          )}
-          {runId && <RestartSelfReviewButton project={project} runId={runId} />}
-        </div>
-      )}
-    </Frame>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Self-review of #{loop.pr} stopped</p>
+        {loop.reason && <p className="mt-0.5 text-sm text-destructive">{loop.reason}</p>}
+        <Link
+          href={`/projects/${project}/reviews/${loop.pr}`}
+          className="mt-1 inline-block text-xs underline underline-offset-2"
+        >
+          Open the review chat
+        </Link>
+      </div>
+      <RestartSelfReviewButton project={project} runId={runId} />
+    </section>
   );
 }

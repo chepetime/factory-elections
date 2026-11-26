@@ -350,7 +350,8 @@ export class BackendService {
       },
       followUp: (project, id, note) =>
         this.issues.followUp({ project, key: id, note, kind: 'review', by: 'factory' }),
-      note: (project, id, message) => this.issues.note({ project, key: id, kind: 'review-loop', message }),
+      note: (project, id, message, review) =>
+        this.issues.note({ project, key: id, kind: 'review-loop', message, ...(review ? { review } : {}) }),
       body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
       github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
       log: (line) => process.stderr.write(`${line}\n`),

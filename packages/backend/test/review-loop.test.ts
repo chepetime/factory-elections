@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { TaskRecord, type ReviewPayload } from '@factory/core';
+import { TaskRecord, type ReviewOutcome, type ReviewPayload } from '@factory/core';
 import { ReviewLoop } from '../src/review-loop.ts';
 
 const pr = { url: 'https://github.com/o/r/pull/4', branch: 'factory/t', head_sha: 'h1', at: 'x' };
@@ -26,6 +26,7 @@ function setup(overrides: Partial<TaskRecord> = {}) {
   let draft = true;
   const docs = new Map<string, unknown>();
   const calls: string[] = [];
+  const outcomes: ReviewOutcome[] = [];
   const loop = new ReviewLoop({
     tasks: { list: async () => [task], read: async () => task, taskPath: () => '/data/t/task.json' },
     storage: {
@@ -37,7 +38,10 @@ function setup(overrides: Partial<TaskRecord> = {}) {
     },
     startReview: async (_p, n) => void calls.push(`review:${n}`),
     followUp: async (_p, _id, note) => void calls.push(`fix:${note.split('\n')[0]}`),
-    note: async (_p, _id, message) => void calls.push(`note:${message}`),
+    note: async (_p, _id, message, review) => {
+      calls.push(`note:${message}`);
+      if (review) outcomes.push(review);
+    },
     body: async () => '## Summary\n\nAdds it.\n\n---\n\n<details>record</details>',
     github: {
       markReady: async (_c, n) => void calls.push(`ready:${n}`),
@@ -48,6 +52,7 @@ function setup(overrides: Partial<TaskRecord> = {}) {
   return {
     loop,
     calls,
+    outcomes,
     task: () => task,
     state: () => loop.state(task),
     set: (patch: Partial<TaskRecord>) => (task = { ...task, ...patch }),
@@ -202,4 +207,25 @@ test('a review that a restart cut starts again, twice per cycle, then the loop s
   // A finished or fixing loop is left alone.
   await ctx.loop.resumeInterrupted(opened);
   assert.equal(ctx.calls.filter((c) => c.startsWith('review:')).length, 3);
+});
+
+test('each review round leaves an outcome for the ticket: decision, counts and what happens next', async () => {
+  const ctx = setup();
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
+  await ctx.loop.reviewEnded('demo', 4, payload('must-fix', 'should-fix'));
+  assert.deepEqual(ctx.outcomes[0] && { ...ctx.outcomes[0], summary: undefined }, {
+    source: 'self',
+    pr: 4,
+    round: 1,
+    decision: ctx.outcomes[0]?.decision,
+    summary: undefined,
+    counts: { 'must-fix': 1, 'should-fix': 1 },
+    next: '1 critical or must-fix finding sent back to the agent. Its fix is pushed once the checks pass, then reviewed again.',
+  });
+  await ctx.loop.runSettled('demo', ctx.task().id);
+  await ctx.loop.reviewEnded('demo', 4, payload('should-fix'));
+  assert.match(
+    ctx.outcomes.at(-1)?.next ?? '',
+    /The 1 other finding goes into the PR description, and the PR is ready for review/,
+  );
 });

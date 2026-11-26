@@ -40,7 +40,8 @@ import { Feed, feedItems, type Authors } from '@/components/task-feed';
 import { AccessList } from '@/components/task-access';
 import { prLabel, RunRow, totalCost } from '@/components/task-runs';
 import { TaskSummary } from '@/components/task-summary';
-import { ReviewTicketCard, SelfReviewCard } from '@/components/review-cycle';
+import { TaskPrLink } from '@/components/task-pr-link';
+import { ReviewTicketCard, SelfReviewStopped } from '@/components/review-cycle';
 import { getReviewLoop, reviewDetail } from '@/lib/reviews';
 
 export const dynamic = 'force-dynamic';
@@ -185,6 +186,24 @@ export default async function TaskPage({
   const runHref = (rid: string) =>
     `/projects/${project}/tasks/${issue.key}${rid === issue.run?.id ? '' : `?run=${rid}`}`;
   const pulls = records.flatMap((r) => (r?.pr ? [r.pr] : [])).reverse();
+  // The ticket's PR under the description: its own run's newest PR, or the reviewed PR.
+  const ownPr = pulls[0];
+  const prUrl = ownPr?.url ?? issue.review?.url;
+  const prNumber = Number(/\/pull\/(\d+)/.exec(prUrl ?? '')?.[1]);
+  const prLink = prUrl
+    ? {
+        url: prUrl,
+        state:
+          issue.pr_outcome && issue.pr_outcome.number === prNumber
+            ? issue.pr_outcome.state
+            : issue.review &&
+                (issue.status === 'done' || issue.status === 'cancelled') &&
+                issue.events.some((e) => e.message === `PR #${prNumber} was merged.`)
+              ? ('MERGED' as const)
+              : ('OPEN' as const),
+        ...(issue.review ? { title: issue.review.title } : {}),
+      }
+    : undefined;
   const cost = totalCost(records.filter((r): r is TaskRecord => !!r));
   const rows = issue.runs.map((rid, i) => ({ rid, index: i + 1, record: records[i] })).reverse();
   const [latestRow, ...pastRows] = rows;
@@ -257,19 +276,8 @@ export default async function TaskPage({
             />
             <div className="mt-4">
               <IssueDescription project={project} issueKey={issue.key} description={issue.description} />
+              {prLink && <TaskPrLink {...prLink} />}
             </div>
-
-            {issue.review && (
-              <ReviewTicketCard
-                project={project}
-                issueKey={issue.key}
-                review={issue.review}
-                {...(reviewReport ? { report: reviewReport } : {})}
-              />
-            )}
-            {selfReview && (
-              <SelfReviewCard project={project} {...(runId ? { runId } : {})} loop={selfReview} />
-            )}
 
             <h2 className="mt-10 border-t pt-6 text-base font-semibold">Activity</h2>
             <Feed items={before} project={project} issueKey={issue.key} authors={authors} />
@@ -319,6 +327,19 @@ export default async function TaskPage({
               </div>
             )}
             <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
+            {/* Review rounds are outcome cards in the feed, in time order. What waits on you comes here:
+                the proposal of a review ticket, or a self-review that stopped. */}
+            {issue.review && (
+              <ReviewTicketCard
+                project={project}
+                issueKey={issue.key}
+                review={issue.review}
+                {...(reviewReport ? { report: reviewReport } : {})}
+              />
+            )}
+            {selfReview?.state === 'stopped' && runId && (
+              <SelfReviewStopped project={project} runId={runId} loop={selfReview} />
+            )}
             {/* What the latest run needs from you comes last, after the newest activity. */}
             {run?.ok && runId === issue.run?.id && run.value.attention && (
               <div className="mt-3">{run.value.attention}</div>

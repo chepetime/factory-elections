@@ -9,6 +9,7 @@ import {
   reviewOptions,
   reviewWatchStep,
   roundRunning,
+  severityCounts,
   type Issue,
   type ReviewPayload,
 } from '@factory/core';
@@ -200,12 +201,27 @@ export class ReviewTickets {
           status_at: at,
           events: [
             ...issue.events,
-            event(
-              at,
-              decision
-                ? `Round ${rounds.length}: ${decision}. Pick what to post.`
-                : `Round ${rounds.length} ended without a report. ${turn.reason ?? ''}`.trim(),
-            ),
+            {
+              ...event(
+                at,
+                decision
+                  ? `Round ${rounds.length}: ${decision}. Pick what to post.`
+                  : `Round ${rounds.length} ended without a report. ${turn.reason ?? ''}`.trim(),
+              ),
+              ...(decision && turn.payload
+                ? {
+                    review: {
+                      source: 'ticket' as const,
+                      pr: number,
+                      round: rounds.length,
+                      decision,
+                      ...(summary ? { summary } : {}),
+                      counts: severityCounts(turn.payload.findings),
+                      next: 'Pick what to post on the PR: the options are on the PR review card below.',
+                    },
+                  }
+                : {}),
+            },
           ],
         };
       });

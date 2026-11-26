@@ -98,6 +98,15 @@ test('a round proposes a decision; your choice is posted and ends the ticket, or
     [view?.review?.rounds[0]?.decision, view?.events.at(-1)?.message],
     ['Comment', 'Round 1: Comment. Pick what to post.'],
   );
+  assert.deepEqual(view?.events.at(-1)?.review, {
+    source: 'ticket',
+    pr: 12,
+    round: 1,
+    decision: 'Comment',
+    summary: 'Comment. One thing.',
+    counts: {},
+    next: 'Pick what to post on the PR: the options are on the PR review card below.',
+  });
   await assert.rejects(tickets.decide('app', key, 'request-changes'), /not an option for Comment/);
 
   await tickets.decide('app', key, 'comment-approve');

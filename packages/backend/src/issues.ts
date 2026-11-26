@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
+  ReviewOutcome,
   asksForBaseMerge,
   parseMentions,
   defaultPrefix,
@@ -541,18 +542,19 @@ export class IssueService {
 
   /** Adds an event for the activity feed, unless the last event says the same. */
   async note(raw: unknown): Promise<IssueView> {
-    const { project, key, kind, message } = z
+    const { project, key, kind, message, review } = z
       .object({
         project: ProjectName,
         key: Key,
         kind: z.string().min(1),
         message: z.string().min(1).max(2000),
+        review: ReviewOutcome.optional(),
       })
       .parse(raw);
     return this.change(project, key, (issue, at) =>
       issue.events.at(-1)?.message === message
         ? issue
-        : { ...issue, events: [...issue.events, { at, kind, message }] },
+        : { ...issue, events: [...issue.events, { at, kind, message, ...(review ? { review } : {}) }] },
     );
   }
 

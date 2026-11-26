@@ -38,6 +38,31 @@ const Iso = z.string().min(1);
 /** A calendar day, `YYYY-MM-DD`. */
 export const PlanDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date');
 
+/** What one senior PR review round found, for the ticket's activity. */
+export const ReviewOutcome = z.object({
+  /** `self`: the factory's own agent PR (review loop). `ticket`: someone's PR (review ticket). */
+  source: z.enum(['self', 'ticket']),
+  pr: z.number().int().positive(),
+  round: z.number().int().positive(),
+  decision: z.string(),
+  summary: z.string().optional(),
+  /** Findings by severity, e.g. `{ 'must-fix': 1, 'should-fix': 2 }`. */
+  counts: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** What happens because of it, in one sentence. */
+  next: z.string(),
+});
+export type ReviewOutcome = z.infer<typeof ReviewOutcome>;
+
+/** Findings by severity, for a ReviewOutcome. */
+export function severityCounts(findings: readonly { severity?: string | null }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const f of findings) {
+    const key = f.severity?.trim() || 'note';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export const Issue = z.object({
   number: z.number().int().min(1),
   title: z.string().trim().min(1).max(200),
@@ -118,6 +143,8 @@ export const Issue = z.object({
         /** Set on status changes, so the feed can show the new status icon. */
         from: IssueStatus.optional(),
         to: IssueStatus.optional(),
+        /** A review round ended: the feed shows it as an outcome card. */
+        review: ReviewOutcome.optional(),
       }),
     )
     .default([]),
