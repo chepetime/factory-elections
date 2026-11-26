@@ -16,6 +16,8 @@ export interface HomeCard {
   title: string;
   repo: string;
   icon: string;
+  /** The project's accent color (`#rrggbb`). */
+  accent: string;
   stats: ProjectStats;
   /** A profile problem worth a line on the card, e.g. "No repo profile". */
   note?: string;
@@ -42,7 +44,8 @@ export function HomeScene({ children }: { children: ReactNode }) {
         />
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+        {/* Centered in the window while it fits; it scrolls from the top when it does not. */}
+        <div className="mx-auto flex min-h-full max-w-6xl flex-col justify-center px-6 py-8">{children}</div>
       </div>
     </div>
   );
@@ -58,6 +61,21 @@ export function HomePanel({ className, children }: { className?: string; childre
 }
 
 const ink = { color: 'var(--rc-ink)' } satisfies CSSProperties;
+
+/** `color` moved toward white by `amount` (0 to 1), as `#rrggbb`. */
+function lighten(color: string, amount: number): string {
+  const channels = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  return `#${channels
+    .map((c) =>
+      Math.round(c + (255 - c) * amount)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
+}
+
+/** Card height, in px. */
+const CARD_HEIGHT = 360;
 const muted = { color: 'var(--rc-muted)' } satisfies CSSProperties;
 
 /** Every project as a reflective card that opens the project. */
@@ -71,7 +89,15 @@ export function ProjectCards({ cards }: { cards: HomeCard[] }) {
               href={`/projects/${encodeURIComponent(card.name)}`}
               className="block rounded-[24px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
             >
-              <ReflectiveCard theme="dark" width="100%" height={260} glare={0.5} roughness={0.3}>
+              <ReflectiveCard
+                theme="dark"
+                width="100%"
+                height={CARD_HEIGHT}
+                glare={0.5}
+                roughness={0.3}
+                // A light tint of the accent, so the metal stays metal.
+                tint={lighten(card.accent, 0.55)}
+              >
                 <CardContent card={card} />
               </ReflectiveCard>
             </Link>
@@ -80,7 +106,7 @@ export function ProjectCards({ cards }: { cards: HomeCard[] }) {
       </ul>
       <Link
         href="/projects"
-        className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:h-11"
+        className="mt-6 inline-flex h-9 self-start items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:h-11"
       >
         <Plus aria-hidden="true" className="size-4" /> Add project
       </Link>
@@ -107,10 +133,10 @@ function CardContent({ card }: { card: HomeCard }) {
     <>
       <div className="flex items-center gap-3 text-[13px] leading-5">
         <span
-          className="flex size-10 shrink-0 items-center justify-center text-base font-semibold uppercase"
+          className="flex size-12 shrink-0 items-center justify-center text-lg font-semibold uppercase"
           style={{
-            background: 'var(--rc-tile)',
-            boxShadow: 'var(--rc-tile-shadow), inset 0 0 0 1px var(--rc-tile-edge)',
+            background: `linear-gradient(180deg, color-mix(in srgb, ${card.accent} 55%, #3a3644) 0%, color-mix(in srgb, ${card.accent} 30%, #27242f) 100%)`,
+            boxShadow: `var(--rc-tile-shadow), inset 0 0 0 1px color-mix(in srgb, ${card.accent} 60%, transparent)`,
             borderRadius: 'var(--rc-tile-radius)',
             ...ink,
           }}

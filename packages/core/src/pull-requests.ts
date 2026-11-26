@@ -1,6 +1,7 @@
 // Pure PR-review triage. Ported from the `elections review` picker's jq rules: who is asked to
 // review, what changed since your last review or comment, and the urgency order of the list.
 import { z } from 'zod';
+import { HexColor } from './project-accent.ts';
 import { IssuePrefix } from './issues.ts';
 import { ContextLimits, type AgentEvent } from './agents.ts';
 
@@ -415,6 +416,8 @@ export const ProjectSettings = z.object({
   display_name: z.string().trim().max(80).optional(),
   /** An emoji or up to two characters shown as the project's icon. */
   icon: z.string().trim().max(8).optional(),
+  /** The project's accent color (`#rrggbb`). Absent or empty: one is picked from the name. */
+  accent: z.union([HexColor, z.literal('')]).optional(),
   /** Short key prefix for this project's board tasks (CE gives CE-12). Absent uses `defaultPrefix`. */
   prefix: z.union([IssuePrefix, z.literal('')]).optional(),
   task_manager: TaskManager.default({ kind: 'none' }),

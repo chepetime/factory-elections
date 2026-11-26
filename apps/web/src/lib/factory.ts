@@ -60,6 +60,8 @@ async function readJson<T extends z.ZodType>(
 export const ProjectSummary = Project.extend({
   display_name: z.string().optional(),
   icon: z.string().optional(),
+  /** The accent a person picked; absent means the name's color (see projectAccent). */
+  accent: z.string().optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 export function listProjects(): Promise<Result<ProjectSummary[]>> {

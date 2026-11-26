@@ -439,13 +439,13 @@ export class BackendService {
       },
     });
   }
-  /** Projects with their display name and icon from settings. */
+  /** Projects with their display name, icon and picked accent from settings. */
   async projectSummaries() {
     const projects = await this.projects.list();
     return Promise.all(
       projects.map(async (p) => {
         const s = await this.settings.get(p.name).catch(() => undefined);
-        return { ...p, display_name: s?.display_name, icon: s?.icon };
+        return { ...p, display_name: s?.display_name, icon: s?.icon, accent: s?.accent || undefined };
       }),
     );
   }

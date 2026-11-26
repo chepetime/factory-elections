@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { defaultPrefix, issueKey } from '@factory/core';
+import { defaultPrefix, issueKey, projectAccent } from '@factory/core';
 import type { ProjectSettings, SettingsProposal } from '@/lib/settings';
 import { cn } from '@/lib/utils';
 
@@ -132,6 +132,7 @@ export function ProjectSettingsForm({
   const [section, setSection] = useState<SectionId>('general');
   const [displayName, setDisplayName] = useState(initial.display_name ?? '');
   const [icon, setIcon] = useState(initial.icon ?? '');
+  const [accent, setAccent] = useState(initial.accent ?? '');
   const [prefix, setPrefix] = useState(initial.prefix ?? '');
   const [tm, setTm] = useState<TaskManager>(initial.task_manager);
   const [docs, setDocs] = useState((initial.task_manager.docs ?? []).join('\n'));
@@ -146,6 +147,7 @@ export function ProjectSettingsForm({
   const values = {
     display_name: displayName,
     icon,
+    accent,
     prefix,
     task_manager: {
       ...tm,
@@ -347,6 +349,32 @@ export function ProjectSettingsForm({
                     onChange={(e) => setIcon(e.target.value)}
                     className="w-24 sm:ml-auto"
                   />
+                )}
+              </Row>
+              <Row
+                label="Accent color"
+                hint={
+                  accent
+                    ? 'Colors the project card on the homepage.'
+                    : 'Colors the project card on the homepage. Picked from the name until you choose one.'
+                }
+              >
+                {(id, hint) => (
+                  <div className="flex items-center gap-2 sm:ml-auto">
+                    {accent && (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setAccent('')}>
+                        Use the name color
+                      </Button>
+                    )}
+                    <input
+                      id={id}
+                      type="color"
+                      value={projectAccent(project, accent)}
+                      aria-describedby={hint}
+                      onChange={(e) => setAccent(e.target.value)}
+                      className="h-9 w-14 cursor-pointer rounded-md border bg-background p-1"
+                    />
+                  </div>
                 )}
               </Row>
             </Group>

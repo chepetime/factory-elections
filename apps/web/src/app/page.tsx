@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { projectAccent } from '@factory/core';
 import { AddProjectForm } from '@/components/add-project-form';
 import { HomePanel, HomeScene, ProjectCards, type HomeCard } from '@/components/home-projects';
 import { listProjects, listTasks, type ProjectSummary } from '@/lib/factory';
@@ -46,6 +47,7 @@ function toHomeCard({ project, stats, profile, missing }: Card): HomeCard {
     title: project.display_name || project.name,
     repo: project.repo,
     icon: project.icon || project.name[0] || '?',
+    accent: projectAccent(project.name, project.accent),
     stats,
     ...(note ? { note } : {}),
     missing,

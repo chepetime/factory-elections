@@ -1,5 +1,6 @@
 export * from './schemas.ts';
 export * from './conflict.ts';
+export * from './project-accent.ts';
 export * from './recovery.ts';
 export * from './domain.ts';
 export * from './ports.ts';
