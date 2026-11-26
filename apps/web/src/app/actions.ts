@@ -422,7 +422,14 @@ export async function moveIssue(
 export async function updateIssue(
   project: string,
   key: string,
-  patch: { title?: string; description?: string; priority?: string; assignee?: string | null },
+  patch: {
+    title?: string;
+    description?: string;
+    priority?: string;
+    assignee?: string | null;
+    start_date?: string | null;
+    due_date?: string | null;
+  },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
   const updated = await updateIssueRun(project, { key, ...patch });

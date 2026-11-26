@@ -189,6 +189,40 @@ test('updates record what changed, and comments append', async (t) => {
   );
 });
 
+test('a task records who created it, and planning dates set, clear, and stay in order', async (t) => {
+  const { service } = await setup(t);
+  const mine = await service.create({ project: 'change-elections', title: 'Mine' });
+  assert.equal(mine.created_by, 'you');
+  const theirs = await service.create({ project: 'change-elections', title: 'Theirs', created_by: 'devin' });
+  assert.equal(theirs.created_by, 'devin');
+
+  const planned = await service.update({
+    project: 'change-elections',
+    key: mine.key,
+    start_date: '2026-12-01',
+    due_date: '2026-12-05',
+  });
+  assert.deepEqual([planned.start_date, planned.due_date], ['2026-12-01', '2026-12-05']);
+  assert.deepEqual(
+    planned.events.slice(1).map((e) => e.message),
+    ['Set the start date to 2026-12-01', 'Set the due date to 2026-12-05'],
+  );
+  await assert.rejects(
+    service.update({ project: 'change-elections', key: mine.key, due_date: '2026-11-30' }),
+    /due date is before the start date/,
+  );
+  await assert.rejects(
+    service.update({ project: 'change-elections', key: mine.key, due_date: '12/05/2026' }),
+    /YYYY-MM-DD/,
+  );
+  const cleared = await service.update({ project: 'change-elections', key: mine.key, start_date: null });
+  assert.equal(cleared.start_date, undefined);
+  assert.equal(cleared.due_date, '2026-12-05');
+  assert.equal(cleared.events.at(-1)?.message, 'Removed the start date');
+  const same = await service.update({ project: 'change-elections', key: mine.key, due_date: '2026-12-05' });
+  assert.equal(same.events.length, cleared.events.length, 'the same date adds no event');
+});
+
 test('moving without a run only sets the status', async (t) => {
   const { service, calls } = await setup(t);
   await service.create({ project: 'change-elections', title: 'Idea' });

@@ -13,11 +13,20 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-function useSave(project: string, key: string) {
+export function useSave(project: string, key: string) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
-  const save = (patch: { title?: string; description?: string; priority?: string }, done?: () => void) =>
+  const save = (
+    patch: {
+      title?: string;
+      description?: string;
+      priority?: string;
+      start_date?: string | null;
+      due_date?: string | null;
+    },
+    done?: () => void,
+  ) =>
     start(async () => {
       const result = await updateIssue(project, key, patch);
       setError(result.error);
@@ -204,11 +213,13 @@ export function IssuePriorityField({
   issueKey,
   priority,
   id,
+  className,
 }: {
   project: string;
   issueKey: string;
   priority: IssuePriority;
   id: string;
+  className?: string;
 }) {
   const { pending, error, save } = useSave(project, issueKey);
   return (
@@ -218,7 +229,10 @@ export function IssuePriorityField({
         defaultValue={priority}
         disabled={pending}
         onChange={(e) => save({ priority: e.target.value })}
-        className="-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={cn(
+          '-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          className,
+        )}
       >
         {PRIORITIES.map((p) => (
           <option key={p.value} value={p.value}>
@@ -235,6 +249,50 @@ export function IssuePriorityField({
   );
 }
 
+/** A planning date (start or due). Clearing the input removes the date. */
+export function IssueDateField({
+  project,
+  issueKey,
+  field,
+  value,
+  id,
+  overdue,
+}: {
+  project: string;
+  issueKey: string;
+  field: 'start_date' | 'due_date';
+  value?: string;
+  id: string;
+  /** Shows the date as late: a due date in the past on an open task. */
+  overdue?: boolean;
+}) {
+  const { pending, error, save } = useSave(project, issueKey);
+  return (
+    <>
+      <input
+        id={id}
+        type="date"
+        defaultValue={value ?? ''}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value || null;
+          if (next !== (value ?? null)) save({ [field]: next });
+        }}
+        className={cn(
+          'h-7 cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          !value && 'text-muted-foreground',
+          overdue && 'text-destructive',
+        )}
+      />
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
 /** The agent that works this task. Moving the task to In progress starts it. */
 export function IssueAssigneeField({
   project,
@@ -242,12 +300,14 @@ export function IssueAssigneeField({
   assignee,
   agents,
   id,
+  className,
 }: {
   project: string;
   issueKey: string;
   assignee?: string;
   agents: { id: string; name: string; avatar: string; archived: boolean }[];
   id: string;
+  className?: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -265,7 +325,10 @@ export function IssueAssigneeField({
             router.refresh();
           })
         }
-        className="-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={cn(
+          '-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          className,
+        )}
       >
         <option value="">No agent</option>
         {agents

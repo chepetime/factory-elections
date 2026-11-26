@@ -35,6 +35,9 @@ export const IssuePrefix = z
 
 const Iso = z.string().min(1);
 
+/** A calendar day, `YYYY-MM-DD`. */
+export const PlanDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date');
+
 export const Issue = z.object({
   number: z.number().int().min(1),
   title: z.string().trim().min(1).max(200),
@@ -48,6 +51,11 @@ export const Issue = z.object({
   jira_key: z.string().trim().min(1).max(100).optional(),
   /** The agent that works this task; moving it to In progress starts that agent's session. */
   assignee: z.string().min(1).optional(),
+  /** Who created it: `you`, the id of the agent that did, or `factory` for a wrapped run. */
+  created_by: z.string().min(1).optional(),
+  /** Planning: the day work should start and the day it is due (`YYYY-MM-DD`). */
+  start_date: PlanDate.optional(),
+  due_date: PlanDate.optional(),
   comments: z
     .array(
       z.object({
@@ -79,6 +87,15 @@ export const Issue = z.object({
   updated_at: Iso,
 });
 export type Issue = z.infer<typeof Issue>;
+
+/**
+ * Who created the task. Tasks from before the field: a wrapped run says so in its first event;
+ * for any other the creator was not recorded.
+ */
+export function issueCreator(issue: Pick<Issue, 'created_by' | 'events'>): string | undefined {
+  if (issue.created_by) return issue.created_by;
+  return issue.events[0]?.message === 'Created from a factory run' ? 'factory' : undefined;
+}
 
 export const IssueBoard = z.object({
   next: z.number().int().min(1),

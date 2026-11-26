@@ -21,6 +21,7 @@ import {
   TaskId,
   type DropAction,
   type FollowUpKind,
+  PlanDate,
   followUpAgent,
   type ProjectSettings,
   type Stage,
@@ -73,6 +74,8 @@ const CreateInput = z.object({
   status: z.enum(['backlog', 'todo']).default('backlog'),
   priority: IssuePriority.default('none'),
   jira_key: z.string().trim().max(100).optional(),
+  /** `you` from the board; an agent's id when its tool creates the task. */
+  created_by: z.string().min(1).max(100).default('you'),
 });
 const UpdateInput = z.object({
   project: ProjectName,
@@ -82,6 +85,9 @@ const UpdateInput = z.object({
   priority: IssuePriority.optional(),
   /** An agent id, or null to unassign. */
   assignee: z.string().min(1).nullable().optional(),
+  /** A `YYYY-MM-DD` day, or null to clear it. */
+  start_date: PlanDate.nullable().optional(),
+  due_date: PlanDate.nullable().optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
 const FollowUpInput = z.object({
@@ -183,6 +189,7 @@ export class IssueService {
         status_at: at,
         runs: [task.id],
         jira_key: task.jira_key,
+        created_by: 'factory',
         events: [{ at, kind: 'created', message: 'Created from a factory run' }],
         created_at: at,
         updated_at: task.updated_at ?? at,
@@ -283,6 +290,7 @@ export class IssueService {
         status_at: at,
         priority: input.priority,
         jira_key: input.jira_key || undefined,
+        created_by: input.created_by,
         events: [{ at, kind: 'created', message: 'Created' }],
         created_at: at,
         updated_at: at,
@@ -295,7 +303,7 @@ export class IssueService {
   }
 
   async update(raw: unknown): Promise<IssueView> {
-    const { project, key, assignee, ...patch } = UpdateInput.parse(raw);
+    const { project, key, assignee, start_date, due_date, ...patch } = UpdateInput.parse(raw);
     if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
     const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
     const updated = await this.change(project, key, (issue, at) => {
@@ -315,6 +323,22 @@ export class IssueService {
           at,
           kind: 'edit:assignee',
           message: assignee ? `Assigned to ${agentName}` : 'Removed the agent',
+        });
+      }
+      const start = start_date === undefined ? issue.start_date : (start_date ?? undefined);
+      const due = due_date === undefined ? issue.due_date : (due_date ?? undefined);
+      if (start && due && due < start) throw new Conflict('The due date is before the start date.');
+      for (const [field, value, label] of [
+        ['start_date', start_date, 'start date'],
+        ['due_date', due_date, 'due date'],
+      ] as const) {
+        if (value === undefined || (value ?? undefined) === issue[field]) continue;
+        const { [field]: _old, ...rest } = next;
+        next = value ? { ...rest, [field]: value } : rest;
+        events.push({
+          at,
+          kind: `edit:${field}`,
+          message: value ? `Set the ${label} to ${value}` : `Removed the ${label}`,
         });
       }
       if (!events.length) return issue;

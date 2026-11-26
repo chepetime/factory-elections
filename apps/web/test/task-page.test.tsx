@@ -32,6 +32,12 @@ vi.mock('@/components/issue-editor', () => ({
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
   IssueAssigneeField: () => <span>assignee</span>,
+  IssueDateField: ({ field, value, overdue }: { field: string; value?: string; overdue?: boolean }) => (
+    <span>
+      {field}:{value ?? 'unset'}
+      {overdue ? ':late' : ''}
+    </span>
+  ),
   IssueCommentBox: () => <span>comment-box</span>,
   IssueReplyBox: ({ parent }: { parent: string }) => <span>reply-box:{parent}</span>,
   IssueArchivedBanner: () => <span>archived-banner</span>,
@@ -410,12 +416,41 @@ it('a task without a run shows its description and takes comments', async () => 
   expect(vi.mocked(readTaskControls)).not.toHaveBeenCalled();
 });
 
+it('sums up the task under its title: status, priority, agent, creator, dates and feature', async () => {
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: { ...issue(), created_by: 'you', start_date: '2026-01-02', due_date: '2026-01-03' },
+  });
+  const page = await html();
+  const summary = page.slice(page.indexOf('aria-label="Summary"'), page.indexOf('description:Fix it'));
+  expect(summary).toMatch(/Status[\s\S]*status[\s\S]*Priority[\s\S]*priority[\s\S]*Agent[\s\S]*assignee/);
+  expect(summary).toMatch(/Created by[\s\S]*>You</);
+  expect(summary).toContain('start_date:2026-01-02');
+  // A due date in the past on an open task shows as late.
+  expect(summary).toMatch(/Due date \(late\)[\s\S]*due_date:2026-01-03:late/);
+  expect(summary).toMatch(/Feature[\s\S]*None/);
+
+  // A task from a feature links to it; an old task without a creator says so.
+  observe('completed', 'coding');
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: { ...task, ticket: { feature: 'checkout', id: 't1' } },
+      execution: 'completed',
+      actions: taskActions(task, 'completed'),
+    },
+  });
+  const linked = await html();
+  expect(linked).toContain('href="/projects/demo/features/checkout"');
+  expect(linked).toMatch(/Created by[\s\S]*Not recorded/);
+  expect(linked).toContain('due_date:unset');
+});
+
 it('lists the runs and pull requests in the side panel', async () => {
   observe('completed', 'coding');
   let page = await html(undefined, 'details');
   expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
   expect(page).toContain('No pull request yet.');
-  expect(page).toMatch(/Project[\s\S]*demo/);
 
   const opened = {
     ...task,
@@ -491,7 +526,7 @@ it('opens the run in the right panel, with its session, and keeps a short card i
   expect(page).toMatch(/Run 1<\/span>/);
   const details = await html(undefined, 'details');
   expect(details).toMatch(/href="[^"]*panel=run"[^>]*>Open</);
-  expect(details).toContain('Properties');
+  expect(details).not.toContain('Properties');
 });
 
 it('puts what the run needs from you on the ticket, also with the Details tab open', async () => {
