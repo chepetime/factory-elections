@@ -102,7 +102,7 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
     phase,
   });
 }
-async function html(start?: string, panel?: 'run' | 'timeline' | 'changes' | 'details') {
+async function html(start?: string, panel?: 'run' | 'status' | 'timeline' | 'changes' | 'details') {
   return renderToStaticMarkup(
     await TaskPage({
       params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
