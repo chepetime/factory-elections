@@ -480,6 +480,51 @@ export class IssueService {
     );
   }
 
+  /**
+   * The task's PR changed state on GitHub (the tending pass reads it). Merged: the task is Done.
+   * Closed without a merge: Cancelled. Reopened: back to In review. Only the latest run's PR moves
+   * the task, and each change is recorded once.
+   */
+  async prOutcome(
+    project: string,
+    runId: string,
+    pr: { number: number; state: 'OPEN' | 'MERGED' | 'CLOSED' },
+  ): Promise<IssueView | undefined> {
+    const view = await this.get({ project, key: runId }).catch(() => undefined);
+    if (!view || view.run?.id !== runId) return undefined;
+    const known = view.pr_outcome;
+    if (pr.state === 'OPEN') {
+      if (!known || known.number !== pr.number) return undefined;
+      return this.change(project, view.key, (issue, at) => {
+        const { pr_outcome: _gone, ...rest } = issue;
+        return {
+          ...rest,
+          status: 'in_review',
+          status_at: at,
+          events: [...issue.events, { at, kind: 'pr-outcome', message: `PR #${pr.number} was reopened.` }],
+        };
+      });
+    }
+    if (known?.state === pr.state && known.number === pr.number) return undefined;
+    const merged = pr.state === 'MERGED';
+    return this.change(project, view.key, (issue, at) => ({
+      ...issue,
+      pr_outcome: { state: pr.state as 'MERGED' | 'CLOSED', number: pr.number, at },
+      status: merged ? 'done' : 'cancelled',
+      status_at: at,
+      events: [
+        ...issue.events,
+        {
+          at,
+          kind: 'pr-outcome',
+          message: merged
+            ? `PR #${pr.number} was merged. The task is done.`
+            : `PR #${pr.number} was closed without a merge. The task is cancelled.`,
+        },
+      ],
+    }));
+  }
+
   /** Adds an event for the activity feed, unless the last event says the same. */
   async note(raw: unknown): Promise<IssueView> {
     const { project, key, kind, message } = z

@@ -353,6 +353,13 @@ export class BackendService {
     this.reviews.onReviewEnded = (project, number, payload, reason) =>
       this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
+      prObserved: async (task, pr) => {
+        await this.issues.prOutcome(task.project, task.id, pr);
+        // An agent's draft PR that never got a review loop (it opened before the loop existed, or
+        // the backend was down): start one. The loop ignores a PR it already has a state for.
+        if (pr.state === 'OPEN' && pr.draft && task.workflow === 'agent')
+          await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
+      },
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({
           project: task.project,

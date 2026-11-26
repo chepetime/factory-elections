@@ -41,6 +41,14 @@ export const PrState = z.object({
 });
 export type PrState = z.infer<typeof PrState>;
 
+/** The few PR facts the board needs on every pass: open, merged or closed, and draft or not. */
+export const PrStatus = z.object({
+  number: z.number().int().positive(),
+  state: z.enum(['OPEN', 'MERGED', 'CLOSED']),
+  draft: z.boolean(),
+});
+export type PrStatus = z.infer<typeof PrStatus>;
+
 export const TendFix = z.object({
   kind: z.enum(['merge-base', 'fix-ci', 'answer-threads', 'rerun']),
   at: z.string(),
