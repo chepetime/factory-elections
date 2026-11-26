@@ -39,7 +39,7 @@ function Scene({ id }: { id: BackgroundId }) {
           mouseGlow={0.6}
           curvature={0.16}
           vignette={0.25}
-          clickEffect="glitch"
+          clickEffect="none"
           scramble={0.9}
           mouseReact={false}
         />
@@ -57,6 +57,7 @@ function Scene({ id }: { id: BackgroundId }) {
           warpIntensity={1}
           rotation={-33}
           enableMouseInteraction
+          clickRipple={false}
         />
       );
     case 'crt-warp':
@@ -77,6 +78,7 @@ function Scene({ id }: { id: BackgroundId }) {
           bloom={1.3}
           rgbShift={0.004}
           vignette={0.5}
+          changeOnClick={false}
         />
       );
     default:
