@@ -470,8 +470,26 @@ export class TendingService {
         await git(cwd, ['reset', '-q', '--hard', before]);
         return done('failed', cost, `the test command failed: ${(test.stdout + test.stderr).slice(-500)}`);
       }
+      // Push the commit that was tested. If HEAD moved during setup or test (a command committed),
+      // the tested SHA is not what is on disk: fail and go back rather than push either.
+      const now = await gitOk(cwd, ['rev-parse', 'HEAD']);
+      if (now !== head) {
+        await git(cwd, ['reset', '-q', '--hard', before]);
+        return done(
+          'failed',
+          cost,
+          `HEAD moved from ${head.slice(0, 12)} to ${now.slice(0, 12)} while the checks ran`,
+        );
+      }
       // A plain push of new commits on top of the PR head: a fast-forward, never a force-push.
-      await gitOk(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`]);
+      await gitOk(cwd, ['push', '-q', 'origin', `${head}:refs/heads/${branch}`]);
+      const remote = (await gitOk(cwd, ['ls-remote', 'origin', `refs/heads/${branch}`])).split(/\s/)[0];
+      if (remote !== head)
+        return done(
+          'failed',
+          cost,
+          `origin ${branch} is ${remote || 'missing'} after the push, not ${head.slice(0, 12)}`,
+        );
     }
     const answered: string[] = [];
     for (const reply of replies) {
