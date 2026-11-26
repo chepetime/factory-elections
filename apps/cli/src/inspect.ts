@@ -47,7 +47,9 @@ export function paths(root: string) {
     backend_lock: existsSync(lock) ? lock : null,
     logs: join(root, 'logs'),
     project_dir: join(root, '<project>'),
-    tasks: join(root, '<project>', 'tasks', '<run-id>'),
+    // With storage.json, tickets and runs live in Postgres (read them with `issue show`, `task show`).
+    storage: existsSync(join(root, 'storage.json')) ? 'postgres' : 'files',
+    tasks: existsSync(join(root, 'storage.json')) ? null : join(root, '<project>', 'tasks', '<run-id>'),
     reviews: join(root, '<project>', 'reviews', '<pr-number>'),
     health: `http://127.0.0.1:${process.env.FACTORY_HEALTH_PORT ?? 4318}/health`,
     backend: process.env.FACTORY_BACKEND_ADDRESS ?? `127.0.0.1:${process.env.FACTORY_BACKEND_PORT ?? 4319}`,
