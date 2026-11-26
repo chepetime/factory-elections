@@ -25,7 +25,8 @@ test('skills come from Factory definitions first, then the skills shipped for Cl
   assert.doesNotMatch(text, /Shadowed|missing|etc/);
 });
 
-test('the real skill folders include the PR review skill', async () => {
+test('the real skill folders include the PR review and design skills', async () => {
   const names = await availableSkills(AGENT_SKILL_DIRS);
   assert.ok(names.includes('senior-pr-review'));
+  assert.ok(names.includes('emil-design-engineering'));
 });
