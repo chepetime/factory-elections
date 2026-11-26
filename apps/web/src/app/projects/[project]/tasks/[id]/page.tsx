@@ -126,9 +126,12 @@ export default async function TaskPage({
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
   // The right panel shows the run when there is one; Timeline is the ticket's history, Changes the
   // run's diff, and Details holds access, PRs, the execution log and dates.
-  type Panel = 'run' | 'timeline' | 'changes' | 'details';
+  type Panel = 'run' | 'status' | 'timeline' | 'changes' | 'details';
   const panel: Panel =
-    query.panel === 'timeline' || query.panel === 'changes' || query.panel === 'details'
+    query.panel === 'status' ||
+    query.panel === 'timeline' ||
+    query.panel === 'changes' ||
+    query.panel === 'details'
       ? query.panel
       : !runId && query.panel !== 'run'
         ? 'details'
@@ -358,6 +361,7 @@ export default async function TaskPage({
           {(
             [
               ['run', 'Run'],
+              ['status', 'Status'],
               ['timeline', 'Timeline'],
               ['changes', 'Changes'],
               ['details', 'Details'],
@@ -420,12 +424,37 @@ export default async function TaskPage({
                       </p>
                     )
                   )}
-                  <h3 className="mt-6 mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                    Status and actions
-                  </h3>
-                  <div className="flex flex-col gap-5">{run.value.activity}</div>
                 </div>
+                {/* The chat holds the session only; what the run needs from you is one link away. */}
+                {run.value.attention && (
+                  <Link
+                    href={panelHref('status')}
+                    className="mx-5 mb-2 flex shrink-0 items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                  >
+                    <span>{runAuthor?.name ?? 'The run'} needs you.</span>
+                    <span className="font-medium">Open Status and actions →</span>
+                  </Link>
+                )}
                 <div className="shrink-0 border-t bg-muted/80 pt-3">{run.value.composer}</div>
+              </>
+            )}
+          </div>
+        ) : panel === 'status' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {!run ? (
+              <p className="text-sm text-muted-foreground">No run yet, so nothing to act on.</p>
+            ) : !run.ok ? (
+              <p role="alert" className="text-sm text-destructive">
+                Run unavailable: {run.error}
+              </p>
+            ) : (
+              <>
+                <p className="mb-4 flex items-center gap-2 text-sm">
+                  <span className="font-medium">Run {runIndex}</span>
+                  <StageBadge stage={run.value.task.stage} />
+                </p>
+                <div className="flex flex-col gap-5">{run.value.activity}</div>
+                <div className="mt-5 border-t pt-3">{run.value.composer}</div>
               </>
             )}
           </div>
