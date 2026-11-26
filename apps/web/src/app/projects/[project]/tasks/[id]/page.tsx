@@ -1,37 +1,28 @@
-import { Check, ChevronRight, GitPullRequest, Minus, X } from 'lucide-react';
+import { ChevronRight, GitPullRequest } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import type { ReactNode } from 'react';
 import {
   stageLabel,
   statusFromStage,
   taskAccess,
   issueCreator,
-  type IssueStatus,
-  type ServiceAccess,
   type TaskRecord,
   queueWaitLabel,
 } from '@factory/core';
 import { FollowUpForm } from '@/components/follow-up-form';
 import { LocalTime } from '@/components/local-time';
-import { Markdown } from '@/components/markdown';
 import {
   IssueArchivedBanner,
-  IssueAssigneeField,
   IssueCommentBox,
-  IssueDateField,
   IssueDescription,
-  IssuePriorityField,
-  IssueReplyBox,
-  IssueStatusField,
   IssueTitle,
 } from '@/components/issue-editor';
 import { StageBadge } from '@/components/stage-badge';
-import { STATUS, StatusLabel } from '@/components/task-status';
-import { Fact, Facts, money, renderRun, Section } from '@/components/task-run';
+import { StatusLabel } from '@/components/task-status';
+import { Fact, Facts, renderRun, Section } from '@/components/task-run';
 import { isProjectName, isTaskId, showTask } from '@/lib/factory';
-import { getIssue, type IssueView } from '@/lib/issues';
+import { getIssue } from '@/lib/issues';
 import { listAgents } from '@/lib/agents';
 import { ResizablePane } from '@/components/resizable-pane';
 import { RunSessionView } from '@/components/run-session';
@@ -44,6 +35,10 @@ import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
 import { cn } from '@/lib/utils';
+import { Feed, feedItems, type Authors } from '@/components/task-feed';
+import { AccessList } from '@/components/task-access';
+import { prLabel, RunRow, totalCost } from '@/components/task-runs';
+import { TaskSummary } from '@/components/task-summary';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,373 +53,6 @@ export async function generateMetadata({
   if (!isProjectName(project) || !TASK_KEY.test(id)) return { title: 'Task' };
   const [issue, label] = await Promise.all([getIssue(project, id), projectLabel(project)]);
   return { title: issue.ok ? `${issue.value.key} ${clip(issue.value.title)} · ${label}` : `Task · ${label}` };
-}
-
-type IssueEvent = IssueView['events'][number];
-type IssueComment = IssueView['comments'][number];
-type FeedItem =
-  | { at: string; kind: 'event'; event: IssueEvent }
-  | { at: string; kind: 'thread'; root: IssueComment; replies: IssueComment[] };
-
-/** Status changes show the new status icon; older events only carry it in their kind. */
-function eventStatus(event: IssueEvent): IssueStatus | undefined {
-  const to = event.to ?? (event.kind.startsWith('move:') ? event.kind.slice(5) : undefined);
-  return to && to in STATUS ? (to as IssueStatus) : undefined;
-}
-
-function Happening({ event }: { event: IssueEvent }) {
-  const status = eventStatus(event);
-  const look = status ? STATUS[status] : undefined;
-  return (
-    <li className="flex items-center gap-2.5 py-1.5 text-sm text-muted-foreground">
-      {look ? (
-        <look.icon className={cn('size-4 shrink-0', look.tone)} aria-hidden />
-      ) : (
-        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-          <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-        </span>
-      )}
-      <span className="min-w-0 flex-1">{event.message}</span>
-      <LocalTime iso={event.at} format="date-time" className="shrink-0 text-xs tabular-nums" />
-    </li>
-  );
-}
-
-/** Two or more events in a row fold under one "N activities" line. */
-function Happenings({ events }: { events: IssueEvent[] }) {
-  const rows = events.map((e, i) => <Happening key={`${e.at}-${e.kind}-${i}`} event={e} />);
-  if (events.length === 1) return <ol>{rows}</ol>;
-  return (
-    <details open className="group/acts">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-1 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden
-          className="size-3.5 transition-transform duration-150 ease-out group-open/acts:rotate-90 motion-reduce:transition-none"
-        />
-        {events.length} activities
-      </summary>
-      <ol>{rows}</ol>
-    </details>
-  );
-}
-
-type Authors = Record<string, { name: string; avatar: string }>;
-
-function CommentBody({
-  comment,
-  reply,
-  authors,
-}: {
-  comment: IssueComment;
-  reply?: boolean;
-  authors: Authors;
-}) {
-  const agent =
-    comment.author === 'you'
-      ? undefined
-      : (authors[comment.author] ?? { name: comment.author, avatar: '🤖' });
-  return (
-    <div className={cn('px-4 py-3', reply && 'border-t')}>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        {agent && <AgentAvatar agent={agent} size="sm" decorative />}
-        <span className="text-sm font-medium text-foreground">{agent?.name ?? 'You'}</span>
-        <LocalTime iso={comment.at} format="date-time" />
-      </p>
-      <div className="mt-1.5 text-sm">
-        <Markdown text={comment.body} />
-      </div>
-    </div>
-  );
-}
-
-function Thread({
-  project,
-  issueKey,
-  root,
-  replies,
-  authors,
-}: {
-  project: string;
-  issueKey: string;
-  root: IssueComment;
-  replies: IssueComment[];
-  authors: Authors;
-}) {
-  return (
-    <article
-      aria-label={`Comment thread, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
-      className="overflow-hidden rounded-xl border bg-card shadow-xs"
-    >
-      <CommentBody comment={root} authors={authors} />
-      {replies.map((r) => (
-        <CommentBody key={r.id} comment={r} reply authors={authors} />
-      ))}
-      <IssueReplyBox project={project} issueKey={issueKey} parent={root.id} />
-    </article>
-  );
-}
-
-const ACCESS_LOOK = {
-  full: { icon: Check, tone: 'text-emerald-600 dark:text-emerald-400', label: 'Full access' },
-  limited: { icon: Minus, tone: 'text-amber-600 dark:text-amber-400', label: 'Limited access' },
-  none: { icon: X, tone: 'text-muted-foreground', label: 'No access' },
-} as const;
-
-/** Which services the task's session can reach. Services with no access share one line. */
-function AccessList({ access }: { access: ServiceAccess[] }) {
-  const reachable = access.filter((a) => a.level !== 'none' || a.service === 'GitHub');
-  const off = access.filter((a) => a.level === 'none' && a.service !== 'GitHub');
-  return (
-    <ul className="flex flex-col gap-2.5 text-sm">
-      {reachable.map((a) => {
-        const look = ACCESS_LOOK[a.level];
-        return (
-          <li key={a.service} className="flex gap-2">
-            <look.icon className={cn('mt-0.5 size-4 shrink-0', look.tone)} aria-label={look.label} />
-            <span className="min-w-0">
-              <span className="font-medium">{a.service}</span>
-              <span className="block text-xs text-muted-foreground">{a.detail}</span>
-            </span>
-          </li>
-        );
-      })}
-      {off.length > 0 && (
-        <li className="flex gap-2">
-          <X className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label="No access" />
-          <span className="min-w-0">
-            <span className="font-medium">Not connected</span>
-            <span className="block text-xs text-muted-foreground">
-              {off.map((a) => a.service).join(', ')}
-            </span>
-          </span>
-        </li>
-      )}
-    </ul>
-  );
-}
-
-/** Issue events and comment threads, oldest first. A thread sorts by its first comment. */
-function feedItems(issue: IssueView): FeedItem[] {
-  const roots = issue.comments.filter((c) => !c.parent || !issue.comments.some((r) => r.id === c.parent));
-  return [
-    ...issue.events.map((event): FeedItem => ({ at: event.at, kind: 'event', event })),
-    ...roots.map((root): FeedItem => ({
-      at: root.at,
-      kind: 'thread',
-      root,
-      replies: issue.comments.filter((c) => c.parent === root.id),
-    })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-}
-
-function Feed({
-  items,
-  project,
-  issueKey,
-  authors,
-}: {
-  items: FeedItem[];
-  project: string;
-  issueKey: string;
-  authors: Authors;
-}) {
-  const blocks: ReactNode[] = [];
-  let events: IssueEvent[] = [];
-  const flush = () => {
-    if (events.length) blocks.push(<Happenings key={`acts-${blocks.length}`} events={events} />);
-    events = [];
-  };
-  for (const item of items) {
-    if (item.kind === 'event') {
-      events.push(item.event);
-      continue;
-    }
-    flush();
-    blocks.push(
-      <Thread
-        key={item.root.id}
-        project={project}
-        issueKey={issueKey}
-        root={item.root}
-        replies={item.replies}
-        authors={authors}
-      />,
-    );
-  }
-  flush();
-  return blocks.length ? <div className="mt-3 flex flex-col gap-3">{blocks}</div> : null;
-}
-
-/** `https://github.com/o/r/pull/12` reads `o/r#12`; any other URL stays as it is. */
-function prLabel(url: string): string {
-  const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
-  return m ? `${m[1]}#${m[2]}` : url;
-}
-
-/** Known spend across runs; a run with an unpriced attempt marks the total as partial. */
-function totalCost(records: TaskRecord[]): string | undefined {
-  const attempts = records.flatMap((r) => r.attempts ?? []);
-  if (!attempts.length) return undefined;
-  const sum = attempts.reduce((total, a) => total + (a.cost_usd ?? 0), 0);
-  return `${attempts.some((a) => a.cost_usd === null) ? 'at least ' : ''}$${sum.toFixed(2)}`;
-}
-
-function RunRow({
-  href,
-  index,
-  record,
-  current,
-  latest,
-}: {
-  href: string;
-  index: number;
-  record: TaskRecord | undefined;
-  current: boolean;
-  latest: boolean;
-}) {
-  const look = record ? STATUS[statusFromStage(record.stage)] : undefined;
-  const Icon = look?.icon;
-  return (
-    <li>
-      <Link
-        href={href}
-        aria-current={current ? 'true' : undefined}
-        className={cn(
-          '-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted',
-          current && 'bg-muted',
-        )}
-      >
-        {Icon ? (
-          <Icon className={cn('size-4 shrink-0', look.tone)} aria-hidden />
-        ) : (
-          <span className="size-4 shrink-0" aria-hidden />
-        )}
-        <span className={cn('shrink-0', current && 'font-medium')}>Run {index}</span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          {record ? stageLabel(record.stage) : 'Unavailable'}
-          {latest && ' · latest'}
-        </span>
-        <span className="shrink-0 text-muted-foreground tabular-nums">{record ? money(record) : ''}</span>
-      </Link>
-    </li>
-  );
-}
-
-type SummaryAgent = { id: string; name: string; avatar: string; archived: boolean };
-
-/** One labeled value in the summary row under the title. */
-function SummaryItem({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
-  const Label = htmlFor ? 'label' : 'span';
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <Label htmlFor={htmlFor} className="text-xs text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex min-h-7 items-center text-sm">{children}</div>
-    </div>
-  );
-}
-
-function Creator({ creator, agents }: { creator?: string; agents: SummaryAgent[] }) {
-  if (!creator) return <span className="text-muted-foreground">Not recorded</span>;
-  if (creator === 'you') return <span>You</span>;
-  if (creator === 'factory') return <span>Factory</span>;
-  const agent = agents.find((a) => a.id === creator);
-  if (!agent) return <span>{creator}</span>;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <AgentAvatar agent={agent} size="sm" decorative />
-      {agent.name}
-    </span>
-  );
-}
-
-/** What the task is and who has it: status, priority, agent, creator, and its planning dates. */
-function TaskSummary({
-  project,
-  issue,
-  agents,
-  feature,
-}: {
-  project: string;
-  issue: IssueView;
-  agents: SummaryAgent[];
-  feature?: string;
-}) {
-  const today = new Date().toISOString().slice(0, 10);
-  const overdue = !!issue.due_date && issue.due_date < today && issue.status !== 'done';
-  return (
-    <div
-      aria-label="Summary"
-      role="group"
-      className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-card px-4 py-3 shadow-xs sm:grid-cols-4"
-    >
-      <SummaryItem label="Status">
-        <IssueStatusField
-          project={project}
-          issue={{ key: issue.key, title: issue.title, status: issue.status, run: issue.run }}
-        />
-      </SummaryItem>
-      <SummaryItem label="Priority" htmlFor="issue-priority">
-        <IssuePriorityField
-          project={project}
-          issueKey={issue.key}
-          priority={issue.priority}
-          id="issue-priority"
-          className="mx-0 -ml-1.5"
-        />
-      </SummaryItem>
-      <SummaryItem label="Agent" htmlFor="issue-assignee">
-        <IssueAssigneeField
-          project={project}
-          issueKey={issue.key}
-          {...(issue.assignee ? { assignee: issue.assignee } : {})}
-          agents={agents}
-          id="issue-assignee"
-          className="mx-0 -ml-1.5"
-        />
-      </SummaryItem>
-      <SummaryItem label="Created by">
-        <Creator creator={issueCreator(issue)} agents={agents} />
-      </SummaryItem>
-      <SummaryItem label="Start date" htmlFor="issue-start-date">
-        <IssueDateField
-          project={project}
-          issueKey={issue.key}
-          field="start_date"
-          id="issue-start-date"
-          {...(issue.start_date ? { value: issue.start_date } : {})}
-        />
-      </SummaryItem>
-      <SummaryItem label={overdue ? 'Due date (late)' : 'Due date'} htmlFor="issue-due-date">
-        <IssueDateField
-          project={project}
-          issueKey={issue.key}
-          field="due_date"
-          id="issue-due-date"
-          overdue={overdue}
-          {...(issue.due_date ? { value: issue.due_date } : {})}
-        />
-      </SummaryItem>
-      <SummaryItem label="Feature">
-        {feature ? (
-          <Link
-            href={`/projects/${project}/features/${encodeURIComponent(feature)}`}
-            className="truncate underline-offset-2 hover:underline"
-          >
-            {feature}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">None</span>
-        )}
-      </SummaryItem>
-      {issue.jira_key && (
-        <SummaryItem label="Jira">
-          <span className="font-mono text-xs">{issue.jira_key}</span>
-        </SummaryItem>
-      )}
-    </div>
-  );
 }
 
 export default async function TaskPage({
