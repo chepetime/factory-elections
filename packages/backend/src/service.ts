@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -6,54 +5,26 @@ import { z } from 'zod';
 import {
   ProjectName,
   TaskId,
-  TaskCommand,
   executionPhase,
   runWorking,
   taskActions,
   taskCommandBlockers,
   withStage,
-  newSpanId,
   newTraceId,
   taskClass,
-  UNUSUAL_LOOKBACK_MS,
-  traceTree,
   inboxItems,
   type InboxItem,
-  metricsSummary,
   type ModelRunner,
-  type RepoProfile,
   type TaskControls,
   type TaskRecord,
-  type TraceScope,
   CleanupRecord,
   cleanupBlocker,
-  combineCleanup,
-  errorCleanup,
-  ExecutionOutcome,
   failureOutcome,
-  parseModelRef,
-  ProviderSessionRef,
-  withSession,
-  type CallCleanup,
-  type ModelFailure,
-  type ModelResult,
-  CallManifest,
   taskSpend,
   envNames,
-  modelRefused,
-  withUserRules,
-  type AgentEvent,
   type QueueWait,
 } from '@factory/core';
-import {
-  callManifest,
-  Evidence,
-  ExperimentStore,
-  OutcomeStore,
-  saveTaskReceipt,
-  TraceLog,
-  withManifest,
-} from '@factory/evidence';
+import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
 import { composeDriver } from '@factory/compose';
@@ -66,8 +37,6 @@ import {
   ChatService,
   AgentPickup,
   routeTask,
-  SessionLog,
-  transcriptEntries,
   type SessionEntry,
 } from '@factory/agents';
 import { FeatureService } from './features.ts';
@@ -86,40 +55,10 @@ import { TeamService } from './team.ts';
 import { TicketService } from './tickets.ts';
 import { environmentChecks, type Check } from '@factory/compose/diagnostics';
 import type { BackgroundRun, Command, Target } from '@factory/backend-client/protocol';
-import { RunActivity, trackShell } from './activity.ts';
 import { ProfileChecks } from './profile-check.ts';
-
-const TargetSchema = z.object({ project: ProjectName, id: TaskId });
-const CommandSchema = TargetSchema.extend({
-  action: TaskCommand,
-  note: z.string().max(20_000).optional().default(''),
-  head: z.string().max(64).optional().default(''),
-  accept_blocking: z.boolean().optional().default(false),
-  draft: z.boolean().optional().default(false),
-  max_attempts: z.number().int().min(0).max(10).optional().default(0),
-});
-const RunRecord = z.object({
-  id: TaskId,
-  project: ProjectName,
-  task_id: TaskId,
-  action: TaskCommand,
-  command: CommandSchema,
-  label: z.string(),
-  state: z.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
-  created_at: z.string(),
-  finished_at: z.string().optional(),
-  error: z.string().optional(),
-  dismissed: z.boolean().optional(),
-  /** How the run ended, apart from `state` (ADR 0005). Absent in older records: see runOutcome. */
-  outcome: ExecutionOutcome.optional(),
-  /** Whether the run's processes are known to be gone. Absent: not recorded. */
-  cleanup: CleanupRecord.optional(),
-  /** The provider sessions the run's model calls used, as references. */
-  provider_sessions: z.array(ProviderSessionRef).optional(),
-  /** What the run's model calls were given: one entry per distinct configuration (Phase 4). */
-  manifests: z.array(CallManifest).optional(),
-});
-type RunRecord = z.infer<typeof RunRecord>;
+import { TaskTraces } from './task-traces.ts';
+import { CommandSchema, RunRecord, TargetSchema, type RunCommand } from './run-record.ts';
+import { performCommand, RunExecutor } from './run-executor.ts';
 
 /**
  * Task runs that may execute at once. Each has its own worktree; the git adapter serializes the
@@ -129,22 +68,6 @@ type RunRecord = z.infer<typeof RunRecord>;
 export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WORKERS ?? 3) || 1);
 /** How long shutdown waits for the active runs before it stops them. */
 export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
-/** The commit a branch points at, or undefined when git cannot tell. */
-const revParse = (repo: string, ref: string | undefined) =>
-  new Promise<string | undefined>((done) => {
-    if (!ref) return done(undefined);
-    execFile('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], (error, stdout) =>
-      done(error ? undefined : stdout.trim() || undefined),
-    );
-  });
-
-/** When a task at the approval gate reached it: its latest gate input. */
-const gateOpenedAt = (task: TaskRecord): string | undefined =>
-  [task.pr_draft?.at, task.review?.at, task.verification?.at, task.updated_at]
-    .filter((x): x is string => !!x)
-    .sort()
-    .at(-1);
-
 const INTERRUPTED =
   'The backend stopped during this run. Run the task again to continue from the last saved step.';
 
@@ -163,10 +86,10 @@ export class BackendService {
   readonly pool: AgentPool;
   /** The task run queue. */
   private readonly dispatcher: Dispatcher;
-  /** Aborts each running run's model calls and checks, on shutdown after the grace period. */
-  private readonly controllers = new Map<string, AbortController>();
-  /** What each executing run is doing now: current command and last output. */
-  private readonly activities = new Map<string, RunActivity>();
+  /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
+  private readonly taskTraces: TaskTraces;
+  /** Executes accepted runs and holds what is live about each one. */
+  private readonly executor: RunExecutor;
   readonly root: string;
   private readonly runner?: ModelRunner;
   /** The `delegate` MCP server. Children take agent slots like any other agent. */
@@ -194,26 +117,10 @@ export class BackendService {
       ? 'Running classify → code → verify → review'
       : 'Revising: code → verify → review';
   }
-  /** Session logs of runs in progress, per `project/task id`. */
-  private readonly sessionLogs = new Map<string, SessionLog>();
-  private sessionPath(project: string, id: string): string {
-    return join(dirname(this.tasks.taskPath(project, id)), 'session.json');
-  }
-  private async readSession(project: string, id: string): Promise<SessionEntry[]> {
-    const doc = (await this.storage.readDocument(this.sessionPath(project, id)).catch(() => undefined)) as
-      { entries?: SessionEntry[] } | undefined;
-    if (Array.isArray(doc?.entries)) return doc.entries;
-    // Runs from before session logs: rebuild the agent's session from Claude's transcripts.
-    const task = await this.tasks.read(project, id).catch(() => undefined);
-    return task?.workflow === 'agent' && task.worktree ? transcriptEntries(task.worktree.path) : [];
-  }
   /** A task's session: every agent message, tool call and result of its runs, live while one works. */
   async runSession(raw: unknown): Promise<{ entries: SessionEntry[]; live: boolean }> {
     const { project, id } = z.object({ project: ProjectName, id: TaskId }).parse(raw);
-    const live = this.sessionLogs.get(`${project}/${id}`);
-    return live
-      ? { entries: live.entries, live: true }
-      : { entries: await this.readSession(project, id), live: false };
+    return this.executor.session(project, id);
   }
   /** Why a turn queued for the task has not started; undefined when none waits. */
   isWaiting(project: string, id: string): QueueWait | undefined {
@@ -343,6 +250,26 @@ export class BackendService {
           : this.execute({ project, id, action: 'reject', note } as Command),
       reviewPr: (project, number) => this.reviews.start({ project, numbers: [number], mode: 'review' }),
       log: (line) => process.stderr.write(`${line}\n`),
+    });
+    this.taskTraces = new TaskTraces({
+      root,
+      tasks: this.tasks,
+      traces: this.traces,
+      features: this.features,
+      projects: this.projects,
+    });
+    this.executor = new RunExecutor({
+      storage: this.storage,
+      tasks: this.tasks,
+      traces: this.traces,
+      taskTraces: this.taskTraces,
+      memory: this.memory,
+      user: this.user,
+      runner: (log) => this.runner ?? composeDriver(this.root, log).deps.runner,
+      driver: (log, runner, signal) => this.driver(log, runner, signal),
+      stopRequested: (runId) => this.dispatcher.stopRequested(runId),
+      receipt: (project, id) => this.issueReceipt(project, id),
+      kick: () => this.pickup?.kick(),
     });
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
@@ -639,23 +566,6 @@ export class BackendService {
     if (agent) await this.tasks.write({ ...task, workflow: 'agent', agent });
     return task.id;
   }
-  private async perform(command: z.infer<typeof CommandSchema>, driver: Driver): Promise<string> {
-    const { project, id, action } = command;
-    switch (action) {
-      case 'run':
-        return (await driver.run(project, id, { maxAttempts: command.max_attempts || 3 })).stage;
-      case 'revise':
-        return (await driver.revise(project, id, command.note, { maxAttempts: command.max_attempts || 3 }))
-          .stage;
-      case 'approve':
-        return `Approved: ${(await driver.approve(project, id, { head: command.head, note: command.note || undefined, acceptBlocking: command.accept_blocking })).approval!.head_sha}`;
-      case 'reject':
-        await driver.reject(project, id, command.note);
-        return `Rejected: ${id}`;
-      case 'open-pr':
-        return (await driver.openPr(project, id, { draft: command.draft })).pr!.url;
-    }
-  }
   private command(raw: Command) {
     const command = CommandSchema.parse(raw);
     if (['revise', 'reject'].includes(command.action) && !command.note.trim())
@@ -674,20 +584,20 @@ export class BackendService {
       try {
         return await evidence
           .span(`task.${command.action}`, { project: command.project, task_id: command.id }, () =>
-            this.perform(
+            performCommand(
               command,
               this.driver((line) => evidence.record('log', { message: line })),
             ),
           )
           .then(async (result) => {
             if (command.action === 'open-pr')
-              await this.tracePr(command.project, command.id).catch(() => undefined);
+              await this.taskTraces.pr(command.project, command.id).catch(() => undefined);
             if (command.action === 'approve' || command.action === 'open-pr')
               await this.issueReceipt(command.project, command.id).catch(() => undefined);
             if (before && ['approve', 'reject'].includes(command.action))
-              await this.traceGate(before, command.action === 'approve' ? 'approved' : 'rejected').catch(
-                () => undefined,
-              );
+              await this.taskTraces
+                .gate(before, command.action === 'approve' ? 'approved' : 'rejected')
+                .catch(() => undefined);
             return result;
           });
       } finally {
@@ -709,7 +619,7 @@ export class BackendService {
       // A run that may have left processes behind blocks the next one on the same worktree.
       const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
       if (waiting) throw new Conflict(waiting);
-      if (command.action === 'revise') await this.traceGate(task, 'revise').catch(() => undefined);
+      if (command.action === 'revise') await this.taskTraces.gate(task, 'revise').catch(() => undefined);
       const blocked = await this.runBlocker(command.project);
       if (blocked) throw new Conflict(blocked);
       await readProfile(this.root, command.project);
@@ -740,7 +650,7 @@ export class BackendService {
   }
   /** Queues an accepted run on the dispatcher. It takes over the reservation and the task lock. */
   private schedule(
-    command: z.infer<typeof CommandSchema>,
+    command: RunCommand,
     record: RunRecord,
     dir: string,
     unlock: () => Promise<void>,
@@ -757,243 +667,12 @@ export class BackendService {
           const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
           return { name, limit };
         },
-        work: (release) => this.work(command, record, dir, release),
+        work: (release) => this.executor.run(command, record, dir, release),
         cancelled: () => this.closeUnstarted(record, dir),
         settle: unlock,
       },
       reservation,
     );
-  }
-  /** A run that holds its worker, agent and pool slot. `release` frees them once the agent is done. */
-  private async work(
-    command: z.infer<typeof CommandSchema>,
-    record: RunRecord,
-    dir: string,
-    release: Release,
-  ): Promise<void> {
-    const controller = new AbortController();
-    this.controllers.set(record.id, controller);
-    if (this.dispatcher.stopRequested(record.id)) controller.abort();
-    const activity = new RunActivity();
-    this.activities.set(record.id, activity);
-    let evidence: Evidence | undefined;
-    // Cleanup evidence and session references from the run's model calls (ADR 0005).
-    const calls: CallCleanup[] = [];
-    let sessions: ProviderSessionRef[] = [];
-    let manifests: CallManifest[] = [];
-    const trace = await this.traceStart(command.project, command.id).catch(() => undefined);
-    const sessionKey = `${command.project}/${command.id}`;
-    // A read failure here would skip the finally below and leak this run's slots: start empty.
-    const session = new SessionLog(await this.readSession(command.project, command.id).catch(() => []));
-    session.run(command.action === 'revise' && command.note ? `You replied: ${command.note}` : record.label);
-    this.sessionLogs.set(sessionKey, session);
-    let savedAt = Date.now();
-    const saveSession = () =>
-      this.storage
-        .writeDocument(this.sessionPath(command.project, command.id), { entries: session.entries })
-        .catch(() => undefined);
-    try {
-      evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
-      record.state = 'running';
-      await this.storage.writeDocument(join(dir, 'run.json'), record);
-      const sink = evidence;
-      let logFailure: unknown;
-      const log = (message: string) => {
-        activity.heard();
-        try {
-          sink.log(message, { project: command.project, task_id: command.id });
-        } catch (error) {
-          // Log callbacks may run inside child-process data events: fail at an async boundary.
-          logFailure ??= error;
-        }
-      };
-      await sink.span(
-        `task.${command.action}`,
-        { project: command.project, task_id: command.id },
-        async (span) => {
-          const base = this.runner ?? composeDriver(this.root, log).deps.runner;
-          const ledger = trace ? this.traces.runner(base, () => trace.scope) : base;
-          const traced = this.memory.recording(command.project, record.id, sink.runner(ledger, span));
-          // Read once per run: a change in user settings applies from the next run.
-          const user = await this.user.get();
-          const checked: ModelRunner = {
-            async run(original) {
-              if (logFailure) throw logFailure;
-              const refused = modelRefused(user, original.model);
-              if (refused) throw new Conflict(`${refused}. Turn it on at /user, or pick another model.`);
-              const request = {
-                ...original,
-                systemPrompt: withUserRules(original.systemPrompt, user),
-                onEvent: (event: AgentEvent) => {
-                  session.event(event, original.step);
-                  // Saved now and then, so a crash loses little of what the person could read.
-                  if (Date.now() - savedAt > 15_000) {
-                    savedAt = Date.now();
-                    void saveSession();
-                  }
-                  original.onEvent?.(event);
-                },
-              };
-              manifests = withManifest(manifests, callManifest(request));
-              let result: ModelResult;
-              try {
-                result = await traced.run(request);
-              } catch (error) {
-                const cleanup = errorCleanup(error);
-                if (cleanup) calls.push(cleanup);
-                throw error;
-              }
-              if (result.sessionId)
-                sessions = withSession(sessions, {
-                  provider: parseModelRef(request.model).provider,
-                  native_id: result.sessionId,
-                  ...(request.cwd ? { cwd: request.cwd } : {}),
-                  scope: request.persistSession || request.resume ? 'task' : 'disposable',
-                  ...(request.step ? { step: request.step } : {}),
-                  last_used_at: new Date().toISOString(),
-                });
-              // Later spans of the run carry the class the classifier just gave the task.
-              if (trace && request.step === 'classifier')
-                trace.scope.task_class =
-                  taskClass(result.structured as { kind?: string; loe?: string }) ?? trace.scope.task_class;
-              return result;
-            },
-          };
-          const driver = this.driver(log, checked, controller.signal);
-          driver.deps.shell = trackShell(driver.deps.shell, activity);
-          await this.perform(command, driver);
-          if (logFailure) throw logFailure;
-        },
-      );
-      record.state = 'completed';
-      record.outcome = 'completed';
-    } catch (error) {
-      record.state = 'failed';
-      const stopped = this.dispatcher.stopRequested(record.id);
-      record.outcome = failureOutcome((error as { kind?: ModelFailure } | null)?.kind, stopped);
-      record.error = stopped
-        ? 'Stopped by you before the run finished.'
-        : error instanceof Error
-          ? error.message
-          : String(error);
-      // A worker error must not leave the UI thinking an owned run is still coding.
-      const task = await this.tasks.read(command.project, command.id);
-      if (stopped || runWorking(task.stage))
-        await this.tasks.write(withStage(task, new Date().toISOString(), 'failed', record.error));
-    } finally {
-      this.controllers.delete(record.id);
-      this.activities.delete(record.id);
-      await saveSession();
-      this.sessionLogs.delete(sessionKey);
-      // The agent is done: its slots go to the next waiting run while this one writes its records.
-      release();
-      // A slot is free again: an agent may take its next Todo task.
-      this.pickup?.kick();
-      record.finished_at = new Date().toISOString();
-      record.cleanup = combineCleanup(calls);
-      if (sessions.length) record.provider_sessions = sessions;
-      if (manifests.length) record.manifests = manifests;
-      if (trace) await this.traceEnd(trace, command.action, record).catch(() => undefined);
-      try {
-        try {
-          await this.storage.writeDocument(join(dir, 'run.json'), record);
-          // The receipt reads this run's manifests, so it follows the run record.
-          await this.issueReceipt(command.project, command.id).catch(() => undefined);
-        } finally {
-          await evidence?.close();
-        }
-      } catch (error) {
-        // Evidence durability is part of completion, even if the workflow itself succeeded.
-        record.state = 'failed';
-        record.outcome = 'failed';
-        record.error = [
-          record.error,
-          `Run finalization failed: ${error instanceof Error ? error.message : String(error)}`,
-        ]
-          .filter(Boolean)
-          .join('\n');
-        await this.storage.writeDocument(join(dir, 'run.json'), record);
-      }
-    }
-  }
-  /** The trace of one task run: its root span id and the fields its spans share. */
-  private async traceStart(project: string, id: string) {
-    const task = await this.tasks.read(project, id);
-    const profile = await readProfile(this.root, project).catch(() => undefined);
-    const base_branch = task.worktree?.base_branch ?? task.stack_on ?? profile?.repo.base_branch.value;
-    const runSpan = newSpanId();
-    const scope: TraceScope = {
-      trace_id: newTraceId(),
-      project,
-      task_id: id,
-      parent_span_id: runSpan,
-      ...(await this.traceLinks(task)),
-    };
-    return {
-      scope,
-      runSpan,
-      started: Date.now(),
-      task,
-      profile,
-      base_branch,
-      base_sha: await revParse(task.worktree?.path ?? task.repo, base_branch),
-    };
-  }
-  /** The ticket, feature, PR and class a task's spans carry. */
-  private async traceLinks(task: TaskRecord): Promise<Partial<TraceScope>> {
-    const feature = task.ticket
-      ? await this.features.read(task.project, task.ticket.feature).catch(() => undefined)
-      : undefined;
-    const key = feature?.tickets.find((t) => t.id === task.ticket?.id)?.external?.key;
-    const number = task.pr ? Number(/\/pull\/(\d+)/.exec(task.pr.url)?.[1]) : NaN;
-    const cls = taskClass(task.verdict);
-    return {
-      ...(task.ticket
-        ? { feature_id: task.ticket.feature, ticket: { id: task.ticket.id, ...(key ? { key } : {}) } }
-        : task.jira_key
-          ? { ticket: { key: task.jira_key } }
-          : {}),
-      ...(task.pr ? { pr: { url: task.pr.url, ...(Number.isFinite(number) ? { number } : {}) } } : {}),
-      ...(cls ? { task_class: cls } : {}),
-    };
-  }
-  /** Writes the run's root span, with the inputs needed to replay it. */
-  private async traceEnd(
-    trace: NonNullable<Awaited<ReturnType<BackendService['traceStart']>>>,
-    action: string,
-    record: RunRecord,
-  ): Promise<void> {
-    const task = await this.tasks.read(trace.scope.project, trace.scope.task_id!).catch(() => trace.task);
-    const commands: RepoProfile['commands'] | undefined = trace.profile?.commands;
-    const { parent_span_id: _, ...shared } = trace.scope;
-    this.traces.append(
-      {
-        ...shared,
-        ...(await this.traceLinks(task)),
-        task_class: taskClass(task.verdict) ?? trace.scope.task_class,
-      },
-      {
-        span_id: trace.runSpan,
-        type: 'run',
-        name: `task.${action}`,
-        started_at: new Date(trace.started).toISOString(),
-        ended_at: new Date().toISOString(),
-        duration_ms: Date.now() - trace.started,
-        outcome: record.state === 'completed' ? 'completed' : 'failed',
-        ...(record.error ? { error: record.error } : {}),
-        replay: {
-          repo: task.repo,
-          ...(trace.base_branch ? { base_branch: trace.base_branch } : {}),
-          ...(trace.base_sha ? { base_sha: trace.base_sha } : {}),
-          prompt: task.prompt,
-          verification: commands
-            ? [commands.test, commands.full_check, commands.runtime_check].filter((c): c is string => !!c)
-            : [],
-        },
-        attributes: { run_id: record.id, stage: task.stage, attempts: task.attempts?.length ?? 0 },
-      },
-    );
-    await this.traces.flush();
   }
   /**
    * Saves the evidence receipt of the task's newest commit with evidence: the PR head, the
@@ -1005,68 +684,13 @@ export class BackendService {
     if (!head) return undefined;
     return saveTaskReceipt(this.root, this.storage, project, id, head);
   }
-  /** Marks the moment a task's PR opened, so the task's traces join to the PR. */
-  private async tracePr(project: string, id: string): Promise<void> {
-    const task = await this.tasks.read(project, id);
-    if (!task.pr) return;
-    const at = new Date().toISOString();
-    this.traces.append(
-      { trace_id: newTraceId(), project, task_id: id, ...(await this.traceLinks(task)) },
-      { type: 'pr', name: 'PR opened', started_at: at, ended_at: at, duration_ms: 0, outcome: 'completed' },
-    );
-    await this.traces.flush();
-  }
   /** Spans of one task, trace or feature, as trees with rolled-up cost. */
-  async trace(raw: unknown) {
-    const q = z
-      .object({
-        project: ProjectName,
-        task_id: z.string().max(100).optional(),
-        trace_id: z.string().max(100).optional(),
-        feature_id: z.string().max(100).optional(),
-      })
-      .refine((x) => x.task_id || x.trace_id || x.feature_id, 'Name a task_id, trace_id or feature_id')
-      .parse(raw);
-    const { project, ...filter } = q;
-    const spans = await this.traces.read(project, filter);
-    return { spans: spans.length, roots: traceTree(spans) };
+  trace(raw: unknown) {
+    return this.taskTraces.query(raw);
   }
   /** Counts across runs for one project, or every project, over `[from, to)` (default: 7 days). */
-  async metrics(raw: unknown) {
-    const q = z
-      .object({
-        project: z.union([ProjectName, z.literal('')]).optional(),
-        from: z.iso.datetime().optional(),
-        to: z.iso.datetime().optional(),
-      })
-      .parse(raw);
-    const to = q.to ?? new Date(Date.now() + 1000).toISOString();
-    const from = q.from ?? new Date(Date.parse(to) - 7 * 86_400_000).toISOString();
-    const projects = q.project ? [q.project] : (await this.projects.list()).map((p) => p.name);
-    const historyStart = new Date(Date.parse(from) - UNUSUAL_LOOKBACK_MS).toISOString();
-    const spans = (
-      await Promise.all(projects.map((p) => this.traces.read(p, { since: historyStart })))
-    ).flat();
-    return metricsSummary(spans, from, to);
-  }
-  /** The time a task waited at the approval gate, as a span, when the human acts on it. */
-  private async traceGate(task: TaskRecord, decision: string): Promise<void> {
-    if (task.stage !== 'awaiting-approval') return;
-    const opened = gateOpenedAt(task);
-    const ended = new Date().toISOString();
-    this.traces.append(
-      { trace_id: newTraceId(), project: task.project, task_id: task.id, ...(await this.traceLinks(task)) },
-      {
-        type: 'gate',
-        name: 'approval gate',
-        started_at: opened ?? ended,
-        ended_at: ended,
-        ...(opened ? { duration_ms: Math.max(0, Date.parse(ended) - Date.parse(opened)) } : {}),
-        outcome: 'completed',
-        attributes: { decision },
-      },
-    );
-    await this.traces.flush();
+  metrics(raw: unknown) {
+    return this.taskTraces.metrics(raw);
   }
   private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);
@@ -1119,8 +743,8 @@ export class BackendService {
       runId: record.id,
       label: record.label,
       logTail,
-      ...(running && this.activities.has(record.id)
-        ? { activity: this.activities.get(record.id)!.snapshot() }
+      ...(running && this.executor.activity(record.id)
+        ? { activity: this.executor.activity(record.id)! }
         : {}),
       ...(record.cleanup ? { cleanup: record.cleanup } : {}),
       state: unfinished && !running ? 'interrupted' : record.state,
@@ -1171,10 +795,7 @@ export class BackendService {
       throw new Conflict('No run is active for this task.');
     // A run that has not started leaves the queue now; a working one reads the stop for its outcome.
     this.dispatcher.stop(latest.record.id);
-    const controller = this.controllers.get(latest.record.id);
-    if (!controller) return 'Stopping the run before it starts.';
-    controller.abort();
-    return 'Stopping the run.';
+    return this.executor.abort(latest.record.id) ? 'Stopping the run.' : 'Stopping the run before it starts.';
   }
   /**
    * Cancels a turn that is queued and has not started, and waits until it left the queue and freed
@@ -1184,7 +805,7 @@ export class BackendService {
     if (!this.isWaiting(project, id)) return;
     const latest = await this.latest({ project, id });
     const completion = latest && this.dispatcher.completion(latest.record.id);
-    if (!latest || !completion || this.controllers.has(latest.record.id)) return;
+    if (!latest || !completion || this.executor.started(latest.record.id)) return;
     this.dispatcher.stop(latest.record.id);
     await completion;
   }
@@ -1236,7 +857,7 @@ export class BackendService {
     this.pickup.stop();
     this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
-      for (const controller of this.controllers.values()) controller.abort();
+      this.executor.abortAll();
     }, graceMs);
     try {
       // Acceptance already in flight may be reserving a lock or writing its durable record.

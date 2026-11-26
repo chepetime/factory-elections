@@ -29,4 +29,4 @@ ADR 0001 named a `packages/dispatcher` that was never built. Queueing, agent lim
 
 ## Consequences
 
-The dispatcher, evidence and port-based packages are tested with fakes, without gRPC, git or a running backend. A new backend capability that a package needs is added to that package's port, not imported. Injecting `run` into every git and GitHub function would remove the process layer, but it would add churn without changing what the adapters can do, so the layer stays. The backend is still the largest package: `service.ts` holds the run body, traces and the inbox.
+The dispatcher, evidence and port-based packages are tested with fakes, without gRPC, git or a running backend. A new backend capability that a package needs is added to that package's port, not imported. Injecting `run` into every git and GitHub function would remove the process layer, but it would add churn without changing what the adapters can do, so the layer stays. The backend is still the largest package. Inside it, `run-executor.ts` runs one accepted task run, `task-traces.ts` writes and reads the run, PR and gate spans, and `service.ts` composes them with the RPC-facing methods.

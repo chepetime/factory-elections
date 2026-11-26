@@ -94,6 +94,15 @@ export async function headSha(dir: string): Promise<string> {
   return (await git(dir, ['rev-parse', 'HEAD'])).trim();
 }
 
+/** The commit a ref points at, or undefined when there is no ref or git cannot tell. */
+export async function commitOf(repo: string, ref: string | undefined): Promise<string | undefined> {
+  if (!ref) return undefined;
+  return (
+    (await git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).catch(() => '')).trim() ||
+    undefined
+  );
+}
+
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
   await exclusive(repo, () => git(repo, ['worktree', 'add', '-b', branch, path, base]));
 }
