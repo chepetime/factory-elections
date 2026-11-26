@@ -67,6 +67,7 @@ For a consistent backup, stop the host backend first so no new artifact/index wr
 - A Postgres `pg_dump` in custom format (`pg_dump -U factory -d factory -Fc` inside the Postgres service).
 - The SeaweedFS artifact volume, copied while the file service is stopped, or a complete S3 object export with its keys intact.
 - `.factory-data.env`, the host `storage.json`, and project profile YAML files, stored privately.
+- The host-only stores under `FACTORY_ROOT`: `receipt-key/`, `<project>/features/`, `<project>/memory/` and `<project>/reviews/`. Postgres does not hold them. See [Storage ownership](storage-ownership.md) for every entity.
 
 Restore database and artifact data from the same backup point. Worktrees/repositories need their own Git/filesystem backup; they are deliberately outside Docker. The preserved original task files are only the import-time snapshot, not a backup of later runs.
 
