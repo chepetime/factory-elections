@@ -67,6 +67,54 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/pr-reviews/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@factory/backend", "@factory/backend/*"],
+                "message": "packages/pr-reviews must not depend on the backend: take what it needs as a port"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/evidence/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@factory/backend", "@factory/backend/*"],
+                "message": "packages/evidence must not depend on the backend: take what it needs as a port"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/compose/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@factory/backend", "@factory/backend/*"],
+                "message": "packages/compose must not depend on the backend: take what it needs as a port"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -9,7 +9,7 @@ import { ProjectName, type ModelRunner } from '@factory/core';
 import { isReadableDirectory } from '@factory/adapters-fs';
 import { DriverError } from '@factory/driver';
 import { BackendService, Conflict, DRAIN_GRACE_MS } from './service.ts';
-import type { ReviewDeps } from './reviews.ts';
+import type { ReviewDeps } from '@factory/pr-reviews';
 import type { SettingsDetector } from './settings.ts';
 import { Evidence } from '@factory/evidence';
 import type { Check } from '@factory/compose/diagnostics';

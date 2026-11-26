@@ -390,7 +390,7 @@ Root: this repository.
 - `packages/adapters-claude/src/index.ts`: SDK configuration, guards, retry and limits.
 - `packages/adapters-claude/src/cli.ts`: review CLI configuration and event translation.
 - `packages/adapters-process/src/index.ts`: foreground and detached process lifecycle.
-- `packages/backend/src/reviews.ts`: review launch, session discovery and stopping.
+- `packages/pr-reviews/src/reviews.ts`: review launch, session discovery and stopping.
 - `packages/driver/src/workflow.ts`: guarded coder workflow.
 - `docs/agent-execution-review.md`: older analysis; individual findings require current-source confirmation.
 

@@ -10,7 +10,6 @@ import { claudeCli, type ClaudeTurnRequest } from '@factory/adapters-claude';
 import { ProjectSettings } from '@factory/core';
 import {
   AUTOMATED_TURN_DENY,
-  MAX_AGENTS,
   ReviewService,
   SKILL_DIR,
   defaultReviewDeps,
@@ -18,6 +17,7 @@ import {
   type AgentTurn,
   type ReviewDeps,
 } from '../src/reviews.ts';
+import { MAX_AGENTS } from '@factory/dispatcher';
 
 const node = (number: number, branch: string) => ({
   number,

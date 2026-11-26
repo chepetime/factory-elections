@@ -1,6 +1,9 @@
 // One limit for every agent this backend runs: task runs, chats, delegated children, feature steps
 // and tending. Reviews run outside the pool and count through `external`.
 
+/** Agents that may run at once on the machine's one Claude sign-in: reviews plus task runs. */
+export const MAX_AGENTS = Number(process.env.FACTORY_MAX_AGENTS ?? 6);
+
 /** Frees what it was given. Calling it again does nothing. */
 export type Release = () => void;
 

@@ -13,6 +13,7 @@
     "@factory/dispatcher": "workspace:*",
     "@factory/compose": "workspace:*",
     "@factory/evidence": "workspace:*",
+    "@factory/pr-reviews": "workspace:*",
     "@factory/driver": "workspace:*",
     "@factory/adapters-fs": "workspace:*",
     "@factory/adapters-git": "workspace:*",

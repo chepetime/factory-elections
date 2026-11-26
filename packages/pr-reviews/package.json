@@ -1,0 +1,21 @@
+{
+  "name": "@factory/pr-reviews",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-claude": "workspace:*",
+    "@factory/adapters-data": "workspace:*",
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/adapters-git": "workspace:*",
+    "@factory/adapters-github": "workspace:*",
+    "@factory/adapters-process": "workspace:*",
+    "@factory/core": "workspace:*",
+    "@factory/dispatcher": "workspace:*",
+    "@factory/evidence": "workspace:*",
+    "effect": "^3.22.4",
+    "zod": "^4.6.7"
+  }
+}

@@ -43,7 +43,7 @@ Codex app-server over stdio behind a feature flag: initialize, start or resume a
 
 ### Phase 3: Claude consolidation
 
-Move PR review and chat turns from detached launches (`spawnDetached` in `packages/backend/src/reviews.ts`) into the execution manager on the SDK path. Keep the guards, sandbox and budgets. Save session IDs early. Use SDK streaming input and interruption only after a check on the installed SDK and CLI. Steps: [workspace-and-runtime.md §10](workspace-and-runtime.md#10-claude-implementation-plan).
+Move PR review and chat turns from detached launches (`spawnDetached` in `packages/pr-reviews/src/reviews.ts`) into the execution manager on the SDK path. Keep the guards, sandbox and budgets. Save session IDs early. Use SDK streaming input and interruption only after a check on the installed SDK and CLI. Steps: [workspace-and-runtime.md §10](workspace-and-runtime.md#10-claude-implementation-plan).
 
 **Exit:** no review-specific detached-process lifecycle remains for migrated work.
 
