@@ -60,17 +60,6 @@ function Happenings({ events }: { events: IssueEvent[] }) {
 
 export type Authors = Record<string, { name: string; avatar: string }>;
 
-/** The body with each recorded @mention as a link to the agent, named as the agent is. */
-export function withMentionLinks(body: string, mentions: readonly string[], authors: Authors): string {
-  if (!mentions.length) return body;
-  const ids = new Set(mentions);
-  return body.replace(/(^|[\s(])@([a-z0-9][a-z0-9_-]{0,63})\b/gi, (all, lead: string, id: string) => {
-    const key = id.toLowerCase();
-    if (!ids.has(key)) return all;
-    return `${lead}[@${authors[key]?.name ?? key}](/agents/${key})`;
-  });
-}
-
 function CommentBody({
   comment,
   reply,
@@ -92,7 +81,12 @@ function CommentBody({
         <LocalTime iso={comment.at} format="date-time" />
       </p>
       <div className="mt-1.5 text-sm">
-        <Markdown text={withMentionLinks(comment.body, comment.mentions ?? [], authors)} />
+        <Markdown
+          text={comment.body}
+          mentions={Object.fromEntries(
+            (comment.mentions ?? []).flatMap((id) => (authors[id] ? [[id, authors[id]]] : [])),
+          )}
+        />
       </div>
     </div>
   );
