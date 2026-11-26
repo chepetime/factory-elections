@@ -4,7 +4,9 @@
 //   2. sends SIGTERM to this checkout's scripts/web.mjs, so the backend drains and removes its lock;
 //   3. starts `scripts/start.mjs` detached (logs in <data root>/logs/stack.log);
 //   4. waits for the backend RPC and the web app, then prints one status line.
-// Usage: pnpm restart [--force] [--prod] [--from-agent-session]. --prod builds; the default is dev.
+// Usage: pnpm restart [--force] [--prod] [--from-agent-session] [--dry-run]. --prod builds; the
+// default is dev. --dry-run prints what it would stop and why, and changes nothing. It runs only in
+// the primary checkout: a worktree runs its own stack with `pnpm worktree run`.
 import './load-env.ts';
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
@@ -18,6 +20,7 @@ const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = dataRoot();
 const args = process.argv.slice(2);
 const force = args.includes('--force');
+const dryRun = args.includes('--dry-run');
 const startArgs = [
   ...(args.includes('--prod') ? [] : ['--dev']),
   ...(args.includes('--from-agent-session') ? ['--from-agent-session'] : []),
@@ -38,15 +41,29 @@ async function busyTasks() {
   return busy;
 }
 
-/** The scripts/web.mjs processes of this checkout (not of other worktrees). */
+/** The scripts/web.mjs processes of this checkout (not of other worktrees), by command and cwd. */
 function webPids() {
   const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' });
   const script = join(repo, 'scripts', 'web.mjs');
   return out
     .split('\n')
-    .filter((line) => line.includes(script))
+    .filter((line) => /(^|\s|\/)scripts\/web\.mjs(\s|$)/.test(line) && !/^\s*\d+\s+sh -c/.test(line))
     .map((line) => Number(line.trim().split(/\s+/)[0]))
-    .filter(Number.isInteger);
+    .filter(Number.isInteger)
+    .filter((pid) => {
+      // `node scripts/web.mjs` (from pnpm web) has a relative path: its cwd says which checkout.
+      const line = out.split('\n').find((l) => Number(l.trim().split(/\s+/)[0]) === pid) ?? '';
+      if (line.includes(script)) return true;
+      try {
+        const cwd = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' })
+          .split('\n')
+          .find((l) => l.startsWith('n'))
+          ?.slice(1);
+        return cwd === repo;
+      } catch {
+        return false;
+      }
+    });
 }
 
 async function reachable() {
@@ -59,7 +76,29 @@ async function reachable() {
 }
 
 async function main() {
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd: repo,
+    encoding: 'utf8',
+  }).trim();
+  if (dirname(common) !== repo)
+    throw new Error(
+      `${repo} is a linked worktree. Restart the primary checkout, or use pnpm worktree run here.`,
+    );
   const running = webPids();
+  if (dryRun) {
+    const busy = running.length && (await reachable()) ? await busyTasks() : [];
+    closeBackendClient();
+    console.log(
+      JSON.stringify({
+        checkout: repo,
+        data_root: root,
+        web_pids: running,
+        busy,
+        would_restart: !busy.length || force,
+      }),
+    );
+    return;
+  }
   if (running.length && (await reachable())) {
     const busy = await busyTasks();
     if (busy.length && !force) {
