@@ -23,6 +23,7 @@ function setup(overrides: Partial<TaskRecord> = {}) {
     pr,
     ...overrides,
   });
+  let draft = true;
   const docs = new Map<string, unknown>();
   const calls: string[] = [];
   const loop = new ReviewLoop({
@@ -40,6 +41,7 @@ function setup(overrides: Partial<TaskRecord> = {}) {
     body: async () => '## Summary\n\nAdds it.\n\n---\n\n<details>record</details>',
     github: {
       markReady: async (_c, n) => void calls.push(`ready:${n}`),
+      isDraft: async () => draft,
       editBody: async (_c, _n, body) => void calls.push(`body:${body}`),
     },
   });
@@ -49,12 +51,13 @@ function setup(overrides: Partial<TaskRecord> = {}) {
     task: () => task,
     state: () => loop.state(task),
     set: (patch: Partial<TaskRecord>) => (task = { ...task, ...patch }),
+    ready: () => (draft = false),
   };
 }
 
 test('a draft PR is reviewed, its must-fix findings fixed, reviewed again, then marked ready with notes', async () => {
   const ctx = setup();
-  await ctx.loop.opened(ctx.task(), true);
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
   assert.deepEqual(
     ctx.calls.filter((c) => c.startsWith('review:')),
     ['review:4'],
@@ -90,7 +93,7 @@ test('a draft PR is reviewed, its must-fix findings fixed, reviewed again, then 
 
 test('after the last fix round the PR is marked ready without another review', async () => {
   const ctx = setup();
-  await ctx.loop.opened(ctx.task(), true);
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
   for (const head of ['h2', 'h3']) {
     await ctx.loop.reviewEnded('demo', 4, payload('critical'));
     ctx.set({ pr: { ...pr, head_sha: head } });
@@ -109,7 +112,7 @@ test('after the last fix round the PR is marked ready without another review', a
 test('a fix that stops, a review without a result, a ready PR and a pipeline task stop or skip the loop', async () => {
   const ctx = setup();
   const opened = ctx.task();
-  await ctx.loop.opened(opened, true);
+  await ctx.loop.prChanged(opened, { kind: 'opened', draft: true });
   await ctx.loop.reviewEnded('demo', 4, payload('must-fix'));
   ctx.set({ stage: 'verification-failed' });
   await ctx.loop.runSettled('demo', opened.id);
@@ -119,17 +122,58 @@ test('a fix that stops, a review without a result, a ready PR and a pipeline tas
   assert.ok(!ctx.calls.some((c) => c.startsWith('ready:')), 'the PR stays a draft');
 
   const empty = setup();
-  await empty.loop.opened(opened, true);
+  await empty.loop.prChanged(opened, { kind: 'opened', draft: true });
   await empty.loop.reviewEnded('demo', 4, undefined);
   assert.match((await empty.state())?.reason ?? '', /without a result/);
 
   const human = setup();
-  await human.loop.opened(opened, false);
+  await human.loop.prChanged(opened, { kind: 'opened', draft: false });
   const pipeline = setup();
-  await pipeline.loop.opened({ ...opened, workflow: 'pipeline' }, true);
+  await pipeline.loop.prChanged({ ...opened, workflow: 'pipeline' }, { kind: 'opened', draft: true });
   assert.equal(
     human.calls.length + pipeline.calls.length,
     0,
     'a ready PR or a pipeline task is left to people',
   );
+});
+
+test('a follow-up pushed to the PR starts a new cycle; the PR people already review only gets new notes', async () => {
+  const ctx = setup();
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
+  await ctx.loop.reviewEnded('demo', 4, payload('should-fix'));
+  assert.equal((await ctx.state())?.state, 'ready');
+  ctx.ready();
+  const before = ctx.calls.length;
+
+  // You approved a follow-up, and the factory pushed it to the open PR.
+  ctx.set({ pr: { ...pr, head_sha: 'h2' } });
+  await ctx.loop.prChanged(ctx.task(), { kind: 'updated' });
+  const cycle = await ctx.state();
+  assert.deepEqual([cycle?.state, cycle?.cycle, cycle?.round, cycle?.fixes], ['reviewing', 2, 1, 0]);
+  await ctx.loop.reviewEnded('demo', 4, payload());
+  const after = ctx.calls.slice(before);
+  assert.deepEqual(
+    after.filter((c) => c.startsWith('review:')),
+    ['review:4'],
+  );
+  assert.match(
+    after.find((c) => c.startsWith('body:'))!,
+    /## Automated review\n\nAfter update 1: 1 senior PR review, 0 fix rounds/,
+  );
+  assert.ok(!after.some((c) => c.startsWith('ready:')), 'already ready: not marked again');
+  assert.ok(after.some((c) => c.startsWith('note:PR #4 was reviewed again after the update')));
+});
+
+test('an update while a review runs gets one more review before the cycle ends', async () => {
+  const ctx = setup();
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
+  ctx.set({ pr: { ...pr, head_sha: 'h2' } });
+  await ctx.loop.prChanged(ctx.task(), { kind: 'updated' });
+  assert.equal((await ctx.state())?.recheck, true);
+  // The running review saw no problem, but it may have read the older commit.
+  await ctx.loop.reviewEnded('demo', 4, payload());
+  assert.deepEqual([(await ctx.state())?.state, (await ctx.state())?.round], ['reviewing', 2]);
+  assert.equal(ctx.calls.filter((c) => c.startsWith('review:')).length, 2);
+  await ctx.loop.reviewEnded('demo', 4, payload());
+  assert.equal((await ctx.state())?.state, 'ready');
 });

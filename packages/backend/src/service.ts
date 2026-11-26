@@ -33,7 +33,7 @@ import {
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import { readPrTemplate, type Driver } from '@factory/driver';
-import { editPullRequestBody, markPullRequestReady } from '@factory/adapters-github';
+import { editPullRequestBody, markPullRequestReady, pullRequestIsDraft } from '@factory/adapters-github';
 import { ReviewLoop } from './review-loop.ts';
 import { composeDriver } from '@factory/compose';
 import {
@@ -344,7 +344,7 @@ export class BackendService {
         this.issues.followUp({ project, key: id, note, kind: 'review', by: 'factory' }),
       note: (project, id, message) => this.issues.note({ project, key: id, kind: 'review-loop', message }),
       body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
-      github: { markReady: markPullRequestReady, editBody: editPullRequestBody },
+      github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.reviews.onReviewEnded = (project, number, payload) =>
@@ -647,10 +647,14 @@ export class BackendService {
           .then(async (result) => {
             if (command.action === 'open-pr') {
               await this.taskTraces.pr(command.project, command.id).catch(() => undefined);
-              // An agent's draft PR starts the review loop; it runs on after this command returns.
+              // An agent's draft PR, or a follow-up pushed to its open PR, starts a review cycle. It
+              // runs on after this command returns.
               const opened = await this.tasks.read(command.project, command.id);
               void this.reviewLoop
-                .opened(opened, command.draft)
+                .prChanged(
+                  opened,
+                  before?.pr ? { kind: 'updated' } : { kind: 'opened', draft: command.draft },
+                )
                 .catch((error: unknown) => process.stderr.write(`review loop: ${String(error)}\n`));
             }
             if (command.action === 'approve' || command.action === 'open-pr')

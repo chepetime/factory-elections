@@ -35,6 +35,8 @@ export interface ReviewLoopDeps {
   body(task: TaskRecord): Promise<string>;
   github: {
     markReady(cwd: string, number: number): Promise<void>;
+    /** Whether the PR is still a draft on GitHub. */
+    isDraft(cwd: string, number: number): Promise<boolean>;
     editBody(cwd: string, number: number, body: string): Promise<void>;
   };
   now?: () => string;
@@ -76,20 +78,42 @@ export class ReviewLoop {
     return next;
   }
 
-  /** A PR opened. An agent's draft PR starts the loop; any other PR is left to people. */
-  opened(task: TaskRecord, draft: boolean): Promise<void> {
+  /**
+   * The task's PR changed. `opened`: an agent's draft PR starts the loop; one opened ready for
+   * review is left to people. `updated`: a follow-up you approved was pushed to the PR, so it is
+   * reviewed again, whatever an earlier cycle ended with.
+   */
+  prChanged(
+    task: TaskRecord,
+    change: { kind: 'opened'; draft: boolean } | { kind: 'updated' },
+  ): Promise<void> {
     return this.serial(task, async () => {
       const number = prNumber(task);
-      if (!draft || task.workflow !== 'agent' || !number || task.stage !== 'pr-opened') return;
-      if ((await this.state(task))?.pr === number) return;
+      if (task.workflow !== 'agent' || !number || task.stage !== 'pr-opened') return;
+      if (change.kind === 'opened' && !change.draft) return;
+      const prior = await this.state(task);
+      const same = prior?.pr === number ? prior : undefined;
+      if (change.kind === 'opened' && same) return;
+      if (same && (same.state === 'reviewing' || same.state === 'fixing')) {
+        // A fix is reviewed next anyway; a running review may have read the older commit.
+        if (same.state === 'reviewing') await this.save(task, { ...same, recheck: true });
+        await this.deps.note(
+          task.project,
+          task.id,
+          `PR #${number} was updated while review cycle ${same.cycle} runs; the cycle reviews the new commit before it ends.`,
+        );
+        return;
+      }
       const state: ReviewLoopState = {
         pr: number,
         state: 'reviewing',
         round: 1,
         fixes: 0,
+        cycle: (same?.cycle ?? 0) + 1,
+        recheck: false,
         notes: [],
         sent: [],
-        history: [],
+        history: same?.history ?? [],
         updated_at: this.now(),
       };
       await this.save(task, state);
@@ -139,6 +163,18 @@ export class ReviewLoop {
         }
         return;
       }
+      // The PR changed while this review ran: review the newest commit before the cycle ends.
+      if (state.recheck) {
+        const again: ReviewLoopState = {
+          ...state,
+          round: state.round + 1,
+          recheck: false,
+          history,
+          updated_at: this.now(),
+        };
+        await this.save(task, again);
+        return this.review(task, again, number);
+      }
       // Clean, or out of fix rounds: what is left goes to the people with the PR.
       await this.finish(task, { ...state, notes: reviewNotes([...important, ...rest]), history });
     });
@@ -186,6 +222,7 @@ export class ReviewLoop {
   ): Promise<void> {
     const current = await this.deps.tasks.read(task.project, task.id);
     if (!current.worktree || !current.pr) return this.stop(task, state, 'The task has no worktree or PR.');
+    let wasDraft = false;
     try {
       const body = await this.deps.body(current);
       const section = reviewNotesSection({ ...state, unreviewed });
@@ -196,15 +233,22 @@ export class ReviewLoop {
           ? `${body.slice(0, footer).trimEnd()}\n\n${section}\n${body.slice(footer)}`
           : `${body}\n\n${section}`;
       await this.deps.github.editBody(current.worktree.path, state.pr, withNotes);
-      await this.deps.github.markReady(current.worktree.path, state.pr);
+      // A PR that people already review (an update after an earlier cycle) only gets new notes.
+      wasDraft = await this.deps.github.isDraft(current.worktree.path, state.pr);
+      if (wasDraft) await this.deps.github.markReady(current.worktree.path, state.pr);
     } catch (error) {
       return this.stop(task, state, `The PR could not be marked ready: ${message(error)}`);
     }
     await this.save(task, { ...state, state: 'ready', updated_at: this.now() });
+    const notes = state.notes.length
+      ? `, with ${state.notes.length} review ${state.notes.length === 1 ? 'note' : 'notes'} for you`
+      : '';
     await this.deps.note(
       task.project,
       task.id,
-      `PR #${state.pr} is ready for review${state.notes.length ? `, with ${state.notes.length} review ${state.notes.length === 1 ? 'note' : 'notes'} for you` : ''}.`,
+      wasDraft
+        ? `PR #${state.pr} is ready for review${notes}.`
+        : `PR #${state.pr} was reviewed again after the update${notes}; its description has the new notes.`,
     );
   }
 

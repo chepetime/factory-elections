@@ -159,3 +159,13 @@ export async function editPullRequestBody(cwd: string, number: number, body: str
   if (result.code !== 0)
     throw new GitHubError(`gh pr edit failed: ${(result.stderr || result.stdout).trim()}`);
 }
+
+/** Whether the pull request is a draft. */
+export async function pullRequestIsDraft(cwd: string, number: number): Promise<boolean> {
+  const result = await run('gh', ['pr', 'view', String(number), '--json', 'isDraft', '--jq', '.isDraft'], {
+    cwd,
+  });
+  if (result.code !== 0)
+    throw new GitHubError(`gh pr view failed: ${(result.stderr || result.stdout).trim()}`);
+  return result.stdout.trim() === 'true';
+}

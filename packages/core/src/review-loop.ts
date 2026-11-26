@@ -15,8 +15,12 @@ export const ReviewLoopState = z.object({
   state: z.enum(['reviewing', 'fixing', 'ready', 'stopped']),
   /** Reviews started so far. */
   round: z.number().int().nonnegative(),
-  /** Fix follow-ups sent so far. */
+  /** Fix follow-ups sent so far, in this cycle. */
   fixes: z.number().int().nonnegative(),
+  /** Review cycles of this PR: one when it opened, one more for each follow-up that updated it. */
+  cycle: z.number().int().positive().default(1),
+  /** The PR was updated while a review ran: that review may have read the older commit. */
+  recheck: z.boolean().default(false),
   /** Findings of the last review that were not sent back, for the PR description. */
   notes: z
     .array(z.object({ severity: z.string(), title: z.string(), where: z.string().optional() }))
@@ -92,12 +96,15 @@ export function reviewNotes(findings: readonly LoopFinding[]): ReviewLoopState['
 
 /** The section the PR description gets when the loop marks it ready. */
 export function reviewNotesSection(
-  state: Pick<ReviewLoopState, 'round' | 'fixes' | 'notes'> & { unreviewed?: ReviewLoopState['notes'] },
+  state: Pick<ReviewLoopState, 'round' | 'fixes' | 'notes'> & {
+    cycle?: number;
+    unreviewed?: ReviewLoopState['notes'];
+  },
 ): string {
   const lines = [
     '## Automated review',
     '',
-    `${state.round} senior PR ${state.round === 1 ? 'review' : 'reviews'}, ${state.fixes} fix ${state.fixes === 1 ? 'round' : 'rounds'} by the agent.`,
+    `${state.cycle && state.cycle > 1 ? `After update ${state.cycle - 1}: ` : ''}${state.round} senior PR ${state.round === 1 ? 'review' : 'reviews'}, ${state.fixes} fix ${state.fixes === 1 ? 'round' : 'rounds'} by the agent.`,
   ];
   if (state.notes.length)
     lines.push(

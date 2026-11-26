@@ -60,7 +60,9 @@ A task whose PR is open is done, and its run is finished. More work on it is a *
 2. After the fix is pushed, the PR is reviewed again. At most two fix rounds run.
 3. When a review leaves nothing critical or must-fix, or after the second fix, the factory adds an **Automated review** section to the PR description (the `should-fix` findings left for you, and any fix that no review checked again) and marks the PR ready for review.
 
-Each step is a line in the task's activity, and the state is in `tasks/<id>/review-loop.json`. A PR opened ready for review, or by the pipeline, is left to people.
+A follow-up that you approve and the factory pushes to the open PR starts a new review cycle, whatever the last cycle ended with. At the end of a cycle the factory marks the PR ready only if it is still a draft; a PR that people already review only gets the new **Automated review** section. If the PR is updated while a review runs, the cycle reviews the newest commit once more before it ends.
+
+Each step is a line in the task's activity, and the state is in `tasks/<id>/review-loop.json`. A PR first opened ready for review, or by the pipeline, is left to people.
 
 Each follow-up is recorded on the run (`follow_ups`: kind, instructions, agent, who added it, the PR head) and in the task's activity.
 
