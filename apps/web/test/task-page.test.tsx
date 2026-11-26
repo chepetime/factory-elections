@@ -102,7 +102,7 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
     phase,
   });
 }
-async function html(start?: string, panel?: 'run' | 'timeline' | 'changes' | 'details') {
+async function html(start?: string, panel?: 'run' | 'status' | 'timeline' | 'changes' | 'details') {
   return renderToStaticMarkup(
     await TaskPage({
       params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
@@ -117,23 +117,23 @@ beforeEach(() => {
 
 it('stops polling an interrupted coding task and offers explicit recovery', async () => {
   observe('interrupted');
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('no live owner');
   expect(page).toContain('Run task');
   expect(page).not.toContain('data-live-run');
 });
 it('offers revision after approval and never unlocks commands on an unavailable observation', async () => {
   observe('completed', 'approved');
-  expect(await html()).toContain('composer:revise');
+  expect(await html(undefined, 'status')).toContain('composer:revise');
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'unavailable' });
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('comment-box');
   expect(page).toContain('Execution status is unavailable');
   expect(page).not.toContain('Push and open pull request');
 });
 it('keeps finalizing busy and explains partial submission success', async () => {
   observe('finalizing', 'awaiting-approval');
-  const page = await html('failed');
+  const page = await html('failed', 'status');
   expect(page).toContain('data-live-run');
   expect(page).toContain('Saving evidence and releasing the task');
   expect(page).toContain('Task saved, but the run could not start');
@@ -143,7 +143,7 @@ it('keeps finalizing busy and explains partial submission success', async () => 
 it('does not unlock commands when the controls observation failed but a later log read succeeds', async () => {
   observe('unavailable', 'approved');
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('comment-box');
   expect(page).toContain('Execution status is unavailable');
 });
@@ -247,7 +247,7 @@ it('renders review findings and stage events through the shared components', asy
   expect(details).toContain('Stage timeline');
   expect(details).toMatch(/aria-current="step"[\s\S]*Review ready/);
   // Findings sit with the run, in the Run panel.
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('Review findings');
   expect(page).toContain('Missing check');
   expect(page).toContain('src/a.ts');
@@ -274,7 +274,7 @@ it('shows command output of a failed step and the last run output as copyable co
     phase: 'completed',
     logTail: '$ pnpm install\nexit 1',
   });
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('Worktree setup (`pnpm install`) exited with status 1.');
   expect(page).toMatch(/ui-codec[\s\S]*aws: \[ERROR\] Token has expired/);
   expect(page).toMatch(/data-tone="danger"[\s\S]*Error output[\s\S]*Token has expired/);
@@ -291,7 +291,7 @@ it('while a run works: a stop composer, the latest activity and the following li
     logTail:
       'Coder attempt 1/3 on sonnet-medium…\n$ pnpm install --frozen-lockfile   # setup\nProgress: resolved 3784',
   });
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toContain('composer:running');
   // The current command is the latest step under the run line.
   expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
@@ -312,7 +312,7 @@ it('a silent command shows its elapsed time and a notice that it is still runnin
       last_output_at: minutesAgo(14),
     },
   });
-  const page = await html();
+  const page = await html(undefined, 'status');
   // The current command is the latest step under the run line.
   expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
   expect(page).toMatch(/15m[\s\S]*no output for 14m/);
@@ -383,7 +383,7 @@ it('ends a successful run with a ready card, the findings, and earlier errors fo
   });
   vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
   vi.mocked(readDiff).mockResolvedValue({ ok: true, value: '' });
-  const page = await html();
+  const page = await html(undefined, 'status');
   expect(page).toMatch(/aria-label="Ready for your approval"[\s\S]*Ready for your approval/);
   expect(page).toContain('2 files changed, 134 insertions(+), 57 deletions(-)');
   expect(page).toContain('Approved · 1 minor, 1 nit');
@@ -593,6 +593,16 @@ it('puts what the run needs from you on the ticket, also with the Details tab op
   expect(page).toContain('Ready for your approval');
   expect(page).toContain('Approve and open draft PR');
   expect(page).toMatch(/href="\/projects\/demo\/tasks\/DE-1\?panel=run"[^>]*>Ask for changes/);
+
+  // The Run tab is the chat only: the status cards live in their own tab, one link away.
+  const chat = await html(undefined, 'run');
+  expect(chat).toMatch(/aria-current="page"[^>]*>Run</);
+  expect(chat).toContain('href="/projects/demo/tasks/DE-1?panel=status"');
+  expect(chat).toContain('Open Status and actions');
+  expect(chat).not.toContain('Status and actions</h3>');
+  const status = await html(undefined, 'status');
+  expect(status).toMatch(/aria-current="page"[^>]*>Status</);
+  expect(status).toContain('Ready for your approval');
 
   // Approved: the push button is on the ticket.
   const approved = {

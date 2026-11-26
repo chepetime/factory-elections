@@ -1,6 +1,6 @@
 // The task run queue: worker permits, the run's own agent, a pool slot, stop before start, and
 // shutdown. It knows nothing about tasks, git or models; the backend passes each job's work in.
-import { Cause, Effect, Exit, Fiber } from 'effect';
+import { Cause, Effect, Exit, Fiber, Semaphore } from 'effect';
 import type { QueueWait } from '@factory/core';
 import type { AgentPool, Release } from './agent-pool.ts';
 
@@ -32,7 +32,7 @@ export interface DispatcherOptions {
 }
 
 export class Dispatcher {
-  private readonly worker: Effect.Semaphore;
+  private readonly worker: Semaphore.Semaphore;
   private readonly pool: AgentPool;
   private readonly maxQueued: number;
   private readonly log: (line: string) => void;
@@ -50,7 +50,7 @@ export class Dispatcher {
   private readonly completions = new Map<string, Promise<void>>();
 
   constructor(options: DispatcherOptions) {
-    this.worker = Effect.runSync(Effect.makeSemaphore(options.workers));
+    this.worker = Effect.runSync(Semaphore.make(options.workers));
     this.pool = options.pool;
     this.maxQueued = options.maxQueued ?? 32;
     this.log = options.log ?? ((line) => process.stderr.write(`${line}\n`));
@@ -114,7 +114,7 @@ export class Dispatcher {
     this.completions.set(
       job.run,
       Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-        if (exit._tag === 'Failure' && !(abandoned && Exit.isInterrupted(exit)))
+        if (exit._tag === 'Failure' && !(abandoned && Exit.hasInterrupts(exit)))
           this.log(`Run ${job.run} could not finalize: ${Cause.pretty(exit.cause)}`);
       }),
     );

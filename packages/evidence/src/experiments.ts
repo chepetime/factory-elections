@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Effect } from 'effect';
+import { Effect, Semaphore } from 'effect';
 import { z } from 'zod';
 import { Experiment, NewExperiment, ProjectName } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
 
 /** Per-project change history, persisted in the configured document store. */
 export class ExperimentStore {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly root: string;
   private readonly storage: DataStorage;
   constructor(root: string, storage: DataStorage) {

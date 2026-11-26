@@ -635,8 +635,29 @@ test("@mentioning the run's own agent on an open PR starts a follow-up for it", 
   const view = await service.comment({
     project: 'change-elections',
     key: 'CE-1',
-    body: '@mika @devin Resolve the CI conflicts in the PR',
+    body: '@mika @devin Fix the copy in the PR',
   });
   assert.ok(calls.includes(`followUp:${opened.id}:custom:devin:you:`), calls.join('\n'));
-  assert.match(view.events.at(-1)?.message ?? '', /Added a follow-up for Devin: @mika @devin Resolve/);
+  assert.match(view.events.at(-1)?.message ?? '', /Added a follow-up for Devin: @mika @devin Fix the copy/);
+});
+
+test('a follow-up asking to merge main or resolve conflicts runs as a conflicts follow-up (the factory merges)', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/5',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Update Effect', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, calls } = await setup(t, [opened]);
+  await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: '@devin Merge main into this branch and run the tests',
+  });
+  assert.ok(calls.includes(`followUp:${opened.id}:conflicts:devin:you:`), calls.join('\n'));
 });

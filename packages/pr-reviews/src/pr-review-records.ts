@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Effect } from 'effect';
+import { Effect, Semaphore } from 'effect';
 import { z } from 'zod';
 import { NewPrReviewRecord, PrReviewRecord, ProjectName } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
 
 /** Project-scoped review records; writes share the backend's process lock. */
 export class PrReviewStore {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly root: string;
   private readonly storage: DataStorage;
   constructor(root: string, storage: DataStorage) {

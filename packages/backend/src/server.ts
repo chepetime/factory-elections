@@ -90,6 +90,8 @@ export async function startBackend(options: ServerOptions) {
             state: service.recoveryReport().state,
             problems: service.recoveryReport().problems.length,
           },
+          // PR review turns run in this process: a restart cuts them (scripts/restart.mjs checks this).
+          reviews_running: await service.reviews.agentsInUse().catch(() => 0),
           ...(hostAgentSession(process.env) ? { host_session: hostAgentSession(process.env) } : {}),
           integrations: [],
         }),
@@ -265,6 +267,38 @@ export async function startBackend(options: ServerOptions) {
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      RestartReviewLoop: async (request) => {
+        const t = service.target(request);
+        const task = await service.tasks.read(t.project, t.id);
+        if (task.workflow !== 'agent' || task.stage !== 'pr-opened' || !task.pr)
+          throw new Conflict('Only an agent task with an open PR has a self-review.');
+        await service.reviewLoop.prChanged(task, { kind: 'updated' });
+        return { json: JSON.stringify((await service.reviewLoop.state(task)) ?? null) };
+      },
+      GetReviewLoop: async (request) => {
+        const t = service.target(request);
+        return {
+          json: JSON.stringify((await service.reviewLoop.state({ project: t.project, id: t.id })) ?? null),
+        };
+      },
+      CreateReviewTicket: async (request) => {
+        const { number } = z.object({ number: z.number().int().positive() }).parse(jsonObject(request.json));
+        return {
+          json: JSON.stringify(
+            await service.reviewTickets.create(ProjectName.parse(request.project), number),
+          ),
+        };
+      },
+      DecideReview: async (request) => {
+        const { key, option } = z
+          .object({ key: z.string().min(1), option: z.string().min(1) })
+          .parse(jsonObject(request.json));
+        return {
+          json: JSON.stringify(
+            await service.reviewTickets.decide(ProjectName.parse(request.project), key, option),
+          ),
+        };
+      },
       ListSpans: async (request) => ({
         json: JSON.stringify(await service.spans({ ...jsonObject(request.json), project: request.project })),
       }),
@@ -433,6 +467,7 @@ export async function startBackend(options: ServerOptions) {
     service.reviews.startSweeping();
     service.features.startTicking();
     service.tending.startTicking();
+    service.reviewTickets.startTicking();
     trace.record('server.recovered', recovered);
     const delegation = await service.delegation.start();
     trace.record('server.delegation', { url: delegation });

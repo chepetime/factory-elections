@@ -38,6 +38,31 @@ const Iso = z.string().min(1);
 /** A calendar day, `YYYY-MM-DD`. */
 export const PlanDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date');
 
+/** What one senior PR review round found, for the ticket's activity. */
+export const ReviewOutcome = z.object({
+  /** `self`: the factory's own agent PR (review loop). `ticket`: someone's PR (review ticket). */
+  source: z.enum(['self', 'ticket']),
+  pr: z.number().int().positive(),
+  round: z.number().int().positive(),
+  decision: z.string(),
+  summary: z.string().optional(),
+  /** Findings by severity, e.g. `{ 'must-fix': 1, 'should-fix': 2 }`. */
+  counts: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** What happens because of it, in one sentence. */
+  next: z.string(),
+});
+export type ReviewOutcome = z.infer<typeof ReviewOutcome>;
+
+/** Findings by severity, for a ReviewOutcome. */
+export function severityCounts(findings: readonly { severity?: string | null }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const f of findings) {
+    const key = f.severity?.trim() || 'note';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export const Issue = z.object({
   number: z.number().int().min(1),
   title: z.string().trim().min(1).max(200),
@@ -56,6 +81,40 @@ export const Issue = z.object({
   /** Planning: the day work should start and the day it is due (`YYYY-MM-DD`). */
   start_date: PlanDate.optional(),
   due_date: PlanDate.optional(),
+  /**
+   * A review ticket: the work is a senior PR review of someone's PR, in rounds. Each round proposes
+   * a decision; you pick what to post. See review-tickets.ts.
+   */
+  review: z
+    .object({
+      number: z.number().int().positive(),
+      url: z.string(),
+      title: z.string(),
+      author: z.string().optional(),
+      rounds: z
+        .array(
+          z.object({
+            at: Iso,
+            mode: z.enum(['review', 'rereview']),
+            /** The PR head the round reviewed, when known. */
+            head_sha: z.string().optional(),
+            /** The skill's decision, when the round saved a report. */
+            decision: z.string().optional(),
+            summary: z.string().optional(),
+            /** Why the round has no report, when it ended without one. */
+            reason: z.string().optional(),
+            ended_at: Iso.optional(),
+            /** What you chose to post, and when the agent posted it. */
+            posted: z
+              .object({ option: z.string(), label: z.string(), at: Iso, done_at: Iso.optional() })
+              .optional(),
+          }),
+        )
+        .default([]),
+      /** The PR head a "new commits, round limit reached" note was written for, so it shows once. */
+      limit_noted_head: z.string().optional(),
+    })
+    .optional(),
   /** How the task's PR ended on GitHub, once the factory saw it: merged or closed. */
   pr_outcome: z
     .object({ state: z.enum(['MERGED', 'CLOSED']), number: z.number().int().positive(), at: Iso })
@@ -84,6 +143,8 @@ export const Issue = z.object({
         /** Set on status changes, so the feed can show the new status icon. */
         from: IssueStatus.optional(),
         to: IssueStatus.optional(),
+        /** A review round ended: the feed shows it as an outcome card. */
+        review: ReviewOutcome.optional(),
       }),
     )
     .default([]),

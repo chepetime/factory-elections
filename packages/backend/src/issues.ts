@@ -2,9 +2,11 @@
 // runs that no issue links to, which backfills old runs and catches runs started off the board.
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
+  ReviewOutcome,
+  asksForBaseMerge,
   parseMentions,
   defaultPrefix,
   dropAction,
@@ -65,6 +67,8 @@ export type IssueDeps = {
   agentIds?: () => Promise<string[]>;
   /** Why the run's queued turn has not started yet; undefined when no turn waits. */
   waiting?: (project: string, runId: string) => QueueWait | undefined;
+  /** Starts the next review round of a review ticket (moving it to In progress does this). */
+  startReview?: (project: string, key: string) => Promise<unknown>;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
   changed?: () => void;
   now?: () => Date;
@@ -137,7 +141,7 @@ export function issuePrompt(issue: Pick<Issue, 'title' | 'description'>): string
 }
 
 export class IssueService {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly deps: IssueDeps;
   constructor(deps: IssueDeps) {
     this.deps = deps;
@@ -246,6 +250,11 @@ export class IssueService {
     return issue;
   }
 
+  /** One read-change-write of a ticket, for services that own a ticket field (review tickets). */
+  edit(project: string, key: string, change: (issue: Issue, at: string) => Issue): Promise<IssueView> {
+    return this.change(project, key, change);
+  }
+
   private async change(
     project: string,
     key: string,
@@ -281,7 +290,7 @@ export class IssueService {
     });
   }
 
-  async create(raw: unknown): Promise<IssueView> {
+  async create(raw: unknown, extra: { review?: Issue['review'] } = {}): Promise<IssueView> {
     const input = CreateInput.parse(raw);
     const created = await this.serial(async () => {
       const { board, runs } = await this.sync(input.project);
@@ -295,6 +304,7 @@ export class IssueService {
         priority: input.priority,
         jira_key: input.jira_key || undefined,
         created_by: input.created_by,
+        ...(extra.review ? { review: extra.review } : {}),
         events: [{ at, kind: 'created', message: 'Created' }],
         created_at: at,
         updated_at: at,
@@ -426,7 +436,10 @@ export class IssueService {
    * task moves through the board again (Todo while queued, In progress, In review or Blocked).
    */
   async followUp(raw: unknown): Promise<IssueView> {
-    const { project, key, note, kind, agent: picked, by, pr_head } = FollowUpInput.parse(raw);
+    const parsed = FollowUpInput.parse(raw);
+    const { project, key, note, agent: picked, by, pr_head } = parsed;
+    // "Merge main", "resolve the conflicts": the factory merges the base itself (outside the sandbox).
+    const kind = parsed.kind === 'custom' && asksForBaseMerge(note) ? 'conflicts' : parsed.kind;
     if (!this.deps.followUp) throw new Conflict('Follow-ups are not available here.');
     const view = await this.get({ project, key });
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
@@ -529,18 +542,19 @@ export class IssueService {
 
   /** Adds an event for the activity feed, unless the last event says the same. */
   async note(raw: unknown): Promise<IssueView> {
-    const { project, key, kind, message } = z
+    const { project, key, kind, message, review } = z
       .object({
         project: ProjectName,
         key: Key,
         kind: z.string().min(1),
         message: z.string().min(1).max(2000),
+        review: ReviewOutcome.optional(),
       })
       .parse(raw);
     return this.change(project, key, (issue, at) =>
       issue.events.at(-1)?.message === message
         ? issue
-        : { ...issue, events: [...issue.events, { at, kind, message }] },
+        : { ...issue, events: [...issue.events, { at, kind, message, ...(review ? { review } : {}) }] },
     );
   }
 
@@ -601,6 +615,8 @@ export class IssueService {
             },
           ],
         };
+      if (action.kind === 'start-run' && issue.review)
+        return { action: { kind: 'start-review' as const }, runId: undefined, number: issue.number };
       if (action.kind === 'start-run') {
         runId = await this.deps.submit({
           project,
@@ -627,6 +643,11 @@ export class IssueService {
       return { action, runId, number: issue.number };
     });
 
+    if (plan.action.kind === 'start-review') {
+      if (!this.deps.startReview) throw new Conflict('PR reviews are not available here.');
+      await this.deps.startReview(project, key);
+      return { action: 'start-run', issue: await this.get({ project, key }) };
+    }
     if ((plan.action.kind === 'start-run' || plan.action.kind === 'run') && plan.runId)
       await this.deps.run(project, plan.runId);
     if (plan.action.kind === 'requeue' && plan.runId) {

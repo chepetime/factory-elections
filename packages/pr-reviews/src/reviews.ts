@@ -183,6 +183,15 @@ export class ReviewService {
    * or undefined when it stopped or failed. The backend's review loop listens here.
    */
   /** A first review turn ended: its payload, or why there is none. */
+  /**
+   * Any review turn ended. `kickoff`: a review or re-review turn (its payload, or why there is
+   * none); otherwise a person's message, such as "post the comments", which the agent carried out.
+   */
+  onTurnEnded?: (
+    project: string,
+    number: number,
+    turn: { turn: number; kickoff: boolean; ok: boolean; payload?: ReviewPayload; reason?: string },
+  ) => unknown;
   onReviewEnded?: (
     project: string,
     number: number,
@@ -274,7 +283,7 @@ export class ReviewService {
 
   /** Gives memory each finished turn once: its digest, and which tools it was offered and used. */
   async learn(project: string, record: RunFile): Promise<void> {
-    if (!this.memory && !this.traces && !this.reviewRecords) return;
+    if (!this.memory && !this.traces && !this.reviewRecords && !this.onTurnEnded) return;
     const dir = this.dir(project, record.number);
     for (let k = 0; k < record.turns.length; k++) {
       const marker = join(dir, `turn-${k}.learned`);
@@ -303,6 +312,34 @@ export class ReviewService {
         await Promise.resolve(this.onReviewEnded(project, record.number, payload, reason)).catch(
           () => undefined,
         );
+      }
+      // Every turn, for review tickets: a review or re-review turn ends a round, a person's turn a posting.
+      if (this.onTurnEnded) {
+        const turn = record.turns[k]!;
+        const exit = (await readFile(join(dir, `turn-${k}.exit`), 'utf8').catch(() => '')).trim();
+        const stopped = turn.stopped === true;
+        const kickoff = turn.label === 'Review' || turn.label === 'Re-review';
+        const read =
+          kickoff && exit === '0' && !stopped ? await this.readPayload(project, record.number) : {};
+        const payload = read.payload?.meta.decision?.trim() ? read.payload : undefined;
+        await Promise.resolve(
+          this.onTurnEnded(project, record.number, {
+            turn: k,
+            kickoff,
+            ok: exit === '0' && !stopped,
+            ...(payload ? { payload } : {}),
+            ...(kickoff && !payload
+              ? {
+                  reason: missingReportReason(events, {
+                    exit,
+                    stopped,
+                    payloadError: read.error,
+                    permissionMode: permissionModeOf(head),
+                  }),
+                }
+              : {}),
+          }),
+        ).catch(() => undefined);
       }
       if (k === 0 && this.reviewRecords && !record.turns[k]!.stopped) {
         const exitPath = join(dir, `turn-${k}.exit`);

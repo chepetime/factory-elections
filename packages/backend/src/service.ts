@@ -55,7 +55,9 @@ import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
+import { run } from '@factory/adapters-process';
 import { systemCatalog } from './system-catalog.ts';
+import { ReviewTickets } from './review-tickets.ts';
 import { AgentPool, Dispatcher, Executions, MAX_AGENTS, type Release } from '@factory/dispatcher';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 import { UserSettingsService } from './user-settings.ts';
@@ -99,6 +101,8 @@ export class BackendService {
   private readonly dispatcher: Dispatcher;
   /** Senior-pr-review rounds on agents' draft PRs (review-loop.ts). */
   readonly reviewLoop: ReviewLoop;
+  /** Someone's PR as a review ticket: rounds, your decision, posting, re-review on new commits. */
+  readonly reviewTickets: ReviewTickets;
   /** Background executions other than task runs: feature steps. */
   readonly executions: Executions;
   /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
@@ -291,6 +295,7 @@ export class BackendService {
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
       agentIds: async () => (await this.agents.list()).filter((a) => !a.archived_at).map((a) => a.id),
+      startReview: (project, key) => this.reviewTickets.start(project, key),
       changed: () => this.pickup?.kick(),
       waiting: (project, id) => this.isWaiting(project, id),
       root,
@@ -345,11 +350,45 @@ export class BackendService {
       },
       followUp: (project, id, note) =>
         this.issues.followUp({ project, key: id, note, kind: 'review', by: 'factory' }),
-      note: (project, id, message) => this.issues.note({ project, key: id, kind: 'review-loop', message }),
+      note: (project, id, message, review) =>
+        this.issues.note({ project, key: id, kind: 'review-loop', message, ...(review ? { review } : {}) }),
       body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
       github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.reviewTickets = new ReviewTickets({
+      projects: this.projects,
+      issues: this.issues,
+      reviews: this.reviews,
+      github: {
+        pr: async (project, number) => {
+          const { repo } = await this.projects.read(project);
+          const out = await run(
+            'gh',
+            ['pr', 'view', String(number), '--json', 'state,headRefOid,title,url,author'],
+            { cwd: repo, timeoutMs: 60_000 },
+          );
+          if (out.code !== 0)
+            throw new Error(`gh pr view ${number} failed: ${(out.stderr || out.stdout).trim()}`);
+          const v = JSON.parse(out.stdout) as {
+            state: 'OPEN' | 'MERGED' | 'CLOSED';
+            headRefOid: string;
+            title: string;
+            url: string;
+            author?: { login?: string };
+          };
+          return {
+            state: v.state,
+            head_sha: v.headRefOid,
+            title: v.title,
+            url: v.url,
+            author: v.author?.login ?? 'unknown',
+          };
+        },
+      },
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
+    this.reviews.onTurnEnded = (project, number, turn) => this.reviewTickets.turnEnded(project, number, turn);
     this.reviews.onReviewEnded = (project, number, payload, reason) =>
       this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
@@ -359,6 +398,16 @@ export class BackendService {
         // the backend was down): start one. The loop ignores a PR it already has a state for.
         if (pr.state === 'OPEN' && pr.draft && task.workflow === 'agent')
           await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
+        // A loop whose review a restart cut waits for a result that never comes: start it again.
+        if (pr.state === 'OPEN' && task.workflow === 'agent') {
+          const loop = await this.reviewLoop.state(task);
+          if (loop?.state === 'reviewing' && loop.pr === pr.number) {
+            const review = await this.reviews
+              .detail({ project: task.project, number: pr.number })
+              .catch(() => undefined);
+            if (review?.state === 'interrupted') await this.reviewLoop.resumeInterrupted(task);
+          }
+        }
       },
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({

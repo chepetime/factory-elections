@@ -29,7 +29,9 @@ test('SDK turn options set what the CLI turn arguments set', () => {
     new AbortController(),
   );
   assert.equal(flag(args, '--dangerously-skip-permissions'), true);
-  assert.equal(options.permissionMode, 'bypassPermissions');
+  // The SDK runs in default mode with a guard; see the guard test below.
+  assert.equal(options.permissionMode, 'default');
+  assert.equal(typeof options.canUseTool, 'function');
   assert.equal(flag(args, '--setting-sources'), 'project');
   assert.deepEqual(options.settingSources, ['project']);
   assert.equal(flag(args, '--strict-mcp-config'), true);
@@ -112,4 +114,29 @@ test('a failed or aborted turn says so and never throws', async () => {
   controller.abort();
   const aborted = await runClaudeTurn({ ...base, signal: controller.signal }, fake([{ type: 'system' }]));
   assert.deepEqual([aborted.ok, aborted.aborted], [false, true]);
+});
+
+test('the SDK review guard allows tools except what a deny rule names, also inside compound commands', async () => {
+  const { deniedBy } = await import('../src/index.ts');
+  const deny = ['Bash(gh pr review:*)', 'Bash(git push:*)', 'WebFetch'];
+  assert.equal(
+    deniedBy(deny, 'Write', { file_path: '/d/payload.json' }),
+    undefined,
+    'saving the report is allowed',
+  );
+  assert.equal(deniedBy(deny, 'Bash', { command: 'git diff main...HEAD' }), undefined);
+  assert.equal(deniedBy(deny, 'Bash', { command: 'gh pr view 4 --json state' }), undefined);
+  assert.equal(deniedBy(deny, 'Bash', { command: 'gh pr review 4 --approve' }), 'Bash(gh pr review:*)');
+  assert.equal(deniedBy(deny, 'Bash', { command: 'git status && git push origin x' }), 'Bash(git push:*)');
+  assert.equal(deniedBy(deny, 'Bash', { command: 'echo hi; gh pr review 4' }), 'Bash(gh pr review:*)');
+  assert.equal(deniedBy(deny, 'WebFetch', { url: 'x' }), 'WebFetch');
+  const options = claudeTurnOptions({ turn, systemPrompt: 'S', cwd: '/w', env: {} }, new AbortController());
+  const ask = options.canUseTool!;
+  const signal = new AbortController().signal;
+  assert.equal((await ask('Write', { file_path: '/p' }, { signal } as never))?.behavior, 'allow');
+  if (turn.deny.length) {
+    const rule = /^Bash\((.*?)(:\*)?\)$/.exec(turn.deny[0]!)?.[1];
+    if (rule)
+      assert.equal((await ask('Bash', { command: `${rule} 1` }, { signal } as never))?.behavior, 'deny');
+  }
 });

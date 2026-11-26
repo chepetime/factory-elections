@@ -11,6 +11,8 @@ import {
   reviewNotes,
   reviewNotesSection,
   splitFindings,
+  severityCounts,
+  type ReviewOutcome,
   type ReviewPayload,
   type TaskRecord,
 } from '@factory/core';
@@ -29,8 +31,8 @@ export interface ReviewLoopDeps {
   startReview(project: string, number: number): Promise<void>;
   /** Queues a `review` follow-up with these instructions for the task's agent. */
   followUp(project: string, taskId: string, note: string): Promise<unknown>;
-  /** Adds a line to the task's activity. */
-  note(project: string, taskId: string, message: string): Promise<unknown>;
+  /** Adds a line to the task's activity; with `review`, the feed shows it as an outcome card. */
+  note(project: string, taskId: string, message: string, review?: ReviewOutcome): Promise<unknown>;
   /** The PR description for the task's current commit, in the repository's template. */
   body(task: TaskRecord): Promise<string>;
   github: {
@@ -113,6 +115,7 @@ export class ReviewLoop {
         recheck: false,
         notes: [],
         sent: [],
+        resumed: 0,
         history: same?.history ?? [],
         updated_at: this.now(),
       };
@@ -150,6 +153,15 @@ export class ReviewLoop {
           left: rest.length,
         },
       ];
+      const outcome = (next: string): ReviewOutcome => ({
+        source: 'self',
+        pr: number,
+        round: state.round,
+        decision: payload.meta.decision?.trim() || 'No decision',
+        ...(payload.meta.summary?.trim() ? { summary: payload.meta.summary.trim() } : {}),
+        counts: severityCounts(payload.findings),
+        next,
+      });
       if (important.length && state.fixes < REVIEW_LOOP_MAX_FIXES) {
         const next: ReviewLoopState = {
           ...state,
@@ -161,10 +173,12 @@ export class ReviewLoop {
           updated_at: this.now(),
         };
         await this.save(task, next);
+        const sentBack = `${important.length} critical or must-fix ${important.length === 1 ? 'finding' : 'findings'} sent back to the agent.`;
         await this.deps.note(
           project,
           task.id,
-          `Review round ${state.round}: ${important.length} critical or must-fix ${important.length === 1 ? 'finding' : 'findings'} sent back to the agent.`,
+          `Review round ${state.round}: ${sentBack}`,
+          outcome(`${sentBack} Its fix is pushed once the checks pass, then reviewed again.`),
         );
         try {
           await this.deps.followUp(project, task.id, reviewFixNote(important, state.round));
@@ -175,6 +189,12 @@ export class ReviewLoop {
       }
       // The PR changed while this review ran: review the newest commit before the cycle ends.
       if (state.recheck) {
+        await this.deps.note(
+          project,
+          task.id,
+          `Review round ${state.round}: ${payload.meta.decision ?? 'done'}; the PR changed meanwhile.`,
+          outcome('The PR changed during the review, so the newest commit is reviewed next.'),
+        );
         const again: ReviewLoopState = {
           ...state,
           round: state.round + 1,
@@ -186,7 +206,45 @@ export class ReviewLoop {
         return this.review(task, again, number);
       }
       // Clean, or out of fix rounds: what is left goes to the people with the PR.
+      await this.deps.note(
+        project,
+        task.id,
+        `Review round ${state.round}: ${payload.meta.decision ?? 'done'}.`,
+        outcome(
+          important.length
+            ? `Out of fix rounds: the ${important.length} important ${important.length === 1 ? 'finding is' : 'findings are'} listed in the PR description for people.`
+            : rest.length
+              ? `Nothing critical or must-fix. The ${rest.length} other ${rest.length === 1 ? 'finding goes' : 'findings go'} into the PR description, and the PR is ready for review.`
+              : 'Nothing to fix. The PR is ready for review.',
+        ),
+      );
       await this.finish(task, { ...state, notes: reviewNotes([...important, ...rest]), history });
+    });
+  }
+
+  /**
+   * The running review of the loop was interrupted (a backend restart cut its turn), so no result
+   * will come. Start it again, at most twice per cycle; then stop and say why.
+   */
+  resumeInterrupted(task: TaskRecord): Promise<void> {
+    return this.serial(task, async () => {
+      const state = await this.state(task);
+      const number = prNumber(task);
+      if (!state || state.state !== 'reviewing' || !number || state.pr !== number) return;
+      if (state.resumed >= 2)
+        return this.stop(
+          task,
+          state,
+          'The senior PR review was interrupted three times by backend restarts.',
+        );
+      const next: ReviewLoopState = { ...state, resumed: state.resumed + 1, updated_at: this.now() };
+      await this.save(task, next);
+      await this.deps.note(
+        task.project,
+        task.id,
+        `Review round ${state.round} of #${number} was interrupted by a backend restart; it starts again.`,
+      );
+      await this.review(task, next, number);
     });
   }
 

@@ -16,6 +16,9 @@ import {
 import { startProfileCheck } from '@/lib/profile-check';
 import { saveAssignment } from '@/lib/team';
 import {
+  createReviewTicketRun,
+  decideReviewRun,
+  restartReviewLoopRun,
   isPrNumber,
   removeReviewRun,
   sendReviewMessageRun,
@@ -237,6 +240,37 @@ export async function assignMember(
 }
 
 /** Starts a review (or re-review) of each selected PR. Called directly from the PR reviews table. */
+/** Makes a review ticket for a PR (or finds its ticket) and returns its key. */
+export async function createReviewTicket(
+  project: string,
+  number: number,
+): Promise<ActionState & { key?: string }> {
+  if (!isProjectName(project) || !isPrNumber(number)) return { error: 'Invalid pull request.' };
+  const made = await createReviewTicketRun(project, number);
+  revalidatePath(`/projects/${project}/reviews`);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return made.ok ? { message: 'Review ticket ready.', key: made.value } : { error: made.error };
+}
+
+/** Runs the self-review of a task's agent PR again (after it stopped). */
+export async function restartSelfReview(project: string, id: string): Promise<ActionState> {
+  if (!isProjectName(project) || !isTaskId(id)) return { error: 'Invalid task.' };
+  const started = await restartReviewLoopRun(project, id);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return started.ok ? { message: 'Self-review started.' } : { error: started.error };
+}
+
+/** Your choice of what to post for a review ticket's proposal. */
+export async function decideReview(project: string, key: string, option: string): Promise<ActionState> {
+  if (!isProjectName(project) || !ISSUE_KEY.test(key) || !/^[a-z-]{2,30}$/.test(option))
+    return { error: 'Invalid decision.' };
+  const sent = await decideReviewRun(project, key, option);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return sent.ok
+    ? { message: option === 'nothing' ? 'Closed without posting.' : 'Posting it on GitHub…' }
+    : { error: sent.error };
+}
+
 export async function startReviews(
   project: string,
   numbers: number[],

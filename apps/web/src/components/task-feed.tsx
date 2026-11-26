@@ -5,6 +5,7 @@ import { type IssueStatus } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { IssueReplyBox } from '@/components/issue-editor';
+import { ReviewOutcomeCard } from '@/components/review-outcome';
 import { STATUS } from '@/components/task-status';
 import { type IssueView } from '@/lib/issues';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -155,6 +156,18 @@ export function Feed({
     events = [];
   };
   for (const item of items) {
+    if (item.kind === 'event' && item.event.review) {
+      flush();
+      blocks.push(
+        <ReviewOutcomeCard
+          key={`review-${item.event.at}`}
+          project={project}
+          at={item.event.at}
+          outcome={item.event.review}
+        />,
+      );
+      continue;
+    }
     if (item.kind === 'event') {
       events.push(item.event);
       continue;

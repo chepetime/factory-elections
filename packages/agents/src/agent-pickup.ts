@@ -102,6 +102,8 @@ export class AgentPickup {
           busy.set(t.agent, (busy.get(t.agent) ?? 0) + 1);
       const records = new Map(tasks.map((t) => [t.id, t]));
       for (const i of board.items) {
+        // A review ticket starts when you move it to In progress, never on its own.
+        if (i.review) continue;
         const latest = i.run ? records.get(i.run.id) : undefined;
         if (!i.assignee && i.status === 'todo' && !i.archived_at && (!i.run || runFinished(i.run.stage)))
           toRoute.push({

@@ -2,7 +2,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Effect } from 'effect';
+import { Effect, Semaphore } from 'effect';
 import { z } from 'zod';
 import { aggregateLog, ProjectName, TeamMember, TeamMemberInput, type Contributor } from '@factory/core';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
@@ -67,7 +67,7 @@ function rows(contributors: Contributor[], file: TeamFile) {
 }
 
 export class TeamService {
-  private readonly updates = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly updates = Effect.runSync(Semaphore.make(1));
   readonly root: string;
   private readonly storage: DataStorage;
   constructor(root: string) {
@@ -140,9 +140,9 @@ export class TeamService {
       },
       catch: (error) => error,
     }).pipe(this.updates.withPermits(1));
-    const result = await Effect.runPromise(Effect.either(update));
-    if (result._tag === 'Left') throw result.left;
-    return result.right;
+    const result = await Effect.runPromise(Effect.result(update));
+    if (result._tag === 'Failure') throw result.failure;
+    return result.success;
   }
   /** Applies one atomic edit or identity merge, serialized with individual assignments. */
   async bulk(raw: unknown) {
@@ -194,9 +194,9 @@ export class TeamService {
       },
       catch: (error) => error,
     }).pipe(this.updates.withPermits(1));
-    const result = await Effect.runPromise(Effect.either(update));
-    if (result._tag === 'Left') throw result.left;
-    return result.right;
+    const result = await Effect.runPromise(Effect.result(update));
+    if (result._tag === 'Failure') throw result.failure;
+    return result.success;
   }
   async assign(raw: unknown): Promise<void> {
     const input = z
@@ -226,7 +226,7 @@ export class TeamService {
       },
       catch: (error) => error,
     }).pipe(this.updates.withPermits(1));
-    const result = await Effect.runPromise(Effect.either(update));
-    if (result._tag === 'Left') throw result.left;
+    const result = await Effect.runPromise(Effect.result(update));
+    if (result._tag === 'Failure') throw result.failure;
   }
 }

@@ -1,6 +1,6 @@
 // Workspace agents, stored in one document so file mode and Postgres mode both list them.
 import { join } from 'node:path';
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import { AgentId, AgentInput, AgentProfile, AgentRoster, agentSlug } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
@@ -90,7 +90,7 @@ const UpdateInput = AgentInput.extend({ id: AgentId });
 const ArchiveInput = z.object({ id: AgentId, archived: z.boolean() });
 
 export class AgentService {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly deps: AgentDeps;
   constructor(deps: AgentDeps) {
     this.deps = deps;

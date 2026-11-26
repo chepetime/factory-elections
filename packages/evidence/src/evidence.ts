@@ -145,9 +145,9 @@ export class Evidence {
     }).pipe(Effect.withSpan(name, { attributes }));
     if (parent) program = program.pipe(Effect.withParentSpan(parent));
     // Unwrap the typed failure at the Promise boundary instead of leaking Effect's FiberFailure wrapper.
-    return Effect.runPromise(Effect.either(program)).then((result) => {
-      if (result._tag === 'Left') throw result.left;
-      return result.right;
+    return Effect.runPromise(Effect.result(program)).then((result) => {
+      if (result._tag === 'Failure') throw result.failure;
+      return result.success;
     });
   }
   runner(base: ModelRunner, parent: Tracer.Span): ModelRunner {

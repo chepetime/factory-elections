@@ -39,6 +39,13 @@ async function busyTasks() {
     const items = Array.isArray(issues) ? issues : (issues.items ?? []);
     for (const i of items) if (i.run?.owned || i.run?.waiting) busy.push(`${name}/${i.key}`);
   }
+  // PR review turns run inside the backend too; a restart would cut them.
+  const health = await fetch(`http://127.0.0.1:${process.env.FACTORY_HEALTH_PORT ?? 4318}/health`, {
+    signal: AbortSignal.timeout(5000),
+  })
+    .then((r) => r.json())
+    .catch(() => ({}));
+  if (health.reviews_running) busy.push(`${health.reviews_running} PR review turn(s)`);
   return busy;
 }
 
