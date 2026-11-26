@@ -1,6 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { backendError, type Result } from '@/lib/factory';
 
 const TicketList = z.object({ configured: z.boolean(), text: z.string() });

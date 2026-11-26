@@ -7,10 +7,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 const formatting = JSON.parse(await readFile(new URL('../.prettierrc.json', import.meta.url), 'utf8'));
 const require = createRequire(import.meta.url);
 const protobuf = createRequire(require.resolve('@grpc/proto-loader'))('protobufjs');
-const source = await readFile(new URL('../packages/backend/factory.proto', import.meta.url), 'utf8');
+const source = await readFile(new URL('../packages/backend-client/factory.proto', import.meta.url), 'utf8');
 const descriptor = protobuf.parse(source).root.toJSON();
 await writeFile(
-  new URL('../packages/backend/src/descriptor.json', import.meta.url),
+  new URL('../packages/backend-client/src/descriptor.json', import.meta.url),
   `${JSON.stringify(descriptor, null, 2)}\n`,
 );
 

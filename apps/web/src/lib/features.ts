@@ -1,5 +1,5 @@
 import 'server-only';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { z } from 'zod';
 import { FeatureActionAvailability, FeatureId, FeatureStage, GrillTurn, Ticket } from '@factory/core';
 

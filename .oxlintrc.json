@@ -27,6 +27,22 @@
           }
         ]
       }
+    },
+    {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@factory/backend", "@factory/backend/*", "@factory/driver", "@factory/adapters-*"],
+                "message": "apps/web talks to the backend only through @factory/backend-client"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

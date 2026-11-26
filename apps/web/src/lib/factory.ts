@@ -1,7 +1,7 @@
 // Server-only gRPC bridge. Task state, execution and evidence belong to the local backend.
 import 'server-only';
-import { backendCall } from '@factory/backend/client';
-import type { Command } from '@factory/backend/protocol';
+import { backendCall } from '@factory/backend-client';
+import type { Command } from '@factory/backend-client/protocol';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';

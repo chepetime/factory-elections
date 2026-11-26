@@ -1,5 +1,5 @@
 import 'server-only';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { SpanRecord, type TraceNode } from '@factory/core';
 import { z } from 'zod';
 

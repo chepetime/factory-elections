@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
 import { TaskControls, type ModelRunner } from '@factory/core';
-import { backendCall, closeBackendClient } from '../src/client.ts';
+import { backendCall, closeBackendClient } from '@factory/backend-client';
 import { Evidence } from '../src/evidence.ts';
 import { startBackend } from '../src/server.ts';
 

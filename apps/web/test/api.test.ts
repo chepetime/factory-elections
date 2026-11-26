@@ -1,13 +1,13 @@
 // Route handlers validate backend snapshots; transport behavior is exercised by backend smoke tests.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { taskActions, TaskRecord } from '@factory/core';
 import { GET as getState } from '@/app/api/projects/[project]/tasks/[id]/state/route';
 import { GET as getLive } from '@/app/api/projects/[project]/tasks/[id]/live/route';
 import { GET as getProjects } from '@/app/api/projects/route';
 import { GET as getTasks } from '@/app/api/projects/[project]/tasks/route';
 
-vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
 const rpc = vi.mocked(backendCall);
 const task = {
   id: '11111111-2222-4333-8444-555555555555',

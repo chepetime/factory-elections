@@ -1,4 +1,3 @@
-import type { ActivitySnapshot } from './activity.ts';
 import type { CleanupRecord, ExecutionPhase } from '@factory/core';
 import { fromJSON } from '@grpc/proto-loader';
 import type { ServiceDefinition } from '@grpc/grpc-js';
@@ -8,6 +7,13 @@ export const definition = fromJSON(descriptor as unknown as Parameters<typeof fr
   keepCase: true,
   defaults: true,
 })['factory.v1.Factory'] as ServiceDefinition;
+/** What a run is doing right now: the current command, when it started, and the last output. */
+export interface ActivitySnapshot {
+  run_started_at: string;
+  command?: string;
+  command_started_at?: string;
+  last_output_at?: string;
+}
 export interface Target {
   project: string;
   id?: string;

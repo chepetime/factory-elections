@@ -4,9 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/server.ts",
-    "./client": "./src/client.ts",
     "./compose": "./src/compose.ts",
-    "./protocol": "./src/protocol.ts",
     "./diagnostics": "./src/diagnostics.ts",
     "./lifecycle": "./src/lifecycle.ts",
     "./receipts": "./src/receipts.ts",
@@ -14,6 +12,7 @@
   },
   "dependencies": {
     "@factory/core": "workspace:*",
+    "@factory/backend-client": "workspace:*",
     "@factory/driver": "workspace:*",
     "@factory/adapters-fs": "workspace:*",
     "@factory/adapters-git": "workspace:*",
@@ -23,7 +22,6 @@
     "@factory/adapters-codex": "workspace:*",
     "effect": "^3.22.4",
     "@grpc/grpc-js": "^1.14.7",
-    "@grpc/proto-loader": "^0.8.1",
     "zod": "^4.6.7",
     "@factory/adapters-data": "workspace:*",
     "yaml": "^2.9.1"

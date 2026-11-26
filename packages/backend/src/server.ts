@@ -13,7 +13,7 @@ import type { ReviewDeps } from './reviews.ts';
 import type { SettingsDetector } from './settings.ts';
 import { Evidence } from './evidence.ts';
 import type { Check } from './diagnostics.ts';
-import { definition, type Command, type Methods, type Target } from './protocol.ts';
+import { definition, type Command, type Methods, type Target } from '@factory/backend-client/protocol';
 
 export interface ServerOptions {
   root: string;

@@ -239,6 +239,9 @@ importers:
       '@factory/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@factory/backend-client':
+        specifier: workspace:*
+        version: link:../../packages/backend-client
       '@factory/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -318,9 +321,9 @@ importers:
       '@factory/affect-ui':
         specifier: workspace:*
         version: link:../../packages/affect-ui
-      '@factory/backend':
+      '@factory/backend-client':
         specifier: workspace:*
-        version: link:../../packages/backend
+        version: link:../../packages/backend-client
       '@factory/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -361,6 +364,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@factory/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
       '@storybook/addon-a11y':
         specifier: 10.6.7
         version: 10.6.7(storybook@10.6.7(@types/react@19.3.0)(prettier@3.10.1)(react@19.3.1))
@@ -512,6 +518,9 @@ importers:
       '@factory/adapters-process':
         specifier: workspace:*
         version: link:../adapters-process
+      '@factory/backend-client':
+        specifier: workspace:*
+        version: link:../backend-client
       '@factory/core':
         specifier: workspace:*
         version: link:../core
@@ -521,9 +530,6 @@ importers:
       '@grpc/grpc-js':
         specifier: ^1.14.7
         version: 1.14.7
-      '@grpc/proto-loader':
-        specifier: ^0.8.1
-        version: 0.8.1
       effect:
         specifier: ^3.22.4
         version: 3.22.4
@@ -533,6 +539,18 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  packages/backend-client:
+    dependencies:
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      '@grpc/grpc-js':
+        specifier: ^1.14.7
+        version: 1.14.7
+      '@grpc/proto-loader':
+        specifier: ^0.8.1
+        version: 0.8.1
 
   packages/core:
     dependencies:

@@ -13,6 +13,7 @@
     "storybook:test": "pnpm --filter @factory/affect-ui build && vitest run --project storybook-light --project storybook-dark"
   },
   "devDependencies": {
+    "@factory/backend": "workspace:*",
     "@storybook/addon-a11y": "10.6.7",
     "@storybook/addon-docs": "10.6.7",
     "@storybook/addon-vitest": "10.6.7",
@@ -34,7 +35,7 @@
     "@ai-sdk/react": "4.0.187",
     "@base-ui/react": "^1.9.0",
     "@factory/affect-ui": "workspace:*",
-    "@factory/backend": "workspace:*",
+    "@factory/backend-client": "workspace:*",
     "@factory/core": "workspace:*",
     "ai": "7.0.182",
     "class-variance-authority": "^0.7.1",

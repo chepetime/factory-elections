@@ -1,7 +1,7 @@
 // Server-only bridge for board tasks ("issues" in code). The backend owns storage, numbering and drops.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { Issue, IssueStatus, QueueWait, Stage } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 

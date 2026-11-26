@@ -14,7 +14,7 @@ import { migrateFiles } from '../src/migrate.ts';
 import { Evidence } from '../../backend/src/evidence.ts';
 import { TraceLog } from '../../backend/src/traces.ts';
 import { startBackend } from '../../backend/src/server.ts';
-import { backendCall, closeBackendClient } from '../../backend/src/client.ts';
+import { backendCall, closeBackendClient } from '../../backend-client/src/client.ts';
 
 const enabled = !!process.env.FACTORY_TEST_STORAGE;
 async function setup(t: TestContext) {

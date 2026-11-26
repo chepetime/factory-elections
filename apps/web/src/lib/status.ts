@@ -1,7 +1,7 @@
 // The backend owns environment/profile checks; Next.js renders their validated results.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { backendError } from '@/lib/factory';
 import { readEngineHealth } from '@/lib/health';
 import type { StatusCheck, StatusReport } from '@/lib/status-checks';

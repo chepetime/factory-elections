@@ -2,7 +2,7 @@
 // to the backend.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { UserEnvironment, UserSettings } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 export type { UserEnvironment, UserSettings };

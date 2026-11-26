@@ -1,7 +1,7 @@
 // Server-only bridge for workspace agents and their chats.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import {
   AgentChat,
   AgentProfile,

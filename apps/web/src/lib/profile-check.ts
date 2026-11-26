@@ -1,7 +1,7 @@
 // Server-only bridge to the backend's profile check ("Check setup").
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { backendError, type Result } from '@/lib/factory';
 
 const Step = z.object({

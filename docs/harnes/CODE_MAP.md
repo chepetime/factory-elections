@@ -6,6 +6,7 @@
 | Tasks board (issues, keys, drops) | `packages/core/src/issues.ts`, `packages/backend/src/issues.ts` | `docs/tasks-board.md` |
 | Workflow execution and gates | `packages/driver/src`, `definitions/` | `docs/state-machines.md` |
 | RPC, queue, memory, delegation | `packages/backend/src` | `docs/local-backend.md` |
+| RPC contract and client (proto, Methods, `backendCall`) | `packages/backend-client/src` | `docs/local-backend.md` |
 | Provider execution | `packages/adapters-claude/src`, `packages/adapters-codex/src` | `docs/agent-execution-review.md` |
 | Git, filesystem, storage, processes | matching `packages/adapters-*` | `docs/docker-storage.md` for data |
 | CLI | `apps/cli/src` | `README.md` command section |

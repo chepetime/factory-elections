@@ -337,8 +337,8 @@ async function taskViaBackend(
     throw new DriverError(
       'This individual step requires the backend to be stopped. Use run or revise while it is serving.',
     );
-  const { backendCall } = await import('@factory/backend/client');
-  const { closeBackendClient } = await import('@factory/backend/client');
+  const { backendCall } = await import('@factory/backend-client');
+  const { closeBackendClient } = await import('@factory/backend-client');
   const text = (key: string) => (typeof values[key] === 'string' ? (values[key] as string) : undefined);
   const request = {
     project,
@@ -412,7 +412,7 @@ async function taskCommand(
   const show = (task: TaskRecord) => out(task);
   switch (sub) {
     case 'actions': {
-      const { backendCall, closeBackendClient } = await import('@factory/backend/client');
+      const { backendCall, closeBackendClient } = await import('@factory/backend-client');
       try {
         out(
           TaskControls.parse(
@@ -425,7 +425,7 @@ async function taskCommand(
       }
     }
     case 'confirm-cleanup': {
-      const { backendCall, closeBackendClient } = await import('@factory/backend/client');
+      const { backendCall, closeBackendClient } = await import('@factory/backend-client');
       try {
         process.stdout.write(
           `${(await backendCall('ConfirmCleanup', { project: project(), id: id() })).text}\n`,

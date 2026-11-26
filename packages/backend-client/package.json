@@ -1,0 +1,14 @@
+{
+  "name": "@factory/backend-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "dependencies": {
+    "@factory/core": "workspace:*",
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1"
+  }
+}

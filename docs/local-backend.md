@@ -191,7 +191,7 @@ Each tending model call is a `model` span with step `tend:<action>`, under the t
 
 ## Communication and configuration
 
-The versioned contract is `packages/backend/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.
+The versioned contract is `packages/backend-client/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.
 
 Next.js and the CLI use one reusable gRPC channel and deadline-bound requests. The web client keeps its channel across development module reloads. The server binds loopback only and requires a bearer credential on every RPC. The local client reads the same data root's token file, or both processes can use `FACTORY_BACKEND_TOKEN` (at least 32 characters).
 

@@ -1,7 +1,7 @@
 // Server-only typed bridge for PR reviews. Worktrees, review agents and reports belong to the backend.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { PullRequestSummary, ReviewPayload, ReviewState } from '@factory/core';
 export type { ReviewPayload };
 import { backendError, type Result } from '@/lib/factory';

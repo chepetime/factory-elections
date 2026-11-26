@@ -14,7 +14,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright';
 import { startBackend } from '@factory/backend';
-import { backendCall, closeBackendClient } from '@factory/backend/client';
+import { backendCall, closeBackendClient } from '@factory/backend-client';
 import type { ModelRunner } from '@factory/core';
 
 const web = join(dirname(fileURLToPath(import.meta.url)), '..');

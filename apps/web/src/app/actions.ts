@@ -350,7 +350,7 @@ export async function featureGateAction(_prev: ActionState, form: FormData): Pro
   if (!isProjectName(project) || !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) || !message)
     return { error: 'Invalid feature action.' };
   try {
-    const { backendCall } = await import('@factory/backend/client');
+    const { backendCall } = await import('@factory/backend-client');
     await backendCall('FeatureAction', {
       project,
       json: JSON.stringify({
@@ -374,7 +374,7 @@ export async function dismissInboxItem(_prev: ActionState, form: FormData): Prom
   const project = field(form, 'project');
   if (!id || id.length > 400 || !isProjectName(project)) return { error: 'Invalid inbox item.' };
   try {
-    const { backendCall } = await import('@factory/backend/client');
+    const { backendCall } = await import('@factory/backend-client');
     await backendCall('DismissInboxItem', { project, json: JSON.stringify({ id }) });
     revalidatePath('/', 'layout');
     return { message: 'Dismissed.' };

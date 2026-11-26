@@ -1,7 +1,7 @@
 // Server-only typed bridge for project settings. Storage and the exploring agent belong to the backend.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { ProjectSettings, TaskManager } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 export type { ProjectSettings };

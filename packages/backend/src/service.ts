@@ -77,7 +77,7 @@ export { Conflict };
 import { TeamService } from './team.ts';
 import { TicketService } from './tickets.ts';
 import { environmentChecks, type Check } from './diagnostics.ts';
-import type { BackgroundRun, Command, Target } from './protocol.ts';
+import type { BackgroundRun, Command, Target } from '@factory/backend-client/protocol';
 import { RunActivity, trackShell } from './activity.ts';
 import { ProfileChecks } from './profile-check.ts';
 
