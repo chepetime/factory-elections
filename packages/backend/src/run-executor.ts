@@ -49,6 +49,16 @@ export async function performCommand(command: RunCommand, driver: Driver): Promi
       return `Rejected: ${id}`;
     case 'open-pr':
       return (await driver.openPr(project, id, { draft: command.draft })).pr!.url;
+    case 'follow-up':
+      return (
+        await driver.followUp(project, id, {
+          note: command.note,
+          kind: command.kind || 'custom',
+          agent: command.agent,
+          by: command.by || 'you',
+          ...(command.pr_head ? { prHead: command.pr_head } : {}),
+        })
+      ).stage;
   }
 }
 

@@ -23,6 +23,12 @@ message Command {
   bool accept_blocking = 6;
   bool draft = 7;
   uint32 max_attempts = 8;
+  // follow-up only: the agent that does it, `custom` or `conflicts`, `you` or `factory`, and the
+  // PR head when the conflict watcher added it.
+  string agent = 9;
+  string kind = 10;
+  string by = 11;
+  string pr_head = 12;
 }
 message Assignment {
   string project = 1;
@@ -65,6 +71,7 @@ service Factory {
   rpc UpdateIssue(SettingsUpdate) returns (Snapshot);
   rpc MoveIssue(SettingsUpdate) returns (Snapshot);
   rpc CommentIssue(SettingsUpdate) returns (Snapshot);
+  rpc FollowUpIssue(SettingsUpdate) returns (Snapshot);
   rpc ArchiveIssue(SettingsUpdate) returns (Snapshot);
   rpc DeleteIssue(SettingsUpdate) returns (Snapshot);
   rpc GetProfileStatus(Target) returns (Snapshot);

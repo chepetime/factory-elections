@@ -15,7 +15,10 @@
       "items": {
         "type": "object",
         "properties": {
-          "action": { "type": "string", "enum": ["run", "revise", "approve", "reject", "open-pr"] },
+          "action": {
+            "type": "string",
+            "enum": ["run", "revise", "approve", "reject", "open-pr", "follow-up"]
+          },
           "allowed": { "type": "boolean" },
           "blockers": {
             "type": "array",
@@ -26,6 +29,7 @@
                   "type": "string",
                   "enum": [
                     "pr-open",
+                    "pr-required",
                     "stage",
                     "worktree-required",
                     "head-unavailable",

@@ -41,17 +41,24 @@ export async function openPr(
   await intent('create');
   // A previous attempt may have opened the PR and then failed to record it. Adopt an open PR for
   // this commit; a closed or merged one needs a person, because opening another repeats a write.
-  const same = (await deps.github.pullRequestsFrom({ cwd: path, head: branch })).filter(
-    (pr) => pr.head_sha === head,
-  );
-  const open = same.find((pr) => pr.state === 'OPEN');
+  const fromBranch = await deps.github.pullRequestsFrom({ cwd: path, head: branch });
+  // After a follow-up the push updated the task's own PR: adopt it, whatever head GitHub lists yet.
+  const own = task.pr ? fromBranch.find((pr) => pr.url === task.pr!.url) : undefined;
+  if (own && own.state !== 'OPEN')
+    throw new DriverError(
+      `the task's pull request is ${own.state.toLowerCase()}: ${own.url}. ` +
+        'Reopen it on GitHub and open the PR again, or reject the task',
+    );
+  const same = fromBranch.filter((pr) => pr.head_sha === head);
+  const open = own ?? same.find((pr) => pr.state === 'OPEN');
   const ended = same.find((pr) => pr.state !== 'OPEN');
   if (!open && ended)
     throw new DriverError(
       `a pull request for this commit already exists and is ${ended.state.toLowerCase()}: ${ended.url}. ` +
         'Reopen it on GitHub and open the PR again to adopt it, or reject the task',
     );
-  if (open) deps.log(`Pull request already open: ${open.url}`);
+  if (own) deps.log(`Updated the pull request: ${own.url}`);
+  else if (open) deps.log(`Pull request already open: ${open.url}`);
   else deps.log('Opening pull request…');
   const url =
     open?.url ??

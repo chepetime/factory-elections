@@ -25,6 +25,7 @@ import {
   type TendAction,
   type TendFix,
   type TendingWaiting,
+  conflictFollowUpSeen,
 } from '@factory/core';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
@@ -52,6 +53,11 @@ export interface TendingDeps {
     writeDocument(path: string, data: unknown): Promise<void>;
   };
   github?: TendingGitHub;
+  /**
+   * Adds a conflict follow-up for the task's agent. Called when tending is off for the project and
+   * the PR conflicts with its base, once per PR head.
+   */
+  conflictFollowUp?(task: TaskRecord, pr: { head_sha: string; base: string }): Promise<unknown>;
   log?(line: string): void;
 }
 
@@ -204,7 +210,18 @@ export class TendingService {
   private async pass(): Promise<void> {
     for (const { name } of await this.deps.projects.list()) {
       const settings = await this.deps.settings(name).catch(() => undefined);
-      if (!settings?.tending.enabled) continue;
+      if (!settings) continue;
+      if (!settings.tending.enabled) {
+        // Without tending, a conflicting PR still gets help: a follow-up its agent picks up.
+        if (this.deps.conflictFollowUp)
+          for (const task of await this.deps.tasks.list(name))
+            await this.watchConflict(task).catch((error: unknown) =>
+              this.deps.log?.(
+                `conflict watch ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            );
+        continue;
+      }
       for (const task of await this.deps.tasks.list(name)) {
         if (task.stage !== 'pr-opened' || !task.pr) continue;
         await this.tend(task, settings).catch((error: unknown) =>
@@ -214,6 +231,19 @@ export class TendingService {
         );
       }
     }
+  }
+
+  /** Adds a conflict follow-up when the task's open PR conflicts and none exists for its head. */
+  async watchConflict(task: TaskRecord): Promise<boolean> {
+    if (task.stage !== 'pr-opened' || !task.pr || !task.worktree || !this.deps.conflictFollowUp) return false;
+    const number = Number(/\/pull\/(\d+)/.exec(task.pr.url)?.[1]);
+    if (!Number.isFinite(number)) return false;
+    const pr = await this.github.pr(task.worktree.path, number);
+    if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING' || conflictFollowUpSeen(task, pr.head_sha))
+      return false;
+    await this.deps.conflictFollowUp(task, { head_sha: pr.head_sha, base: pr.base });
+    this.deps.log?.(`conflict watch ${task.project}/${task.id} PR #${number}: follow-up added`);
+    return true;
   }
 
   /** Tends one PR once: reads it, picks the next action and does it. */

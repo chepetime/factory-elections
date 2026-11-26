@@ -40,6 +40,7 @@ vi.mock('@/app/actions', () => ({
   approveAndOpenPullRequest: vi.fn(),
   approveTask: vi.fn(),
   dismissLog: vi.fn(),
+  followUpIssue: vi.fn(),
   openPullRequest: vi.fn(),
   rejectTask: vi.fn(),
   runTask: vi.fn(),
@@ -432,6 +433,9 @@ it('lists the runs and pull requests in the side panel', async () => {
   page = await html(undefined, 'details');
   expect(page).toContain('o/r#12');
   expect(page).not.toContain('No pull request yet.');
+  // An open PR is continued by a follow-up on the same branch, not by a new run.
+  expect(page).toContain('Follow up');
+  expect(page).toContain('Resolve merge conflicts');
 });
 
 it('folds runs of events and shows comment threads with their replies', async () => {

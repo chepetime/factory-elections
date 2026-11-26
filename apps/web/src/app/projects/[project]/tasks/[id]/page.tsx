@@ -12,6 +12,7 @@ import {
   type TaskRecord,
   queueWaitLabel,
 } from '@factory/core';
+import { FollowUpForm } from '@/components/follow-up-form';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
@@ -309,7 +310,7 @@ export default async function TaskPage({
   searchParams,
 }: {
   params: Promise<{ project: string; id: string }>;
-  searchParams?: Promise<{ start?: string; run?: string; panel?: string }>;
+  searchParams?: Promise<{ start?: string; run?: string; panel?: string; followup?: string }>;
 }) {
   const query = (await searchParams) ?? {};
   const { project, id } = await params;
@@ -457,6 +458,24 @@ export default async function TaskPage({
                   </Link>
                 )}
               </div>
+            )}
+            {/* The latest run's PR is open: more work is a follow-up on the same branch and PR. */}
+            {run?.ok && runId === issue.run?.id && run.value.task.stage === 'pr-opened' && (
+              <FollowUpForm
+                project={project}
+                issueKey={issue.key}
+                agents={agents.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name }))}
+                {...(((run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                issue.assignee)
+                  ? {
+                      defaultAgent:
+                        (run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                        issue.assignee!,
+                    }
+                  : {})}
+                base={run.value.task.worktree?.base_branch ?? 'main'}
+                open={query.followup === '1'}
+              />
             )}
             <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
           </div>

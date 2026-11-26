@@ -228,3 +228,41 @@ export async function resetWorktreeHard(dir: string, ref: string): Promise<void>
   else if (await has('CHERRY_PICK_HEAD')) await git(dir, ['cherry-pick', '--abort']);
   await git(dir, ['reset', '--hard', ref]);
 }
+
+/** Fetches these refs from origin. Administrative, so it runs alone on the repository. */
+export async function fetchRefs(dir: string, refs: string[]): Promise<void> {
+  await exclusive(dir, () => git(dir, ['fetch', '-q', 'origin', ...refs]));
+}
+
+/** Fast-forwards the current branch to `ref`. False when the branch has diverged from it. */
+export async function fastForwardTo(dir: string, ref: string): Promise<boolean> {
+  return gitOk(dir, ['merge', '-q', '--ff-only', ref]);
+}
+
+/**
+ * Merges `ref` into the current branch. `clean`: the merge is committed. Otherwise the merge stops
+ * on conflicts and stays in progress, with the conflicted paths listed. Any other failure throws.
+ */
+export async function mergeRef(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }> {
+  const result = await run('git', ['-c', 'user.useConfigOnly=false', 'merge', '--no-edit', '-q', ref], {
+    cwd: dir,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+  });
+  if (result.code === 0) return { clean: true, conflicted: [] };
+  const conflicted = (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
+  if (!conflicted.length) {
+    await gitOk(dir, ['merge', '--abort']);
+    throw new GitError(`git merge ${ref} failed: ${(result.stderr || result.stdout).trim()}`);
+  }
+  return { clean: false, conflicted };
+}
+
+/** Whether a merge is in progress (MERGE_HEAD exists). */
+export async function mergeInProgress(dir: string): Promise<boolean> {
+  return gitOk(dir, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
+}
+
+/** Stops a merge in progress and restores the branch head. */
+export async function abortMerge(dir: string): Promise<void> {
+  await gitOk(dir, ['merge', '--abort']);
+}

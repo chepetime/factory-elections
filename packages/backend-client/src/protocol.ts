@@ -30,6 +30,14 @@ export interface Command extends Target {
   accept_blocking?: boolean;
   draft?: boolean;
   max_attempts?: number;
+  /** follow-up: the agent that does it. */
+  agent?: string;
+  /** follow-up: `custom` or `conflicts`. */
+  kind?: string;
+  /** follow-up: `you` or `factory`. */
+  by?: string;
+  /** follow-up: the PR head when the conflict watcher added it. */
+  pr_head?: string;
 }
 export interface BackgroundRun {
   running: boolean;
@@ -88,6 +96,7 @@ export interface Methods {
   UpdateIssue: [{ project: string; json: string }, { json: string }];
   MoveIssue: [{ project: string; json: string }, { json: string }];
   CommentIssue: [{ project: string; json: string }, { json: string }];
+  FollowUpIssue: [{ project: string; json: string }, { json: string }];
   ArchiveIssue: [{ project: string; json: string }, { json: string }];
   DeleteIssue: [{ project: string; json: string }, { json: string }];
   /** Repo profile: missing, draft, approved or invalid, with its path. DraftProfile drafts a missing one. */

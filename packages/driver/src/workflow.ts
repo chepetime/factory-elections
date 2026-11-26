@@ -30,10 +30,11 @@ import {
   type Rung,
   type StepAttempt,
   type StepDefinition,
+  type FollowUpKind,
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
 import { setupInputsKey } from './setup.ts';
@@ -54,6 +55,16 @@ import { checkProfile, verifyWorktree } from './verification.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
 export { worktreeGuard } from './support.ts';
+
+/** Changed files that still hold a conflict marker line. */
+async function conflictMarkers(dir: string, files: string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const file of files) {
+    const text = await readFile(join(dir, file), 'utf8').catch(() => '');
+    if (/^(<{7}|>{7}) /m.test(text) || /^={7}$/m.test(text)) found.push(file);
+  }
+  return found;
+}
 
 export class Driver {
   readonly deps: DriverDeps;
@@ -636,6 +647,76 @@ export class Driver {
   }
 
   /**
+   * More work on a task whose PR is open, by a workspace agent on the same branch and PR (see
+   * core follow-ups.ts). It starts from the PR head and refuses a branch that diverged from it. A
+   * conflict follow-up merges the base first: a clean merge goes straight to verification, and
+   * conflicts go to the agent. Either way the task stops at the approval gate with the new commit.
+   */
+  async followUp(
+    project: string,
+    id: string,
+    input: { note: string; kind: FollowUpKind; agent: string; by: string; prHead?: string },
+  ): Promise<TaskRecord> {
+    let task = await this.deps.tasks.read(project, id);
+    const blockers = taskCommandBlockers(task, 'follow-up');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    const { git } = this.deps;
+    if (!this.deps.agentSession || !git.fetchRefs || !git.fastForwardTo || !git.mergeRef)
+      throw new DriverError('Follow-ups are not available here.');
+    const { path, branch, base } = await this.checkedWorktree(task);
+    if (!(await git.isClean(path))) throw new DriverError('the task worktree has uncommitted changes');
+    // Start from the PR head: someone may have pushed to it since the factory did.
+    await git.fetchRefs(path, [branch, base]);
+    if (!(await git.fastForwardTo(path, `origin/${branch}`)))
+      throw new DriverError(`the task branch has diverged from the pull request (origin/${branch})`);
+    const changesAgent = task.workflow !== 'agent' || task.agent !== input.agent;
+    const entry = {
+      at: this.deps.now(),
+      kind: input.kind,
+      note: input.note,
+      agent: input.agent,
+      by: input.by,
+      ...(input.prHead ? { pr_head: input.prHead } : {}),
+    };
+    task = withEvent(
+      {
+        ...task,
+        workflow: 'agent',
+        agent: input.agent,
+        // Another agent starts its own session; the same agent keeps its context.
+        ...(changesAgent ? { agent_session: undefined } : {}),
+        approval: undefined,
+        follow_ups: [...(task.follow_ups ?? []), entry],
+      },
+      this.deps.now(),
+      'follow-up',
+      `${input.by === 'factory' ? 'The factory' : 'You'} added a follow-up for ${input.agent}: ${input.note}`,
+    );
+    await this.deps.tasks.write(task);
+    let note = input.note;
+    if (input.kind === 'conflicts') {
+      this.deps.log(`Merging ${base} into ${branch}…`);
+      const merge = await git.mergeRef(path, `origin/${base}`);
+      if (merge.clean) {
+        // Nothing for an agent: the merged commit goes through verification to the gate.
+        this.deps.log('The merge applied without conflicts. Verifying…');
+        return this.gateAfterFollowUp(project, id);
+      }
+      note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
+    }
+    return this.agentRun(project, id, note);
+  }
+
+  /** Verifies the worktree head and puts a follow-up's commit at the approval gate. */
+  private async gateAfterFollowUp(project: string, id: string): Promise<TaskRecord> {
+    const verified = await this.verifyAndRecord(project, id);
+    if (!verified.verification?.passed) return verified;
+    const ready = withStage(verified, this.deps.now(), 'awaiting-approval', 'Ready for your review');
+    await this.deps.tasks.write(ready);
+    return ready;
+  }
+
+  /**
    * A workspace agent works the task in one session under the coder's guard and sandbox, then the
    * driver commits and verifies. A reply resumes the same session. There is no reviewer step: the
    * person reviews the change before approving it, and only a person opens the pull request.
@@ -737,14 +818,20 @@ export class Driver {
       if (childCost) costUsd = (costUsd ?? 0) + childCost;
 
       let committed = false;
+      // A conflict follow-up leaves a merge in progress: the commit below completes it.
+      const merging = (await this.deps.git.mergeInProgress?.(path)) ?? false;
       if (outcome === 'completed') {
         const changed = await this.deps.git.stageAll(path);
         const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+        const marked = merging ? await conflictMarkers(path, changed) : [];
         if (forbidden.length) {
           await this.deps.git.unstageAll(path);
           outcome = 'failed';
           error = `${session.name} changed forbidden paths: ${forbidden.join(', ')}`;
-        } else if (changed.length) {
+        } else if (marked.length) {
+          outcome = 'failed';
+          error = `conflict markers remain in ${marked.join(', ')}`;
+        } else if (changed.length || merging) {
           await this.deps.git.commit(
             path,
             `${taskTitle(task)}\n\nFactory task ${task.id} (${session.name}).`,
@@ -776,6 +863,7 @@ export class Driver {
         `${session.name} ${outcome === 'failed' ? `stopped: ${error}` : 'finished'}${committed ? ` and Factory committed the rest on ${branch}` : ''}`,
       );
       if (outcome === 'failed') {
+        if (merging) await this.deps.git.abortMerge?.(path);
         await this.deps.tasks.write(
           withStage(task, this.deps.now(), 'failed', error ?? `${session.name} failed`),
         );
@@ -783,6 +871,18 @@ export class Driver {
       }
       const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
       const asked = session.reported();
+      // A follow-up that changed nothing leaves the PR as it was: the task is done again.
+      if (task.pr && asked !== 'blocked' && (await this.deps.git.headSha(path)) === task.pr.head_sha) {
+        await this.deps.tasks.write(
+          withStage(
+            task,
+            this.deps.now(),
+            'pr-opened',
+            `${session.name} made no changes; the pull request is unchanged.`,
+          ),
+        );
+        return await this.deps.tasks.read(project, id);
+      }
       if (asked === 'blocked' || (await this.deps.git.commitCountSince(path, base)) === 0) {
         const message =
           asked === 'blocked'

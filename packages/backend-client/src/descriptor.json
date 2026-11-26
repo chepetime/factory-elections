@@ -169,6 +169,22 @@
                 "maxAttempts": {
                   "type": "uint32",
                   "id": 8
+                },
+                "agent": {
+                  "type": "string",
+                  "id": 9
+                },
+                "kind": {
+                  "type": "string",
+                  "id": 10
+                },
+                "by": {
+                  "type": "string",
+                  "id": 11
+                },
+                "prHead": {
+                  "type": "string",
+                  "id": 12
                 }
               }
             },
@@ -328,6 +344,10 @@
                   "responseType": "Snapshot"
                 },
                 "CommentIssue": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "FollowUpIssue": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },

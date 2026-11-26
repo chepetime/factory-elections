@@ -7,7 +7,7 @@ import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
 import { archiveIssue, commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
 import { Markdown } from '@/components/markdown';
 import { useConfirm } from '@/components/confirm-dialog';
-import { decideDrop, MoveMenu } from '@/components/task-board';
+import { decideDrop, followUpHref, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -294,6 +294,7 @@ export function IssueStatusField({
     const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') return setNotice({ kind: 'error', text: action.reason });
+    if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     start(async () => {
       const result = await moveIssue(project, issue.key, to);
       setNotice(

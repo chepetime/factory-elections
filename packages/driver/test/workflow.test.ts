@@ -198,7 +198,7 @@ test('task goes from intake to an opened pull request only after approval', asyn
     stored.attempts?.map((a) => a.step),
     ['classifier', 'coder', 'reviewer', 'pr-writer'],
   );
-  await assert.rejects(driver.openPr('demo', task.id), /already open/);
+  await assert.rejects(driver.openPr('demo', task.id), /already has this commit/);
 });
 
 test('the PR draft is written after review and shown at the gate, a failed draft does not block', async () => {

@@ -51,7 +51,9 @@ export type BoardIssue = {
  * that starts, reruns or cancels paid model work never happens without a yes.
  */
 /** The column a card shows in while its move is sent: the column the backend will put it in. */
-export function optimisticStatus(action: Exclude<DropAction, { kind: 'none' | 'refused' }>): IssueStatus {
+export function optimisticStatus(
+  action: Exclude<DropAction, { kind: 'none' | 'refused' | 'follow-up' }>,
+): IssueStatus {
   switch (action.kind) {
     case 'reject':
       return 'cancelled';
@@ -63,6 +65,10 @@ export function optimisticStatus(action: Exclude<DropAction, { kind: 'none' | 'r
       return 'in_progress';
   }
 }
+
+/** The task page with the follow-up form open. */
+export const followUpHref = (project: string, key: string) =>
+  `/projects/${project}/tasks/${key}?panel=details&followup=1#follow-up`;
 
 export async function decideDrop(
   issue: Pick<BoardIssue, 'key' | 'status' | 'run'>,
@@ -206,6 +212,8 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       setNotice({ kind: 'error', text: `${issue.key}: ${action.reason}` });
       return;
     }
+    // The PR is open: more work is a follow-up, written on the task page.
+    if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     if (moving.current.has(issue.key)) return;
     moving.current.add(issue.key);
     setNotice(undefined);

@@ -47,6 +47,14 @@ export interface GitPort {
   remoteBranchExists?(repo: string, branch: string): Promise<boolean>;
   /** Ignores a pattern in this repository only, without a committed .gitignore change. */
   excludeLocally?(dir: string, pattern: string): Promise<void>;
+  /** Fetches these refs from origin. Follow-ups need it, with the next four. */
+  fetchRefs?(dir: string, refs: string[]): Promise<void>;
+  /** Fast-forwards the current branch to `ref`; false when it has diverged. */
+  fastForwardTo?(dir: string, ref: string): Promise<boolean>;
+  /** Merges `ref`: committed when clean, else left in progress with the conflicted paths. */
+  mergeRef?(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }>;
+  mergeInProgress?(dir: string): Promise<boolean>;
+  abortMerge?(dir: string): Promise<void>;
 }
 
 export interface ShellPort {

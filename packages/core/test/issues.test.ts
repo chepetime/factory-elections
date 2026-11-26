@@ -160,3 +160,8 @@ test('a queued turn names what it waits for', () => {
   assert.equal(queueWaitLabel('agent'), 'Waiting for its agent');
   assert.equal(queueWaitLabel('slot', 'Devin'), 'Waiting for a free slot', 'a full pool is not the agent');
 });
+
+test('a Done task whose PR is open asks for a follow-up when dropped on In progress; a rejected one starts again', () => {
+  assert.deepEqual(dropAction('done', 'in_progress', { stage: 'pr-opened' }), { kind: 'follow-up' });
+  assert.deepEqual(dropAction('cancelled', 'in_progress', { stage: 'rejected' }), { kind: 'start-run' });
+});

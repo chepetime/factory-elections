@@ -194,6 +194,11 @@ export async function startBackend(options: ServerOptions) {
           await service.issues.move({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      FollowUpIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.followUp({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
       CommentIssue: async (request) => ({
         json: JSON.stringify(
           await service.issues.comment({ ...jsonObject(request.json), project: request.project }),

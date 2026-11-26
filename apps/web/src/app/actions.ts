@@ -34,6 +34,7 @@ import {
   commentIssueRun,
   createIssueRun,
   deleteIssueRun,
+  followUpIssueRun,
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
@@ -441,6 +442,22 @@ export async function commentIssue(_prev: ActionState, form: FormData): Promise<
   revalidatePath(`/projects/${project}/tasks/${key}`);
   if (!commented.ok) return { error: commented.error };
   return { message: parent ? 'Reply added.' : 'Comment added.' };
+}
+
+/** Adds a follow-up on a task whose PR is open. The agent continues the same branch and PR. */
+export async function followUpIssue(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const project = field(form, 'project');
+  const key = field(form, 'key');
+  const note = field(form, 'note').trim();
+  const kind = field(form, 'kind') === 'conflicts' ? 'conflicts' : 'custom';
+  const agent = field(form, 'agent') || undefined;
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  if (!note) return { error: 'Write what the agent should do.' };
+  const followed = await followUpIssueRun(project, key, { note, kind, ...(agent ? { agent } : {}) });
+  revalidatePath(`/projects/${project}/tasks/${key}`);
+  revalidatePath(`/projects/${project}`);
+  if (!followed.ok) return { error: followed.error };
+  return { message: 'Follow-up queued. The task moves back through the board as the agent works.' };
 }
 
 /** Archives a board task, or restores it with `archived: false`. */

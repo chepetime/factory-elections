@@ -36,7 +36,8 @@ export function approvalBlockers(task: TaskRecord, headSha: string): string[] {
     if (!task.review) reasons.push('the reviewer has not reviewed the change');
     else if (task.review.head_sha !== headSha) reasons.push('the review is for an older commit');
   }
-  if (task.pr) reasons.push('a pull request is already open');
+  // After a follow-up the PR is open with an older commit; only the same commit is already in it.
+  if (task.pr?.head_sha === headSha) reasons.push('the pull request already has this commit');
   return reasons;
 }
 

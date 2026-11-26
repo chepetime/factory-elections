@@ -24,6 +24,7 @@ import {
   envNames,
   type QueueWait,
   recoveryBlocker,
+  conflictFollowUpNote,
   recoveryInboxItems,
   type RecoveryProblem,
   type RecoveryReport,
@@ -112,11 +113,11 @@ export class BackendService {
   /** Starts Todo tasks assigned to free agents. The server starts it; tests call `tick`. */
   readonly pickup: AgentPickup;
   /** What the run's steps are, for the progress line: an agent run has no classifier or reviewer. */
-  private async runLabel(task: TaskRecord, action: string): Promise<string> {
-    if (task.workflow === 'agent') {
-      const name = task.agent
-        ? ((await this.agents.get({ id: task.agent }).catch(() => undefined))?.name ?? task.agent)
-        : 'Agent';
+  private async runLabel(task: TaskRecord, action: string, agent?: string): Promise<string> {
+    if (action === 'follow-up' || task.workflow === 'agent') {
+      const id = (action === 'follow-up' && agent) || task.agent;
+      const name = id ? ((await this.agents.get({ id }).catch(() => undefined))?.name ?? id) : 'Agent';
+      if (action === 'follow-up') return `${name}: follow-up on the open PR → commit → checks`;
       return action === 'run'
         ? `${name}: session → commit → checks`
         : `${name} read your reply: session → commit → checks`;
@@ -292,6 +293,17 @@ export class BackendService {
       settings: (p) => this.settings.get(p),
       submit: (input) => this.submit(input),
       revise: (project, id, note) => this.start({ project, id, action: 'revise', note } as Command),
+      followUp: (project, id, input) =>
+        this.start({
+          project,
+          id,
+          action: 'follow-up',
+          note: input.note,
+          kind: input.kind,
+          agent: input.agent,
+          by: input.by ?? 'you',
+          pr_head: input.prHead ?? '',
+        } as Command),
       run: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
       cancelQueued: (project, id) => this.cancelQueued(project, id),
@@ -317,6 +329,15 @@ export class BackendService {
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.tending = new TendingService({
+      conflictFollowUp: (task, pr) =>
+        this.issues.followUp({
+          project: task.project,
+          key: task.id,
+          note: conflictFollowUpNote(pr.base),
+          kind: 'conflicts',
+          by: 'factory',
+          pr_head: pr.head_sha,
+        }),
       projects: this.projects,
       tasks: this.tasks,
       settings: (p) => this.settings.get(p),
@@ -578,13 +599,14 @@ export class BackendService {
   }
   private command(raw: Command) {
     const command = CommandSchema.parse(raw);
-    if (['revise', 'reject'].includes(command.action) && !command.note.trim())
+    if (['revise', 'reject', 'follow-up'].includes(command.action) && !command.note.trim())
       throw new Error('A note is required');
     return command;
   }
   async execute(raw: Command): Promise<string> {
     const command = this.command(raw);
-    if (['run', 'revise'].includes(command.action)) throw new Error('Use StartRun for long-running work');
+    if (['run', 'revise', 'follow-up'].includes(command.action))
+      throw new Error('Use StartRun for long-running work');
     if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
     const unknown = recoveryBlocker(this.recovery, command.project, command.id);
     if (unknown) throw new Conflict(unknown);
@@ -619,7 +641,10 @@ export class BackendService {
   }
   async start(raw: Command): Promise<RunRecord> {
     const command = this.command(raw);
-    if (!['run', 'revise'].includes(command.action)) throw new Error('Only run and revise can be scheduled');
+    if (!['run', 'revise', 'follow-up'].includes(command.action))
+      throw new Error('Only run, revise and follow-up can be scheduled');
+    if (command.action === 'follow-up' && !command.agent)
+      throw new Conflict('Name the agent for the follow-up.');
     const unknown = recoveryBlocker(this.recovery, command.project, command.id);
     if (unknown) throw new Conflict(unknown);
     const reservation = this.dispatcher.reserve();
@@ -643,7 +668,7 @@ export class BackendService {
         task_id: command.id,
         action: command.action,
         command,
-        label: await this.runLabel(task, command.action),
+        label: await this.runLabel(task, command.action, command.agent),
         state: 'queued',
         created_at: new Date().toISOString(),
       };
@@ -676,7 +701,13 @@ export class BackendService {
         run: record.id,
         agent: async () => {
           const task = await this.tasks.read(command.project, command.id).catch(() => undefined);
-          const name = task?.workflow === 'agent' ? task.agent : undefined;
+          // A follow-up runs as its named agent, also on a task the pipeline did.
+          const name =
+            command.action === 'follow-up' && command.agent
+              ? command.agent
+              : task?.workflow === 'agent'
+                ? task.agent
+                : undefined;
           if (!name) return undefined;
           const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
           return { name, limit };

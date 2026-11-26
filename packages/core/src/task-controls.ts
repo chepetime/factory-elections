@@ -4,7 +4,7 @@ import { STAGES, TaskRecord, type Stage } from './schemas.ts';
 import { approvalBlockers, blockingFindings, openPrBlockers } from './domain.ts';
 import { cleanupBlocker, type CleanupRecord } from './execution.ts';
 
-export const TaskCommand = z.enum(['run', 'revise', 'approve', 'reject', 'open-pr']);
+export const TaskCommand = z.enum(['run', 'revise', 'approve', 'reject', 'open-pr', 'follow-up']);
 export type TaskCommand = z.infer<typeof TaskCommand>;
 export const ExecutionPhase = z.enum([
   'idle',
@@ -35,6 +35,7 @@ export function executionBusy(phase: ExecutionPhase): boolean {
 const Blocker = z.object({
   code: z.enum([
     'pr-open',
+    'pr-required',
     'stage',
     'worktree-required',
     'head-unavailable',
@@ -53,6 +54,8 @@ const COMMAND_STAGES: Record<TaskCommand, readonly Stage[]> = {
   approve: ['awaiting-approval'],
   reject: STAGES,
   'open-pr': ['approved'],
+  // A follow-up continues a finished run on its own branch and PR (see follow-ups.ts).
+  'follow-up': ['pr-opened'],
 };
 /** Whether a task in `stage` accepts `command`, before the worktree, lock and PR checks. */
 export function commandAllowedIn(command: TaskCommand, stage: Stage): boolean {
@@ -64,12 +67,20 @@ const COMMAND_RESULT: Record<TaskCommand, string> = {
   approve: 'approved',
   reject: 'rejected',
   'open-pr': 'opened as a pull request',
+  'follow-up': 'followed up',
 };
 
 /** Structural guards shared by the offline driver, scheduler and action discovery. */
 export function taskCommandBlockers(task: TaskRecord, action: TaskCommand): CommandBlocker[] {
-  if (task.pr || task.stage === 'pr-opened')
-    return [{ code: 'pr-open', message: 'A pull request is already open for this task.' }];
+  // A run whose PR is open is finished; only a follow-up continues it, on the same branch and PR.
+  if (action === 'follow-up' && !task.pr)
+    return [
+      { code: 'pr-required', message: 'A follow-up continues an open pull request; this task has none.' },
+    ];
+  if (action !== 'follow-up' && task.stage === 'pr-opened')
+    return [
+      { code: 'pr-open', message: 'A pull request is already open for this task. Add a follow-up instead.' },
+    ];
   // Reject only closes the run, so a run that stopped before it made a worktree can still close.
   if (action !== 'run' && action !== 'reject' && !task.worktree)
     return [{ code: 'worktree-required', message: 'The task has no worktree.' }];
@@ -124,7 +135,7 @@ export function taskActions(
           blockers.push({ code: 'gate', message });
     }
     const requires: z.infer<typeof ActionAvailability>['requires'] = [];
-    if (action === 'revise' || action === 'reject') requires.push('note');
+    if (action === 'revise' || action === 'reject' || action === 'follow-up') requires.push('note');
     if (action === 'approve') {
       requires.push('head');
       if (blockingFindings(task)) requires.push('accept_blocking');

@@ -20,6 +20,8 @@ import {
   syncedStatus,
   TaskId,
   type DropAction,
+  type FollowUpKind,
+  followUpAgent,
   type ProjectSettings,
   type Stage,
   type TaskRecord,
@@ -44,6 +46,12 @@ export type IssueDeps = {
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
   run: (project: string, id: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
+  /** Queues a follow-up on a run whose PR is open (core follow-ups.ts). */
+  followUp?: (
+    project: string,
+    id: string,
+    input: { note: string; kind: FollowUpKind; agent: string; by?: string; prHead?: string },
+  ) => Promise<unknown>;
   /** Takes a queued turn out of the queue before a reject: the queued turn holds the run's lock. */
   cancelQueued?: (project: string, id: string) => Promise<unknown>;
   /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
@@ -76,6 +84,18 @@ const UpdateInput = z.object({
   assignee: z.string().min(1).nullable().optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
+const FollowUpInput = z.object({
+  project: ProjectName,
+  key: Key,
+  note: z.string().trim().min(1).max(20_000),
+  kind: z.enum(['custom', 'conflicts']).default('custom'),
+  /** The workspace agent; absent uses the run's agent, then the task's assignee. */
+  agent: z.string().min(1).optional(),
+  /** `factory` when the conflict watcher adds it. */
+  by: z.enum(['you', 'factory']).default('you'),
+  /** The PR head the watcher saw, so it adds one follow-up per head. */
+  pr_head: z.string().min(1).max(64).optional(),
+});
 const CommentInput = z.object({
   project: ProjectName,
   key: Key,
@@ -324,6 +344,42 @@ export class IssueService {
   }
 
   /**
+   * Adds a follow-up to a task whose PR is open: an agent continues the same branch and PR, and the
+   * task moves through the board again (Todo while queued, In progress, In review or Blocked).
+   */
+  async followUp(raw: unknown): Promise<IssueView> {
+    const { project, key, note, kind, agent: picked, by, pr_head } = FollowUpInput.parse(raw);
+    if (!this.deps.followUp) throw new Conflict('Follow-ups are not available here.');
+    const view = await this.get({ project, key });
+    const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
+    if (!view.run || !record || view.run.stage !== 'pr-opened')
+      throw new Conflict('A follow-up continues a task whose pull request is open.');
+    const agent = picked ?? followUpAgent(record, view.assignee);
+    if (!agent) throw new Conflict('Pick the agent that does the follow-up.');
+    // Refuses a missing or archived agent before anything is queued.
+    const name = this.deps.agentName ? await this.deps.agentName(agent) : agent;
+    await this.deps.followUp(project, view.run.id, {
+      note,
+      kind,
+      agent,
+      by,
+      ...(pr_head ? { prHead: pr_head } : {}),
+    });
+    return this.change(project, key, (issue, at) => ({
+      ...issue,
+      ...(issue.assignee ? {} : { assignee: agent }),
+      events: [
+        ...issue.events,
+        {
+          at,
+          kind: 'follow-up',
+          message: `${by === 'factory' ? 'The factory added a' : 'Added a'} follow-up for ${name}: ${firstLine(note)}`,
+        },
+      ],
+    }));
+  }
+
+  /**
    * A person's comment continues the task's agent session when the agent is waiting on them:
    * its change is in review, its checks failed, it stopped, or it asked for help. An approved,
    * rejected or merged run is never restarted by a comment.
@@ -397,6 +453,8 @@ export class IssueService {
       const view = this.view(prefix, issue, runs);
       const action = dropAction(view.status, to, view.run);
       if (action.kind === 'refused') throw new Conflict(action.reason);
+      if (action.kind === 'follow-up')
+        throw new Conflict('The pull request is open. Add a follow-up with instructions from the task page.');
       const at = this.now();
       const event = (message: string) => ({ at, kind: `move:${to}`, message });
       let updated = issue;

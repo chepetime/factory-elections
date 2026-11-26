@@ -177,6 +177,8 @@ export type DropAction =
   | { kind: 'reject' }
   /** Close a run that waits for a person, then put the task back in Backlog or Todo. */
   | { kind: 'requeue'; status: 'backlog' | 'todo' }
+  /** The task's PR is open: more work is a follow-up with instructions, on the same branch and PR. */
+  | { kind: 'follow-up' }
   | { kind: 'refused'; reason: string };
 
 /**
@@ -196,6 +198,7 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
   if (to === 'in_review' || to === 'blocked')
     return { kind: 'refused', reason: 'The factory moves tasks into this column.' };
   if (to === 'in_progress') {
+    if (run?.stage === 'pr-opened') return { kind: 'follow-up' };
     if (!run || runFinished(run.stage)) return { kind: 'start-run' };
     if (commandAllowedIn('run', run.stage)) return { kind: 'run' };
     return { kind: 'refused', reason: 'Approve, revise or reject it from the task page.' };
