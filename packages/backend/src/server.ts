@@ -90,6 +90,8 @@ export async function startBackend(options: ServerOptions) {
             state: service.recoveryReport().state,
             problems: service.recoveryReport().problems.length,
           },
+          // PR review turns run in this process: a restart cuts them (scripts/restart.mjs checks this).
+          reviews_running: await service.reviews.agentsInUse().catch(() => 0),
           ...(hostAgentSession(process.env) ? { host_session: hostAgentSession(process.env) } : {}),
           integrations: [],
         }),

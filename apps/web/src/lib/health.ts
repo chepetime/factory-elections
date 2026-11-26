@@ -26,6 +26,8 @@ const EngineHealth = z
       .optional(),
     /** The agent session the backend was started from; its agents may run with capped permissions. */
     host_session: z.literal('claude-code').optional(),
+    /** PR review turns running in the backend now. */
+    reviews_running: z.number().int().nonnegative().optional(),
     integrations: z.array(z.never()).max(0),
   })
   .strict();

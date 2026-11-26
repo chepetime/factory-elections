@@ -103,6 +103,7 @@ describe('self-review card', () => {
           fixes: 1,
           cycle: 1,
           recheck: false,
+          resumed: 0,
           notes: [],
           sent: [],
           history: [

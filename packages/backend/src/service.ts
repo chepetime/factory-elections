@@ -397,6 +397,16 @@ export class BackendService {
         // the backend was down): start one. The loop ignores a PR it already has a state for.
         if (pr.state === 'OPEN' && pr.draft && task.workflow === 'agent')
           await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
+        // A loop whose review a restart cut waits for a result that never comes: start it again.
+        if (pr.state === 'OPEN' && task.workflow === 'agent') {
+          const loop = await this.reviewLoop.state(task);
+          if (loop?.state === 'reviewing' && loop.pr === pr.number) {
+            const review = await this.reviews
+              .detail({ project: task.project, number: pr.number })
+              .catch(() => undefined);
+            if (review?.state === 'interrupted') await this.reviewLoop.resumeInterrupted(task);
+          }
+        }
       },
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({

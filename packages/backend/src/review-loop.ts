@@ -113,6 +113,7 @@ export class ReviewLoop {
         recheck: false,
         notes: [],
         sent: [],
+        resumed: 0,
         history: same?.history ?? [],
         updated_at: this.now(),
       };
@@ -187,6 +188,32 @@ export class ReviewLoop {
       }
       // Clean, or out of fix rounds: what is left goes to the people with the PR.
       await this.finish(task, { ...state, notes: reviewNotes([...important, ...rest]), history });
+    });
+  }
+
+  /**
+   * The running review of the loop was interrupted (a backend restart cut its turn), so no result
+   * will come. Start it again, at most twice per cycle; then stop and say why.
+   */
+  resumeInterrupted(task: TaskRecord): Promise<void> {
+    return this.serial(task, async () => {
+      const state = await this.state(task);
+      const number = prNumber(task);
+      if (!state || state.state !== 'reviewing' || !number || state.pr !== number) return;
+      if (state.resumed >= 2)
+        return this.stop(
+          task,
+          state,
+          'The senior PR review was interrupted three times by backend restarts.',
+        );
+      const next: ReviewLoopState = { ...state, resumed: state.resumed + 1, updated_at: this.now() };
+      await this.save(task, next);
+      await this.deps.note(
+        task.project,
+        task.id,
+        `Review round ${state.round} of #${number} was interrupted by a backend restart; it starts again.`,
+      );
+      await this.review(task, next, number);
     });
   }
 

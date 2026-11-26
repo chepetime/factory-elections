@@ -30,6 +30,8 @@ export const ReviewLoopState = z.object({
     .array(z.object({ severity: z.string(), title: z.string(), where: z.string().optional() }))
     .default([]),
   reason: z.string().optional(),
+  /** Reviews of this cycle started again after a backend restart cut them. */
+  resumed: z.number().int().nonnegative().default(0),
   history: z
     .array(
       z.object({

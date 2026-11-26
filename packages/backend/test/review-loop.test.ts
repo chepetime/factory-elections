@@ -181,3 +181,25 @@ test('an update while a review runs gets one more review before the cycle ends',
   await ctx.loop.reviewEnded('demo', 4, payload());
   assert.equal((await ctx.state())?.state, 'ready');
 });
+
+test('a review that a restart cut starts again, twice per cycle, then the loop stops and says why', async () => {
+  const ctx = setup();
+  const opened = ctx.task();
+  await ctx.loop.prChanged(opened, { kind: 'opened', draft: true });
+  assert.deepEqual(
+    ctx.calls.filter((c) => c.startsWith('review:')),
+    ['review:4'],
+  );
+  await ctx.loop.resumeInterrupted(opened);
+  await ctx.loop.resumeInterrupted(opened);
+  assert.equal(ctx.calls.filter((c) => c.startsWith('review:')).length, 3, 'started again twice');
+  assert.ok(ctx.calls.some((c) => /interrupted by a backend restart; it starts again/.test(c)));
+  await ctx.loop.resumeInterrupted(opened);
+  const stopped = await ctx.state();
+  assert.equal(stopped?.state, 'stopped');
+  assert.match(stopped?.reason ?? '', /interrupted three times/);
+  assert.equal(ctx.calls.filter((c) => c.startsWith('review:')).length, 3, 'no fourth start');
+  // A finished or fixing loop is left alone.
+  await ctx.loop.resumeInterrupted(opened);
+  assert.equal(ctx.calls.filter((c) => c.startsWith('review:')).length, 3);
+});
