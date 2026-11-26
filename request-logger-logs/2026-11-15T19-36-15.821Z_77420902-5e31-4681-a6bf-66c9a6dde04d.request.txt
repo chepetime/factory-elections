@@ -1,1 +1,0 @@
-{"model":"claude-opus-5-5","max_tokens":1,"messages":[{"role":"user","content":"quota"}],"metadata":{"user_id":"{\"device_id\":\"e22f8ae23b762d8a85ba1c269a6d40e3fd823cfe0a37e245a0c611d7273f87b5\",\"account_uuid\":\"870125bf-38c8-4248-abfc-86a607060ae8\",\"session_id\":\"4c380ad2-501c-43c6-972e-f59c96c4b16c\"}"}}
