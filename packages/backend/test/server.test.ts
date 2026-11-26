@@ -725,3 +725,63 @@ test('an agent start that cannot run is refused in plain words and leaves no emp
 
   await writeFile(profile, approved);
 });
+
+test('a queued run cancelled before it starts leaves the queue at once, frees its lock and never runs', async (t) => {
+  process.env.FACTORY_TASK_WORKERS = '1';
+  t.after(() => delete process.env.FACTORY_TASK_WORKERS);
+  let release!: () => void;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  let calls = 0;
+  const runner: ModelRunner = {
+    async run() {
+      calls++;
+      await hold;
+      throw Object.assign(new Error('scripted end'), { kind: 'aborted' });
+    },
+  };
+  t.after(() => release());
+  const { server, id } = await fixture(t, runner);
+  const second = (await backendCall('SubmitTask', { project: 'demo', prompt: 'second task' })).text;
+  const third = (await backendCall('SubmitTask', { project: 'demo', prompt: 'third task' })).text;
+  await backendCall('StartRun', { project: 'demo', id, action: 'run' });
+  const queued = JSON.parse(
+    (await backendCall('StartRun', { project: 'demo', id: second, action: 'run' })).json,
+  );
+  const stoppedRun = JSON.parse(
+    (await backendCall('StartRun', { project: 'demo', id: third, action: 'run' })).json,
+  );
+  for (let i = 0; i < 200 && calls < 1; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(server.service.isWaiting('demo', second), true);
+  const stageBefore = (await server.service.tasks.read('demo', second)).stage;
+
+  // The worker is still busy, so this only returns because the run left the queue.
+  await server.service.cancelQueued('demo', second);
+  assert.equal(server.service.isWaiting('demo', second), false);
+  const unlock = await server.service.tasks.acquireLock('demo', second);
+  await unlock();
+  // StopRun on a queued run takes the same way out.
+  assert.match((await backendCall('StopRun', { project: 'demo', id: third })).text, /before it starts/);
+  await finished(third);
+
+  for (const [task, run] of [
+    [second, queued.id],
+    [third, stoppedRun.id],
+  ]) {
+    const dir = join(dirname(server.service.tasks.taskPath('demo', task)), 'runs', run);
+    const record = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8'));
+    assert.equal(record.state, 'failed');
+    assert.equal(record.outcome, 'cancelled');
+    assert.match(record.error, /before the run started/);
+  }
+  assert.equal(
+    (await server.service.tasks.read('demo', second)).stage,
+    stageBefore,
+    'the task keeps its stage',
+  );
+  release();
+  await finished(id);
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(calls, 1, 'the cancelled runs never reached the model');
+});

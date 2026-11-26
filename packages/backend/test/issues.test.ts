@@ -71,6 +71,10 @@ async function setup(
         updated_at: new Date((clock += 1000)).toISOString(),
       };
     },
+    cancelQueued: async (_project, id) => {
+      calls.push(`cancelQueued:${id}`);
+      waiting.delete(id);
+    },
     deleteRun: async (_project, id) => {
       calls.push(`delete:${id}`);
       if (id === failingDelete) throw new Error('git refused');
@@ -398,4 +402,14 @@ test('an interrupted run at coding can be archived and deleted; a live run canno
   assert.ok(archived.archived_at);
   await service.delete({ project: 'change-elections', key: key(stopped.id) });
   assert.deepEqual(deleted, [stopped.id]);
+});
+
+test('Cancelled takes a queued turn out of the queue before it rejects the run', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const { service, calls } = await setup(t, [stuck], {}, undefined, new Set([stuck.id]));
+  await service.move({ project: 'change-elections', key: 'CE-1', to: 'cancelled' });
+  assert.deepEqual(
+    calls.filter((c) => /^(cancelQueued|reject):/.test(c)).map((c) => c.split(':')[0]),
+    ['cancelQueued', 'reject'],
+  );
 });

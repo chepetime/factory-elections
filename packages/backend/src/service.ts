@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { Cause, Effect, Fiber } from 'effect';
+import { Cause, Effect, Exit, Fiber } from 'effect';
 import { z } from 'zod';
 import {
   ProjectName,
@@ -159,6 +159,8 @@ export class BackendService {
   private readonly activities = new Map<string, RunActivity>();
   /** Runs a person asked to stop; a queued one stops as soon as it starts. */
   private readonly stopRequests = new Set<string>();
+  /** Per run id, for a run that waits for a worker: drops it from that queue. False once it started. */
+  private readonly unstarted = new Map<string, () => boolean>();
   private executing = 0;
   private accepting = true;
   private reservations = 0;
@@ -357,6 +359,7 @@ export class BackendService {
       revise: (project, id, note) => this.start({ project, id, action: 'revise', note } as Command),
       run: (project, id) => this.start({ project, id, action: 'run' } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
+      cancelQueued: (project, id) => this.cancelQueued(project, id),
       deleteRun: (project, id) => this.deleteRun(project, id),
     });
     this.pickup = new AgentPickup({
@@ -747,14 +750,25 @@ export class BackendService {
     {
       const task = `${command.project}/${command.id}`;
       this.scheduled.set(task, (this.scheduled.get(task) ?? 0) + 1);
-      const work = Effect.tryPromise({
-        try: () => this.work(command, record, dir),
-        catch: (error) => error,
+      // `entered` and `abandoned` change with no await between check and set, so a cancel either
+      // drops the run before work() starts or leaves it to work(), never both.
+      let entered = false;
+      let abandoned = false;
+      const work = Effect.suspend(() => {
+        if (abandoned) return Effect.void;
+        entered = true;
+        this.unstarted.delete(record.id);
+        return Effect.tryPromise({
+          try: () => this.work(command, record, dir),
+          catch: (error) => error,
+        });
       }).pipe(
         this.worker.withPermits(1),
         Effect.ensuring(
           Effect.promise(async () => {
             try {
+              this.unstarted.delete(record.id);
+              if (abandoned) await this.closeUnstarted(record, dir);
               await unlock();
             } finally {
               this.reservations--;
@@ -767,8 +781,16 @@ export class BackendService {
         ),
       );
       const fiber = Effect.runFork(work);
+      this.unstarted.set(record.id, () => {
+        if (entered) return false;
+        abandoned = true;
+        // Safe: the fiber only waits for a worker permit, and work() has not started.
+        Effect.runFork(Fiber.interrupt(fiber));
+        return true;
+      });
       const completion = Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-        if (exit._tag === 'Failure')
+        // An interrupt is the cancel above, and its record is written: not a failure.
+        if (exit._tag === 'Failure' && !(abandoned && Exit.isInterrupted(exit)))
           process.stderr.write(`Run ${record.id} could not finalize: ${Cause.pretty(exit.cause)}\n`);
       });
       this.active.set(record.id, completion);
@@ -776,10 +798,17 @@ export class BackendService {
   }
   private async work(command: z.infer<typeof CommandSchema>, record: RunRecord, dir: string): Promise<void> {
     // A run that had not started when shutdown began stays queued; the next start runs it.
-    if (!(await this.takeAgentSlot())) return;
-    const own = await this.takeOwnAgentSlot(command.project, command.id);
-    if (!own) {
+    // A run a person stopped while it waited never starts: its task keeps the stage it had.
+    const stopped = () => this.stopRequests.has(record.id);
+    if (!(await this.takeAgentSlot(stopped))) {
+      if (stopped()) await this.closeUnstarted(record, dir);
+      return;
+    }
+    const own = await this.takeOwnAgentSlot(command.project, command.id, stopped);
+    if (!own || stopped()) {
+      own?.();
       this.executing--;
+      if (stopped()) await this.closeUnstarted(record, dir);
       return;
     }
     const controller = new AbortController();
@@ -1186,9 +1215,38 @@ export class BackendService {
     if (!latest || !this.active.has(latest.record.id)) throw new Conflict('No run is active for this task.');
     this.stopRequests.add(latest.record.id);
     const controller = this.controllers.get(latest.record.id);
-    if (!controller) return 'Stopping the run before it starts.';
+    if (!controller) {
+      // Waiting for a worker: leave that queue now. Waiting for an agent: the wait loop sees the stop.
+      this.unstarted.get(latest.record.id)?.();
+      return 'Stopping the run before it starts.';
+    }
     controller.abort();
     return 'Stopping the run.';
+  }
+  /**
+   * Cancels a turn that is queued and has not started, and waits until it left the queue and freed
+   * the task lock. The turn never runs and the task keeps its stage. Does nothing otherwise.
+   */
+  async cancelQueued(project: string, id: string): Promise<void> {
+    if (!this.isWaiting(project, id)) return;
+    const latest = await this.latest({ project, id });
+    const completion = latest && this.active.get(latest.record.id);
+    if (!latest || !completion || this.controllers.has(latest.record.id)) return;
+    this.stopRequests.add(latest.record.id);
+    this.unstarted.get(latest.record.id)?.();
+    await completion;
+  }
+  /** Records a queued run a person stopped before it started. */
+  private async closeUnstarted(record: RunRecord, dir: string): Promise<void> {
+    this.stopRequests.delete(record.id);
+    record.state = 'failed';
+    record.outcome = failureOutcome(undefined, true);
+    record.error = 'Stopped by you before the run started.';
+    record.finished_at = new Date().toISOString();
+    record.cleanup = { status: 'clean' };
+    await this.storage.writeDocument(join(dir, 'run.json'), record).catch((error) => {
+      process.stderr.write(`Run ${record.id} could not record its stop: ${String(error)}\n`);
+    });
   }
   /**
    * Records that a person checked an uncertain cleanup: nothing from the last run still runs.
@@ -1226,11 +1284,11 @@ export class BackendService {
    * Waits until reviews and task runs leave a free agent, then takes it. False when shutdown
    * began first. The count and the increment happen with no await between them.
    */
-  private async takeAgentSlot(): Promise<boolean> {
+  private async takeAgentSlot(stopped: () => boolean = () => false): Promise<boolean> {
     for (;;) {
-      if (!this.accepting) return false;
+      if (!this.accepting || stopped()) return false;
       const reviews = await this.reviews.agentsInUse().catch(() => 0);
-      if (!this.accepting) return false;
+      if (!this.accepting || stopped()) return false;
       if (this.executing + reviews < MAX_AGENTS) {
         this.executing++;
         return true;
@@ -1239,13 +1297,17 @@ export class BackendService {
     }
   }
   /** For an agent run, waits until that agent has a free slot (its concurrency). Other runs pass at once. */
-  private async takeOwnAgentSlot(project: string, id: string): Promise<(() => void) | undefined> {
+  private async takeOwnAgentSlot(
+    project: string,
+    id: string,
+    stopped: () => boolean = () => false,
+  ): Promise<(() => void) | undefined> {
     const task = await this.tasks.read(project, id).catch(() => undefined);
     const name = task?.workflow === 'agent' ? task.agent : undefined;
     if (!name) return () => {};
     const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
     for (;;) {
-      if (!this.accepting) return undefined;
+      if (!this.accepting || stopped()) return undefined;
       const used = this.agentRuns.get(name) ?? 0;
       if (used < limit) {
         this.agentRuns.set(name, used + 1);

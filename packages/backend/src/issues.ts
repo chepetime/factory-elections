@@ -55,6 +55,8 @@ export type IssueDeps = {
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
   run: (project: string, id: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
+  /** Takes a queued turn out of the queue before a reject: the queued turn holds the run's lock. */
+  cancelQueued?: (project: string, id: string) => Promise<unknown>;
   /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
@@ -479,6 +481,8 @@ export class IssueService {
       }));
     }
     if (plan.action.kind === 'reject' && plan.runId) {
+      // Without this, the reject waits for the lock until the queued turn got an agent and ran.
+      await this.deps.cancelQueued?.(project, plan.runId);
       await this.deps.reject(project, plan.runId, 'Cancelled from the task board.');
       await this.change(project, `N-${plan.number}`, (issue, at) => ({
         ...issue,
