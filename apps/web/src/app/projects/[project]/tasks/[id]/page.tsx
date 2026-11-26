@@ -38,6 +38,7 @@ import { RunSessionView } from '@/components/run-session';
 import { readRunSession } from '@/lib/run-session';
 import { TASK_DETAILS_PANE } from '@/lib/pane-spec';
 import { modelTotals, ticketTimeline } from '@/lib/ticket-timeline';
+import { listSpans } from '@/lib/system';
 import { TicketTimeline } from '@/components/ticket-timeline';
 import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -519,12 +520,31 @@ export default async function TaskPage({
   const [latestRow, ...pastRows] = rows;
   const creator = issueCreator(issue);
   const agentName = (id?: string) => (id ? (agents.find((a) => a.id === id)?.name ?? id) : undefined);
-  const timeline = ticketTimeline(issue, records, {
-    ...(creator
-      ? { creator: creator === 'you' ? 'you' : creator === 'factory' ? 'the factory' : agentName(creator)! }
-      : {}),
-    agent: agentName,
-  });
+  const prUrls = new Set(pulls.map((p) => p.url));
+  const reviewSpans = prUrls.size ? await listSpans('review', 500, { project, days: 90 }) : undefined;
+  const reviewTurns = reviewSpans?.ok
+    ? reviewSpans.value.items
+        .filter((s) => s.pr && prUrls.has(s.pr.url))
+        .map((s) => ({
+          at: s.started_at,
+          name: s.name,
+          outcome: s.outcome,
+          ...(s.model ? { model: s.model } : {}),
+          ...(s.cost_usd !== undefined ? { cost_usd: s.cost_usd } : {}),
+          ...(s.pr?.number ? { pr: { number: s.pr.number } } : {}),
+        }))
+    : [];
+  const timeline = ticketTimeline(
+    issue,
+    records,
+    {
+      ...(creator
+        ? { creator: creator === 'you' ? 'you' : creator === 'factory' ? 'the factory' : agentName(creator)! }
+        : {}),
+      agent: agentName,
+    },
+    reviewTurns,
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:flex-row">
@@ -774,7 +794,7 @@ export default async function TaskPage({
               title="Timeline"
               aside={`${timeline.length} ${timeline.length === 1 ? 'event' : 'events'}`}
             >
-              <TicketTimeline entries={timeline} models={modelTotals(records)} />
+              <TicketTimeline entries={timeline} models={modelTotals(records, reviewTurns)} />
             </Section>
 
             <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>

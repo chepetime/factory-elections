@@ -485,3 +485,29 @@ test('findings lists the saved report findings of every review, newest review fi
     ['a.ts', '10-12', 'request-changes'],
   );
 });
+
+test('a review without a report says why: stopped, failed, invalid, or refused by a permission check', async () => {
+  const { missingReportReason } = await import('../src/index.ts');
+  const ok = { exit: '0', stopped: false };
+  assert.equal(missingReportReason([], { ...ok, stopped: true }), 'The review was stopped.');
+  assert.match(missingReportReason([], { ...ok, exit: '1' }), /failed before it saved a report/);
+  assert.match(missingReportReason([], { ...ok, payloadError: 'bad JSON' }), /not valid: bad JSON/);
+  const refused = [
+    { type: 'tool-result' as const, ok: false, text: 'This command requires approval' },
+    {
+      type: 'tool-result' as const,
+      ok: false,
+      text: "Claude requested permissions to write to /d/reviews/4/payload.json, but you haven't granted it yet.",
+    },
+    { type: 'tool-result' as const, ok: false, text: 'grep: no such file' },
+  ];
+  assert.match(
+    missingReportReason(refused, ok),
+    /refused permission to save its report; 2 of its tool calls were refused by a permission check/,
+  );
+  assert.match(
+    missingReportReason(refused.slice(0, 1), ok),
+    /ended without a report; 1 of its tool calls was refused/,
+  );
+  assert.equal(missingReportReason([], ok), 'The review ended without saving a report.');
+});

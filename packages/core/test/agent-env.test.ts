@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { agentEnvironment, envNames } from '../src/index.ts';
+import { agentEnvironment, envNames, hostAgentSession } from '../src/index.ts';
 
 const host = {
   PATH: '/bin',
@@ -34,4 +34,10 @@ test('an agent gets tool lookup and its own provider credential only', () => {
 test('allow lists keep valid names only', () => {
   assert.deepEqual(envNames(' A_1, bad-name ,,B '), ['A_1', 'B']);
   assert.deepEqual(envNames(undefined), []);
+});
+
+test('hostAgentSession names a Claude Code session that started the process, and nothing otherwise', () => {
+  assert.equal(hostAgentSession({ CLAUDECODE: '1' }), 'claude-code');
+  assert.equal(hostAgentSession({ CLAUDE_CODE_SESSION_ID: 's' }), 'claude-code');
+  assert.equal(hostAgentSession({ PATH: '/bin' }), undefined);
 });

@@ -348,8 +348,8 @@ export class BackendService {
       github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
       log: (line) => process.stderr.write(`${line}\n`),
     });
-    this.reviews.onReviewEnded = (project, number, payload) =>
-      this.reviewLoop.reviewEnded(project, number, payload);
+    this.reviews.onReviewEnded = (project, number, payload, reason) =>
+      this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({

@@ -25,10 +25,17 @@ export type SpanList = z.infer<typeof SpanList>;
 export type ListedSpan = SpanList['items'][number];
 
 /** The newest spans of one type over every project, e.g. every tool call. */
-export function listSpans(type: 'tool' | 'model', limit = 200): Promise<Result<SpanList>> {
+export function listSpans(
+  type: 'tool' | 'model' | 'review',
+  limit = 200,
+  scope: { project?: string; days?: number } = {},
+): Promise<Result<SpanList>> {
+  const query = { type, limit, ...(scope.days ? { days: scope.days } : {}) };
   return attempt(async () =>
     SpanList.parse(
-      json((await backendCall('ListSpans', { project: '', json: JSON.stringify({ type, limit }) })).json),
+      json(
+        (await backendCall('ListSpans', { project: scope.project ?? '', json: JSON.stringify(query) })).json,
+      ),
     ),
   );
 }

@@ -94,10 +94,29 @@ function joinFields(fields: string[]): string {
   return unique.length === 1 ? unique[0]! : `${unique.slice(0, -1).join(', ')} and ${unique.at(-1)}`;
 }
 
+/** One senior PR review turn on a PR of this ticket, from its `review` span. */
+export interface ReviewTurn {
+  at: string;
+  name: string;
+  model?: string;
+  outcome: string;
+  cost_usd?: number | null;
+  pr?: { number?: number };
+}
+
+const reviewUse = (t: ReviewTurn): ModelUse => ({
+  model: t.model ?? 'unknown model',
+  step: 'review',
+  calls: 1,
+  failed: t.outcome === 'completed' ? 0 : 1,
+  cost_usd: t.cost_usd ?? null,
+});
+
 export function ticketTimeline(
   issue: IssueInput,
   records: (Run | undefined)[],
   names: { creator?: string; agent: (id?: string) => string | undefined },
+  reviews: readonly ReviewTurn[] = [],
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
   const hasRuns = records.some(Boolean);
@@ -199,14 +218,29 @@ export function ticketTimeline(
       entries.push({ at: r.updated_at, kind: 'run', title: `Run ${n}: ${stageLabel(r.stage)}`, tone: 'bad' });
   });
 
+  for (const t of reviews)
+    entries.push({
+      at: t.at,
+      kind: 'review',
+      title: t.name === 'review' ? 'Senior PR review turn' : 'Senior PR review reply',
+      ...(t.pr?.number ? { detail: `PR #${t.pr.number}` } : {}),
+      ...(t.outcome === 'completed' ? {} : { tone: 'bad' as const }),
+      models: [reviewUse(t)],
+    });
+
   return entries.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 /** The models that worked the ticket, the most calls first. */
-export function modelTotals(records: (Run | undefined)[]): ModelTotal[] {
+export function modelTotals(records: (Run | undefined)[], reviews: readonly ReviewTurn[] = []): ModelTotal[] {
   const totals = new Map<string, ModelTotal & { runSet: Set<number> }>();
-  records.forEach((r, i) => {
-    for (const use of modelUses(r?.attempts ?? [])) {
+  // Review turns count as one more "run" of their own (index -1), so they add no task run.
+  const groups: { uses: ModelUse[]; run?: number }[] = [
+    ...records.map((r, i) => ({ uses: modelUses(r?.attempts ?? []), run: i })),
+    { uses: reviews.map(reviewUse) },
+  ];
+  groups.forEach(({ uses, run }) => {
+    for (const use of uses) {
       const t = totals.get(use.model) ?? {
         model: use.model,
         calls: 0,
@@ -220,7 +254,7 @@ export function modelTotals(records: (Run | undefined)[]): ModelTotal[] {
       t.failed += use.failed;
       t.cost_usd = addCost(t.cost_usd, use.cost_usd);
       if (!t.steps.includes(use.step)) t.steps.push(use.step);
-      t.runSet.add(i);
+      if (run !== undefined) t.runSet.add(run);
       totals.set(use.model, t);
     }
   });

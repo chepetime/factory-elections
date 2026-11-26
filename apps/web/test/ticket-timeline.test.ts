@@ -103,6 +103,49 @@ describe('ticketTimeline', () => {
   });
 });
 
+describe('review turns', () => {
+  const reviews = [
+    {
+      at: '2026-11-26T19:37:00.000Z',
+      name: 'review',
+      model: 'claude-opus-5-5',
+      outcome: 'completed',
+      cost_usd: 0.79,
+      pr: { number: 4 },
+    },
+    {
+      at: '2026-11-26T19:50:00.000Z',
+      name: 'review reply',
+      model: 'claude-opus-5-5',
+      outcome: 'failed',
+      cost_usd: null,
+    },
+  ];
+  it('puts each senior PR review turn on the line with its model and cost', () => {
+    const entries = ticketTimeline(issue, records, names, reviews).filter((e) =>
+      e.title.startsWith('Senior'),
+    );
+    expect(entries.map((e) => [e.title, e.detail, e.tone])).toEqual([
+      ['Senior PR review turn', 'PR #4', undefined],
+      ['Senior PR review reply', undefined, 'bad'],
+    ]);
+    expect(entries[0]!.models).toEqual([
+      { model: 'claude-opus-5-5', step: 'review', calls: 1, failed: 0, cost_usd: 0.79 },
+    ]);
+  });
+  it('adds review models to the totals without counting them as task runs', () => {
+    const opus = modelTotals(records, reviews).find((m) => m.model === 'claude-opus-5-5')!;
+    expect(opus).toEqual({
+      model: 'claude-opus-5-5',
+      calls: 3,
+      failed: 1,
+      cost_usd: null,
+      steps: ['coder', 'review'],
+      runs: 1,
+    });
+  });
+});
+
 describe('modelTotals', () => {
   it('sums every model over the runs, most calls first, unknown cost stays unknown', () => {
     expect(modelTotals(records)).toEqual([

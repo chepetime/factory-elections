@@ -272,6 +272,31 @@ function agentEnv(provider: AgentCli['id']): NodeJS.ProcessEnv {
   return agentEnvironment(provider, process.env, envNames(process.env.FACTORY_AGENT_ENV_ALLOW));
 }
 
+/** Tool results that say a permission check refused the call, not that the tool failed. */
+const PERMISSION_REFUSAL =
+  /requested permissions|haven't granted|requires approval|permission (?:was )?denied/i;
+
+/**
+ * Why a finished review turn left no usable report, in words for the ticket: stopped, failed, a
+ * report that does not parse, or calls that a permission check refused (saving the report among them).
+ */
+export function missingReportReason(
+  events: readonly AgentEvent[],
+  turn: { exit: string; stopped: boolean; payloadError?: string },
+): string {
+  if (turn.stopped) return 'The review was stopped.';
+  if (turn.exit !== '0') return 'The review turn failed before it saved a report.';
+  if (turn.payloadError) return `The saved report is not valid: ${turn.payloadError}`;
+  const refused = events.filter(
+    (e): e is Extract<AgentEvent, { type: 'tool-result' }> =>
+      e.type === 'tool-result' && !e.ok && PERMISSION_REFUSAL.test(e.text),
+  );
+  const report = refused.some((e) => /payload\.json/.test(e.text));
+  if (refused.length)
+    return `${report ? 'The agent was refused permission to save its report' : 'The agent ended without a report'}; ${refused.length} of its tool ${refused.length === 1 ? 'calls was' : 'calls were'} refused by a permission check. The review turn did not run with its intended permissions: see Settings, System status.`;
+  return 'The review ended without saving a report.';
+}
+
 /** The review model, for its context limit. */
 const REVIEW_MODEL = 'claude-opus-5-5';
 
@@ -322,7 +347,13 @@ export class ReviewService {
    * Called once when a review's first turn ends: with its payload when it finished with a decision,
    * or undefined when it stopped or failed. The backend's review loop listens here.
    */
-  onReviewEnded?: (project: string, number: number, payload: ReviewPayload | undefined) => unknown;
+  /** A first review turn ended: its payload, or why there is none. */
+  onReviewEnded?: (
+    project: string,
+    number: number,
+    payload: ReviewPayload | undefined,
+    reason?: string,
+  ) => unknown;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, ReviewGrant>();
   /** This backend instance, the owner of the in-process turns it starts. */
@@ -422,13 +453,15 @@ export class ReviewService {
       // The first turn's result, for the review loop: the payload when the turn finished with one.
       if (k === 0 && this.onReviewEnded) {
         const exit = await readFile(join(dir, `turn-${k}.exit`), 'utf8').catch(() => '');
-        const payload =
-          exit.trim() === '0' && !record.turns[k]!.stopped
-            ? (await this.readPayload(project, record.number)).payload
-            : undefined;
-        await Promise.resolve(
-          this.onReviewEnded(project, record.number, payload?.meta.decision?.trim() ? payload : undefined),
-        ).catch(() => undefined);
+        const stopped = record.turns[k]!.stopped === true;
+        const read = exit.trim() === '0' && !stopped ? await this.readPayload(project, record.number) : {};
+        const payload = read.payload?.meta.decision?.trim() ? read.payload : undefined;
+        const reason = payload
+          ? undefined
+          : missingReportReason(events, { exit: exit.trim(), stopped, payloadError: read.error });
+        await Promise.resolve(this.onReviewEnded(project, record.number, payload, reason)).catch(
+          () => undefined,
+        );
       }
       if (k === 0 && this.reviewRecords && !record.turns[k]!.stopped) {
         const exitPath = join(dir, `turn-${k}.exit`);

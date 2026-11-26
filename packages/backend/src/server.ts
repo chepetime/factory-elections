@@ -1,4 +1,4 @@
-import { outcomeTraceIds } from '@factory/core';
+import { hostAgentSession, outcomeTraceIds } from '@factory/core';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -90,6 +90,7 @@ export async function startBackend(options: ServerOptions) {
             state: service.recoveryReport().state,
             problems: service.recoveryReport().problems.length,
           },
+          ...(hostAgentSession(process.env) ? { host_session: hostAgentSession(process.env) } : {}),
           integrations: [],
         }),
       );

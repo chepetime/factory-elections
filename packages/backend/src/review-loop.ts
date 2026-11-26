@@ -122,13 +122,23 @@ export class ReviewLoop {
   }
 
   /** A senior-pr-review ended: send the important findings back, or finish the loop. */
-  async reviewEnded(project: string, number: number, payload: ReviewPayload | undefined): Promise<void> {
+  async reviewEnded(
+    project: string,
+    number: number,
+    payload: ReviewPayload | undefined,
+    reason?: string,
+  ): Promise<void> {
     const task = (await this.deps.tasks.list(project)).find((t) => prNumber(t) === number);
     if (!task) return;
     await this.serial(task, async () => {
       const state = await this.state(task);
       if (!state || state.pr !== number || state.state !== 'reviewing') return;
-      if (!payload) return this.stop(task, state, 'The senior PR review stopped without a result.');
+      if (!payload)
+        return this.stop(
+          task,
+          state,
+          `The senior PR review ended without a report. ${reason ?? 'It saved no result.'}`,
+        );
       const { important, rest } = splitFindings(payload.findings);
       const history = [
         ...state.history,

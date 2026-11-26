@@ -123,8 +123,12 @@ test('a fix that stops, a review without a result, a ready PR and a pipeline tas
 
   const empty = setup();
   await empty.loop.prChanged(opened, { kind: 'opened', draft: true });
-  await empty.loop.reviewEnded('demo', 4, undefined);
-  assert.match((await empty.state())?.reason ?? '', /without a result/);
+  await empty.loop.reviewEnded('demo', 4, undefined, 'The agent was refused permission to save its report.');
+  assert.equal(
+    (await empty.state())?.reason,
+    'The senior PR review ended without a report. The agent was refused permission to save its report.',
+    'the reason the review gave reaches the ticket',
+  );
 
   const human = setup();
   await human.loop.prChanged(opened, { kind: 'opened', draft: false });
