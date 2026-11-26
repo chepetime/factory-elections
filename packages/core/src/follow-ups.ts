@@ -14,6 +14,21 @@ export function followUpPushesItself(kind: FollowUpKind): boolean {
   return kind === 'review';
 }
 
+/**
+ * Whether a person's follow-up asks to bring the base branch in: merge or rebase on main, update
+ * the branch, or resolve conflicts. Such a follow-up runs as `conflicts`: the factory merges the base
+ * outside the agent sandbox (which blocks some paths a merge may touch, such as `.claude/`), and the
+ * agent only resolves what conflicts. A clean merge needs no agent.
+ */
+export function asksForBaseMerge(note: string): boolean {
+  const n = note.toLowerCase();
+  return (
+    /\bconflict/.test(n) ||
+    /\b(merge|rebase|sync|update|bring)\b[^.\n]{0,40}\b(main|master|base|upstream|develop)\b/.test(n) ||
+    /\b(main|base)\b[^.\n]{0,20}\binto (this|the) (branch|pr)\b/.test(n)
+  );
+}
+
 /** The instructions of a conflict follow-up; `base` is the PR's base branch. */
 export function conflictFollowUpNote(base: string): string {
   return [

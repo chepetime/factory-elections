@@ -61,6 +61,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
   const github: TendingGitHub = {
     me: async () => 'me',
     pr: async () => pr,
+    status: async () => ({ number: pr.number, state: pr.state, draft: false }),
     rerunFailed: async (_c, id) => void calls.push(`rerun ${id}`),
     failedLog: async () => 'AssertionError: expected fixed',
     reply: async (_c, id, body) => void calls.push(`reply ${id}: ${body}`),
@@ -313,6 +314,7 @@ test('with tending off, a conflicting PR gets one conflict follow-up per head, a
     github: {
       me: async () => 'me',
       pr: async () => pr,
+      status: async () => ({ number: pr.number, state: pr.state, draft: false }),
       rerunFailed: async () => {},
       failedLog: async () => '',
       reply: async () => {},
@@ -331,4 +333,46 @@ test('with tending off, a conflicting PR gets one conflict follow-up per head, a
   assert.equal(await tending.watchConflict(seen), true, 'a new head that conflicts again gets another');
   pr = { ...pr, mergeable: 'MERGEABLE' };
   assert.equal(await tending.watchConflict(task), false);
+});
+
+test("each pass reports every open-PR task's PR state, and skips conflict watch and tending once it merged", async () => {
+  const task = {
+    id: '11111111-2222-4333-8444-555555555555',
+    project: 'app',
+    repo: '/r',
+    prompt: 'x',
+    stage: 'pr-opened',
+    workflow: 'agent',
+    agent: 'devin',
+    worktree: { path: '/w', branch: 'b', base_branch: 'main' },
+    pr: { url: 'https://github.com/o/r/pull/5', branch: 'b', head_sha: 'h', at: '2026-11-26T00:00:00.000Z' },
+  } as unknown as TaskRecord;
+  const seen: string[] = [];
+  let state: 'OPEN' | 'MERGED' = 'OPEN';
+  const tending = new TendingService({
+    projects: { list: async () => [{ name: 'app' }] },
+    tasks: { list: async () => [task], taskPath: () => '/r/task.json' },
+    settings: async () => ProjectSettings.parse({}),
+    profile: async () => ({}) as RepoProfile,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    slot: async () => () => {},
+    storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+    github: {
+      me: async () => 'me',
+      pr: async () => {
+        seen.push('pr');
+        throw new Error('not reached for a merged PR');
+      },
+      status: async (_cwd, number) => ({ number, state, draft: true }),
+      rerunFailed: async () => {},
+      failedLog: async () => '',
+      reply: async () => {},
+      resolve: async () => {},
+    },
+    conflictFollowUp: async () => void seen.push('conflict'),
+    prObserved: async (_t, pr) => void seen.push(`${pr.number}:${pr.state}:${pr.draft}`),
+  });
+  state = 'MERGED';
+  await tending.tick();
+  assert.deepEqual(seen, ['5:MERGED:true'], 'a merged PR is reported and not read again for conflicts');
 });

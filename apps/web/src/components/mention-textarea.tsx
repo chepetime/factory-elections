@@ -1,9 +1,11 @@
 'use client';
 // A textarea that suggests agents after `@`: arrows move, Enter or Tab inserts `@id `, Escape
-// closes. The text stays plain (`@devin`); the backend reads the mentions from it.
-import { useRef, useState, type ComponentProps, type KeyboardEvent } from 'react';
+// closes. The text stays plain (`@devin`); the backend reads the mentions from it. A highlight
+// layer behind the transparent textarea, with the same box and text metrics, marks each mention of
+// a known agent, so it reads as a chip while you type.
+import { Fragment, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from 'react';
 import { insertMention, mentionAt } from '@factory/core';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea, textareaBase } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 export interface MentionAgent {
@@ -18,8 +20,32 @@ type Props = Omit<ComponentProps<typeof Textarea>, 'value' | 'onChange'> & {
   agents: readonly MentionAgent[];
 };
 
+/** The text with each `@id` of a known agent wrapped in a mark; everything else as plain text. */
+export function highlightMentions(text: string, ids: ReadonlySet<string>): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/(?<=^|[\s(])@([a-z0-9][a-z0-9_-]{0,63})\b/gi)) {
+    if (!ids.has(m[1]!.toLowerCase())) continue;
+    if (m.index > last) out.push(<Fragment key={`t${last}`}>{text.slice(last, m.index)}</Fragment>);
+    out.push(
+      <mark
+        key={`m${m.index}`}
+        data-mention={m[1]!.toLowerCase()}
+        className="rounded-[4px] bg-orange-500/15 text-transparent shadow-[0_0_0_2px_rgb(249_115_22/0.15)]"
+      >
+        {m[0]}
+      </mark>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(<Fragment key={`t${last}`}>{text.slice(last)}</Fragment>);
+  return out;
+}
+
 export function MentionTextarea({ value, onValueChange, agents, onKeyDown, className, ...props }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
+  const ids = new Set(agents.map((a) => a.id));
   const [typing, setTyping] = useState<{ start: number; query: string; caret: number }>();
   const [active, setActive] = useState(0);
   const matches = typing
@@ -68,6 +94,19 @@ export function MentionTextarea({ value, onValueChange, agents, onKeyDown, class
 
   return (
     <div className="relative">
+      <div
+        ref={backdrop}
+        aria-hidden
+        className={cn(
+          textareaBase,
+          className,
+          'pointer-events-none absolute inset-0 block overflow-hidden border-transparent break-words whitespace-pre-wrap text-transparent shadow-none',
+        )}
+      >
+        {highlightMentions(value, ids)}
+        {/* A trailing newline needs a character to take its line. */}
+        {'\u200b'}
+      </div>
       <Textarea
         {...props}
         ref={ref}
@@ -84,7 +123,10 @@ export function MentionTextarea({ value, onValueChange, agents, onKeyDown, class
         onSelect={(e) => track(e.currentTarget.value, e.currentTarget.selectionStart)}
         onBlur={() => setTimeout(() => setTyping(undefined), 120)}
         onKeyDown={keys}
-        className={className}
+        onScroll={(e) => {
+          if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+        }}
+        className={cn(className, 'relative bg-transparent dark:bg-transparent')}
       />
       {open && (
         <ul

@@ -55,3 +55,17 @@ test('workSpend counts only the attempts since the latest follow-up', () => {
   };
   assert.equal(workSpend(followed as TaskRecord), 2);
 });
+
+test('a follow-up that asks to merge or rebase on the base, or to resolve conflicts, is a base merge', async () => {
+  const { asksForBaseMerge } = await import('../src/index.ts');
+  for (const yes of [
+    '@devin Resolve the ci conflicts in the PR',
+    'Merge main into this branch and run the tests',
+    'Please rebase on main',
+    'update the branch with main',
+    'bring main into the PR',
+  ])
+    assert.equal(asksForBaseMerge(yes), true, yes);
+  for (const no of ['Fix the copy on the landing page', 'The main menu is broken', 'Update the README'])
+    assert.equal(asksForBaseMerge(no), false, no);
+});

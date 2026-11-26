@@ -578,3 +578,86 @@ test('@mentions are stored and route the comment: the run agent continues, an op
   await service.comment({ project: 'change-elections', key: 'CE-1', body: '@mika again', author: 'devin' });
   assert.equal(calls.length, before, 'no call for an unknown mention or an agent comment');
 });
+
+test('a merged PR moves its task to Done once, a closed one to Cancelled, a reopened one back to In review', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/5',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Update Effect', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service } = await setup(t, [opened]);
+  assert.equal(
+    (await service.get({ project: 'change-elections', key: 'CE-1' })).status,
+    'in_review',
+    'open PR: in review',
+  );
+
+  const merged = await service.prOutcome('change-elections', opened.id, { number: 5, state: 'MERGED' });
+  assert.equal(merged?.status, 'done');
+  assert.deepEqual([merged?.pr_outcome?.state, merged?.pr_outcome?.number], ['MERGED', 5]);
+  assert.equal(merged?.events.at(-1)?.message, 'PR #5 was merged. The task is done.');
+  assert.equal(
+    await service.prOutcome('change-elections', opened.id, { number: 5, state: 'MERGED' }),
+    undefined,
+    'recorded once',
+  );
+
+  const reopened = await service.prOutcome('change-elections', opened.id, { number: 5, state: 'OPEN' });
+  assert.equal(reopened?.status, 'in_review');
+  assert.equal(reopened?.pr_outcome, undefined);
+  const closed = await service.prOutcome('change-elections', opened.id, { number: 5, state: 'CLOSED' });
+  assert.equal(closed?.status, 'cancelled');
+  assert.equal(
+    await service.prOutcome('change-elections', 'not-a-run', { number: 5, state: 'MERGED' }),
+    undefined,
+  );
+});
+
+test("@mentioning the run's own agent on an open PR starts a follow-up for it", async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/5',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Update Effect', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, calls } = await setup(t, [opened]);
+  const view = await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: '@mika @devin Fix the copy in the PR',
+  });
+  assert.ok(calls.includes(`followUp:${opened.id}:custom:devin:you:`), calls.join('\n'));
+  assert.match(view.events.at(-1)?.message ?? '', /Added a follow-up for Devin: @mika @devin Fix the copy/);
+});
+
+test('a follow-up asking to merge main or resolve conflicts runs as a conflicts follow-up (the factory merges)', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/5',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Update Effect', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, calls } = await setup(t, [opened]);
+  await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: '@devin Merge main into this branch and run the tests',
+  });
+  assert.ok(calls.includes(`followUp:${opened.id}:conflicts:devin:you:`), calls.join('\n'));
+});

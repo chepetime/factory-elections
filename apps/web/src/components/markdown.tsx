@@ -1,10 +1,16 @@
 // A small Markdown subset for agent replies: headings, lists, code fences, bold, inline code and
-// links. It builds React elements (no HTML injection), so model output cannot add markup or scripts.
+// links, and @mentions of known agents (as chips). It builds React elements (no HTML injection),
+// so model output cannot add markup or scripts.
+import Link from 'next/link';
 import { Fragment, type ReactNode } from 'react';
 
-function inline(text: string, key: string): ReactNode[] {
+/** Agents a text may @mention, by id: their mention renders as a chip linking to the agent. */
+export type MentionNames = Readonly<Record<string, { name: string; avatar: string }>>;
+
+function inline(text: string, key: string, mentions?: MentionNames): ReactNode[] {
   const parts: ReactNode[] = [];
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const pattern =
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(?<=^|[\s(])@([a-z0-9][a-z0-9_-]{0,63})\b/gi;
   let last = 0;
   let i = 0;
   for (const m of text.matchAll(pattern)) {
@@ -17,7 +23,26 @@ function inline(text: string, key: string): ReactNode[] {
         </code>,
       );
     else if (m[2]) parts.push(<strong key={k}>{m[2].slice(2, -2)}</strong>);
-    else
+    else if (m[5]) {
+      const id = m[5].toLowerCase();
+      const agent = mentions?.[id];
+      parts.push(
+        agent ? (
+          <Link
+            key={k}
+            href={`/agents/${id}`}
+            className="inline-flex items-baseline gap-1 rounded-md bg-orange-500/10 px-1 font-medium text-orange-700 no-underline hover:bg-orange-500/20 dark:text-orange-300"
+          >
+            <span aria-hidden className="text-[0.9em]">
+              {agent.avatar}
+            </span>
+            {agent.name}
+          </Link>
+        ) : (
+          m[0]
+        ),
+      );
+    } else
       parts.push(
         <a
           key={k}
@@ -53,7 +78,7 @@ function isTableStart(lines: string[], i: number): boolean {
   );
 }
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, mentions }: { text: string; mentions?: MentionNames }) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -76,7 +101,7 @@ export function Markdown({ text }: { text: string }) {
     if (heading) {
       blocks.push(
         <p key={key} className="font-semibold">
-          {inline(heading[2]!, key)}
+          {inline(heading[2]!, key, mentions)}
         </p>,
       );
       i++;
@@ -88,7 +113,7 @@ export function Markdown({ text }: { text: string }) {
       while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i]!)) {
         items.push(
           <li key={`${key}-${items.length}`}>
-            {inline(lines[i]!.replace(/^\s*([-*]|\d+\.)\s+/, ''), `${key}-${items.length}`)}
+            {inline(lines[i]!.replace(/^\s*([-*]|\d+\.)\s+/, ''), `${key}-${items.length}`, mentions)}
           </li>,
         );
         i++;
@@ -118,7 +143,7 @@ export function Markdown({ text }: { text: string }) {
               <tr>
                 {header.map((cell, c) => (
                   <th key={c} className="border-b px-2 py-1 font-semibold">
-                    {inline(cell, `${key}-h${c}`)}
+                    {inline(cell, `${key}-h${c}`, mentions)}
                   </th>
                 ))}
               </tr>
@@ -128,7 +153,7 @@ export function Markdown({ text }: { text: string }) {
                 <tr key={r}>
                   {row.map((cell, c) => (
                     <td key={c} className="border-b px-2 py-1 align-top">
-                      {inline(cell, `${key}-${r}-${c}`)}
+                      {inline(cell, `${key}-${r}-${c}`, mentions)}
                     </td>
                   ))}
                 </tr>
@@ -156,7 +181,7 @@ export function Markdown({ text }: { text: string }) {
         {para.map((p, j) => (
           <Fragment key={j}>
             {j > 0 && <br />}
-            {inline(p, `${key}-${j}`)}
+            {inline(p, `${key}-${j}`, mentions)}
           </Fragment>
         ))}
       </p>,

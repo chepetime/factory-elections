@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
+  asksForBaseMerge,
   parseMentions,
   defaultPrefix,
   dropAction,
@@ -384,9 +385,9 @@ export class IssueService {
   }
 
   /**
-   * A person @mentioned agents. The first one that can act on the ticket gets the comment:
+   * A person @mentioned agents. The run's agent, if mentioned, else the first one, gets the comment:
+   * - the PR is open: a follow-up for that agent (the run's own agent too), with the comment as its note;
    * - the agent of the run: its session continues, as with any comment (returns undefined);
-   * - the PR is open: a follow-up for the mentioned agent, with the comment as its note;
    * - no run and no agent yet: the mentioned agent is assigned.
    * Otherwise the ticket says why the mention started nothing.
    */
@@ -398,8 +399,8 @@ export class IssueService {
   ): Promise<IssueView | undefined> {
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
     const runAgent = record?.workflow === 'agent' ? record.agent : undefined;
-    if (runAgent && mentions.includes(runAgent)) return undefined;
-    const [agent] = mentions as [string, ...string[]];
+    // The run's agent first, when it is mentioned: it knows the branch.
+    const agent = runAgent && mentions.includes(runAgent) ? runAgent : mentions[0]!;
     const name = this.deps.agentName ? await this.deps.agentName(agent).catch(() => agent) : agent;
     const explain = (message: string) =>
       this.change(project, view.key, (issue, at) => ({
@@ -411,6 +412,8 @@ export class IssueService {
         return explain(`${name} was mentioned, but a follow-up is already queued or working on this task.`);
       return this.followUp({ project, key: view.key, note: body, kind: 'custom', agent, by: 'you' });
     }
+    // Waiting on a person, the run's agent continues its session with the comment.
+    if (agent === runAgent) return undefined;
     if (!view.run && !view.assignee) return this.update({ project, key: view.key, assignee: agent });
     if (!view.run)
       return explain(`${name} was mentioned; the task is assigned to another agent, so nothing started.`);
@@ -424,7 +427,10 @@ export class IssueService {
    * task moves through the board again (Todo while queued, In progress, In review or Blocked).
    */
   async followUp(raw: unknown): Promise<IssueView> {
-    const { project, key, note, kind, agent: picked, by, pr_head } = FollowUpInput.parse(raw);
+    const parsed = FollowUpInput.parse(raw);
+    const { project, key, note, agent: picked, by, pr_head } = parsed;
+    // "Merge main", "resolve the conflicts": the factory merges the base itself (outside the sandbox).
+    const kind = parsed.kind === 'custom' && asksForBaseMerge(note) ? 'conflicts' : parsed.kind;
     if (!this.deps.followUp) throw new Conflict('Follow-ups are not available here.');
     const view = await this.get({ project, key });
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
@@ -478,6 +484,51 @@ export class IssueService {
         `comment ${view.key}: could not wake the agent: ${error instanceof Error ? error.message : error}\n`,
       ),
     );
+  }
+
+  /**
+   * The task's PR changed state on GitHub (the tending pass reads it). Merged: the task is Done.
+   * Closed without a merge: Cancelled. Reopened: back to In review. Only the latest run's PR moves
+   * the task, and each change is recorded once.
+   */
+  async prOutcome(
+    project: string,
+    runId: string,
+    pr: { number: number; state: 'OPEN' | 'MERGED' | 'CLOSED' },
+  ): Promise<IssueView | undefined> {
+    const view = await this.get({ project, key: runId }).catch(() => undefined);
+    if (!view || view.run?.id !== runId) return undefined;
+    const known = view.pr_outcome;
+    if (pr.state === 'OPEN') {
+      if (!known || known.number !== pr.number) return undefined;
+      return this.change(project, view.key, (issue, at) => {
+        const { pr_outcome: _gone, ...rest } = issue;
+        return {
+          ...rest,
+          status: 'in_review',
+          status_at: at,
+          events: [...issue.events, { at, kind: 'pr-outcome', message: `PR #${pr.number} was reopened.` }],
+        };
+      });
+    }
+    if (known?.state === pr.state && known.number === pr.number) return undefined;
+    const merged = pr.state === 'MERGED';
+    return this.change(project, view.key, (issue, at) => ({
+      ...issue,
+      pr_outcome: { state: pr.state as 'MERGED' | 'CLOSED', number: pr.number, at },
+      status: merged ? 'done' : 'cancelled',
+      status_at: at,
+      events: [
+        ...issue.events,
+        {
+          at,
+          kind: 'pr-outcome',
+          message: merged
+            ? `PR #${pr.number} was merged. The task is done.`
+            : `PR #${pr.number} was closed without a merge. The task is cancelled.`,
+        },
+      ],
+    }));
   }
 
   /** Adds an event for the activity feed, unless the last event says the same. */
