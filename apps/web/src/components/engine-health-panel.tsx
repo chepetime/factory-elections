@@ -42,6 +42,18 @@ export function EngineHealthView({ state }: { state: HealthState }) {
               <dd>{state.health.ledger.write_errors}</dd>
             </>
           )}
+          {state.health.recovery && (
+            <>
+              <dt className="text-muted-foreground">Recovery after restart</dt>
+              <dd>
+                {state.health.recovery.state === 'degraded'
+                  ? `${state.health.recovery.problems} could not be read`
+                  : state.health.recovery.state === 'pending'
+                    ? 'Running'
+                    : 'Settled'}
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Integrations</dt>
           <dd>No integrations configured</dd>
         </dl>

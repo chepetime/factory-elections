@@ -19,6 +19,7 @@ const KIND: Record<string, { label: string; dot: string }> = {
   merge: { label: 'Ready to merge', dot: 'bg-emerald-500' },
   review: { label: 'PR review', dot: 'bg-blue-500' },
   tending: { label: 'PR tending', dot: 'bg-blue-500' },
+  recovery: { label: 'Recovery', dot: 'bg-destructive' },
 };
 
 function Dismiss({ item }: { item: InboxItem }) {

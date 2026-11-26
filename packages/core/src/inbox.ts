@@ -26,7 +26,9 @@ export type InboxKind =
   /** A PR review finished; its findings are ready. */
   | 'review'
   /** PR tending could not keep a PR moving on its own. */
-  | 'tending';
+  | 'tending'
+  /** Startup recovery could not read some work, so the backend cannot tell who owns it. */
+  | 'recovery';
 
 export interface InboxItem {
   id: string;

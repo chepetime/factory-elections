@@ -1,10 +1,11 @@
 // A small real-gRPC smoke suite. Models are scripted; git uses an isolated local repository.
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { promisify } from 'node:util';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
@@ -826,4 +827,79 @@ test('a turn behind its busy agent says so, and a cancel takes it out of the wai
   release();
   await new Promise((done) => setTimeout(done, 50));
   assert.equal(calls, 1, 'the cancelled turn never reached the model');
+});
+
+test('recovery reports a run it cannot read, refuses to change it, and a later reconcile runs it once', async (t) => {
+  let calls = 0;
+  const runner: ModelRunner = {
+    async run(request) {
+      calls++;
+      return {
+        text: '',
+        costUsd: null,
+        structured: {
+          intake_id: /"id": "([^"]+)"/.exec(request.prompt)![1],
+          kind: 'code',
+          loe: 'S',
+          readiness: 'needs-clarification',
+          blockers: [{ kind: 'clarification', question: 'Which file?' }],
+        },
+      };
+    },
+  };
+  const { server, root, id } = await fixture(t, runner);
+  await server.close();
+  // A run that was queued when the backend stopped, behind a pointer that no longer parses.
+  const taskDir = dirname(server.service.tasks.taskPath('demo', id));
+  const runId = randomUUID();
+  const record = {
+    id: runId,
+    project: 'demo',
+    task_id: id,
+    action: 'run',
+    command: { project: 'demo', id, action: 'run' },
+    label: 'Running classify → code → verify → review',
+    state: 'queued',
+    created_at: new Date().toISOString(),
+  };
+  await mkdir(join(taskDir, 'runs', runId), { recursive: true });
+  await writeFile(join(taskDir, 'runs', runId, 'run.json'), JSON.stringify(record));
+  await writeFile(join(taskDir, 'latest-run.json'), '{');
+
+  const restarted = await startBackend({ root, port: 0, healthPort: 0, token, runner });
+  try {
+    closeBackendClient();
+    process.env.FACTORY_BACKEND_ADDRESS = `127.0.0.1:${restarted.port}`;
+    const report = restarted.service.recoveryReport();
+    assert.equal(report.state, 'degraded');
+    assert.deepEqual(
+      report.problems.map((p) => [p.project, p.task_id]),
+      [['demo', id]],
+    );
+    const health = (await (await fetch(`http://127.0.0.1:${restarted.healthPort}/health`)).json()) as {
+      recovery: unknown;
+    };
+    assert.deepEqual(health.recovery, { state: 'degraded', problems: 1 });
+    const inbox = await restarted.service.inbox();
+    assert.ok(inbox.items.some((i) => i.kind === 'recovery' && i.task_id === id));
+    await assert.rejects(
+      backendCall('StartRun', { project: 'demo', id, action: 'run' }),
+      /Recovery could not read this task's last run/,
+    );
+    assert.equal(calls, 0, 'nothing ran while ownership was unknown');
+
+    await writeFile(join(taskDir, 'latest-run.json'), JSON.stringify({ id: runId }));
+    assert.equal((await restarted.service.reconcile()).state, 'ok');
+    await finished(id);
+    assert.equal(calls, 1, 'the queued run ran once');
+    assert.equal((await restarted.service.inbox()).items.filter((i) => i.kind === 'recovery').length, 0);
+    // Recovering again finds nothing to do: the run has an owner or has finished.
+    await restarted.service.reconcile();
+    await restarted.service.recover();
+    await new Promise((done) => setTimeout(done, 50));
+    assert.equal(calls, 1, 'no second execution');
+  } finally {
+    closeBackendClient();
+    await restarted.close();
+  }
 });

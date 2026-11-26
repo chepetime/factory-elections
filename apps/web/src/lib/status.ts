@@ -72,6 +72,24 @@ export async function systemStatus(): Promise<StatusReport> {
       status: store === 'available' ? 'ok' : store === 'not_initialized' ? 'warn' : 'fail',
       detail: store,
     });
+    const recovery = health.health.recovery;
+    if (recovery)
+      checks.push({
+        id: 'engine-recovery',
+        group: 'Engine',
+        name: 'Recovery after restart',
+        status: recovery.state === 'ok' ? 'ok' : recovery.state === 'pending' ? 'warn' : 'fail',
+        detail:
+          recovery.state === 'degraded'
+            ? `${recovery.problems} ${recovery.problems === 1 ? 'item' : 'items'} could not be read`
+            : recovery.state === 'pending'
+              ? 'Running'
+              : 'Settled',
+        fix:
+          recovery.state === 'degraded'
+            ? 'Open the inbox for each item; fix the storage error and the backend retries on its own.'
+            : undefined,
+      });
     checks.push({
       id: 'engine-integrations',
       group: 'Engine',

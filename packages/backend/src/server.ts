@@ -86,6 +86,10 @@ export async function startBackend(options: ServerOptions) {
           telemetry_database: storageHealth?.postgres ?? 'not_configured',
           ...(storageHealth ? { artifact_store: storageHealth.artifacts } : {}),
           ...(ledger ? { ledger } : {}),
+          recovery: {
+            state: service.recoveryReport().state,
+            problems: service.recoveryReport().problems.length,
+          },
           integrations: [],
         }),
       );
