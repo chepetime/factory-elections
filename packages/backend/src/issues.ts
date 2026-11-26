@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Cause, Effect, Exit } from 'effect';
 import { z } from 'zod';
 import {
+  asksForBaseMerge,
   parseMentions,
   defaultPrefix,
   dropAction,
@@ -426,7 +427,10 @@ export class IssueService {
    * task moves through the board again (Todo while queued, In progress, In review or Blocked).
    */
   async followUp(raw: unknown): Promise<IssueView> {
-    const { project, key, note, kind, agent: picked, by, pr_head } = FollowUpInput.parse(raw);
+    const parsed = FollowUpInput.parse(raw);
+    const { project, key, note, agent: picked, by, pr_head } = parsed;
+    // "Merge main", "resolve the conflicts": the factory merges the base itself (outside the sandbox).
+    const kind = parsed.kind === 'custom' && asksForBaseMerge(note) ? 'conflicts' : parsed.kind;
     if (!this.deps.followUp) throw new Conflict('Follow-ups are not available here.');
     const view = await this.get({ project, key });
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
