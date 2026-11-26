@@ -38,7 +38,7 @@ import {
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
-import { IssueStatus } from '@factory/core';
+import { HOME_BACKGROUNDS, IssueStatus, type HomeBackground } from '@factory/core';
 import { saveUserSettingsRun, userSettings, type UserSettings } from '@/lib/user-settings';
 
 export interface ActionState {
@@ -502,6 +502,19 @@ const USER_SECTIONS = [
   'rules',
 ] as const;
 type UserSection = (typeof USER_SECTIONS)[number];
+
+/** Saves the homepage background the person picked with the arrows; keeps the other preferences. */
+export async function saveHomeBackground(background: HomeBackground): Promise<ActionState> {
+  if (!HOME_BACKGROUNDS.includes(background)) return { error: 'Unknown background.' };
+  const current = await userSettings();
+  if (!current.ok) return { error: current.error };
+  const saved = await saveUserSettingsRun({
+    ...current.value,
+    preferences: { ...current.value.preferences, home_background: background },
+  });
+  revalidatePath('/', 'layout');
+  return saved.ok ? { message: 'Saved' } : { error: saved.error };
+}
 
 /** Saves one section of the user settings and keeps the rest as stored. */
 export async function updateUserSettings<K extends UserSection>(

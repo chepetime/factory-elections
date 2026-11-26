@@ -34,6 +34,10 @@ export const ProviderSettings = z.object({
 });
 export type ProviderSettings = z.infer<typeof ProviderSettings>;
 
+/** The homepage backgrounds, in the order the arrows step through them. */
+export const HOME_BACKGROUNDS = ['dither', 'faulty-terminal', 'line-waves', 'crt-warp'] as const;
+export type HomeBackground = (typeof HOME_BACKGROUNDS)[number];
+
 export const UserSettings = z.object({
   identity: z
     .preprocess(
@@ -62,6 +66,8 @@ export const UserSettings = z.object({
       theme: z.enum(['system', 'light', 'dark']).default('light'),
       /** An IANA zone for times in the app. Absent means the browser's own zone. */
       time_zone: z.string().max(100).optional(),
+      /** The animated background on the homepage. Absent means the first one, dithered waves. */
+      home_background: z.enum(HOME_BACKGROUNDS).optional(),
     })
     .default({ theme: 'light' }),
   /** Defaults for the new-task composer. */
