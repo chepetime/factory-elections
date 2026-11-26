@@ -54,6 +54,14 @@ A task whose PR is open is done, and its run is finished. More work on it is a *
 - **Same gate.** Nothing reaches GitHub without your approval of the new commit. Opening the PR again pushes to the same branch and updates the task's own PR. A closed or merged PR stops it and asks you to reopen it or reject the task.
 - **Automatic conflicts.** When PR tending is off for the project, the tending pass (every 10 minutes) adds a conflict follow-up for the task's agent when its open PR conflicts with the base, once per PR head (`TendingService.watchConflict`). With tending on, tending resolves conflicts itself and pushes after the tests pass.
 
+**Review loop.** When an agent's change is approved and opened as a **draft** PR, the factory starts a senior-pr-review of it (`packages/backend/src/review-loop.ts`, rules in `packages/core/src/review-loop.ts`):
+
+1. `critical` and `must-fix` findings go back to the agent as a `review` follow-up. Its fix is pushed to the same PR once the checks pass, without the approval gate: you review the whole PR on GitHub at the end. A fix that fails the checks or asks you something stops the loop, and the PR stays a draft.
+2. After the fix is pushed, the PR is reviewed again. At most two fix rounds run.
+3. When a review leaves nothing critical or must-fix, or after the second fix, the factory adds an **Automated review** section to the PR description (the `should-fix` findings left for you, and any fix that no review checked again) and marks the PR ready for review.
+
+Each step is a line in the task's activity, and the state is in `tasks/<id>/review-loop.json`. A PR opened ready for review, or by the pipeline, is left to people.
+
 Each follow-up is recorded on the run (`follow_ups`: kind, instructions, agent, who added it, the PR head) and in the task's activity.
 
 ## Chats

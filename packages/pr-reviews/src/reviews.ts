@@ -300,6 +300,11 @@ export class ReviewService {
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
   reviewRecords?: PrReviewStore;
+  /**
+   * Called once when a review's first turn ends: with its payload when it finished with a decision,
+   * or undefined when it stopped or failed. The backend's review loop listens here.
+   */
+  onReviewEnded?: (project: string, number: number, payload: ReviewPayload | undefined) => unknown;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, ReviewGrant>();
   /** This backend instance, the owner of the in-process turns it starts. */
@@ -396,6 +401,17 @@ export class ReviewService {
       const events = lines.flatMap((l) => this.deps.agent.parse(l));
       const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
       await this.traceTurn(project, record, k, events).catch(() => undefined);
+      // The first turn's result, for the review loop: the payload when the turn finished with one.
+      if (k === 0 && this.onReviewEnded) {
+        const exit = await readFile(join(dir, `turn-${k}.exit`), 'utf8').catch(() => '');
+        const payload =
+          exit.trim() === '0' && !record.turns[k]!.stopped
+            ? (await this.readPayload(project, record.number)).payload
+            : undefined;
+        await Promise.resolve(
+          this.onReviewEnded(project, record.number, payload?.meta.decision?.trim() ? payload : undefined),
+        ).catch(() => undefined);
+      }
       if (k === 0 && this.reviewRecords && !record.turns[k]!.stopped) {
         const exitPath = join(dir, `turn-${k}.exit`);
         const exit = await readFile(exitPath, 'utf8').catch(() => '');

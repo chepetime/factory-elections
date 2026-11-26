@@ -31,6 +31,7 @@ import {
   type StepAttempt,
   type StepDefinition,
   type FollowUpKind,
+  followUpPushesItself,
   missingHeadings,
   type TaskRecord,
   type ToolGuard,
@@ -56,7 +57,7 @@ import { checkedWorktree } from './worktree.ts';
 import { checkProfile, verifyWorktree } from './verification.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
-export { worktreeGuard } from './support.ts';
+export { readPrTemplate, worktreeGuard } from './support.ts';
 
 /** Changed files that still hold a conflict marker line. */
 async function conflictMarkers(dir: string, files: string[]): Promise<string[]> {
@@ -706,7 +707,21 @@ export class Driver {
       }
       note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
     }
-    return this.agentRun(project, id, note);
+    const done = await this.agentRun(project, id, note);
+    return followUpPushesItself(input.kind) ? this.pushReviewFix(project, id, done) : done;
+  }
+
+  /**
+   * A review fix that passed the checks is approved by the review loop and pushed to the same PR.
+   * Anything else (a failed check, a question, no change) stays where the run left it.
+   */
+  private async pushReviewFix(project: string, id: string, task: TaskRecord): Promise<TaskRecord> {
+    if (task.stage !== 'awaiting-approval' || !task.verification?.passed) return task;
+    await this.approve(project, id, {
+      head: task.verification.head_sha,
+      note: 'Approved by the review loop: the checks passed. Review the PR on GitHub.',
+    });
+    return openPr(this.deps, project, id, {});
   }
 
   /** Verifies the worktree head and puts a follow-up's commit at the approval gate. */

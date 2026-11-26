@@ -88,7 +88,7 @@ const FollowUpInput = z.object({
   project: ProjectName,
   key: Key,
   note: z.string().trim().min(1).max(20_000),
-  kind: z.enum(['custom', 'conflicts']).default('custom'),
+  kind: z.enum(['custom', 'conflicts', 'review']).default('custom'),
   /** The workspace agent; absent uses the run's agent, then the task's assignee. */
   agent: z.string().min(1).optional(),
   /** `factory` when the conflict watcher adds it. */

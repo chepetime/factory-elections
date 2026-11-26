@@ -20,7 +20,7 @@ export const CommandSchema = TargetSchema.extend({
   max_attempts: z.number().int().min(0).max(10).optional().default(0),
   // follow-up only (protobuf sends empty strings for the other commands).
   agent: z.string().max(100).optional().default(''),
-  kind: z.enum(['custom', 'conflicts', '']).optional().default(''),
+  kind: z.enum(['custom', 'conflicts', 'review', '']).optional().default(''),
   by: z.string().max(40).optional().default(''),
   pr_head: z.string().max(64).optional().default(''),
 });

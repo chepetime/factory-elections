@@ -24,6 +24,7 @@ import {
   envNames,
   type QueueWait,
   recoveryBlocker,
+  prBody,
   conflictFollowUpNote,
   recoveryInboxItems,
   type RecoveryProblem,
@@ -31,7 +32,9 @@ import {
 } from '@factory/core';
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
-import type { Driver } from '@factory/driver';
+import { readPrTemplate, type Driver } from '@factory/driver';
+import { editPullRequestBody, markPullRequestReady } from '@factory/adapters-github';
+import { ReviewLoop } from './review-loop.ts';
 import { composeDriver } from '@factory/compose';
 import {
   DelegationServer,
@@ -93,6 +96,8 @@ export class BackendService {
   readonly pool: AgentPool;
   /** The task run queue. */
   private readonly dispatcher: Dispatcher;
+  /** Senior-pr-review rounds on agents' draft PRs (review-loop.ts). */
+  readonly reviewLoop: ReviewLoop;
   /** Background executions other than task runs: feature steps. */
   readonly executions: Executions;
   /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
@@ -328,6 +333,22 @@ export class BackendService {
       accepting: () => this.dispatcher.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.reviewLoop = new ReviewLoop({
+      tasks: this.tasks,
+      storage: this.storage,
+      startReview: async (project, number) => {
+        const [result] = await this.reviews.start({ project, numbers: [number], mode: 'review' });
+        if (!result?.ok) throw new Error(result?.error ?? 'the review was refused');
+      },
+      followUp: (project, id, note) =>
+        this.issues.followUp({ project, key: id, note, kind: 'review', by: 'factory' }),
+      note: (project, id, message) => this.issues.note({ project, key: id, kind: 'review-loop', message }),
+      body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
+      github: { markReady: markPullRequestReady, editBody: editPullRequestBody },
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
+    this.reviews.onReviewEnded = (project, number, payload) =>
+      this.reviewLoop.reviewEnded(project, number, payload);
     this.tending = new TendingService({
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({
@@ -624,8 +645,14 @@ export class BackendService {
             ),
           )
           .then(async (result) => {
-            if (command.action === 'open-pr')
+            if (command.action === 'open-pr') {
               await this.taskTraces.pr(command.project, command.id).catch(() => undefined);
+              // An agent's draft PR starts the review loop; it runs on after this command returns.
+              const opened = await this.tasks.read(command.project, command.id);
+              void this.reviewLoop
+                .opened(opened, command.draft)
+                .catch((error: unknown) => process.stderr.write(`review loop: ${String(error)}\n`));
+            }
             if (command.action === 'approve' || command.action === 'open-pr')
               await this.issueReceipt(command.project, command.id).catch(() => undefined);
             if (before && ['approve', 'reject'].includes(command.action))
@@ -714,7 +741,13 @@ export class BackendService {
         },
         work: (release) => this.executor.run(command, record, dir, release),
         cancelled: () => this.closeUnstarted(record, dir),
-        settle: unlock,
+        settle: async () => {
+          await unlock();
+          // After the lock is free: a review fix that was pushed starts the next review round.
+          void this.reviewLoop
+            .runSettled(command.project, command.id)
+            .catch((error: unknown) => process.stderr.write(`review loop: ${String(error)}\n`));
+        },
       },
       reservation,
     );

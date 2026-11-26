@@ -145,3 +145,17 @@ export async function pullRequestHead(
   if (!headRefName) throw new GitHubError(`PR #${number} has no head branch`);
   return { branch: headRefName, url: url ?? '', title: title ?? '' };
 }
+
+/** Takes a draft pull request out of draft, so people are asked to review it. */
+export async function markPullRequestReady(cwd: string, number: number): Promise<void> {
+  const result = await run('gh', ['pr', 'ready', String(number)], { cwd });
+  if (result.code !== 0)
+    throw new GitHubError(`gh pr ready failed: ${(result.stderr || result.stdout).trim()}`);
+}
+
+/** Replaces a pull request's description. */
+export async function editPullRequestBody(cwd: string, number: number, body: string): Promise<void> {
+  const result = await run('gh', ['pr', 'edit', String(number), '--body-file', '-'], { cwd, input: body });
+  if (result.code !== 0)
+    throw new GitHubError(`gh pr edit failed: ${(result.stderr || result.stdout).trim()}`);
+}

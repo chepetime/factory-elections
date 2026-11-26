@@ -4,7 +4,15 @@
 // nothing reaches GitHub without a person approving that exact commit.
 import type { TaskRecord } from './schemas.ts';
 
-export type FollowUpKind = 'custom' | 'conflicts';
+export type FollowUpKind = 'custom' | 'conflicts' | 'review';
+
+/**
+ * Whether the follow-up's commit is pushed once the checks pass, without the approval gate. Only
+ * the review loop's fixes are: the person reviews the whole PR on GitHub when the loop is done.
+ */
+export function followUpPushesItself(kind: FollowUpKind): boolean {
+  return kind === 'review';
+}
 
 /** The instructions of a conflict follow-up; `base` is the PR's base branch. */
 export function conflictFollowUpNote(base: string): string {
