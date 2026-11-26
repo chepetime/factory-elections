@@ -2,7 +2,7 @@
 // runs that no issue links to, which backfills old runs and catches runs started off the board.
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
   asksForBaseMerge,
@@ -138,7 +138,7 @@ export function issuePrompt(issue: Pick<Issue, 'title' | 'description'>): string
 }
 
 export class IssueService {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly deps: IssueDeps;
   constructor(deps: IssueDeps) {
     this.deps = deps;
