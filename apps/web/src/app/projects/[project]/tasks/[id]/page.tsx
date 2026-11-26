@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import {
+  stageLabel,
   statusFromStage,
   taskAccess,
   type IssueStatus,
   type ServiceAccess,
-  type Stage,
   type TaskRecord,
 } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
@@ -247,8 +247,6 @@ function Feed({
   flush();
   return blocks.length ? <div className="mt-3 flex flex-col gap-3">{blocks}</div> : null;
 }
-
-const stageLabel = (stage: Stage) => stage.charAt(0).toUpperCase() + stage.slice(1).replace(/-/g, ' ');
 
 /** `https://github.com/o/r/pull/12` reads `o/r#12`; any other URL stays as it is. */
 function prLabel(url: string): string {

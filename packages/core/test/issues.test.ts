@@ -8,6 +8,7 @@ import {
   issueKey,
   issueNumber,
   ProjectSettings,
+  runHeld,
   runWorking,
   statusFromStage,
   syncedStatus,
@@ -144,4 +145,11 @@ test('a queued turn refuses every drop but Cancelled, so no drop closes its run 
     assert.equal(dropAction('todo', to, run).kind, 'refused', to);
   assert.deepEqual(dropAction('todo', 'cancelled', run), { kind: 'reject' });
   assert.deepEqual(dropAction('todo', 'todo', run), { kind: 'none' });
+});
+
+test('a run is held by a live run when that is known, else by a working stage', () => {
+  assert.equal(runHeld('coding'), true);
+  assert.equal(runHeld('failed'), false);
+  assert.equal(runHeld('coding', false), false, 'an interrupted run is not held');
+  assert.equal(runHeld('failed', true), true, 'a live revision of a failed run is held');
 });

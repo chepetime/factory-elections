@@ -133,6 +133,15 @@ export function runWorking(stage: Stage): boolean {
   return stage === 'coding' || stage === 'reviewing';
 }
 
+/**
+ * The factory holds the run now, so its task cannot be archived or deleted. `owned` says whether a
+ * live run holds it, when the caller knows: an interrupted run at `coding` is not held, and a live
+ * revision of a failed run is. Without `owned` the stage decides.
+ */
+export function runHeld(stage: Stage, owned?: boolean): boolean {
+  return owned ?? runWorking(stage);
+}
+
 /** A run that has ended: nothing more happens to it unless a person revises it. */
 export function runFinished(stage: Stage): boolean {
   return stage === 'rejected' || stage === 'pr-opened';

@@ -15,7 +15,7 @@ import {
   issueKey,
   issueNumber,
   ProjectName,
-  runWorking,
+  runHeld,
   statusFromStage,
   syncedStatus,
   TaskId,
@@ -185,6 +185,11 @@ export class IssueService {
   /** A turn is queued for the run: it will use the run's worktree once its agent is free. */
   private queued(project: string, runId: string): boolean {
     return this.deps.waiting?.(project, runId) === true;
+  }
+
+  /** The factory holds the run now: a live run, or a working stage when live runs are not known. */
+  private held(project: string, runId: string, stage: Stage | undefined): boolean {
+    return !!stage && runHeld(stage, this.deps.owned?.(project, runId));
   }
 
   private view(prefix: string, issue: Issue, runs: Map<string, TaskRecord>): IssueView {
@@ -495,7 +500,7 @@ export class IssueService {
       const issue = this.find(board, key);
       const latest = issue.runs.at(-1);
       const stage = latest ? runs.get(latest)?.stage : undefined;
-      if (archived && latest && ((stage && runWorking(stage)) || this.queued(project, latest)))
+      if (archived && latest && (this.held(project, latest, stage) || this.queued(project, latest)))
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
       const at = this.now();
       const updated = Issue.parse({
@@ -527,7 +532,7 @@ export class IssueService {
       if (!issue.archived_at) throw new Conflict('Archive the task before you delete it.');
       const working = issue.runs.find((id) => {
         const stage = runs.get(id)?.stage;
-        return (stage && runWorking(stage)) || this.queued(project, id);
+        return this.held(project, id, stage) || this.queued(project, id);
       });
       if (working)
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');

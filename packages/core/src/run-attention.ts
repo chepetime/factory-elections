@@ -2,6 +2,25 @@
 // the board cards and the home numbers, so a run never shows as working in one and waiting in another.
 import type { Stage } from './schemas.ts';
 
+/** The name of each stage for a person. Every screen reads this one list. */
+export const STAGE_LABELS: Record<Stage, string> = {
+  queued: 'Queued',
+  classified: 'Classified',
+  coding: 'Coding',
+  reviewing: 'Reviewing',
+  'awaiting-approval': 'Awaiting approval',
+  'verification-failed': 'Checks failed',
+  approved: 'Approved',
+  'pr-opened': 'PR opened',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  rejected: 'Rejected',
+};
+
+export function stageLabel(stage: Stage): string {
+  return STAGE_LABELS[stage];
+}
+
 export type RunAttention =
   /** The factory works on it now. */
   | 'working'

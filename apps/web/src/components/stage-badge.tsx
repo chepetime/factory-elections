@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import type { Stage } from '@factory/core';
+import { stageLabel, type Stage } from '@factory/core';
 
 const TONE: Record<Stage, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   queued: 'outline',
@@ -16,5 +16,5 @@ const TONE: Record<Stage, 'default' | 'secondary' | 'destructive' | 'outline'> =
 };
 
 export function StageBadge({ stage }: { stage: Stage }) {
-  return <Badge variant={TONE[stage]}>{stage}</Badge>;
+  return <Badge variant={TONE[stage]}>{stageLabel(stage)}</Badge>;
 }

@@ -24,6 +24,18 @@ export type FeatureCommand = z.infer<typeof FeatureCommand>;
  * A done or cancelled feature accepts no command, and no late agent step moves it again. The
  * backend answers a repeated `cancel` of a cancelled feature with the feature, not an error.
  */
+/** The name of each feature stage for a person. */
+export const FEATURE_STAGE_LABELS: Record<FeatureStage, string> = {
+  grilling: 'Questions',
+  spec: 'Specification',
+  'spec-approved': 'Specification approved',
+  board: 'Board',
+  implementing: 'In progress',
+  qa: 'QA',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
+
 export const FEATURE_ENDED_STAGES: readonly FeatureStage[] = ['done', 'cancelled'];
 export function featureEnded(stage: FeatureStage): boolean {
   return FEATURE_ENDED_STAGES.includes(stage);

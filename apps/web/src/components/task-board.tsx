@@ -14,7 +14,8 @@ import {
   ISSUE_STATUSES,
   runAttention,
   runNeed,
-  runWorking,
+  runHeld,
+  stageLabel,
   type DropAction,
   type IssueStatus,
   type Stage,
@@ -34,20 +35,6 @@ export type BoardIssue = {
   run?: { id: string; stage: Stage; updated_at?: string; waiting?: boolean; owned?: boolean };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
-};
-
-const STAGE_LABEL: Partial<Record<Stage, string>> = {
-  queued: 'Queued',
-  classified: 'Classified',
-  coding: 'Coding',
-  reviewing: 'Reviewing',
-  'awaiting-approval': 'Awaiting approval',
-  'verification-failed': 'Checks failed',
-  approved: 'Approved',
-  'pr-opened': 'PR opened',
-  blocked: 'Blocked',
-  failed: 'Failed',
-  rejected: 'Rejected',
 };
 
 /**
@@ -394,7 +381,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                             ? 'Waiting for its agent'
                             : runNeed(issue.run.stage, issue.run.owned) === 'interrupted'
                               ? 'Interrupted'
-                              : (STAGE_LABEL[issue.run.stage] ?? issue.run.stage)}
+                              : stageLabel(issue.run.stage)}
                         </span>
                       ) : (
                         <span>No run yet</span>
@@ -466,9 +453,9 @@ export function MoveMenu({
               <>
                 <Menu.Separator className="my-1 h-px bg-border" />
                 <Menu.Item
-                  disabled={!!issue.run && runWorking(issue.run.stage)}
+                  disabled={!!issue.run && runHeld(issue.run.stage, issue.run.owned)}
                   title={
-                    issue.run && runWorking(issue.run.stage)
+                    issue.run && runHeld(issue.run.stage, issue.run.owned)
                       ? 'Wait for the run to stop, or cancel it.'
                       : undefined
                   }

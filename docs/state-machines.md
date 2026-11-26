@@ -135,7 +135,16 @@ This pass closed the gaps the second pass listed.
 
 Stage predicates `coding | reviewing` and `rejected | pr-opened` now use core `runWorking` and `runFinished` in the backend, agent pickup and the task page.
 
+## Fourth pass (2026-11-25)
+
+This pass closed the last gaps.
+
+| Machine / source | States and transitions | Decision / invariant |
+| --- | --- | --- |
+| Archive and delete guard — core/backend/web | held → refused; not held → archived | One rule, [`runHeld`](../packages/core/src/issues.ts): a live run holds its task, whatever the stage. An interrupted run at `coding` or `reviewing` can be archived with no reject first. A live revision of a failed run cannot. A queued turn is still refused. |
+| Stage names — core/web | stage → label | One list, [`STAGE_LABELS`](../packages/core/src/run-attention.ts), for the board cards, the task page and the stage badge. Feature stages read `FEATURE_STAGE_LABELS` in [feature controls](../packages/core/src/feature-controls.ts). The tab glyph and the badge tone are different facts about a stage, each typed by `Stage`. |
+| Cross-project board "Ready" — web | approved, no pull request → ready | The column reads `runNeed`. A test proves that each card in Needs me and Ready is a run that `runAttention` calls needs-you. The column stays: the vision defines it as "what can I finish". |
+
 ## Known gaps
 
-- The archive rule reads the stage: an interrupted run at `coding` must be rejected before its task can be archived.
-- The stage label maps (`STAGE_LABEL`, `STAGE_GLYPH`, `StageBadge`) are separate copies of the stage list. They are typed by `Stage`, so a new stage fails the compile in most of them.
+None.

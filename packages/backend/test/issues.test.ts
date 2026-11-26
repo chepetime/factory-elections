@@ -363,3 +363,39 @@ test('a task view says whether a live run holds its latest run', async (t) => {
     ],
   );
 });
+
+test('an interrupted run at coding can be archived and deleted; a live run cannot', async (t) => {
+  const live = run('Live run', '2026-11-20T10:00:00.000Z', 'failed');
+  const stopped = run('Stopped run', '2026-11-21T10:00:00.000Z', 'coding');
+  const root = await mkdtemp(join(tmpdir(), 'factory-issues-held-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const deleted: string[] = [];
+  const service = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => [live, stopped] },
+    owned: (_project, id) => id === live.id,
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false },
+    }),
+    submit: async () => '',
+    run: async () => undefined,
+    reject: async () => undefined,
+    deleteRun: async (_project, id) => void deleted.push(id),
+  } as ConstructorParameters<typeof IssueService>[0]);
+  const { items } = await service.list('change-elections');
+  const key = (id: string) => items.find((i) => i.run!.id === id)!.key;
+  await assert.rejects(
+    service.archive({ project: 'change-elections', key: key(live.id), archived: true }),
+    Conflict,
+  );
+  const archived = await service.archive({
+    project: 'change-elections',
+    key: key(stopped.id),
+    archived: true,
+  });
+  assert.ok(archived.archived_at);
+  await service.delete({ project: 'change-elections', key: key(stopped.id) });
+  assert.deepEqual(deleted, [stopped.id]);
+});

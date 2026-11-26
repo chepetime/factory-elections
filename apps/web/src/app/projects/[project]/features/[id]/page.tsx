@@ -1,4 +1,4 @@
-import { FeatureId, type FeatureCommand } from '@factory/core';
+import { FEATURE_STAGE_LABELS, FeatureId, type FeatureCommand } from '@factory/core';
 import { notFound } from 'next/navigation';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { FeatureBoardEditor } from '@/components/feature-board-editor';
@@ -7,16 +7,6 @@ import { isProjectName } from '@/lib/factory';
 import { getFeature } from '@/lib/features';
 export const dynamic = 'force-dynamic';
 
-const STAGE_LABELS: Record<string, string> = {
-  grilling: 'Questions',
-  spec: 'Specification',
-  'spec-approved': 'Specification approved',
-  board: 'Board',
-  implementing: 'In progress',
-  qa: 'QA',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
 const STEP_LABELS: Record<string, string> = {
   grill: 'The agent reads your answer',
   'write-spec': 'The agent writes the specification',
@@ -49,7 +39,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ projec
       <div>
         <h1 className="text-2xl font-semibold">{f.title}</h1>
         <p className="text-sm text-muted-foreground" role="status">
-          {STAGE_LABELS[f.stage] ?? f.stage}
+          {FEATURE_STAGE_LABELS[f.stage]}
           {f.working ? ` · ${STEP_LABELS[f.working.action] ?? `${f.working.action} in progress`}…` : ''}
         </p>
       </div>

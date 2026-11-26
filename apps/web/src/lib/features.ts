@@ -1,19 +1,19 @@
 import 'server-only';
 import { backendCall } from '@factory/backend/client';
 import { z } from 'zod';
-import { FeatureActionAvailability, FeatureId, GrillTurn, Ticket } from '@factory/core';
+import { FeatureActionAvailability, FeatureId, FeatureStage, GrillTurn, Ticket } from '@factory/core';
 
 export const FeatureSummary = z.object({
   id: FeatureId,
   title: z.string(),
-  stage: z.string(),
+  stage: FeatureStage,
   tickets: z.number(),
   error: z.string().optional(),
 });
 export const FeatureDetail = z.object({
   id: FeatureId,
   title: z.string(),
-  stage: z.string(),
+  stage: FeatureStage,
   grill: z.object({ turns: z.array(GrillTurn) }).default({ turns: [] }),
   spec: z.string().optional(),
   critique: z.string().optional(),

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { STAGES, runAttention, runNeed } from '../src/index.ts';
+import {
+  FEATURE_STAGE_LABELS,
+  FeatureStage,
+  STAGES,
+  runAttention,
+  runNeed,
+  stageLabel,
+} from '../src/index.ts';
 
 test('every stage has one answer for who moves next', () => {
   assert.deepEqual(Object.fromEntries(STAGES.map((stage) => [stage, runAttention(stage)])), {
@@ -29,4 +36,11 @@ test('live ownership wins over the stage', () => {
   assert.equal(runAttention('blocked', true, true), 'waiting', 'a queued turn waits for its agent');
   assert.equal(runNeed('blocked', false, true), undefined);
   assert.equal(runNeed('coding'), undefined);
+});
+
+test('every stage and every feature stage has a label for a person', () => {
+  for (const stage of STAGES) assert.ok(stageLabel(stage), stage);
+  for (const stage of FeatureStage.options) assert.ok(FEATURE_STAGE_LABELS[stage], stage);
+  assert.equal(stageLabel('verification-failed'), 'Checks failed');
+  assert.equal(stageLabel('pr-opened'), 'PR opened');
 });
