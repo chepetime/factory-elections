@@ -209,7 +209,7 @@ After a hard kill (SIGKILL, power loss) the next start still settles the run rec
 
 After establishing that all old work stopped, remove the stale `backend.lock` to restart. If a task's `command.lock` stays because a live process holds its PID, confirm that process is not a factory worker before removing the lock. A model step that was cut off starts again from its beginning; the work it saved before (verdict, worktree, commits, verification) is kept. A transport deadline does not prove a command did not happen: inspect the task/run before retrying, especially a PR operation.
 
-Opening a PR first looks for an open PR from the task branch and adopts it, so a retry after a lost write does not open a second one. Still deferred: resuming a model step inside its session, cancelling a run from the UI, streamed SSE progress, log rotation, pagination and distributed execution. The approval gate is unchanged: nothing pushes or opens a PR on its own.
+Opening a PR saves a `publication` intent on the task (operation ID, commit, branch, base, and step `push` or `create`) before each GitHub write, and clears it when the PR is recorded. It then lists the branch's PRs in any state: an open PR for the same commit is adopted, so a retry after a lost write does not open a second one; a closed or merged PR for the same commit stops the attempt and asks a person to reopen it or reject the task, because opening another would repeat an ambiguous write. Still deferred: resuming a model step inside its session, cancelling a run from the UI, streamed SSE progress, log rotation, pagination and distributed execution. The approval gate is unchanged: nothing pushes or opens a PR on its own.
 
 ## Light checks
 

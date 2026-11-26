@@ -66,7 +66,10 @@ async function setup(turns: ((run: ModelRun) => Promise<ModelResult>)[]) {
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
     shell: { runShell },
-    github: { createPullRequest: async () => 'https://github.com/example/demo/pull/1' },
+    github: {
+      createPullRequest: async () => 'https://github.com/example/demo/pull/1',
+      pullRequestsFrom: async () => [],
+    },
     runner,
     definitions: {
       readStep: fsAdapter.readStepDefinition,

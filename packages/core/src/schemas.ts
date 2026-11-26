@@ -224,6 +224,21 @@ export const TaskRecord = z.looseObject({
   /** A person allowed this task to delete, skip or loosen tests (see test-integrity.ts). */
   allow_test_changes: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
+  /**
+   * A PR publication that started and is not recorded yet: saved before each external write
+   * (`push`, then `create`), cleared when `pr` is saved. Its presence after a crash means GitHub
+   * may hold a result that this record does not.
+   */
+  publication: z
+    .looseObject({
+      op_id: NonEmpty,
+      head_sha: NonEmpty,
+      branch: NonEmpty,
+      base: NonEmpty,
+      step: z.enum(['push', 'create']),
+      at: Iso,
+    })
+    .optional(),
   events: z.array(TaskEvent).optional(),
   /** `agent`: one open session by a workspace agent, with no reviewer step. Absent means the pipeline. */
   workflow: z.enum(['pipeline', 'agent']).optional(),

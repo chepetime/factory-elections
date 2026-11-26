@@ -69,8 +69,14 @@ export interface ShellPort {
 }
 
 export interface GitHubPort {
-  /** The URL of an open pull request whose head is `head`, if one exists. */
-  findOpenPullRequest?(options: { cwd: string; head: string }): Promise<string | undefined>;
+  /**
+   * The pull requests from branch `head` in any state, with the commit each one points at. Opening
+   * a PR reads this first, so a write that GitHub kept and the task record lost is found again.
+   */
+  pullRequestsFrom(options: {
+    cwd: string;
+    head: string;
+  }): Promise<{ url: string; state: 'OPEN' | 'CLOSED' | 'MERGED'; head_sha: string }[]>;
   createPullRequest(options: {
     cwd: string;
     base: string;

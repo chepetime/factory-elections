@@ -1599,15 +1599,41 @@ export class Driver {
       throw new DriverError(
         `open the pull request of the blocking ticket first: ${base} is not on origin yet`,
       );
+    // Intent first: a crash after a GitHub write leaves this record, and the next attempt
+    // reconciles with GitHub instead of writing again.
+    const intent = async (step: 'push' | 'create') => {
+      const current = await this.deps.tasks.read(project, id);
+      const previous = current.publication?.head_sha === head ? current.publication : undefined;
+      const publication = {
+        op_id: previous?.op_id ?? `pub-${head.slice(0, 12)}-${Date.parse(this.deps.now()).toString(36)}`,
+        head_sha: head,
+        branch,
+        base,
+        step,
+        at: this.deps.now(),
+      };
+      await this.deps.tasks.write({ ...current, publication });
+    };
+    await intent('push');
     this.deps.log(`Pushing ${branch}…`);
     await this.deps.git.push(path, branch);
-    // A previous attempt may have opened the PR and then failed to record it: adopt that PR
-    // instead of opening a second one.
-    const existing = await this.deps.github.findOpenPullRequest?.({ cwd: path, head: branch });
-    if (existing) this.deps.log(`Pull request already open: ${existing}`);
+    await intent('create');
+    // A previous attempt may have opened the PR and then failed to record it. Adopt an open PR for
+    // this commit; a closed or merged one needs a person, because opening another repeats a write.
+    const same = (await this.deps.github.pullRequestsFrom({ cwd: path, head: branch })).filter(
+      (pr) => pr.head_sha === head,
+    );
+    const open = same.find((pr) => pr.state === 'OPEN');
+    const ended = same.find((pr) => pr.state !== 'OPEN');
+    if (!open && ended)
+      throw new DriverError(
+        `a pull request for this commit already exists and is ${ended.state.toLowerCase()}: ${ended.url}. ` +
+          'Reopen it on GitHub and open the PR again to adopt it, or reject the task',
+      );
+    if (open) this.deps.log(`Pull request already open: ${open.url}`);
     else this.deps.log('Opening pull request…');
     const url =
-      existing ??
+      open?.url ??
       (await this.deps.github.createPullRequest({
         cwd: path,
         base,
@@ -1617,6 +1643,8 @@ export class Driver {
         draft: options.draft,
       }));
     task = await this.deps.tasks.read(project, id);
+    const { publication: _done, ...recorded } = task;
+    task = recorded;
     task = withStage(
       { ...task, pr: { url, branch, head_sha: head, at: this.deps.now() } },
       this.deps.now(),
