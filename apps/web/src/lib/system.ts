@@ -2,7 +2,7 @@
 // review findings, the traffic numbers, and the catalog of MCP servers, tools and skills.
 import 'server-only';
 import { backendCall } from '@factory/backend-client';
-import { SpanRecord } from '@factory/core';
+import { MetricsSummarySchema, SpanRecord } from '@factory/core';
 import { z } from 'zod';
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -64,31 +64,8 @@ export function listFindings(): Promise<Result<FindingRow[]>> {
   );
 }
 
-const tokens = z.object({
-  input: z.number(),
-  output: z.number(),
-  cache_read: z.number(),
-  cache_write: z.number(),
-});
-const Sum = z.object({ cost_usd: z.number(), unknown_cost_spans: z.number(), tokens });
-const Traffic = z.object({
-  from: z.string(),
-  to: z.string(),
-  total: Sum.extend({ spans: z.number() }),
-  days: z.array(Sum.extend({ day: z.string() })),
-  by_model: z.record(z.string(), Sum),
-  by_project: z.record(z.string(), Sum),
-  by_step: z.record(z.string(), Sum),
-  by_type: z.record(z.string(), Sum.extend({ spans: z.number() })),
-  runs: z.object({ count: z.number(), failed: z.number() }),
-  reliability: z.object({
-    stalls: z.number(),
-    repeat_loops: z.number(),
-    failed_tool_calls: z.number(),
-    tool_calls: z.number(),
-  }),
-  prs: z.object({ count: z.number(), cost_usd: z.number() }),
-});
+/** GetMetrics over every project; the shape is core's (MetricsSummarySchema). */
+const Traffic = MetricsSummarySchema;
 export type Traffic = z.infer<typeof Traffic>;
 
 /** Spend, tokens and calls over every project for the last `days` days. */

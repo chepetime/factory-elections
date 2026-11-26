@@ -2,6 +2,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend-client';
+import { metricsSummary } from '@factory/core';
 import FindingsPage from '@/app/findings/page';
 import LlmCallsPage from '@/app/llm-calls/page';
 import SkillsPage from '@/app/system/skills/page';
@@ -116,15 +117,13 @@ it('shows traffic totals, a bar per day, and breakdowns by model', async () => {
   };
   rpc.mockResolvedValue(
     reply({
-      from: '2026-11-12T00:00:00.000Z',
-      to: '2026-11-26T00:00:00.000Z',
+      ...metricsSummary([], '2026-11-12T00:00:00.000Z', '2026-11-26T00:00:00.000Z'),
       total: { ...sum, spans: 9 },
-      days: [{ ...sum, day: '2026-11-20' }],
+      days: [{ ...sum, day: '2026-11-20', by_provider: {} }],
       by_model: { 'claude-sonnet-5-5': sum },
       by_project: { demo: sum },
-      by_step: {},
       by_type: { model: { ...sum, spans: 3 } },
-      runs: { count: 4, failed: 1 },
+      runs: { count: 4, failed: 1, unusual: [] },
       reliability: { stalls: 0, repeat_loops: 0, failed_tool_calls: 2, tool_calls: 20 },
       prs: { count: 1, cost_usd: 3 },
     }),

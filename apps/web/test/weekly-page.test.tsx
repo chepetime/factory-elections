@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { backendCall } from '@factory/backend-client';
+import { metricsSummary } from '@factory/core';
 import WeeklyPage from '@/app/projects/[project]/weekly/page';
 
 vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
@@ -16,13 +17,14 @@ const cost = {
   unknown_cost_spans: 1,
   tokens: { input: 100, output: 30, cache_read: 25, cache_write: 4 },
 };
+// A full, empty summary from core, then the fields this test shows.
+const empty = metricsSummary([], '2026-01-01', '2026-01-08');
 const data = {
-  from: '2026-01-01',
-  to: '2026-01-08',
-  total: cost,
-  days: [{ ...cost, day: '2026-01-02' }],
-  prs: { count: 2, median_cost_usd: 1.25, median_run_ms: 120000 },
-  runs: { count: 4, failed: 1, failure_rate: 0.25, first_pass_rate: 0.75, climb_rate: 0.5 },
+  ...empty,
+  total: { ...cost, spans: 3 },
+  days: [{ ...cost, day: '2026-01-02', by_provider: {} }],
+  prs: { count: 2, median_cost_usd: 1.25, median_run_ms: 120000, cost_usd: 2.5 },
+  runs: { count: 4, failed: 1, failure_rate: 0.25, first_pass_rate: 0.75, climb_rate: 0.5, unusual: [] },
   reliability: { stalls: 1, repeat_loops: 2, failed_tool_calls: 1, tool_calls: 4 },
   call_grading: [
     {
@@ -59,8 +61,8 @@ it('shows empty data and backend failures distinctly', async () => {
       ...data,
       days: [],
       call_grading: [],
-      prs: { count: 0 },
-      runs: { count: 0, failed: 0 },
+      prs: { count: 0, cost_usd: 0 },
+      runs: { count: 0, failed: 0, unusual: [] },
       reliability: { stalls: 0, repeat_loops: 0, failed_tool_calls: 0, tool_calls: 0 },
     }),
   });
