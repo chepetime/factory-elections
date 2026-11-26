@@ -340,11 +340,7 @@ function ParkedPages() {
         More pages
         <span className="ml-auto text-xs">Off</span>
       </summary>
-      <ul
-        aria-label="More pages, not available yet"
-        // Capped, so opening it does not push the task list and footer out of the sidebar.
-        className="mt-px flex max-h-52 flex-col gap-px overflow-y-auto"
-      >
+      <ul aria-label="More pages, not available yet" className="mt-px flex flex-col gap-px">
         {PARKED.map(({ label, icon: Icon }) => (
           <li
             key={label}
@@ -459,7 +455,7 @@ function Sidebar({
     <aside
       aria-label="Tasks"
       style={{ width }}
-      className="relative m-2 flex flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
+      className="relative m-2 flex min-h-0 flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
     >
       <div className="flex items-center gap-1 p-2">
         <Menu.Root>
@@ -576,103 +572,113 @@ function Sidebar({
         </button>
       </div>
 
-      {project && (
-        <div className="flex flex-col gap-1 px-2 pb-2">
-          <SidebarLink href={`/projects/${project}`} current={pathname === `/projects/${project}`}>
-            <Home className="size-4 text-muted-foreground" /> Home
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/tasks`}
-            current={pathname === `/projects/${project}/tasks`}
-          >
-            <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/team`}
-            current={/^\/projects\/[^/]+\/team(?:\/|$)/.test(pathname)}
-          >
-            <Users className="size-4 text-muted-foreground" /> Team members
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/reviews`}
-            current={/^\/projects\/[^/]+\/reviews(?:\/|$)/.test(pathname)}
-          >
-            <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/tickets`}
-            current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
-          >
-            <Tickets className="size-4 text-muted-foreground" /> Tickets
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/features`}
-            current={/^\/projects\/[^/]+\/features(?:\/|$)/.test(pathname)}
-          >
-            <Tickets className="size-4 text-muted-foreground" /> Features
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/weekly`}
-            current={/^\/projects\/[^/]+\/weekly(?:\/|$)/.test(pathname)}
-          >
-            <span aria-hidden="true">◷</span> Weekly
-          </SidebarLink>
-          <div role="separator" className="my-1 h-px bg-border" />
-          {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {
-            const href = `/projects/${project}/${segment}`;
-            return (
-              <SidebarLink
-                key={segment}
-                href={href}
-                current={pathname === href || pathname.startsWith(`${href}/`)}
-              >
-                <Icon className="size-4 text-muted-foreground" /> {label}
+      {/* Below the project switcher, one column scrolls: links, New task, tasks and the footer. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="flex min-h-full flex-col">
+          {project && (
+            <div className="flex flex-col gap-1 px-2 pb-2">
+              <SidebarLink href={`/projects/${project}`} current={pathname === `/projects/${project}`}>
+                <Home className="size-4 text-muted-foreground" /> Home
               </SidebarLink>
-            );
-          })}
-          <ParkedPages />
-          <div role="separator" className="my-2 h-px bg-border" />
-          <Link
-            href={`/projects/${project}/tasks/new`}
-            aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <Plus className="size-4" /> New task
-          </Link>
-        </div>
-      )}
+              <SidebarLink
+                href={`/projects/${project}/tasks`}
+                current={pathname === `/projects/${project}/tasks`}
+              >
+                <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/team`}
+                current={/^\/projects\/[^/]+\/team(?:\/|$)/.test(pathname)}
+              >
+                <Users className="size-4 text-muted-foreground" /> Team members
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/reviews`}
+                current={/^\/projects\/[^/]+\/reviews(?:\/|$)/.test(pathname)}
+              >
+                <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/tickets`}
+                current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
+              >
+                <Tickets className="size-4 text-muted-foreground" /> Tickets
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/features`}
+                current={/^\/projects\/[^/]+\/features(?:\/|$)/.test(pathname)}
+              >
+                <Tickets className="size-4 text-muted-foreground" /> Features
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/weekly`}
+                current={/^\/projects\/[^/]+\/weekly(?:\/|$)/.test(pathname)}
+              >
+                <span aria-hidden="true">◷</span> Weekly
+              </SidebarLink>
+              <div role="separator" className="my-1 h-px bg-border" />
+              {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {
+                const href = `/projects/${project}/${segment}`;
+                return (
+                  <SidebarLink
+                    key={segment}
+                    href={href}
+                    current={pathname === href || pathname.startsWith(`${href}/`)}
+                  >
+                    <Icon className="size-4 text-muted-foreground" /> {label}
+                  </SidebarLink>
+                );
+              })}
+              <ParkedPages />
+              <div role="separator" className="my-2 h-px bg-border" />
+              <Link
+                href={`/projects/${project}/tasks/new`}
+                aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}
+                className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <Plus className="size-4" /> New task
+              </Link>
+            </div>
+          )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {!project ? null : tasks.kind === 'loading' ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading tasks</p>
-        ) : tasks.kind === 'failed' ? (
-          <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
-        ) : (
-          <SidebarWork project={project} issues={tasks.value} activeKey={activeId} onChanged={onRefresh} />
-        )}
-      </div>
-
-      {project && (
-        <div className="flex flex-col gap-px border-t px-2 py-2">
-          <SidebarLink
-            href={`/projects/${project}/tasks/archived`}
-            current={pathname === `/projects/${project}/tasks/archived`}
-          >
-            <Archive className="size-4 text-muted-foreground" /> Archived
-            {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
-              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                {tasks.value.filter((i) => i.archived).length}
-              </span>
+          <div className="flex-1 px-2 pb-2">
+            {!project ? null : tasks.kind === 'loading' ? (
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading tasks</p>
+            ) : tasks.kind === 'failed' ? (
+              <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
+            ) : (
+              <SidebarWork
+                project={project}
+                issues={tasks.value}
+                activeKey={activeId}
+                onChanged={onRefresh}
+              />
             )}
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/settings`}
-            current={/^\/projects\/[^/]+\/settings(?:\/|$)/.test(pathname)}
-          >
-            <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
-          </SidebarLink>
+          </div>
+
+          {project && (
+            <div className="flex flex-col gap-px border-t px-2 py-2">
+              <SidebarLink
+                href={`/projects/${project}/tasks/archived`}
+                current={pathname === `/projects/${project}/tasks/archived`}
+              >
+                <Archive className="size-4 text-muted-foreground" /> Archived
+                {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
+                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                    {tasks.value.filter((i) => i.archived).length}
+                  </span>
+                )}
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/settings`}
+                current={/^\/projects\/[^/]+\/settings(?:\/|$)/.test(pathname)}
+              >
+                <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
+              </SidebarLink>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <div
         role="separator"

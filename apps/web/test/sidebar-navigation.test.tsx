@@ -112,3 +112,15 @@ it.each([
     expect(html).toContain(`href="/projects/demo/${page}"`);
   expect(currentLinks(html)).toEqual([expected]);
 });
+
+it('keeps the project switcher fixed and scrolls everything below it as one column', () => {
+  route.pathname = '/projects/demo/tasks';
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  const aside = html.slice(html.indexOf('<aside'), html.indexOf('</aside>'));
+  const scroller = aside.indexOf('overflow-y-auto');
+  // One scroll area in the sidebar, after the switcher, holding the links, New task and the footer.
+  expect(aside.match(/overflow-y-auto/g)).toHaveLength(1);
+  expect(aside.indexOf('aria-haspopup')).toBeLessThan(scroller);
+  for (const text of ['Team members', 'New task', 'More pages', 'Project settings'])
+    expect(aside.indexOf(text)).toBeGreaterThan(scroller);
+});
