@@ -1,6 +1,6 @@
 # Package boundaries and YAML definitions
 
-Status: accepted.
+Status: accepted. The package list and adapter layering are updated by [ADR 0006](0006-package-boundaries-after-the-backend-split.md).
 
 The reference factory's flat modules and fixed driver paths combine policy, orchestration and outside effects. This factory uses pnpm workspace packages, a pure domain core and validated YAML definitions so behavior can be tested independently and loops can change without rewriting the driver. It is a redesign, not a module-for-module port.
 

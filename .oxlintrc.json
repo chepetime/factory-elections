@@ -131,6 +131,127 @@
           }
         ]
       }
+    },
+    {
+      "files": [
+        "packages/adapters-claude/src/**",
+        "packages/adapters-fs/src/**",
+        "packages/adapters-process/src/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/adapters-*",
+                  "@factory/driver",
+                  "@factory/dispatcher",
+                  "@factory/evidence",
+                  "@factory/compose",
+                  "@factory/pr-reviews",
+                  "@factory/agents",
+                  "@factory/backend",
+                  "@factory/backend/*",
+                  "@factory/backend-client",
+                  "@factory/backend-client/*"
+                ],
+                "message": "ADR 0006: this adapter imports only core"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/adapters-git/src/**",
+        "packages/adapters-github/src/**",
+        "packages/adapters-codex/src/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/adapters-*",
+                  "!@factory/adapters-process",
+                  "@factory/driver",
+                  "@factory/dispatcher",
+                  "@factory/evidence",
+                  "@factory/compose",
+                  "@factory/pr-reviews",
+                  "@factory/agents",
+                  "@factory/backend",
+                  "@factory/backend/*",
+                  "@factory/backend-client",
+                  "@factory/backend-client/*"
+                ],
+                "message": "ADR 0006: this adapter may import only core and adapters-process"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/adapters-data/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/adapters-*",
+                  "!@factory/adapters-fs",
+                  "@factory/driver",
+                  "@factory/dispatcher",
+                  "@factory/evidence",
+                  "@factory/compose",
+                  "@factory/pr-reviews",
+                  "@factory/agents",
+                  "@factory/backend",
+                  "@factory/backend/*",
+                  "@factory/backend-client",
+                  "@factory/backend-client/*"
+                ],
+                "message": "ADR 0006: adapters-data may import only core and adapters-fs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/driver/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/adapters-*",
+                  "@factory/dispatcher",
+                  "@factory/evidence",
+                  "@factory/compose",
+                  "@factory/pr-reviews",
+                  "@factory/agents",
+                  "@factory/backend",
+                  "@factory/backend/*",
+                  "@factory/backend-client",
+                  "@factory/backend-client/*"
+                ],
+                "message": "ADR 0006: the driver imports only core; adapters come in through ports"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
