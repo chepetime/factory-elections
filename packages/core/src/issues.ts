@@ -56,6 +56,40 @@ export const Issue = z.object({
   /** Planning: the day work should start and the day it is due (`YYYY-MM-DD`). */
   start_date: PlanDate.optional(),
   due_date: PlanDate.optional(),
+  /**
+   * A review ticket: the work is a senior PR review of someone's PR, in rounds. Each round proposes
+   * a decision; you pick what to post. See review-tickets.ts.
+   */
+  review: z
+    .object({
+      number: z.number().int().positive(),
+      url: z.string(),
+      title: z.string(),
+      author: z.string().optional(),
+      rounds: z
+        .array(
+          z.object({
+            at: Iso,
+            mode: z.enum(['review', 'rereview']),
+            /** The PR head the round reviewed, when known. */
+            head_sha: z.string().optional(),
+            /** The skill's decision, when the round saved a report. */
+            decision: z.string().optional(),
+            summary: z.string().optional(),
+            /** Why the round has no report, when it ended without one. */
+            reason: z.string().optional(),
+            ended_at: Iso.optional(),
+            /** What you chose to post, and when the agent posted it. */
+            posted: z
+              .object({ option: z.string(), label: z.string(), at: Iso, done_at: Iso.optional() })
+              .optional(),
+          }),
+        )
+        .default([]),
+      /** The PR head a "new commits, round limit reached" note was written for, so it shows once. */
+      limit_noted_head: z.string().optional(),
+    })
+    .optional(),
   /** How the task's PR ended on GitHub, once the factory saw it: merged or closed. */
   pr_outcome: z
     .object({ state: z.enum(['MERGED', 'CLOSED']), number: z.number().int().positive(), at: Iso })

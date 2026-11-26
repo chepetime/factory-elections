@@ -262,6 +262,30 @@ export async function startBackend(options: ServerOptions) {
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      GetReviewLoop: async (request) => {
+        const t = service.target(request);
+        return {
+          json: JSON.stringify((await service.reviewLoop.state({ project: t.project, id: t.id })) ?? null),
+        };
+      },
+      CreateReviewTicket: async (request) => {
+        const { number } = z.object({ number: z.number().int().positive() }).parse(jsonObject(request.json));
+        return {
+          json: JSON.stringify(
+            await service.reviewTickets.create(ProjectName.parse(request.project), number),
+          ),
+        };
+      },
+      DecideReview: async (request) => {
+        const { key, option } = z
+          .object({ key: z.string().min(1), option: z.string().min(1) })
+          .parse(jsonObject(request.json));
+        return {
+          json: JSON.stringify(
+            await service.reviewTickets.decide(ProjectName.parse(request.project), key, option),
+          ),
+        };
+      },
       ListSpans: async (request) => ({
         json: JSON.stringify(await service.spans({ ...jsonObject(request.json), project: request.project })),
       }),
@@ -430,6 +454,7 @@ export async function startBackend(options: ServerOptions) {
     service.reviews.startSweeping();
     service.features.startTicking();
     service.tending.startTicking();
+    service.reviewTickets.startTicking();
     trace.record('server.recovered', recovered);
     const delegation = await service.delegation.start();
     trace.record('server.delegation', { url: delegation });

@@ -1,6 +1,7 @@
 // Server-only typed bridge for PR reviews. Worktrees, review agents and reports belong to the backend.
 import 'server-only';
 import { z } from 'zod';
+import { ReviewLoopState } from '@factory/core';
 import { backendCall } from '@factory/backend-client';
 import { PullRequestSummary, ReviewPayload, ReviewState } from '@factory/core';
 export type { ReviewPayload };
@@ -112,4 +113,27 @@ export function stopReviewRun(project: string, number: number): Promise<Result<s
 }
 export function removeReviewRun(project: string, number: number): Promise<Result<string>> {
   return attempt(async () => (await backendCall('RemoveReview', { project, number }, 120_000)).text);
+}
+
+/** Makes a review ticket for the PR, or returns its existing ticket; resolves to the ticket key. */
+export function createReviewTicketRun(project: string, number: number): Promise<Result<string>> {
+  return attempt(async () => {
+    const view = JSON.parse(
+      (await backendCall('CreateReviewTicket', { project, json: JSON.stringify({ number }) }, 60_000)).json,
+    ) as { key?: string; number?: number };
+    return z.string().parse(view.key);
+  });
+}
+/** Your decision on a review ticket's latest proposal: one of core reviewOptions' ids. */
+export function decideReviewRun(project: string, key: string, option: string): Promise<Result<string>> {
+  return attempt(async () => {
+    await backendCall('DecideReview', { project, json: JSON.stringify({ key, option }) }, 60_000);
+    return 'Sent.';
+  });
+}
+/** The self-review loop of a task's agent PR, or null when it has none. */
+export function getReviewLoop(project: string, id: string): Promise<Result<ReviewLoopState | null>> {
+  return attempt(async () =>
+    ReviewLoopState.nullable().parse(JSON.parse((await backendCall('GetReviewLoop', { project, id })).json)),
+  );
 }

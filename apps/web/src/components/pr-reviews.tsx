@@ -12,11 +12,12 @@ import {
   RefreshCw,
   Square,
   Trash2,
+  Ticket,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { removeReview, startReviews, stopReview } from '@/app/actions';
+import { createReviewTicket, removeReview, startReviews, stopReview } from '@/app/actions';
 import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
 import { LatticeLoader } from '@/components/bits/lattice-loader';
 import { Markdown } from '@/components/markdown';
@@ -129,11 +130,14 @@ function Toggle({ href, on, children }: { href: string; on: boolean; children: R
 
 export function PullRequestReviews({
   project,
+  tickets = {},
   drafts,
   approved,
   list,
   error,
 }: {
+  /** PR number -> its review ticket key, for PRs that have one. */
+  tickets?: Record<number, string>;
   project: string;
   drafts: boolean;
   approved: boolean;
@@ -464,6 +468,38 @@ export function PullRequestReviews({
                               <LoaderCircle className="size-3.5 motion-safe:animate-spin" />
                             )}
                             {hasChat ? 'New review' : 'Review'}
+                          </Button>
+                        )}
+                        {tickets[pr.number] ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            nativeButton={false}
+                            title="Open the review ticket"
+                            render={<Link href={`/projects/${project}/tasks/${tickets[pr.number]}`} />}
+                          >
+                            <Ticket className="size-3.5" /> {tickets[pr.number]}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={pending}
+                            title="Make a review ticket: an agent reviews it in rounds and proposes what to post"
+                            onClick={() =>
+                              act(`ticket:${pr.number}`, async () => {
+                                const made = await createReviewTicket(project, pr.number);
+                                if (made.key) router.push(`/projects/${project}/tasks/${made.key}`);
+                                return made;
+                              })
+                            }
+                          >
+                            {busy === `ticket:${pr.number}` ? (
+                              <LoaderCircle className="size-3.5 motion-safe:animate-spin" />
+                            ) : (
+                              <Ticket className="size-3.5" />
+                            )}
+                            Ticket
                           </Button>
                         )}
                         <Button

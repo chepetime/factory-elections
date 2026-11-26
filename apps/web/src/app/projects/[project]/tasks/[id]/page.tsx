@@ -40,6 +40,8 @@ import { Feed, feedItems, type Authors } from '@/components/task-feed';
 import { AccessList } from '@/components/task-access';
 import { prLabel, RunRow, totalCost } from '@/components/task-runs';
 import { TaskSummary } from '@/components/task-summary';
+import { ReviewTicketCard, SelfReviewCard } from '@/components/review-cycle';
+import { getReviewLoop, reviewDetail } from '@/lib/reviews';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,6 +151,27 @@ export default async function TaskPage({
   const authors: Authors = Object.fromEntries(agents.map((a) => [a.id, { name: a.name, avatar: a.avatar }]));
   // The latest run decides who works the task; with no run yet, the assigned agent would.
   const runRecord = run?.ok ? run.value.task : undefined;
+  // A review ticket's latest report (finding counts), and an agent PR's self-review loop.
+  const reviewRound = issue.review?.rounds.at(-1);
+  const reviewDetailed =
+    issue.review && reviewRound?.decision && !reviewRound.posted
+      ? await reviewDetail(project, issue.review.number)
+      : undefined;
+  const reviewReport =
+    reviewDetailed?.ok && reviewDetailed.value.payload
+      ? {
+          counts: reviewDetailed.value.payload.findings.reduce<Record<string, number>>((all, f) => {
+            const key = f.severity ?? 'note';
+            all[key] = (all[key] ?? 0) + 1;
+            return all;
+          }, {}),
+        }
+      : undefined;
+  const loop =
+    runRecord?.workflow === 'agent' && runRecord.pr && runId
+      ? await getReviewLoop(project, runId)
+      : undefined;
+  const selfReview = loop?.ok ? loop.value : null;
   const runAgentId = runRecord
     ? runRecord.workflow === 'agent'
       ? runRecord.agent
@@ -232,6 +255,16 @@ export default async function TaskPage({
             <div className="mt-4">
               <IssueDescription project={project} issueKey={issue.key} description={issue.description} />
             </div>
+
+            {issue.review && (
+              <ReviewTicketCard
+                project={project}
+                issueKey={issue.key}
+                review={issue.review}
+                {...(reviewReport ? { report: reviewReport } : {})}
+              />
+            )}
+            {selfReview && <SelfReviewCard project={project} loop={selfReview} />}
 
             <h2 className="mt-10 border-t pt-6 text-base font-semibold">Activity</h2>
             <Feed items={before} project={project} issueKey={issue.key} authors={authors} />

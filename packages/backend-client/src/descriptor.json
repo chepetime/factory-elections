@@ -439,6 +439,18 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "CreateReviewTicket": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "DecideReview": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "GetReviewLoop": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "ListFindings": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

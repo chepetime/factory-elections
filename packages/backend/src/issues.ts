@@ -66,6 +66,8 @@ export type IssueDeps = {
   agentIds?: () => Promise<string[]>;
   /** Why the run's queued turn has not started yet; undefined when no turn waits. */
   waiting?: (project: string, runId: string) => QueueWait | undefined;
+  /** Starts the next review round of a review ticket (moving it to In progress does this). */
+  startReview?: (project: string, key: string) => Promise<unknown>;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
   changed?: () => void;
   now?: () => Date;
@@ -247,6 +249,11 @@ export class IssueService {
     return issue;
   }
 
+  /** One read-change-write of a ticket, for services that own a ticket field (review tickets). */
+  edit(project: string, key: string, change: (issue: Issue, at: string) => Issue): Promise<IssueView> {
+    return this.change(project, key, change);
+  }
+
   private async change(
     project: string,
     key: string,
@@ -282,7 +289,7 @@ export class IssueService {
     });
   }
 
-  async create(raw: unknown): Promise<IssueView> {
+  async create(raw: unknown, extra: { review?: Issue['review'] } = {}): Promise<IssueView> {
     const input = CreateInput.parse(raw);
     const created = await this.serial(async () => {
       const { board, runs } = await this.sync(input.project);
@@ -296,6 +303,7 @@ export class IssueService {
         priority: input.priority,
         jira_key: input.jira_key || undefined,
         created_by: input.created_by,
+        ...(extra.review ? { review: extra.review } : {}),
         events: [{ at, kind: 'created', message: 'Created' }],
         created_at: at,
         updated_at: at,
@@ -605,6 +613,8 @@ export class IssueService {
             },
           ],
         };
+      if (action.kind === 'start-run' && issue.review)
+        return { action: { kind: 'start-review' as const }, runId: undefined, number: issue.number };
       if (action.kind === 'start-run') {
         runId = await this.deps.submit({
           project,
@@ -631,6 +641,11 @@ export class IssueService {
       return { action, runId, number: issue.number };
     });
 
+    if (plan.action.kind === 'start-review') {
+      if (!this.deps.startReview) throw new Conflict('PR reviews are not available here.');
+      await this.deps.startReview(project, key);
+      return { action: 'start-run', issue: await this.get({ project, key }) };
+    }
     if ((plan.action.kind === 'start-run' || plan.action.kind === 'run') && plan.runId)
       await this.deps.run(project, plan.runId);
     if (plan.action.kind === 'requeue' && plan.runId) {
