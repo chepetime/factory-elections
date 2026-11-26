@@ -25,6 +25,7 @@ import {
   GitPullRequest,
   Home,
   KanbanSquare,
+  CalendarClock,
   ChevronRight,
   Network,
   MessageSquare,
@@ -321,25 +322,45 @@ const PARKED = [
 /** Project pages for the agents' setup: what they talk with, run on, and can reach. */
 const AGENT_PAGES = [
   { segment: 'chat', label: 'Chat', icon: MessageSquare },
-  { segment: 'llms', label: 'LLMs', icon: Cpu },
   { segment: 'agents', label: 'Agents', icon: Bot },
   { segment: 'mcp', label: 'MCP', icon: Plug },
   { segment: 'skills', label: 'Skills', icon: Sparkles },
+] as const;
+
+/** Project pages used less often: they work, but sit folded under More pages. */
+const MORE_PAGES = [
+  { segment: 'weekly', label: 'Weekly', icon: CalendarClock },
+  { segment: 'features', label: 'Features', icon: Tickets },
+  { segment: 'llms', label: 'LLMs', icon: Cpu },
   { segment: 'tools', label: 'Tools', icon: Wrench },
 ] as const;
 
-/** The parked pages, folded under one toggle so the task list keeps its room. */
-function ParkedPages() {
+/**
+ * Less-used pages and the parked ones, folded under one toggle so the task list keeps its room. It
+ * opens by itself on one of its pages, so the current link stays in view.
+ */
+function MorePages({ project, pathname }: { project: string; pathname: string }) {
+  const pages = MORE_PAGES.map((page) => {
+    const href = `/projects/${project}/${page.segment}`;
+    return { ...page, href, current: pathname === href || pathname.startsWith(`${href}/`) };
+  });
   return (
-    <details className="group/parked">
+    <details className="group/more" open={pages.some((p) => p.current) || undefined}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground select-none hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
-          className="size-4 transition-transform group-open/parked:rotate-90 motion-reduce:transition-none"
+          className="size-4 transition-transform group-open/more:rotate-90 motion-reduce:transition-none"
         />
         More pages
-        <span className="ml-auto text-xs">Off</span>
       </summary>
+      <div className="mt-px flex flex-col gap-px">
+        {pages.map(({ segment, label, icon: Icon, href, current }) => (
+          <SidebarLink key={segment} href={href} current={current}>
+            <Icon className="size-4 text-muted-foreground" /> {label}
+          </SidebarLink>
+        ))}
+      </div>
+      <p className="mt-2 px-3 text-xs text-muted-foreground">Not available yet</p>
       <ul aria-label="More pages, not available yet" className="mt-px flex flex-col gap-px">
         {PARKED.map(({ label, icon: Icon }) => (
           <li
@@ -604,18 +625,6 @@ function Sidebar({
               >
                 <Tickets className="size-4 text-muted-foreground" /> Tickets
               </SidebarLink>
-              <SidebarLink
-                href={`/projects/${project}/features`}
-                current={/^\/projects\/[^/]+\/features(?:\/|$)/.test(pathname)}
-              >
-                <Tickets className="size-4 text-muted-foreground" /> Features
-              </SidebarLink>
-              <SidebarLink
-                href={`/projects/${project}/weekly`}
-                current={/^\/projects\/[^/]+\/weekly(?:\/|$)/.test(pathname)}
-              >
-                <span aria-hidden="true">◷</span> Weekly
-              </SidebarLink>
               <div role="separator" className="my-1 h-px bg-border" />
               {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {
                 const href = `/projects/${project}/${segment}`;
@@ -629,7 +638,7 @@ function Sidebar({
                   </SidebarLink>
                 );
               })}
-              <ParkedPages />
+              <MorePages project={project} pathname={pathname} />
               <div role="separator" className="my-2 h-px bg-border" />
               <Link
                 href={`/projects/${project}/tasks/new`}
