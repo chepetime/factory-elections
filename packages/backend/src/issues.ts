@@ -384,9 +384,9 @@ export class IssueService {
   }
 
   /**
-   * A person @mentioned agents. The first one that can act on the ticket gets the comment:
+   * A person @mentioned agents. The run's agent, if mentioned, else the first one, gets the comment:
+   * - the PR is open: a follow-up for that agent (the run's own agent too), with the comment as its note;
    * - the agent of the run: its session continues, as with any comment (returns undefined);
-   * - the PR is open: a follow-up for the mentioned agent, with the comment as its note;
    * - no run and no agent yet: the mentioned agent is assigned.
    * Otherwise the ticket says why the mention started nothing.
    */
@@ -398,8 +398,8 @@ export class IssueService {
   ): Promise<IssueView | undefined> {
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
     const runAgent = record?.workflow === 'agent' ? record.agent : undefined;
-    if (runAgent && mentions.includes(runAgent)) return undefined;
-    const [agent] = mentions as [string, ...string[]];
+    // The run's agent first, when it is mentioned: it knows the branch.
+    const agent = runAgent && mentions.includes(runAgent) ? runAgent : mentions[0]!;
     const name = this.deps.agentName ? await this.deps.agentName(agent).catch(() => agent) : agent;
     const explain = (message: string) =>
       this.change(project, view.key, (issue, at) => ({
@@ -411,6 +411,8 @@ export class IssueService {
         return explain(`${name} was mentioned, but a follow-up is already queued or working on this task.`);
       return this.followUp({ project, key: view.key, note: body, kind: 'custom', agent, by: 'you' });
     }
+    // Waiting on a person, the run's agent continues its session with the comment.
+    if (agent === runAgent) return undefined;
     if (!view.run && !view.assignee) return this.update({ project, key: view.key, assignee: agent });
     if (!view.run)
       return explain(`${name} was mentioned; the task is assigned to another agent, so nothing started.`);
