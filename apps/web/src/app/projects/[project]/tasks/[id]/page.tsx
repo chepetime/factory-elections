@@ -352,7 +352,11 @@ export default async function TaskPage({
     comment
   );
   const run = runId
-    ? await renderRun(project, runId, { startFailed: query.start === 'failed', fallback: reply })
+    ? await renderRun(project, runId, {
+        startFailed: query.start === 'failed',
+        fallback: reply,
+        runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
+      })
     : undefined;
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
   const feed = feedItems(issue);
@@ -449,6 +453,17 @@ export default async function TaskPage({
                       : stageLabel(run.value.task.stage)}
                   </span>
                 </p>
+                {run.value.task.pr && (
+                  <a
+                    href={run.value.task.pr.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <GitPullRequest className="size-4 text-muted-foreground" aria-hidden />
+                    {prLabel(run.value.task.pr.url)}
+                  </a>
+                )}
                 {panel !== 'run' && (
                   <Link
                     href={panelHref('run')}
@@ -458,6 +473,10 @@ export default async function TaskPage({
                   </Link>
                 )}
               </div>
+            )}
+            {/* What the latest run needs from you, on the ticket: not only deep in the Run tab. */}
+            {run?.ok && runId === issue.run?.id && run.value.attention && (
+              <div className="mt-3">{run.value.attention}</div>
             )}
             {/* The latest run's PR is open: more work is a follow-up on the same branch and PR. */}
             {run?.ok && runId === issue.run?.id && run.value.task.stage === 'pr-opened' && (

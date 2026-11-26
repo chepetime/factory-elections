@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronRight, CircleCheck } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, CircleAlert, CircleCheck } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 import {
@@ -8,6 +8,7 @@ import {
   runWorking,
   taskActions,
   type TaskRecord,
+  stageLabel,
 } from '@factory/core';
 import { DiffCodeBlock } from '@/components/diff-code-block';
 import {
@@ -209,6 +210,38 @@ const SHOW_ON_HOVER = {
 const FINDING_ORDER = ['blocking', 'major', 'minor', 'nit'] as const;
 
 /** The end of a successful run: what changed, what was checked, what the reviewer found. */
+/** A card on the ticket for something only you can do now. */
+function NeedsYou({
+  title,
+  tone = 'action',
+  children,
+}: {
+  title: string;
+  tone?: 'action' | 'danger';
+  children: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className={cn(
+        'rounded-xl border p-4 text-sm',
+        tone === 'danger' ? 'border-destructive/40 bg-destructive/5' : 'border-amber-500/40 bg-amber-500/5',
+      )}
+    >
+      <h2
+        className={cn(
+          'mb-2 flex items-center gap-2 font-semibold',
+          tone === 'danger' ? 'text-destructive' : 'text-amber-800 dark:text-amber-300',
+        )}
+      >
+        <CircleAlert className="size-4" aria-hidden />
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 function ReadyCard({ task, diffStat }: { task: TaskRecord; diffStat?: string }) {
   const verification = task.verification;
   const review = task.review;
@@ -291,12 +324,15 @@ function DecisionOptions({
   blockers,
   blocking,
   branch,
+  askHref,
 }: {
   hidden: Record<string, string>;
   head: string;
   branch?: string;
   blockers: string[];
   blocking: number;
+  /** Where "Ask for changes" goes when the chat box is not on the page. */
+  askHref?: string;
 }) {
   if (blockers.length > 0)
     return <p className="mt-3 text-sm text-destructive">Not ready for approval: {blockers.join('; ')}</p>;
@@ -325,9 +361,18 @@ function DecisionOptions({
         >
           {accept}
         </ActionForm>
-        <label htmlFor="chat-input" className={cn(buttonVariants({ variant: 'outline' }), 'cursor-pointer')}>
-          Ask for changes
-        </label>
+        {askHref ? (
+          <Link href={askHref} className={buttonVariants({ variant: 'outline' })}>
+            Ask for changes
+          </Link>
+        ) : (
+          <label
+            htmlFor="chat-input"
+            className={cn(buttonVariants({ variant: 'outline' }), 'cursor-pointer')}
+          >
+            Ask for changes
+          </label>
+        )}
       </div>
       <details className="text-sm">
         <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
@@ -493,6 +538,11 @@ function ReviewCard({
 
 export type RunParts = {
   task: TaskRecord;
+  /**
+   * What the run needs from you now, for the ticket itself: the decision at the gate, opening the PR,
+   * or the agent's question. Undefined while nothing waits on you.
+   */
+  attention: ReactNode;
   /** The run's conversation and its live and decision cards, for the activity feed. */
   activity: ReactNode;
   /** Revise while the run takes notes, Stop while it works; otherwise `fallback`. */
@@ -508,7 +558,11 @@ export type RunParts = {
 export async function renderRun(
   project: string,
   id: string,
-  { startFailed = false, fallback }: { startFailed?: boolean; fallback?: ReactNode } = {},
+  {
+    startFailed = false,
+    fallback,
+    runHref,
+  }: { startFailed?: boolean; fallback?: ReactNode; runHref?: string } = {},
 ): Promise<{ ok: true; value: RunParts } | { ok: false; error: string }> {
   const shown = await readTaskControls(project, id);
   if (!shown.ok) return { ok: false, error: shown.error };
@@ -724,6 +778,89 @@ export async function renderRun(
       )}
     </>
   );
+
+  const waitingMessage = [...(task.events ?? [])].reverse().find((e) => e.kind.startsWith('stage:'))?.message;
+  const who = author?.name ?? 'The factory';
+  const attention =
+    busy || phase === 'unavailable' ? undefined : showReady && gate ? (
+      <div className="flex flex-col gap-1">
+        <ReadyCard task={task} diffStat={controls.diff_stat} />
+        <DecisionOptions
+          hidden={hidden}
+          head={gate.head_sha}
+          blockers={gate.blockers}
+          blocking={blocking}
+          branch={task.worktree?.branch}
+          {...(runHref ? { askHref: runHref } : {})}
+        />
+      </div>
+    ) : allowed('open-pr') ? (
+      <NeedsYou title="Approved: open the pull request">
+        <ActionForm
+          action={openPullRequest}
+          hidden={hidden}
+          submit={task.pr ? 'Push and update the pull request' : 'Push and open pull request'}
+          pendingLabel="Pushing…"
+        >
+          <p className="text-sm text-muted-foreground">
+            Pushes <span className="font-mono">{task.worktree?.branch}</span> to origin and{' '}
+            {task.pr
+              ? 'updates the open pull request'
+              : `opens a pull request into ${task.worktree?.base_branch}`}
+            . Every gate is checked again first.
+          </p>
+          {!task.pr && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="draft" defaultChecked /> Open as draft
+            </label>
+          )}
+        </ActionForm>
+      </NeedsYou>
+    ) : task.stage === 'approved' ? (
+      <NeedsYou title="Approved, but the pull request cannot open yet" tone="danger">
+        <p className="text-sm">
+          {actions
+            .find((a) => a.action === 'open-pr')
+            ?.blockers.map((b) => b.message)
+            .join('; ')}
+        </p>
+      </NeedsYou>
+    ) : ['blocked', 'failed', 'verification-failed'].includes(task.stage) ? (
+      <NeedsYou
+        title={task.stage === 'blocked' ? `${who} needs you` : `${who} stopped: ${stageLabel(task.stage)}`}
+        tone={task.stage === 'blocked' ? 'action' : 'danger'}
+      >
+        {waitingMessage && <p className="text-sm whitespace-pre-wrap">{waitingMessage}</p>}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {task.workflow === 'agent'
+            ? `Reply in a comment below: it continues ${who}'s session.`
+            : 'Open the run for its output and options.'}
+          {runHref && (
+            <>
+              {' '}
+              <Link href={runHref} className="underline underline-offset-2">
+                Open the run
+              </Link>
+            </>
+          )}
+        </p>
+      </NeedsYou>
+    ) : run.cleanup?.status === 'uncertain' && !run.cleanup.confirmed_at ? (
+      <NeedsYou title="Confirm that nothing from the last run still runs" tone="danger">
+        <ActionForm
+          action={confirmCleanup}
+          hidden={hidden}
+          submit="Nothing is running; allow new runs"
+          pendingLabel="Confirming…"
+        >
+          <p className="text-sm">
+            The last run may have left processes running
+            {run.cleanup.reasons?.length ? `: ${run.cleanup.reasons.join('; ')}` : ''}. Check for them, stop
+            any you find, then confirm.
+          </p>
+        </ActionForm>
+      </NeedsYou>
+    ) : undefined;
 
   const sections = (
     <>
@@ -977,5 +1114,5 @@ export async function renderRun(
     </>
   );
 
-  return { ok: true, value: { task, activity, composer, sections } };
+  return { ok: true, value: { task, attention, activity, composer, sections } };
 }
