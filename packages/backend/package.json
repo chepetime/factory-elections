@@ -13,6 +13,7 @@
   "dependencies": {
     "@factory/core": "workspace:*",
     "@factory/backend-client": "workspace:*",
+    "@factory/dispatcher": "workspace:*",
     "@factory/driver": "workspace:*",
     "@factory/adapters-fs": "workspace:*",
     "@factory/adapters-git": "workspace:*",

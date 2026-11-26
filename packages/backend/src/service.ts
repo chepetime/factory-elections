@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { Cause, Effect, Exit, Fiber } from 'effect';
 import { z } from 'zod';
 import {
   ProjectName,
@@ -71,6 +70,7 @@ import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
 import { MAX_AGENTS, ReviewService, type ReviewDeps } from './reviews.ts';
+import { AgentPool, Dispatcher, type Release } from '@factory/dispatcher';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 import { UserSettingsService } from './user-settings.ts';
 export { Conflict };
@@ -119,7 +119,6 @@ type RunRecord = z.infer<typeof RunRecord>;
  * MAX_AGENTS: a run waits in `queued` while the agents in use fill it.
  */
 export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WORKERS ?? 3) || 1);
-const POOL_WAIT_MS = 2000;
 /** How long shutdown waits for the active runs before it stops them. */
 export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
 /** The commit a branch points at, or undefined when git cannot tell. */
@@ -152,19 +151,14 @@ export class BackendService {
   readonly user: UserSettingsService;
   private readonly environment: () => Promise<Check[]>;
   readonly projects: ProjectStore;
-  private readonly worker = Effect.runSync(Effect.makeSemaphore(taskWorkers()));
-  private readonly active = new Map<string, Promise<void>>();
+  /** Every agent this backend runs takes a slot here; reviews count from outside. */
+  readonly pool: AgentPool;
+  /** The task run queue. */
+  private readonly dispatcher: Dispatcher;
   /** Aborts each running run's model calls and checks, on shutdown after the grace period. */
   private readonly controllers = new Map<string, AbortController>();
   /** What each executing run is doing now: current command and last output. */
   private readonly activities = new Map<string, RunActivity>();
-  /** Runs a person asked to stop; a queued one stops as soon as it starts. */
-  private readonly stopRequests = new Set<string>();
-  /** Per run id, for a run that waits for a worker: drops it from that queue. False once it started. */
-  private readonly unstarted = new Map<string, () => boolean>();
-  private executing = 0;
-  private accepting = true;
-  private reservations = 0;
   readonly root: string;
   private readonly runner?: ModelRunner;
   /** The `delegate` MCP server. Children take agent slots like any other agent. */
@@ -213,38 +207,13 @@ export class BackendService {
       ? { entries: live.entries, live: true }
       : { entries: await this.readSession(project, id), live: false };
   }
-  /** Runs queued or working in this backend, per `project/task id`. */
-  private readonly scheduled = new Map<string, number>();
-  /** Runs that started working, per `project/task id`; a scheduled run not in here waits for a slot. */
-  private readonly working = new Set<string>();
-  /** Queued runs blocked by their own agent's limit, per `project/task id`. Others wait for a slot. */
-  private readonly agentWaits = new Set<string>();
   /** Why a turn queued for the task has not started; undefined when none waits. */
   isWaiting(project: string, id: string): QueueWait | undefined {
-    const key = `${project}/${id}`;
-    if (!this.scheduled.has(key) || this.working.has(key)) return undefined;
-    return this.agentWaits.has(key) ? 'agent' : 'slot';
-  }
-  /** Wakes every run that waits for a slot, so it checks again now instead of at its next poll. */
-  private readonly wakers = new Set<() => void>();
-  private wake(): void {
-    for (const waker of this.wakers) waker();
-  }
-  /** Waits until the next poll or a wake(), whichever comes first. */
-  private nap(): Promise<void> {
-    return new Promise((done) => {
-      const waker = () => {
-        clearTimeout(timer);
-        this.wakers.delete(waker);
-        done();
-      };
-      const timer = setTimeout(waker, POOL_WAIT_MS);
-      this.wakers.add(waker);
-    });
+    return this.dispatcher.waiting(`${project}/${id}`);
   }
   /** Whether this backend has a run queued or working for the task. */
   isScheduled(project: string, id: string): boolean {
-    return this.scheduled.has(`${project}/${id}`);
+    return this.dispatcher.scheduledFor(`${project}/${id}`);
   }
   /** Why a run cannot start in this project now, in words a person can act on; undefined when it can. */
   async runBlocker(project: string): Promise<string | undefined> {
@@ -257,8 +226,6 @@ export class BackendService {
       return `The repo profile is invalid: ${status.error}. Fix it in ${status.path}.`;
     return undefined;
   }
-  /** Agent runs in progress, per workspace agent. */
-  private readonly agentRuns = new Map<string, number>();
   /** One span ledger for every run, model call, tool call, child, review, feature step and gate. */
   readonly traces: TraceLog;
   readonly experiments: ExperimentStore;
@@ -275,6 +242,9 @@ export class BackendService {
   ) {
     this.root = root;
     this.storage = storageFor(root);
+    // Reviews read their state from storage; the pool caches that count for all its waiters.
+    this.pool = new AgentPool({ max: MAX_AGENTS, external: () => this.reviews.agentsInUse() });
+    this.dispatcher = new Dispatcher({ workers: taskWorkers(), pool: this.pool });
     this.team = new TeamService(root);
     this.profileChecks = new ProfileChecks({
       root,
@@ -301,7 +271,7 @@ export class BackendService {
       this.projects,
       (p) => this.settings.get(p),
       reviewDeps,
-      () => this.executing,
+      () => this.pool.inUse(),
     );
     this.traces = new TraceLog(root, this.storage);
     this.experiments = new ExperimentStore(root, this.storage);
@@ -313,7 +283,7 @@ export class BackendService {
     this.delegation = new DelegationServer({
       // Children of a traced call carry `traceParent`; other calls pass through untraced.
       runner: this.traces.runner(base, () => undefined),
-      slot: () => this.tryAgentSlot(),
+      slot: () => this.pool.tryAcquire(),
       traceParent: (token) => this.traces.grantParent(token),
     });
     this.reviews.delegation = this.delegation;
@@ -337,7 +307,7 @@ export class BackendService {
       },
       runner: (project) =>
         project ? this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'chat') : base,
-      slot: () => this.tryAgentSlot(),
+      slot: () => this.pool.tryAcquire(),
       delegation: this.delegation,
     });
     this.features = new FeatureService({
@@ -354,7 +324,7 @@ export class BackendService {
             'feature-step',
           ),
         ),
-      slot: () => this.tryAgentSlot(),
+      slot: () => this.pool.tryAcquire(),
       settings: (p) => this.settings.get(p),
       facts: (p) => this.memory.prompt(p),
       tasks: this.tasks,
@@ -399,7 +369,7 @@ export class BackendService {
         );
         return routeTask({ task, agents: await this.agents.list(), runner });
       },
-      accepting: () => this.accepting,
+      accepting: () => this.dispatcher.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.tending = new TendingService({
@@ -419,7 +389,7 @@ export class BackendService {
             ...(taskClass(task.verdict) ? { task_class: taskClass(task.verdict) } : {}),
           })),
         ),
-      slot: () => this.tryAgentSlot(),
+      slot: () => this.pool.tryAcquire(),
       storage: this.storage,
       log: (line) => process.stderr.write(`${line}\n`),
     });
@@ -539,7 +509,7 @@ export class BackendService {
     const { name, repo } = z
       .object({ name: ProjectName, repo: z.string().trim().min(1).max(4096) })
       .parse(raw);
-    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
     const project = await this.projects.add(name, repo);
     // Every run needs an approved profile, so a new project starts with a draft to review.
     return { ...project, profile: await ensureProfileDraft(this.root, name, project.repo) };
@@ -551,7 +521,7 @@ export class BackendService {
   async deleteRun(project: string, id: string): Promise<void> {
     ProjectName.parse(project);
     TaskId.parse(id);
-    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
     await this.tasks.delete(project, id, async (task) => {
       if (!task.worktree) return;
       await removeWorktree(task.repo, task.worktree.path, task.worktree.branch).catch((error: unknown) => {
@@ -649,7 +619,7 @@ export class BackendService {
         agent: z.string().min(1).optional(),
       })
       .parse(raw);
-    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
     if (agent) {
       await this.agents.active(agent);
       // Refuse before a run record exists, so a refused start leaves no empty run behind.
@@ -687,7 +657,7 @@ export class BackendService {
   async execute(raw: Command): Promise<string> {
     const command = this.command(raw);
     if (['run', 'revise'].includes(command.action)) throw new Error('Use StartRun for long-running work');
-    if (!this.accepting) throw new Conflict('Backend is shutting down');
+    if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
     return this.tasks.withLock(command.project, command.id, async () => {
       const before = await this.tasks.read(command.project, command.id).catch(() => undefined);
       const dir = join(dirname(this.tasks.taskPath(command.project, command.id)), 'runs', randomUUID());
@@ -720,9 +690,8 @@ export class BackendService {
   async start(raw: Command): Promise<RunRecord> {
     const command = this.command(raw);
     if (!['run', 'revise'].includes(command.action)) throw new Error('Only run and revise can be scheduled');
-    if (!this.accepting || this.reservations >= 32)
-      throw new Conflict('Backend is stopping or its queue is full');
-    this.reservations++;
+    const reservation = this.dispatcher.reserve();
+    if (!reservation) throw new Conflict('Backend is stopping or its queue is full');
     let release: (() => Promise<void>) | undefined;
     try {
       release = await this.tasks.acquireLock(command.project, command.id);
@@ -753,91 +722,50 @@ export class BackendService {
         [join(dir, 'run.json'), record],
         [join(taskDir, 'latest-run.json'), { id: record.id }],
       ]);
-      this.schedule(command, record, dir, release);
+      this.schedule(command, record, dir, release, reservation);
       return record;
     } catch (error) {
-      this.reservations--;
+      reservation();
       await release?.();
       throw error;
     }
   }
-  /** Queues an accepted run on the worker. Takes over the reservation and the task lock. */
+  /** Queues an accepted run on the dispatcher. It takes over the reservation and the task lock. */
   private schedule(
     command: z.infer<typeof CommandSchema>,
     record: RunRecord,
     dir: string,
     unlock: () => Promise<void>,
+    reservation: Release,
   ): void {
-    {
-      const task = `${command.project}/${command.id}`;
-      this.scheduled.set(task, (this.scheduled.get(task) ?? 0) + 1);
-      // `entered` and `abandoned` change with no await between check and set, so a cancel either
-      // drops the run before work() starts or leaves it to work(), never both.
-      let entered = false;
-      let abandoned = false;
-      const work = Effect.suspend(() => {
-        if (abandoned) return Effect.void;
-        entered = true;
-        this.unstarted.delete(record.id);
-        return Effect.tryPromise({
-          try: () => this.work(command, record, dir),
-          catch: (error) => error,
-        });
-      }).pipe(
-        this.worker.withPermits(1),
-        Effect.ensuring(
-          Effect.promise(async () => {
-            try {
-              this.unstarted.delete(record.id);
-              if (abandoned) await this.closeUnstarted(record, dir);
-              await unlock();
-            } finally {
-              this.reservations--;
-              this.active.delete(record.id);
-              const left = (this.scheduled.get(task) ?? 1) - 1;
-              if (left > 0) this.scheduled.set(task, left);
-              else this.scheduled.delete(task);
-            }
-          }),
-        ),
-      );
-      const fiber = Effect.runFork(work);
-      this.unstarted.set(record.id, () => {
-        if (entered) return false;
-        abandoned = true;
-        // Safe: the fiber only waits for a worker permit, and work() has not started.
-        Effect.runFork(Fiber.interrupt(fiber));
-        return true;
-      });
-      const completion = Effect.runPromise(Fiber.await(fiber)).then((exit) => {
-        // An interrupt is the cancel above, and its record is written: not a failure.
-        if (exit._tag === 'Failure' && !(abandoned && Exit.isInterrupted(exit)))
-          process.stderr.write(`Run ${record.id} could not finalize: ${Cause.pretty(exit.cause)}\n`);
-      });
-      this.active.set(record.id, completion);
-    }
+    this.dispatcher.schedule(
+      {
+        task: `${command.project}/${command.id}`,
+        run: record.id,
+        agent: async () => {
+          const task = await this.tasks.read(command.project, command.id).catch(() => undefined);
+          const name = task?.workflow === 'agent' ? task.agent : undefined;
+          if (!name) return undefined;
+          const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
+          return { name, limit };
+        },
+        work: (release) => this.work(command, record, dir, release),
+        cancelled: () => this.closeUnstarted(record, dir),
+        settle: unlock,
+      },
+      reservation,
+    );
   }
-  private async work(command: z.infer<typeof CommandSchema>, record: RunRecord, dir: string): Promise<void> {
-    // A run that had not started when shutdown began stays queued; the next start runs it.
-    // A run a person stopped while it waited never starts: its task keeps the stage it had.
-    const stopped = () => this.stopRequests.has(record.id);
-    // Its own agent first: a turn that waits for a busy agent must not hold a slot others could use.
-    const own = await this.takeOwnAgentSlot(command.project, command.id, stopped);
-    if (!own) {
-      if (stopped()) await this.closeUnstarted(record, dir);
-      return;
-    }
-    const pooled = await this.takeAgentSlot(stopped);
-    if (!pooled || stopped()) {
-      if (pooled) this.executing--;
-      own();
-      this.wake();
-      if (stopped()) await this.closeUnstarted(record, dir);
-      return;
-    }
+  /** A run that holds its worker, agent and pool slot. `release` frees them once the agent is done. */
+  private async work(
+    command: z.infer<typeof CommandSchema>,
+    record: RunRecord,
+    dir: string,
+    release: Release,
+  ): Promise<void> {
     const controller = new AbortController();
     this.controllers.set(record.id, controller);
-    if (this.stopRequests.has(record.id)) controller.abort();
+    if (this.dispatcher.stopRequested(record.id)) controller.abort();
     const activity = new RunActivity();
     this.activities.set(record.id, activity);
     let evidence: Evidence | undefined;
@@ -856,9 +784,6 @@ export class BackendService {
       this.storage
         .writeDocument(this.sessionPath(command.project, command.id), { entries: session.entries })
         .catch(() => undefined);
-    // Added right before the try, so its finally always removes it: a leak shows the task waiting forever.
-    const workingKey = `${command.project}/${command.id}`;
-    this.working.add(workingKey);
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.storage);
       record.state = 'running';
@@ -936,7 +861,7 @@ export class BackendService {
       record.outcome = 'completed';
     } catch (error) {
       record.state = 'failed';
-      const stopped = this.stopRequests.has(record.id);
+      const stopped = this.dispatcher.stopRequested(record.id);
       record.outcome = failureOutcome((error as { kind?: ModelFailure } | null)?.kind, stopped);
       record.error = stopped
         ? 'Stopped by you before the run finished.'
@@ -950,14 +875,10 @@ export class BackendService {
     } finally {
       this.controllers.delete(record.id);
       this.activities.delete(record.id);
-      this.stopRequests.delete(record.id);
       await saveSession();
       this.sessionLogs.delete(sessionKey);
-      this.executing--;
-      this.working.delete(workingKey);
-      own();
-      // The freed slots go to the next waiting run now, not at its next poll.
-      this.wake();
+      // The agent is done: its slots go to the next waiting run while this one writes its records.
+      release();
       // A slot is free again: an agent may take its next Todo task.
       this.pickup?.kick();
       record.finished_at = new Date().toISOString();
@@ -1161,7 +1082,7 @@ export class BackendService {
     if (!latest) return { running: false, phase: 'idle' };
     const { record, dir } = latest;
     const unfinished = ['queued', 'running'].includes(record.state);
-    const running = this.active.has(record.id);
+    const running = this.dispatcher.active(record.id);
     let logTail: string | undefined;
     if (includeLog && !record.dismissed && this.storage.config) {
       const tail = await this.storage.artifactTail(join(dir, 'run.log'));
@@ -1238,15 +1159,12 @@ export class BackendService {
   /** Stops the task's active run: its model calls and commands get the abort signal. */
   async stopRun(target: Target): Promise<string> {
     const latest = await this.latest(target);
-    if (!latest || !this.active.has(latest.record.id)) throw new Conflict('No run is active for this task.');
-    this.stopRequests.add(latest.record.id);
+    if (!latest || !this.dispatcher.active(latest.record.id))
+      throw new Conflict('No run is active for this task.');
+    // A run that has not started leaves the queue now; a working one reads the stop for its outcome.
+    this.dispatcher.stop(latest.record.id);
     const controller = this.controllers.get(latest.record.id);
-    if (!controller) {
-      // Waiting for a worker: leave that queue now. Waiting for an agent: the wait loop sees the stop.
-      this.unstarted.get(latest.record.id)?.();
-      this.wake();
-      return 'Stopping the run before it starts.';
-    }
+    if (!controller) return 'Stopping the run before it starts.';
     controller.abort();
     return 'Stopping the run.';
   }
@@ -1257,24 +1175,19 @@ export class BackendService {
   async cancelQueued(project: string, id: string): Promise<void> {
     if (!this.isWaiting(project, id)) return;
     const latest = await this.latest({ project, id });
-    const completion = latest && this.active.get(latest.record.id);
+    const completion = latest && this.dispatcher.completion(latest.record.id);
     if (!latest || !completion || this.controllers.has(latest.record.id)) return;
-    this.stopRequests.add(latest.record.id);
-    this.unstarted.get(latest.record.id)?.();
-    this.wake();
+    this.dispatcher.stop(latest.record.id);
     await completion;
   }
   /** Records a queued run a person stopped before it started. */
   private async closeUnstarted(record: RunRecord, dir: string): Promise<void> {
-    this.stopRequests.delete(record.id);
     record.state = 'failed';
     record.outcome = failureOutcome(undefined, true);
     record.error = 'Stopped by you before the run started.';
     record.finished_at = new Date().toISOString();
     record.cleanup = { status: 'clean' };
-    await this.storage.writeDocument(join(dir, 'run.json'), record).catch((error) => {
-      process.stderr.write(`Run ${record.id} could not record its stop: ${String(error)}\n`);
-    });
+    await this.storage.writeDocument(join(dir, 'run.json'), record);
   }
   /**
    * Records that a person checked an uncertain cleanup: nothing from the last run still runs.
@@ -1284,7 +1197,8 @@ export class BackendService {
     const { project, id } = this.target(target);
     // An active run holds the task lock for its whole life: refuse before waiting on the lock.
     const current = await this.latest(target);
-    if (current && this.active.has(current.record.id)) throw new Conflict('A run still owns this task.');
+    if (current && this.dispatcher.active(current.record.id))
+      throw new Conflict('A run still owns this task.');
     return this.tasks.withLock(project, id, async () => {
       const latest = await this.latest(target);
       if (!latest || !cleanupBlocker(latest.record.cleanup))
@@ -1308,68 +1222,9 @@ export class BackendService {
    * Stops acceptance, lets the active run finish for `graceMs`, then stops its model calls and
    * checks. Queued runs that have not started stay queued for the next start.
    */
-  /**
-   * Waits until reviews and task runs leave a free agent, then takes it. False when shutdown
-   * began first. The count and the increment happen with no await between them.
-   */
-  private async takeAgentSlot(stopped: () => boolean = () => false): Promise<boolean> {
-    for (;;) {
-      if (!this.accepting || stopped()) return false;
-      const reviews = await this.reviews.agentsInUse().catch(() => 0);
-      if (!this.accepting || stopped()) return false;
-      if (this.executing + reviews < MAX_AGENTS) {
-        this.executing++;
-        return true;
-      }
-      await this.nap();
-    }
-  }
-  /** For an agent run, waits until that agent has a free slot (its concurrency). Other runs pass at once. */
-  private async takeOwnAgentSlot(
-    project: string,
-    id: string,
-    stopped: () => boolean = () => false,
-  ): Promise<(() => void) | undefined> {
-    const task = await this.tasks.read(project, id).catch(() => undefined);
-    const name = task?.workflow === 'agent' ? task.agent : undefined;
-    if (!name) return () => {};
-    const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
-    const key = `${project}/${id}`;
-    try {
-      for (;;) {
-        if (!this.accepting || stopped()) return undefined;
-        const used = this.agentRuns.get(name) ?? 0;
-        if (used < limit) {
-          this.agentRuns.set(name, used + 1);
-          let released = false;
-          return () => {
-            if (!released) this.agentRuns.set(name, (this.agentRuns.get(name) ?? 1) - 1);
-            released = true;
-          };
-        }
-        this.agentWaits.add(key);
-        await this.nap();
-      }
-    } finally {
-      this.agentWaits.delete(key);
-    }
-  }
-  /** Takes a free agent slot at once, for a child task; undefined when none is free. */
-  private async tryAgentSlot(): Promise<(() => void) | undefined> {
-    if (!this.accepting) return undefined;
-    const reviews = await this.reviews.agentsInUse().catch(() => 0);
-    if (!this.accepting || this.executing + reviews >= MAX_AGENTS) return undefined;
-    this.executing++;
-    let released = false;
-    return () => {
-      if (!released) this.executing--;
-      released = true;
-    };
-  }
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
-    this.accepting = false;
     // Waiting runs see the shutdown now and stay queued for the next start.
-    this.wake();
+    this.dispatcher.close();
     this.pickup.stop();
     this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
@@ -1377,11 +1232,7 @@ export class BackendService {
     }, graceMs);
     try {
       // Acceptance already in flight may be reserving a lock or writing its durable record.
-      while (this.reservations > 0) {
-        const pending = [...this.active.values()];
-        if (pending.length) await Promise.all(pending);
-        else await new Promise((done) => setTimeout(done, 10));
-      }
+      await this.dispatcher.drained();
     } finally {
       clearTimeout(deadline);
     }
@@ -1397,7 +1248,7 @@ export class BackendService {
       for (const task of await this.tasks.list(project.name).catch(() => [])) {
         const target = { project: project.name, id: task.id };
         const latest = await this.latest(target).catch(() => undefined);
-        if (!latest || this.active.has(latest.record.id)) continue;
+        if (!latest || this.dispatcher.active(latest.record.id)) continue;
         const { record, dir } = latest;
         if (record.state !== 'queued' && record.state !== 'running') continue;
         await this.tasks.clearDeadLock(project.name, task.id);
@@ -1427,17 +1278,17 @@ export class BackendService {
   }
 
   private async requeue(record: RunRecord, dir: string): Promise<boolean> {
-    if (!this.accepting) return false;
-    this.reservations++;
+    const reservation = this.dispatcher.reserve();
+    if (!reservation) return false;
     let release: (() => Promise<void>) | undefined;
     try {
       release = await this.tasks.acquireLock(record.project, record.task_id);
       const task = await this.tasks.read(record.project, record.task_id);
       if (taskCommandBlockers(task, record.action).length) throw new Error('blocked');
-      this.schedule(record.command, record, dir, release);
+      this.schedule(record.command, record, dir, release, reservation);
       return true;
     } catch {
-      this.reservations--;
+      reservation();
       await release?.();
       return false;
     }

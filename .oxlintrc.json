@@ -43,6 +43,30 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/dispatcher/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "node:fs",
+                  "node:fs/*",
+                  "node:child_process",
+                  "@factory/adapters-*",
+                  "@factory/driver",
+                  "@factory/backend",
+                  "@factory/backend/*"
+                ],
+                "message": "packages/dispatcher only schedules: the backend passes each job's work in"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
