@@ -831,6 +831,14 @@ export async function renderRun(
         tone={task.stage === 'blocked' ? 'action' : 'danger'}
       >
         {waitingMessage && <p className="text-sm whitespace-pre-wrap">{waitingMessage}</p>}
+        {task.workflow === 'agent' && task.agent && /\bbudget\b/i.test(waitingMessage ?? '') && (
+          <Link
+            href={`/agents/${encodeURIComponent(task.agent)}?tab=settings&section=general`}
+            className="mt-2 inline-flex h-8 items-center rounded-lg border bg-background px-3 text-sm font-medium hover:bg-muted"
+          >
+            Raise {who}&apos;s budget
+          </Link>
+        )}
         <p className="mt-1 text-xs text-muted-foreground">
           {task.workflow === 'agent'
             ? `Reply in a comment below: it continues ${who}'s session.`

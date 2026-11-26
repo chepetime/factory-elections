@@ -21,7 +21,7 @@ import {
   readinessDecision,
   contextLimit,
   contextWarning,
-  taskSpend,
+  workSpend,
   withEvent,
   withStage,
   type ModelLadder,
@@ -116,7 +116,7 @@ export class Driver {
   private async budgetLeft(task: TaskRecord): Promise<number> {
     const profile = await this.deps.readProfile(task.project);
     const budget = profile.limits?.task_budget_usd ?? DEFAULT_TASK_LIMITS.task_budget_usd;
-    return budget - taskSpend(task);
+    return budget - workSpend(task);
   }
 
   /** Stops the task before a model call when its budget is spent. */
@@ -124,7 +124,7 @@ export class Driver {
     const task = await this.deps.tasks.read(project, id);
     const left = await this.budgetLeft(task);
     if (left > 0) return;
-    const spent = taskSpend(task).toFixed(2);
+    const spent = workSpend(task).toFixed(2);
     const message = `Task budget reached ($${spent} spent) before the ${step} step. Raise limits.task_budget_usd in the profile to continue.`;
     await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
     throw new DriverError(message);
@@ -747,9 +747,11 @@ export class Driver {
       const profile = await this.deps.readProfile(project);
       const { path, branch } = await this.checkedWorktree(task);
       const session = await this.deps.agentSession(task, reply);
-      const left = session.budgetUsd - taskSpend(task);
+      const spent = workSpend(task);
+      const left = session.budgetUsd - spent;
       if (left <= 0) {
-        const message = `${session.name} spent this task's budget ($${taskSpend(task).toFixed(2)}). Raise the agent's task budget to continue.`;
+        const work = task.follow_ups?.length ? 'this follow-up' : 'this task';
+        const message = `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
         await this.deps.tasks.write(withStage(task, this.deps.now(), 'blocked', message));
         return await this.deps.tasks.read(project, id);
       }
@@ -1219,11 +1221,16 @@ export class Driver {
   // ---------- full run ----------
 
   /** Runs every automated step and stops at the human approval gate. Never pushes. */
-  async run(project: string, id: string, options: { maxAttempts: number }): Promise<TaskRecord> {
+  async run(
+    project: string,
+    id: string,
+    options: { maxAttempts: number; reply?: string },
+  ): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
     const blockers = taskCommandBlockers(task, 'run');
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
-    if (task.workflow === 'agent') return this.agentRun(project, id);
+    // A person's comment on a blocked agent task: the agent reads it as the reply to its question.
+    if (task.workflow === 'agent') return this.agentRun(project, id, options.reply);
     await this.preflight(project, id);
     task = await this.deps.tasks.read(project, id);
     if (!task.verdict) task = await this.classify(project, id);

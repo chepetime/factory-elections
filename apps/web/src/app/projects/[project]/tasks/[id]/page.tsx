@@ -92,13 +92,21 @@ export default async function TaskPage({
   if (issue.key !== id) redirect(`/projects/${project}/tasks/${issue.key}`);
 
   const runId = query.run && issue.runs.includes(query.run) ? query.run : issue.run?.id;
-  const comment = <IssueCommentBox project={project} issueKey={issue.key} />;
   const roster = await listAgents();
+  const mentionable = roster.ok
+    ? roster.value.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name, avatar: a.avatar }))
+    : [];
+  const comment = <IssueCommentBox project={project} issueKey={issue.key} agents={mentionable} />;
   const assigned =
     roster.ok && issue.assignee ? roster.value.find((a) => a.id === issue.assignee) : undefined;
   // In the Run tab the same box replies to the waiting agent: a comment there wakes its session.
   const reply = assigned ? (
-    <IssueCommentBox project={project} issueKey={issue.key} placeholder={`Reply to ${assigned.name}…`} />
+    <IssueCommentBox
+      project={project}
+      issueKey={issue.key}
+      placeholder={`Reply to ${assigned.name}… Type @ to mention another agent.`}
+      agents={mentionable}
+    />
   ) : (
     comment
   );

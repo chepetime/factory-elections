@@ -66,6 +66,8 @@ export const Issue = z.object({
         parent: z.string().min(1).optional(),
         /** `you`, or the id of the agent that wrote it. */
         author: z.string().min(1).default('you'),
+        /** The agents the comment @mentions (ids), in order. */
+        mentions: z.array(z.string().min(1)).optional(),
       }),
     )
     .default([]),

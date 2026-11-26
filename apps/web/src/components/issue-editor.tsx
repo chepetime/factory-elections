@@ -11,6 +11,7 @@ import { decideDrop, followUpHref, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { MentionTextarea, type MentionAgent } from '@/components/mention-textarea';
 import { cn } from '@/lib/utils';
 
 export function useSave(project: string, key: string) {
@@ -412,11 +413,14 @@ export function IssueStatusField({
 export function IssueCommentBox({
   project,
   issueKey,
-  placeholder = 'Leave a comment…',
+  placeholder = 'Leave a comment… Type @ to mention an agent.',
+  agents = [],
 }: {
   project: string;
   issueKey: string;
   placeholder?: string;
+  /** Agents the comment can @mention. */
+  agents?: readonly MentionAgent[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
   const [text, setText] = useState('');
@@ -434,13 +438,14 @@ export function IssueCommentBox({
           <label htmlFor={id} className="sr-only">
             Comment
           </label>
-          <Textarea
+          <MentionTextarea
             id={id}
             name="body"
             rows={2}
             value={text}
             placeholder={placeholder}
-            onChange={(e) => setText(e.target.value)}
+            agents={agents}
+            onValueChange={setText}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim() && !pending) {
                 e.preventDefault();
@@ -474,10 +479,12 @@ export function IssueReplyBox({
   project,
   issueKey,
   parent,
+  agents = [],
 }: {
   project: string;
   issueKey: string;
   parent: string;
+  agents?: readonly MentionAgent[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
   const [text, setText] = useState('');
@@ -495,13 +502,14 @@ export function IssueReplyBox({
         <label htmlFor={id} className="sr-only">
           Reply
         </label>
-        <Textarea
+        <MentionTextarea
           id={id}
           name="body"
           rows={1}
           value={text}
           placeholder="Leave a reply…"
-          onChange={(e) => setText(e.target.value)}
+          agents={agents}
+          onValueChange={setText}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

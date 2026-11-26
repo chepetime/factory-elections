@@ -290,6 +290,7 @@ export class BackendService {
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
+      agentIds: async () => (await this.agents.list()).filter((a) => !a.archived_at).map((a) => a.id),
       changed: () => this.pickup?.kick(),
       waiting: (project, id) => this.isWaiting(project, id),
       root,
@@ -310,7 +311,8 @@ export class BackendService {
           by: input.by ?? 'you',
           pr_head: input.prHead ?? '',
         } as Command),
-      run: (project, id) => this.start({ project, id, action: 'run' } as Command),
+      run: (project, id, reply) =>
+        this.start({ project, id, action: 'run', ...(reply ? { note: reply } : {}) } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
       cancelQueued: (project, id) => this.cancelQueued(project, id),
       deleteRun: (project, id) => this.deleteRun(project, id),

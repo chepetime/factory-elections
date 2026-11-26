@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Cause, Effect, Exit } from 'effect';
 import { z } from 'zod';
 import {
+  parseMentions,
   defaultPrefix,
   dropAction,
   Issue,
@@ -45,7 +46,8 @@ export type IssueDeps = {
   submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
   /** Sends a person's note to a waiting run; agent runs resume their session with it. */
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
-  run: (project: string, id: string) => Promise<unknown>;
+  /** Starts the task's run; `reply` is a person's comment the agent reads (blocked agent tasks). */
+  run: (project: string, id: string, reply?: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
   /** Queues a follow-up on a run whose PR is open (core follow-ups.ts). */
   followUp?: (
@@ -59,6 +61,8 @@ export type IssueDeps = {
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
+  /** The ids of the agents a comment can @mention (not archived). */
+  agentIds?: () => Promise<string[]>;
   /** Why the run's queued turn has not started yet; undefined when no turn waits. */
   waiting?: (project: string, runId: string) => QueueWait | undefined;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
@@ -350,6 +354,7 @@ export class IssueService {
 
   async comment(raw: unknown): Promise<IssueView> {
     const { project, key, body, parent, author = 'you' } = CommentInput.parse(raw);
+    const mentions = parseMentions(body, (await this.deps.agentIds?.()) ?? []);
     const view = await this.change(project, key, (issue, at) => {
       const target = parent ? issue.comments.find((c) => c.id === parent) : undefined;
       if (parent && !target) throw new Conflict('The comment you replied to is gone.');
@@ -359,12 +364,59 @@ export class IssueService {
         ...issue,
         comments: [
           ...issue.comments,
-          { id: randomUUID(), at, body, author, ...(root ? { parent: root } : {}) },
+          {
+            id: randomUUID(),
+            at,
+            body,
+            author,
+            ...(root ? { parent: root } : {}),
+            ...(mentions.length ? { mentions } : {}),
+          },
         ],
       };
     });
-    if (author === 'you') await this.wakeAgent(project, view, body);
+    // Only a person's comment starts work: an agent's mention never wakes another agent.
+    if (author !== 'you') return view;
+    const routed = mentions.length ? await this.routeMention(project, view, body, mentions) : undefined;
+    if (routed) return routed;
+    await this.wakeAgent(project, view, body);
     return view;
+  }
+
+  /**
+   * A person @mentioned agents. The first one that can act on the ticket gets the comment:
+   * - the agent of the run: its session continues, as with any comment (returns undefined);
+   * - the PR is open: a follow-up for the mentioned agent, with the comment as its note;
+   * - no run and no agent yet: the mentioned agent is assigned.
+   * Otherwise the ticket says why the mention started nothing.
+   */
+  private async routeMention(
+    project: string,
+    view: IssueView,
+    body: string,
+    mentions: string[],
+  ): Promise<IssueView | undefined> {
+    const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
+    const runAgent = record?.workflow === 'agent' ? record.agent : undefined;
+    if (runAgent && mentions.includes(runAgent)) return undefined;
+    const [agent] = mentions as [string, ...string[]];
+    const name = this.deps.agentName ? await this.deps.agentName(agent).catch(() => agent) : agent;
+    const explain = (message: string) =>
+      this.change(project, view.key, (issue, at) => ({
+        ...issue,
+        events: [...issue.events, { at, kind: 'mention', message }],
+      }));
+    if (view.run?.stage === 'pr-opened') {
+      if (view.run.waiting || view.run.owned)
+        return explain(`${name} was mentioned, but a follow-up is already queued or working on this task.`);
+      return this.followUp({ project, key: view.key, note: body, kind: 'custom', agent, by: 'you' });
+    }
+    if (!view.run && !view.assignee) return this.update({ project, key: view.key, assignee: agent });
+    if (!view.run)
+      return explain(`${name} was mentioned; the task is assigned to another agent, so nothing started.`);
+    return explain(
+      `${name} was mentioned, but ${runAgent ? 'another agent works this run' : 'the pipeline works this run'}. Mention its agent, or add a follow-up once the PR is open.`,
+    );
   }
 
   /**
@@ -417,7 +469,7 @@ export class IssueService {
     if (record?.workflow !== 'agent') return;
     const start =
       record.stage === 'blocked'
-        ? this.deps.run(project, record.id)
+        ? this.deps.run(project, record.id, body)
         : ['awaiting-approval', 'verification-failed', 'failed'].includes(record.stage) && this.deps.revise
           ? this.deps.revise(project, record.id, body)
           : undefined;

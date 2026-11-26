@@ -190,6 +190,18 @@ export function taskSpend(task: TaskRecord): number {
 }
 
 /**
+ * Dollars spent on the task's current work: since its latest follow-up, or since it started. A
+ * follow-up is new work on the same branch, so it gets the whole task budget again; the earlier
+ * spend stays in `taskSpend`. Unknown costs count as zero, as in `taskSpend`.
+ */
+export function workSpend(task: TaskRecord): number {
+  const since = task.follow_ups?.at(-1)?.at;
+  return (task.attempts ?? [])
+    .filter((a) => !since || a.started_at >= since)
+    .reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
+}
+
+/**
  * Reads a model error message as a failure kind. Rate limits and overload are short and worth a
  * retry; a usage limit lasts until the plan resets, so the step stops and the task stays resumable.
  */

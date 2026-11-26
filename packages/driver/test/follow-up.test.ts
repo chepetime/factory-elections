@@ -267,3 +267,19 @@ test('a review follow-up pushes its fix to the same PR once the checks pass, and
   assert.equal(failed.stage, 'verification-failed');
   assert.equal((await ctx.read()).pr?.head_sha, pushed.pr?.head_sha, 'the PR keeps the last good fix');
 });
+
+test('a follow-up gets the task budget again: the first run spent more than it, and the follow-up still runs', async () => {
+  const ctx = await opened(async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'from devin\n');
+    return { text: 'Done.', costUsd: 6 };
+  });
+  ctx.turns.push(write('feature.txt', 'from devin, again\n'));
+  const followed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: 'Change the text.',
+    kind: 'custom',
+    agent: 'devin',
+    by: 'you',
+  });
+  assert.equal(followed.stage, 'awaiting-approval', 'not blocked on the $5 budget');
+  assert.match(ctx.calls.at(-1)!.prompt, /Change the text/);
+});
