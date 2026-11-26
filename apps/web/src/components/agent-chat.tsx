@@ -2,10 +2,10 @@
 // Chats with workspace agents: the chat list, the new-chat picker, and one conversation that polls
 // while the agent replies.
 import { Menu } from '@base-ui/react/menu';
-import { CircleCheck, CircleX, LoaderCircle, MoreHorizontal, Square } from 'lucide-react';
+import { MoreHorizontal, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useId, useState, useTransition, type ReactNode } from 'react';
+import { useId, useRef, useState, useTransition, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { DynamicToolUIPart } from 'ai';
 import { deleteChat, renameChat, startChat } from '@/app/agent-actions';
@@ -16,6 +16,8 @@ import {
   type FactoryMessage,
 } from '@/lib/chat-transport';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { CallChip, iconForTool } from '@/components/bits/call-chip';
+import { ThoughtLine } from '@/components/bits/thought-line';
 import { ChatComposer } from '@/components/chat-composer';
 import { useConfirm } from '@/components/confirm-dialog';
 import { LocalTime } from '@/components/local-time';
@@ -182,22 +184,27 @@ type Chat = {
   working: boolean;
 };
 
-/** One tool step in a reply: "Read README.md", with a spinner while it runs. */
-function ToolStep({ part }: { part: DynamicToolUIPart }) {
+/** One tool step in a reply, as a chip: "Read README.md" fills while it runs, then ticks or fails. */
+function ToolStep({ part, timed }: { part: DynamicToolUIPart; timed: boolean }) {
   const detail = (part.input as { detail?: string } | undefined)?.detail;
   const running = part.state === 'input-available' || part.state === 'input-streaming';
   const failed = part.state === 'output-error';
   return (
-    <li className="flex items-center gap-2 text-xs text-muted-foreground">
-      {running ? (
-        <LoaderCircle className="size-3.5 shrink-0 motion-safe:animate-spin" aria-label="Running" />
-      ) : failed ? (
-        <CircleX className="size-3.5 shrink-0 text-destructive" aria-label="Failed" />
-      ) : (
-        <CircleCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Done" />
-      )}
-      <span className="font-medium text-foreground">{part.toolName}</span>
-      {detail && <span className="min-w-0 truncate font-mono">{detail}</span>}
+    <li className="min-w-0">
+      <CallChip
+        icon={iconForTool(part.toolName)}
+        name={part.toolName}
+        argument={detail ?? ''}
+        status={running ? 'running' : failed ? 'error' : 'done'}
+        showTimer={timed}
+        size={24}
+        radius={6}
+        surfaceColor="transparent"
+        doneColor="var(--chip-done)"
+        errorColor="var(--destructive)"
+        shake={4}
+        className="[--chip-done:#059669] dark:[--chip-done:#34d399]"
+      />
     </li>
   );
 }
@@ -214,6 +221,9 @@ function AgentReply({
   const meta = message.metadata ?? {};
   const tools = message.parts.filter((p): p is DynamicToolUIPart => p.type === 'dynamic-tool');
   const text = message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+  // Times only mean something for a reply this page watched; stored replies have none.
+  const watched = useRef(live);
+  if (live) watched.current = true;
   return (
     <div className="flex gap-3">
       <AgentAvatar agent={agent} decorative className="mt-0.5" />
@@ -230,10 +240,20 @@ function AgentReply({
             <span className="tabular-nums"> · ${meta.cost_usd.toFixed(2)}</span>
           )}
         </p>
+        {watched.current && (
+          <ThoughtLine
+            working={live}
+            label={`${agent.name} is replying…`}
+            doneLabel="Replied in"
+            collapsible={false}
+            fontSize={13}
+            className="text-muted-foreground"
+          />
+        )}
         {tools.length > 0 && (
-          <ul aria-label="Steps" className="flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2">
+          <ul aria-label="Steps" className="flex flex-col gap-0.5 rounded-lg border bg-muted/30 px-1.5 py-1">
             {tools.map((part) => (
-              <ToolStep key={part.toolCallId} part={part} />
+              <ToolStep key={part.toolCallId} part={part} timed={watched.current} />
             ))}
           </ul>
         )}
@@ -241,8 +261,6 @@ function AgentReply({
           <div className="text-sm leading-relaxed">
             <Markdown text={text} />
           </div>
-        ) : live ? (
-          <p className="text-sm text-muted-foreground motion-safe:animate-pulse">{agent.name} is replying…</p>
         ) : null}
         {meta.tasks_created?.length ? (
           <ul className="flex flex-wrap gap-2">

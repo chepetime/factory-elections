@@ -293,7 +293,8 @@ it('while a run works: a stop composer, the latest activity and the following li
   });
   const page = await html();
   expect(page).toContain('composer:running');
-  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  // The current command is the latest step under the run line.
+  expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
   expect(page).toMatch(/aria-label="Live output"[\s\S]*Progress: resolved 3784/);
   expect(await html(undefined, 'details')).toMatch(/Stage timeline[\s\S]*running/);
 });
@@ -312,7 +313,8 @@ it('a silent command shows its elapsed time and a notice that it is still runnin
     },
   });
   const page = await html();
-  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  // The current command is the latest step under the run line.
+  expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
   expect(page).toMatch(/15m[\s\S]*no output for 14m/);
   expect(page).toMatch(/role="status"[^>]*>[\s\S]*No output for 14m/);
 });

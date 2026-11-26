@@ -1,9 +1,9 @@
 'use client';
 // The running turn on the task page. It polls a small JSON route for new output and activity,
 // and reloads the page only when the task itself changes (a new stage, the run finished).
-import { ThinkingLoader } from '@factory/affect-ui/components/thinking-loader-clean';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { ThoughtLine } from '@/components/bits/thought-line';
 import { LiveOutput } from '@/components/live-output';
 import { livePollOutcome, runStatus, type LivePoll, type RunActivity } from '@/lib/task-chat';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,9 @@ interface LiveState {
   logTail?: string;
   activity?: RunActivity;
 }
+
+/** Steps kept under the run line; older ones scroll away. */
+const MAX_STEPS = 6;
 
 export function LiveRun({
   project,
@@ -70,17 +73,22 @@ export function LiveRun({
   }, [project, id, version, everyMs, router]);
 
   const status = runStatus(live.activity, live.logTail ?? '', now);
+  // Each new "now" line becomes a step under the run line; the last one is the current step.
+  const [steps, setSteps] = useState<string[]>(status.text ? [status.text] : []);
+  if (status.text && steps.at(-1) !== status.text) setSteps([...steps, status.text].slice(-MAX_STEPS));
+  const started = live.activity ? Date.parse(live.activity.run_started_at) : NaN;
   return (
     <div data-live-run="">
-      <div className="affect-ui-theme">
-        <ThinkingLoader phases={[label ?? 'Working']} variant="plain" size="sm" />
-      </div>
-      {status.text && (
+      <ThoughtLine
+        label={label ?? 'Working'}
+        steps={steps}
+        {...(Number.isFinite(started) ? { startedAt: started } : {})}
+        fontSize={14}
+        className="text-muted-foreground [&_li]:font-mono [&_li]:text-xs"
+      />
+      {status.elapsed && (
         <p className="mt-1 flex min-w-0 gap-2 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate font-mono" title={status.text}>
-            Now: {status.text}
-          </span>
-          {status.elapsed && <span className="shrink-0 tabular-nums">· {status.elapsed}</span>}
+          <span className="shrink-0 tabular-nums">This step: {status.elapsed}</span>
           {status.silent && (
             <span
               className={cn('shrink-0 tabular-nums', status.quiet && 'text-amber-700 dark:text-amber-400')}

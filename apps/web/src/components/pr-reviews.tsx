@@ -17,6 +17,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { removeReview, startReviews, stopReview } from '@/app/actions';
+import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
+import { LatticeLoader } from '@/components/bits/lattice-loader';
 import { Markdown } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import type { ReviewList, ReviewRow } from '@/lib/reviews';
@@ -143,7 +145,6 @@ export function PullRequestReviews({
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [notice, setNotice] = useState<Notice>();
   const [failures, setFailures] = useState<Record<number, string>>({});
-  const [confirmRemove, setConfirmRemove] = useState<number>();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<string>();
 
@@ -222,7 +223,6 @@ export function PullRequestReviews({
     startTransition(async () => {
       const result = await call();
       setBusy(undefined);
-      setConfirmRemove(undefined);
       setNotice(
         result.error
           ? { kind: 'error', text: result.error }
@@ -283,9 +283,7 @@ export function PullRequestReviews({
               </Button>
               <Button size="sm" disabled={pending} onClick={() => launch(visibleSelected, 'review')}>
                 {busy?.startsWith('review:') ? (
-                  <>
-                    <LoaderCircle className="size-3.5 motion-safe:animate-spin" /> Preparing worktrees…
-                  </>
+                  <LatticeLoader label="Preparing worktrees…" fontSize={13} />
                 ) : (
                   `Review ${visibleSelected.length}`
                 )}
@@ -499,27 +497,19 @@ export function PullRequestReviews({
                         </div>
                         {removable && (
                           <div className="mt-3 flex items-center gap-2">
-                            {confirmRemove === pr.number ? (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={pending}
-                                  onClick={() =>
-                                    act(`remove:${pr.number}`, () => removeReview(project, pr.number))
-                                  }
-                                >
-                                  Remove worktree, chat and report
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(undefined)}>
-                                  Cancel
-                                </Button>
-                              </>
-                            ) : (
-                              <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(pr.number)}>
-                                <Trash2 className="size-3.5" /> Remove review
-                              </Button>
-                            )}
+                            {/* Holding is the confirmation: it removes the worktree, chat and report. */}
+                            <HoldButton
+                              {...DESTRUCTIVE_HOLD}
+                              disabled={pending}
+                              doneLabel="Removing…"
+                              resetAfter={0}
+                              title="Removes the review's worktree, chat and report"
+                              onHold={() =>
+                                act(`remove:${pr.number}`, () => removeReview(project, pr.number))
+                              }
+                            >
+                              <Trash2 aria-hidden /> Hold to remove review
+                            </HoldButton>
                           </div>
                         )}
                       </td>

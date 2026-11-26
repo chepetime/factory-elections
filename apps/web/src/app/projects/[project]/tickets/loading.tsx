@@ -1,7 +1,9 @@
+import { LatticeLoader } from '@/components/bits/lattice-loader';
+
 export default function LoadingTickets() {
   return (
-    <p role="status" className="p-6 text-sm text-muted-foreground">
-      Loading tickets…
-    </p>
+    <div className="p-6 text-muted-foreground">
+      <LatticeLoader label="Loading tickets…" showTimer={false} />
+    </div>
   );
 }

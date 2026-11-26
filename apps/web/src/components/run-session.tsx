@@ -1,10 +1,11 @@
 'use client';
 // A run's whole session, like a terminal transcript: the agent's messages, each tool call with its
 // input, and the result under it. Polls while the run works and follows the bottom.
-import { ChevronRight, CircleCheck, CircleX, LoaderCircle } from 'lucide-react';
+import { ChevronRight, LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { CallChip, iconForTool } from '@/components/bits/call-chip';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,7 @@ function ToolCall({
   live: boolean;
 }) {
   const running = !result && live;
+  const took = result ? Date.parse(result.at) - Date.parse(tool.at) : NaN;
   return (
     <li className={cn('text-xs', tool.sub && 'ml-4 border-l pl-3')}>
       <details className="group/tool">
@@ -45,23 +47,21 @@ function ToolCall({
             aria-hidden
             className="size-3 shrink-0 text-muted-foreground transition-transform group-open/tool:rotate-90 motion-reduce:transition-none"
           />
-          {running ? (
-            <LoaderCircle
-              className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin"
-              aria-label="Running"
-            />
-          ) : result?.ok === false ? (
-            <CircleX className="size-3.5 shrink-0 text-destructive" aria-label="Failed" />
-          ) : (
-            <CircleCheck
-              className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-              aria-label="Done"
-            />
-          )}
-          <span className="shrink-0 font-medium">{toolName(tool.tool)}</span>
-          <span className="min-w-0 truncate font-mono text-muted-foreground" title={tool.input}>
-            {tool.input}
-          </span>
+          <CallChip
+            icon={iconForTool(tool.tool)}
+            name={toolName(tool.tool)}
+            argument={tool.input}
+            status={running ? 'running' : result?.ok === false ? 'error' : 'done'}
+            {...(Number.isFinite(took) && took >= 0 ? { durationMs: took } : {})}
+            size={24}
+            radius={6}
+            surfaceColor="transparent"
+            doneColor="var(--chip-done)"
+            errorColor="var(--destructive)"
+            shake={4}
+            announce={false}
+            className="min-w-0 [--chip-done:#059669] dark:[--chip-done:#34d399]"
+          />
         </summary>
         <div className="mt-1 mb-2 ml-5 flex flex-col gap-1.5">
           {tool.input && (
