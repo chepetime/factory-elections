@@ -8,13 +8,14 @@
 // default is dev. --dry-run prints what it would stop and why, and changes nothing. It runs only in
 // the primary checkout: a worktree runs its own stack with `pnpm worktree run`.
 import './load-env.ts';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataRoot } from '../packages/adapters-fs/src/index.ts';
 import { backendCall, closeBackendClient } from '../packages/backend-client/src/client.ts';
+import { LABEL } from './service.mjs';
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = dataRoot();
@@ -84,6 +85,9 @@ async function main() {
     throw new Error(
       `${repo} is a linked worktree. Restart the primary checkout, or use pnpm worktree run here.`,
     );
+  // Installed as a launchd agent (scripts/service.mjs): launchd stops it with a drain and starts it.
+  const uid = execFileSync('id', ['-u'], { encoding: 'utf8' }).trim();
+  const service = spawnSync('launchctl', ['print', `gui/${uid}/${LABEL}`], { stdio: 'ignore' }).status === 0;
   const running = webPids();
   if (dryRun) {
     const busy = running.length && (await reachable()) ? await busyTasks() : [];
@@ -111,6 +115,12 @@ async function main() {
   }
   closeBackendClient();
 
+  if (service) {
+    execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${LABEL}`], { stdio: 'inherit' });
+    await waitUp(undefined, join(root, 'logs', 'stack.log'));
+    return;
+  }
+
   for (const pid of running) process.kill(pid, 'SIGTERM');
   if (running.length) process.stdout.write(`Stopping web.mjs (${running.join(', ')})`);
   const lock = join(root, 'backend.lock');
@@ -134,11 +144,18 @@ async function main() {
   });
   child.unref();
 
+  await waitUp(child, logPath);
+  console.log(`(started pid ${child.pid})`);
+}
+
+/** Waits for the backend RPC and the web app, then prints the running commit. */
+async function waitUp(child, logPath) {
   let backend = false;
   let web = false;
-  for (let i = 0; i < 180 && !(backend && web); i++) {
+  for (let i = 0; i < 400 && !(backend && web); i++) {
     await sleep(1000);
-    if (child.exitCode !== null) throw new Error(`start.mjs exited with ${child.exitCode}; see ${logPath}.`);
+    if (child && child.exitCode !== null)
+      throw new Error(`start.mjs exited with ${child.exitCode}; see ${logPath}.`);
     backend ||= await reachable();
     if (backend && !web)
       web = await fetch(`http://localhost:${port}/api/projects`, { signal: AbortSignal.timeout(60_000) })
@@ -146,9 +163,9 @@ async function main() {
         .catch(() => false);
   }
   closeBackendClient();
-  if (!backend || !web) throw new Error(`The stack did not come up within 3 min; see ${logPath}.`);
+  if (!backend || !web) throw new Error(`The stack did not come up in time; see ${logPath}.`);
   const head = execFileSync('git', ['log', '--oneline', '-1'], { cwd: repo, encoding: 'utf8' }).trim();
-  console.log(`Running ${head} at http://localhost:${port} (pid ${child.pid}, log ${logPath}).`);
+  console.log(`Running ${head} at http://localhost:${port} (log ${logPath}).`);
 }
 
 main().catch((error) => {
