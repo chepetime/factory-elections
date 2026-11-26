@@ -147,4 +147,4 @@ This pass closed the last gaps.
 
 ## Known gaps
 
-None.
+None in the state machines this audit covers. This is not a claim about the whole system: the [roadmap status](vision/roadmap.md#status) and the [architecture assessments](architecture-assessments/2026-11-26-ac0a5377.md) list what is still partial or planned.

@@ -35,7 +35,7 @@ The existing app has been imported and activated. Repositories and worktree path
 
 In configured mode, Postgres is authoritative for task/project records and run/team metadata. Task schema validation, the workflow driver, Effect orchestration and exact-head approval checks are retained. Task writes update JSONB snapshots; indexes support project/stage lookup. File mode remains available for isolated tests and roots without a storage configuration.
 
-Run acceptance and the latest-run pointer are committed in one database transaction. Per-task Postgres advisory locks are held on dedicated connections while work is queued/running, and are released when the connection closes. The host backend ownership file still prevents two servers owning one local root. This remains a single-worker local application, not a distributed scheduler.
+Run acceptance and the latest-run pointer are committed in one database transaction. Per-task Postgres advisory locks are held on dedicated connections while work is queued/running, and are released when the connection closes. The host backend ownership file still prevents two servers owning one local root. It is one backend per data root, running up to `FACTORY_TASK_WORKERS` task runs at once (default 3), not a distributed scheduler.
 
 The importer:
 

@@ -2,14 +2,40 @@
 
 Part of the [product vision](../../VISION.md). The phases come from [workspace-and-runtime.md §14](workspace-and-runtime.md#14-migration-plan). This page maps them to the code. [TODO.md](../../TODO.md) has the tasks.
 
+## Status
+
+Checked against the source on 26 Nov 2026. A status names how far a capability is, with the source and the test that show it. Update a row when you change what it describes.
+
+- **Implemented**: in the default path, covered by tests.
+- **Partially integrated**: implemented for some callers or behind a flag.
+- **Experimentally verified**: checked against real CLIs once, in [runtime-baseline.md](../runtime-baseline.md).
+- **Planned**: not in the source yet.
+
+| Capability | Phase | Status | Source | Test |
+| --- | --- | --- | --- | --- |
+| Lifecycle baseline per transport | 0 | Experimentally verified (24 Nov 2026) | [runtime-baseline.md](../runtime-baseline.md) | `packages/adapters-*/test/fixtures.test.ts` |
+| Tool-call and parent-call IDs on events | 1 | Implemented | `ToolCallIds` in [agents.ts](https://github.com/chepetime/factory-elections/blob/main/packages/core/src/agents.ts) | `packages/adapters-claude/test/fixtures.test.ts` |
+| Codex stdout (protocol) apart from stderr (diagnostics) | 1 | Implemented | [adapters-codex](https://github.com/chepetime/factory-elections/blob/main/packages/adapters-codex/src/index.ts) | `packages/adapters-codex/test/app-server.test.ts` |
+| Rate-limit retry decided by activity, not by cost | 1 | Implemented | `canRetryRateLimit` in [adapters-claude](https://github.com/chepetime/factory-elections/blob/main/packages/adapters-claude/src/index.ts) | `packages/adapters-claude/test/runner.test.ts` |
+| Outcome and cleanup separate from state | 1 | Implemented | [execution.ts](https://github.com/chepetime/factory-elections/blob/main/packages/core/src/execution.ts), [ADR 0005](../adr/0005-execution-contract.md) | `packages/core/test/execution.test.ts` |
+| Capabilities per adapter and tested version | 1 | Partially integrated: the app-server runner declares its own; `TESTED_RUNTIMES` pins versions | [app-server.ts](https://github.com/chepetime/factory-elections/blob/main/packages/adapters-codex/src/app-server.ts), [agents.ts](https://github.com/chepetime/factory-elections/blob/main/packages/core/src/agents.ts) | `packages/core/test/execution.test.ts` |
+| Codex app-server transport | 2 | Partially integrated: behind `FACTORY_CODEX_TRANSPORT=app-server`; experimentally verified on codex-cli 0.172.0 | [app-server.ts](https://github.com/chepetime/factory-elections/blob/main/packages/adapters-codex/src/app-server.ts) | `packages/adapters-codex/test/app-server.test.ts` |
+| PR review turns on the SDK path | 3 | Partially integrated: in-process by default; detached for `FACTORY_REVIEW_TRANSPORT=cli` and Codex | [reviews.ts](https://github.com/chepetime/factory-elections/blob/main/packages/pr-reviews/src/reviews.ts) | `packages/pr-reviews/test/reviews.test.ts` |
+| Configuration manifest per execution | 4 | Implemented for task runs | `callManifest` in [receipts.ts](https://github.com/chepetime/factory-elections/blob/main/packages/evidence/src/receipts.ts) | `packages/evidence/test/receipts.test.ts` |
+| Restart reconciliation | 4 | Implemented: recovery report, refusal while ownership is unknown, retry. No ownership generation yet | `recover`, `reconcile` in [service.ts](https://github.com/chepetime/factory-elections/blob/main/packages/backend/src/service.ts) | `packages/backend/test/server.test.ts` (recovery) |
+| One scheduler and shared limits | 4 | Partially integrated: one `AgentPool`; task runs on `Dispatcher`; feature steps and chats on `Executions`. Children and tending take slots directly; reviews count from outside | [dispatcher](https://github.com/chepetime/factory-elections/blob/main/packages/dispatcher/src) | `packages/dispatcher/test/*.test.ts` |
+| External write intent and reconciliation | 4 | Implemented for PR publication | [publication.ts](https://github.com/chepetime/factory-elections/blob/main/packages/driver/src/publication.ts) | `packages/driver/test/workflow.test.ts` (publication) |
+| Usage checkpoints (cumulative versus incremental) | 4 | Planned | — | — |
+| Product generalization | 5 | Planned | [entities.md](entities.md) | — |
+
 ## What the phases keep
 
 These parts work today. The phases move them behind one contract and do not remove them:
 
 - Claude SDK guards (`canUseTool`), the OS sandbox, budgets, timers and cancellation (`packages/adapters-claude/src/index.ts`).
-- Slots, git locks, recovery and provider rules in the backend (`packages/backend/src`).
+- Slots and the run queue (`packages/dispatcher/src`), and git locks, recovery and provider rules in the backend (`packages/backend/src`).
 - The span ledger, the inbox, PR tending, metrics and call grading.
-- The software workflow and its gates (`packages/driver/src/workflow.ts`, `definitions/`).
+- The software workflow and its gates (`packages/driver/src`: `workflow.ts`, `verification.ts`, `publication.ts`; `definitions/`).
 
 ## Phases
 
@@ -23,7 +49,7 @@ Pin the Factory revision and the Claude SDK, Claude CLI and Codex CLI versions. 
 
 Add execution and provider-session identity, tool-call and parent-call IDs on events, separate stdout and stderr, and retry from evidence. Keep the current transports.
 
-Known gaps this phase closes:
+Known gaps this phase closes (all closed except per-version capabilities; see [Status](#status)):
 
 | Gap | Where |
 | --- | --- |
