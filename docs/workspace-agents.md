@@ -34,6 +34,8 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 - **New tasks:** a task from the prompt field goes to Backlog, or to Todo when "Start" is on. It never starts the old pipeline directly.
 - Set `FACTORY_AGENT_PICKUP=0` to turn pickup off for the whole backend.
 
+**PR text.** After the checks pass, the `pr-writer` step writes the PR title and description from the diff, the checks and the agent's own report. It follows the repository's PR template (`.github/pull_request_template.md` or the other paths GitHub reads), or the factory template (Summary, Evidence, Merge Danger) when there is none. A body that leaves out a template heading is asked for again once, then refused; the PR then uses the task text in the template's shape. You read the draft at the gate.
+
 **Replies.** A comment from you wakes the agent's session, but only while the agent waits: `awaiting-approval`, `verification-failed`, `failed` or `blocked`. A comment on an approved, rejected or merged run starts nothing.
 
 **Tools.** The session gets factory tools through its MCP grant (`packages/agents/src/agent-tools.ts`):

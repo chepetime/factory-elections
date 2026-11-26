@@ -31,6 +31,7 @@ import {
   type StepAttempt,
   type StepDefinition,
   type FollowUpKind,
+  missingHeadings,
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
@@ -49,6 +50,7 @@ import {
   errorCost,
   failureText,
   worktreeGuard,
+  readPrTemplate,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 import { checkProfile, verifyWorktree } from './verification.ts';
@@ -773,6 +775,8 @@ export class Driver {
       let error: string | undefined;
       let costUsd: number | null = null;
       let sessionId = task.agent_session;
+      // The agent's last message: what it says it did, for the PR writer.
+      let report = '';
       let saving: Promise<void> = Promise.resolve();
       try {
         const result = await this.deps.runner.run({
@@ -805,6 +809,7 @@ export class Driver {
         });
         costUsd = result.costUsd;
         sessionId = result.sessionId ?? sessionId;
+        report = result.text?.trim() ?? '';
       } catch (e) {
         outcome = 'failed';
         error = failureText(e);
@@ -893,8 +898,10 @@ export class Driver {
       }
       await this.deps.tasks.write(task);
       this.deps.log('Verifying…');
-      const verified = await this.verifyAndRecord(project, id);
-      if (!verified.verification?.passed) return verified;
+      const checked = await this.verifyAndRecord(project, id);
+      if (!checked.verification?.passed) return checked;
+      // The PR text is written now, so you read it at the gate; a failure leaves the template fallback.
+      const verified = await this.draftPrQuietly(project, id, { agentReport: report });
       const ready = withStage(
         verified,
         this.deps.now(),
@@ -1052,10 +1059,14 @@ export class Driver {
   }
 
   /** Drafts the PR text after a review; a failure leaves the task at the gate without a draft. */
-  private async draftPrQuietly(project: string, id: string): Promise<TaskRecord> {
+  private async draftPrQuietly(
+    project: string,
+    id: string,
+    options: { agentReport?: string } = {},
+  ): Promise<TaskRecord> {
     if (!this.deps.steps.prWriter) return this.deps.tasks.read(project, id);
     try {
-      return await this.draftPr(project, id);
+      return await this.draftPr(project, id, options);
     } catch (e) {
       this.deps.log(`PR draft not written (${(e as Error).message}); the PR will use the task summary.`);
       return this.deps.tasks.read(project, id);
@@ -1066,14 +1077,22 @@ export class Driver {
    * Writes the pull-request title and description for the reviewed commit, so the human sees them
    * at the approval gate. Does not change the task's stage.
    */
-  async draftPr(project: string, id: string): Promise<TaskRecord> {
+  async draftPr(
+    project: string,
+    id: string,
+    options: { agentReport?: string; retryFor?: string[] } = {},
+  ): Promise<TaskRecord> {
     const paths = this.deps.steps.prWriter;
     if (!paths) throw new DriverError('no pr-writer step is configured');
     let task = await this.deps.tasks.read(project, id);
     const { path, base } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
-    if (!task.review || task.review.head_sha !== head)
+    // An agent run has no reviewer step; its verified commit and report are the inputs instead.
+    if (task.workflow !== 'agent' && (!task.review || task.review.head_sha !== head))
       throw new DriverError('the current commit has not been reviewed');
+    if (task.workflow === 'agent' && task.verification?.head_sha !== head)
+      throw new DriverError('the current commit has not been verified');
+    const template = await readPrTemplate(path);
     const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(paths.step);
     const limits = await this.callLimits(task, step);
     if ((await this.budgetLeft(task)) <= 0) throw new DriverError('the task budget is spent');
@@ -1107,13 +1126,29 @@ export class Driver {
           '<verification>',
           tail(task.verification?.output_tail ?? 'not recorded', 4000),
           '</verification>',
-          '<review>',
-          JSON.stringify({
-            verdict: task.review.verdict,
-            summary: task.review.summary,
-            findings: task.review.findings,
-          }),
-          '</review>',
+          ...(task.review
+            ? [
+                '<review>',
+                JSON.stringify({
+                  verdict: task.review.verdict,
+                  summary: task.review.summary,
+                  findings: task.review.findings,
+                }),
+                '</review>',
+              ]
+            : []),
+          ...(options.agentReport?.trim()
+            ? ['<agent-report>', tail(options.agentReport.trim(), 6000), '</agent-report>']
+            : []),
+          `<template source="${template.source}">`,
+          template.text.trim(),
+          '</template>',
+          ...(options.retryFor?.length
+            ? [
+                `Your last body left out these template headings: ${options.retryFor.join(', ')}.`,
+                'Return the whole JSON object again, with every heading of the template, in order.',
+              ]
+            : []),
           `<diff-stat base="${base}">`,
           await this.deps.git.diffSince(path, base, true),
           '</diff-stat>',
@@ -1147,8 +1182,17 @@ export class Driver {
     }
     if (!parsed.success)
       throw new DriverError(`pr-writer returned an invalid draft: ${describeIssues(parsed.error)}`);
+    // The template is enforced: one more try with the missing headings named, then a refusal.
+    const missing = missingHeadings(parsed.data.body, template.text);
+    if (missing.length) {
+      if (!options.retryFor) return this.draftPr(project, id, { ...options, retryFor: missing });
+      throw new DriverError(`pr-writer left out template headings: ${missing.join(', ')}`);
+    }
     task = withEvent(
-      { ...task, pr_draft: { ...parsed.data, head_sha: head, at: this.deps.now() } },
+      {
+        ...task,
+        pr_draft: { ...parsed.data, head_sha: head, at: this.deps.now(), template: template.source },
+      },
       this.deps.now(),
       'pr-draft',
       `PR drafted: ${parsed.data.title}`,

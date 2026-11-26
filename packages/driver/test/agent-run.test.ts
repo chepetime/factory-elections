@@ -22,7 +22,10 @@ function sh(cwd: string, ...args: string[]) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 
-async function setup(turns: ((run: ModelRun) => Promise<ModelResult>)[]) {
+async function setup(
+  turns: ((run: ModelRun) => Promise<ModelResult>)[],
+  options: { prWriter?: boolean } = {},
+) {
   const base = await mkdtemp(join(tmpdir(), 'factory-agent-run-'));
   const root = join(base, 'data');
   const repo = join(base, 'repo');
@@ -80,7 +83,12 @@ async function setup(turns: ((run: ModelRun) => Promise<ModelResult>)[]) {
           () => false,
         ),
     },
-    steps: { classifier: paths('classifier'), coder: paths('coder'), reviewer: paths('reviewer') },
+    steps: {
+      classifier: paths('classifier'),
+      coder: paths('coder'),
+      reviewer: paths('reviewer'),
+      ...(options.prWriter ? { prWriter: paths('pr-writer') } : {}),
+    },
     now: () => new Date(Date.UTC(2026, 10, 13, 0, 0, tick++)).toISOString(),
     log: () => {},
     agentSession: async (_task, reply): Promise<AgentSession> => {
@@ -212,4 +220,34 @@ test('a run that never made a worktree can still be rejected', async () => {
   assert.equal(rejected.stage, 'rejected');
   assert.equal(rejected.approval, undefined, 'no commit to record');
   assert.equal((await store.read('demo', task.id)).stage, 'rejected');
+});
+
+test("an agent run drafts its PR from the agent's report, in the template, before the gate", async () => {
+  const { driver, task, calls } = await setup(
+    [
+      async (r) => {
+        await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+        return { text: 'I added feature.txt because the test needs it.', costUsd: 0.4 };
+      },
+      async () => ({
+        text: '',
+        structured: {
+          title: 'Add feature.txt for the check',
+          body: '## Summary\n\nAdds it.\n\n## Evidence\n\n- **After:** test passes\n\n## Merge Danger\n\n**Door:** two-way',
+        },
+        costUsd: 0.05,
+      }),
+    ],
+    { prWriter: true },
+  );
+  const done = await driver.run('demo', task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(done.pr_draft?.title, 'Add feature.txt for the check');
+  const writer = calls.find((c) => c.step === 'pr-writer')!;
+  assert.match(
+    writer.prompt,
+    /<agent-report>\nI added feature\.txt because the test needs it\.\n<\/agent-report>/,
+  );
+  assert.match(writer.prompt, /<template source="factory">/);
+  assert.doesNotMatch(writer.prompt, /<review>/, 'an agent run has no reviewer');
 });

@@ -1,6 +1,7 @@
 // Small helpers the workflow modules share: output tails, limits, failure text, the worktree guard.
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   DEFAULT_TASK_LIMITS,
   isForbiddenCommand,
@@ -8,6 +9,9 @@ import {
   type ModelFailure,
   type RepoProfile,
   type ToolGuard,
+  FACTORY_PR_TEMPLATE,
+  PR_TEMPLATE_PATHS,
+  type PrTemplate,
 } from '@factory/core';
 
 export const OUTPUT_TAIL = 6000;
@@ -126,4 +130,13 @@ export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard
       return undefined;
     },
   };
+}
+
+/** The repository's PR template from the worktree, or the factory's when it has none. */
+export async function readPrTemplate(dir: string): Promise<PrTemplate> {
+  for (const path of PR_TEMPLATE_PATHS) {
+    const text = await readFile(join(dir, path), 'utf8').catch(() => undefined);
+    if (text?.trim()) return { source: path, text };
+  }
+  return { source: 'factory', text: FACTORY_PR_TEMPLATE };
 }

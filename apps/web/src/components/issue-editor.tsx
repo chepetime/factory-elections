@@ -115,7 +115,14 @@ export function IssueDescription({
     return (
       <div className="group relative">
         {description.trim() ? (
-          <div className="text-sm leading-relaxed">
+          // A fixed height with its own scroll: a long description must not push the activity away.
+          // Focusable, so the region scrolls from the keyboard too.
+          <div
+            role="region"
+            aria-label="Description"
+            tabIndex={0}
+            className="max-h-80 overflow-y-auto overscroll-contain rounded-lg border bg-muted/20 px-4 py-3 text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
+          >
             <Markdown text={description} />
           </div>
         ) : (
@@ -157,7 +164,7 @@ export function IssueDescription({
             setEditing(false);
           }
         }}
-        className="text-sm"
+        className="h-80 max-h-80 field-sizing-fixed text-sm"
       />
       {error && (
         <p role="alert" className="mt-1 text-sm text-destructive">
