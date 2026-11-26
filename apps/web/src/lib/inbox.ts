@@ -1,5 +1,5 @@
 import 'server-only';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { z } from 'zod';
 const Item = z.object({
   id: z.string(),

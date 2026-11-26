@@ -52,11 +52,9 @@ export function LiveRun({
           if (response.ok) {
             const outcome = livePollOutcome(version, (await response.json()) as LivePoll);
             if (stopped) return;
-            if (outcome === 'reload') {
-              router.refresh();
-              return;
-            }
-            setLive(outcome);
+            // Keep polling after a reload: if the page renders the same version, no new effect starts.
+            if (outcome === 'reload') router.refresh();
+            else setLive(outcome);
           }
         } catch {
           // A missed poll is harmless; the next one tries again.

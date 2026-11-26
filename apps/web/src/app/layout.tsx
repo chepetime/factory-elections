@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { InboxNotifier } from '@/components/inbox-notifier';
-import { DEFAULT_PREFERENCES, UserPreferencesProvider } from '@/components/user-preferences';
+import { UserPreferencesProvider } from '@/components/user-preferences';
+import { DEFAULT_PREFERENCES } from '@/lib/user-preferences';
 import { userSettings } from '@/lib/user-settings';
 import './globals.css';
 

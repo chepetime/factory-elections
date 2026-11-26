@@ -7,20 +7,37 @@ export async function ghAvailable(): Promise<boolean> {
   return (await run('gh', ['auth', 'status'])).code === 0;
 }
 
-/** The URL of the open pull request from branch `head`, if there is one. */
-export async function findOpenPullRequest(options: {
-  cwd: string;
-  head: string;
-}): Promise<string | undefined> {
+export interface BranchPullRequest {
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  /** The commit the pull request's head pointed at last. */
+  head_sha: string;
+}
+
+/** The pull requests from branch `head` in any state, newest first. */
+export async function pullRequestsFrom(options: { cwd: string; head: string }): Promise<BranchPullRequest[]> {
   const result = await run(
     'gh',
-    ['pr', 'list', '--head', options.head, '--state', 'open', '--json', 'url', '--jq', '.[0].url // ""'],
+    [
+      'pr',
+      'list',
+      '--head',
+      options.head,
+      '--state',
+      'all',
+      '--limit',
+      '20',
+      '--json',
+      'url,state,headRefOid',
+    ],
     { cwd: options.cwd },
   );
   if (result.code !== 0)
     throw new GitHubError(`gh pr list failed: ${(result.stderr || result.stdout).trim()}`);
-  const url = result.stdout.trim();
-  return url.startsWith('https://') ? url : undefined;
+  const rows = JSON.parse(result.stdout || '[]') as { url: string; state: string; headRefOid: string }[];
+  return rows
+    .filter((r) => r.url.startsWith('https://') && ['OPEN', 'CLOSED', 'MERGED'].includes(r.state))
+    .map((r) => ({ url: r.url, state: r.state as BranchPullRequest['state'], head_sha: r.headRefOid }));
 }
 
 export async function createPullRequest(options: {

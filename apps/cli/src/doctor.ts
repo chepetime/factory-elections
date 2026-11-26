@@ -1,6 +1,6 @@
 // CLI formatting over the same environment checks used by the backend.
-import { environmentChecks } from '@factory/backend/diagnostics';
-export { pnpmCheck } from '@factory/backend/diagnostics';
+import { environmentChecks } from '@factory/compose/diagnostics';
+export { pnpmCheck } from '@factory/compose/diagnostics';
 
 export async function doctor(root: string): Promise<boolean> {
   const checks = await environmentChecks(root);

@@ -102,7 +102,8 @@ export function ReviewChat({
   const running = detail.state === 'running';
   // Poll while the agent works; keep polling briefly after a send until the new turn shows up.
   const [expectTurns, setExpectTurns] = useState(0);
-  const watching = preparing || running || detail.turns < expectTurns;
+  // A start that failed adds no turn: its error ends the wait.
+  const watching = preparing || running || (detail.turns < expectTurns && !detail.error);
   useEffect(() => {
     if (!watching) return;
     let live = true;
@@ -189,7 +190,13 @@ export function ReviewChat({
             variant="ghost"
             disabled={pending || !detail.can_reply}
             title="Reset the worktree to the latest head and re-review in this chat"
-            onClick={() => act(() => startReviews(project, [detail.number], 'rereview'), detail.turns + 1)}
+            onClick={() =>
+              act(async () => {
+                // A refused start is reported per pull request, not as a call error.
+                const result = await startReviews(project, [detail.number], 'rereview');
+                return { error: result.error ?? result.failed?.[0]?.error };
+              }, detail.turns + 1)
+            }
           >
             <RotateCcw className="size-3.5" /> Re-review
           </Button>

@@ -4,7 +4,7 @@ import './load-env.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { backendCall, closeBackendClient } from '../packages/backend/src/client.ts';
+import { backendCall, closeBackendClient } from '../packages/backend-client/src/client.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const web = join(root, 'apps', 'web');

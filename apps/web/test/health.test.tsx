@@ -54,6 +54,16 @@ describe('engine health panel', () => {
   });
 
   it.each([
+    [{ state: 'ok', problems: 0 }, 'Settled'],
+    [{ state: 'degraded', problems: 2 }, '2 could not be read'],
+  ])('shows recovery %o as %s, not as an unavailable engine', async (recovery, label) => {
+    const html = await render(() => json({ ...valid('available'), recovery }));
+    expect(html).toContain('Recovery after restart');
+    expect(html).toContain(label);
+    expect(html).not.toContain('Engine unavailable');
+  });
+
+  it.each([
     ['non-success', () => json(valid('available'), 500)],
     ['malformed', () => Promise.resolve(new Response('not json', { status: 200 }))],
     ['invalid', () => json({ ...valid('available'), engine: 'stopped' })],

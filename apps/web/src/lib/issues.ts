@@ -1,15 +1,25 @@
 // Server-only bridge for board tasks ("issues" in code). The backend owns storage, numbering and drops.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
-import { Issue, IssueStatus, Stage } from '@factory/core';
+import { backendCall } from '@factory/backend-client';
+import { Issue, IssueStatus, QueueWait, Stage } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 
 export const IssueView = Issue.extend({
   key: z.string(),
   status: IssueStatus,
   stored_status: IssueStatus,
-  run: z.object({ id: z.string(), stage: Stage, updated_at: z.string().optional() }).optional(),
+  run: z
+    .object({
+      id: z.string(),
+      stage: Stage,
+      updated_at: z.string().optional(),
+      waiting: z.boolean().optional(),
+      waiting_for: QueueWait.optional(),
+      /** A live run holds the task now. Absent from an older backend: the stage decides. */
+      owned: z.boolean().optional(),
+    })
+    .optional(),
 });
 export type IssueView = z.infer<typeof IssueView>;
 const IssueList = z.object({ prefix: z.string(), items: z.array(IssueView) });
@@ -28,7 +38,14 @@ async function attempt<T>(call: () => Promise<T>): Promise<Result<T>> {
 }
 
 type Method =
-  'GetIssue' | 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'CommentIssue' | 'ArchiveIssue' | 'DeleteIssue';
+  | 'GetIssue'
+  | 'CreateIssue'
+  | 'UpdateIssue'
+  | 'MoveIssue'
+  | 'CommentIssue'
+  | 'FollowUpIssue'
+  | 'ArchiveIssue'
+  | 'DeleteIssue';
 async function call(method: Method, project: string, body: object): Promise<unknown> {
   return JSON.parse((await backendCall(method, { project, json: JSON.stringify(body) })).json);
 }
@@ -51,6 +68,15 @@ export function updateIssueRun(project: string, input: object): Promise<Result<I
 export function moveIssueRun(project: string, key: string, to: IssueStatus) {
   return attempt(async () => MoveResult.parse(await call('MoveIssue', project, { key, to })));
 }
+/** Adds a follow-up to a task whose PR is open: an agent continues the same branch and PR. */
+export function followUpIssueRun(
+  project: string,
+  key: string,
+  input: { note: string; kind: 'custom' | 'conflicts'; agent?: string },
+): Promise<Result<IssueView>> {
+  return attempt(async () => IssueView.parse(await call('FollowUpIssue', project, { key, ...input })));
+}
+
 export function commentIssueRun(
   project: string,
   key: string,

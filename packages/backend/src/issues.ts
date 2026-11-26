@@ -15,33 +15,30 @@ import {
   issueKey,
   issueNumber,
   ProjectName,
-  runWorking,
+  runHeld,
   statusFromStage,
   syncedStatus,
   TaskId,
   type DropAction,
+  type FollowUpKind,
+  followUpAgent,
   type ProjectSettings,
   type Stage,
   type TaskRecord,
+  type QueueWait,
+  type IssueList,
+  type IssueRun,
+  type IssueView,
 } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
-import { Conflict } from './conflict.ts';
-
-export type IssueRun = { id: string; stage: Stage; updated_at?: string };
-export type IssueView = Omit<Issue, 'status'> & {
-  key: string;
-  /** The column it shows in: the latest run's status unless a person set one since. */
-  status: IssueStatus;
-  /** The status stored on the issue, before syncing from the run. */
-  stored_status: IssueStatus;
-  run?: IssueRun;
-};
-export type IssueList = { prefix: string; items: IssueView[] };
+import { Conflict } from '@factory/core';
 
 export type IssueDeps = {
   root: string;
   storage: DataStorage;
   tasks: { list(project: string): Promise<TaskRecord[]> };
+  /** Whether a run of this task is accepted, running or finalizing in this backend. */
+  owned?: (project: string, id: string) => boolean;
   settings: (project: string) => Promise<ProjectSettings>;
   /** Creates a factory run and returns its id; it does not start it. */
   submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
@@ -49,10 +46,20 @@ export type IssueDeps = {
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
   run: (project: string, id: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
+  /** Queues a follow-up on a run whose PR is open (core follow-ups.ts). */
+  followUp?: (
+    project: string,
+    id: string,
+    input: { note: string; kind: FollowUpKind; agent: string; by?: string; prHead?: string },
+  ) => Promise<unknown>;
+  /** Takes a queued turn out of the queue before a reject: the queued turn holds the run's lock. */
+  cancelQueued?: (project: string, id: string) => Promise<unknown>;
   /** Removes a run's worktree, branch and records. Fails while the run holds its lock. */
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
+  /** Why the run's queued turn has not started yet; undefined when no turn waits. */
+  waiting?: (project: string, runId: string) => QueueWait | undefined;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
   changed?: () => void;
   now?: () => Date;
@@ -77,6 +84,18 @@ const UpdateInput = z.object({
   assignee: z.string().min(1).nullable().optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
+const FollowUpInput = z.object({
+  project: ProjectName,
+  key: Key,
+  note: z.string().trim().min(1).max(20_000),
+  kind: z.enum(['custom', 'conflicts']).default('custom'),
+  /** The workspace agent; absent uses the run's agent, then the task's assignee. */
+  agent: z.string().min(1).optional(),
+  /** `factory` when the conflict watcher adds it. */
+  by: z.enum(['you', 'factory']).default('you'),
+  /** The PR head the watcher saw, so it adds one follow-up per head. */
+  pr_head: z.string().min(1).max(64).optional(),
+});
 const CommentInput = z.object({
   project: ProjectName,
   key: Key,
@@ -174,10 +193,29 @@ export class IssueService {
     return { board: synced, runs };
   }
 
+  /** A turn is queued for the run: it will use the run's worktree once its agent is free. */
+  private queued(project: string, runId: string): QueueWait | undefined {
+    return this.deps.waiting?.(project, runId);
+  }
+
+  /** The factory holds the run now: a live run, or a working stage when live runs are not known. */
+  private held(project: string, runId: string, stage: Stage | undefined): boolean {
+    return !!stage && runHeld(stage, this.deps.owned?.(project, runId));
+  }
+
   private view(prefix: string, issue: Issue, runs: Map<string, TaskRecord>): IssueView {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
-    const run = task ? { id: task.id, stage: task.stage, updated_at: task.updated_at } : undefined;
+    const waiting = task ? this.queued(task.project, task.id) : undefined;
+    const run = task
+      ? {
+          id: task.id,
+          stage: task.stage,
+          updated_at: task.updated_at,
+          ...(waiting ? { waiting: true, waiting_for: waiting } : {}),
+          owned: this.deps.owned?.(task.project, task.id) ?? false,
+        }
+      : undefined;
     return {
       ...issue,
       key: issueKey(prefix, issue.number),
@@ -306,6 +344,42 @@ export class IssueService {
   }
 
   /**
+   * Adds a follow-up to a task whose PR is open: an agent continues the same branch and PR, and the
+   * task moves through the board again (Todo while queued, In progress, In review or Blocked).
+   */
+  async followUp(raw: unknown): Promise<IssueView> {
+    const { project, key, note, kind, agent: picked, by, pr_head } = FollowUpInput.parse(raw);
+    if (!this.deps.followUp) throw new Conflict('Follow-ups are not available here.');
+    const view = await this.get({ project, key });
+    const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
+    if (!view.run || !record || view.run.stage !== 'pr-opened')
+      throw new Conflict('A follow-up continues a task whose pull request is open.');
+    const agent = picked ?? followUpAgent(record, view.assignee);
+    if (!agent) throw new Conflict('Pick the agent that does the follow-up.');
+    // Refuses a missing or archived agent before anything is queued.
+    const name = this.deps.agentName ? await this.deps.agentName(agent) : agent;
+    await this.deps.followUp(project, view.run.id, {
+      note,
+      kind,
+      agent,
+      by,
+      ...(pr_head ? { prHead: pr_head } : {}),
+    });
+    return this.change(project, key, (issue, at) => ({
+      ...issue,
+      ...(issue.assignee ? {} : { assignee: agent }),
+      events: [
+        ...issue.events,
+        {
+          at,
+          kind: 'follow-up',
+          message: `${by === 'factory' ? 'The factory added a' : 'Added a'} follow-up for ${name}: ${firstLine(note)}`,
+        },
+      ],
+    }));
+  }
+
+  /**
    * A person's comment continues the task's agent session when the agent is waiting on them:
    * its change is in review, its checks failed, it stopped, or it asked for help. An approved,
    * rejected or merged run is never restarted by a comment.
@@ -379,6 +453,8 @@ export class IssueService {
       const view = this.view(prefix, issue, runs);
       const action = dropAction(view.status, to, view.run);
       if (action.kind === 'refused') throw new Conflict(action.reason);
+      if (action.kind === 'follow-up')
+        throw new Conflict('The pull request is open. Add a follow-up with instructions from the task page.');
       const at = this.now();
       const event = (message: string) => ({ at, kind: `move:${to}`, message });
       let updated = issue;
@@ -452,6 +528,8 @@ export class IssueService {
       }));
     }
     if (plan.action.kind === 'reject' && plan.runId) {
+      // Without this, the reject waits for the lock until the queued turn got an agent and ran.
+      await this.deps.cancelQueued?.(project, plan.runId);
       await this.deps.reject(project, plan.runId, 'Cancelled from the task board.');
       await this.change(project, `N-${plan.number}`, (issue, at) => ({
         ...issue,
@@ -473,7 +551,7 @@ export class IssueService {
       const issue = this.find(board, key);
       const latest = issue.runs.at(-1);
       const stage = latest ? runs.get(latest)?.stage : undefined;
-      if (archived && stage && runWorking(stage))
+      if (archived && latest && (this.held(project, latest, stage) || this.queued(project, latest)))
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
       const at = this.now();
       const updated = Issue.parse({
@@ -505,7 +583,7 @@ export class IssueService {
       if (!issue.archived_at) throw new Conflict('Archive the task before you delete it.');
       const working = issue.runs.find((id) => {
         const stage = runs.get(id)?.stage;
-        return stage && runWorking(stage);
+        return this.held(project, id, stage) || this.queued(project, id);
       });
       if (working)
         throw new Conflict('The factory is working on this task. Wait for the run to stop, or cancel it.');
@@ -524,3 +602,5 @@ export class IssueService {
     return { key: issueKey(removed.prefix, removed.issue.number), failed };
   }
 }
+
+export type { IssueList, IssueRun, IssueView };

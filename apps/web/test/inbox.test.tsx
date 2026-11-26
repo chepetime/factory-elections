@@ -1,12 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { revalidatePath } from 'next/cache';
 import { dismissInboxItem } from '@/app/actions';
 import { Inbox } from '@/components/inbox';
 import { getInbox } from '@/lib/inbox';
 
-vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/headers', () => ({ cookies: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));

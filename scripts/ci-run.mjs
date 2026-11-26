@@ -25,5 +25,7 @@ if (plan.code) {
   if (plan.web) {
     run('pnpm', ['--filter', '@factory/web', 'typecheck']);
     run('pnpm', ['--filter', '@factory/web', 'test']);
+    // Route structure and server/client boundaries fail only in a production build.
+    run('pnpm', ['--filter', '@factory/web', 'build']);
   }
 }

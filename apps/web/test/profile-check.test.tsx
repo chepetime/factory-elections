@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { approveProfile, checkProjectSetup } from '@/app/actions';
 import { ProfileCheckView } from '@/components/profile-check';
 import { ProfileStatusRow } from '@/components/profile-status';
 
-vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/headers', () => ({ cookies: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn(), useRouter: () => ({ refresh: vi.fn() }) }));

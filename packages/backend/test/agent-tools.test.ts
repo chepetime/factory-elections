@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { storageFor } from '@factory/adapters-data';
-import { chatTools, taskTools, type SessionReport } from '../src/agent-tools.ts';
-import { DelegationServer } from '../src/delegation.ts';
+import { chatTools, taskTools, type SessionReport, DelegationServer } from '@factory/agents';
 import { IssueService } from '../src/issues.ts';
 
 async function rpc(url: string, token: string, method: string, params?: unknown) {

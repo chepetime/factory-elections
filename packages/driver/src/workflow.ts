@@ -1,7 +1,6 @@
 // Task workflow: classify → worktree → code → verify → review → human approval → pull request.
 // The driver coordinates adapters through ports; every rule lives in @factory/core.
-import { createServer } from 'node:net';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { join } from 'node:path';
 import {
   CLASSIFIER_OUTPUT_SCHEMA,
   ClassifierRequest,
@@ -12,160 +11,59 @@ import {
   DEFAULT_STEP_LIMITS,
   DEFAULT_TASK_LIMITS,
   environmentFailure,
-  tooBroadForLocalCheck,
-  isTestPath,
-  testWeakening,
   ReviewOutput,
   approvalBlockers,
   blockingFindings,
   describeIssues,
-  isForbiddenCommand,
   isForbiddenPath,
-  isGeneratedPath,
-  openPrBlockers,
-  prBody,
-  prTitle,
   taskTitle,
   taskCommandBlockers,
   readinessDecision,
   contextLimit,
   contextWarning,
-  runtimeVerdict,
-  type RuntimeVerdict,
   taskSpend,
   withEvent,
   withStage,
   type ModelLadder,
-  type ModelFailure,
   type ModelRun,
   type RepoProfile,
   type Rung,
   type StepAttempt,
   type StepDefinition,
+  type FollowUpKind,
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
 import { setupInputsKey } from './setup.ts';
+import {
+  MAX_DIFF_CHARS,
+  MAX_PR_DIFF_CHARS,
+  MAX_PR_TASK_CHARS,
+  tail,
+  MINUTE,
+  type ProfileCheckResult,
+  checkLimits,
+  errorCost,
+  failureText,
+  worktreeGuard,
+} from './support.ts';
+import { checkedWorktree } from './worktree.ts';
+import { checkProfile, verifyWorktree } from './verification.ts';
+import { openPr } from './publication.ts';
+export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
+export { worktreeGuard } from './support.ts';
 
-const OUTPUT_TAIL = 6000;
-const MAX_DIFF_CHARS = 200_000;
-const MAX_PR_DIFF_CHARS = 80_000;
-const MAX_PR_TASK_CHARS = 6_000;
-
-function tail(text: string, size = OUTPUT_TAIL): string {
-  return text.length > size ? `…${text.slice(-size)}` : text;
-}
-
-const MINUTE = 60_000;
-
-export interface ProfileCheckStep {
-  name: string;
-  command?: string;
-  outcome: 'passed' | 'failed' | 'skipped';
-  duration_ms: number;
-  output: string;
-  /** Plain words when a failure is a machine fault, e.g. "a credential has expired or is missing". */
-  environment?: string;
-}
-export interface ProfileCheckResult {
-  passed: boolean;
-  steps: ProfileCheckStep[];
-}
-
-/** "1 second", "40 seconds", "10 minutes": for messages about check limits. */
-function duration(ms: number): string {
-  if (ms < MINUTE) {
-    const seconds = Math.max(1, Math.round(ms / 1000));
-    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+/** Changed files that still hold a conflict marker line. */
+async function conflictMarkers(dir: string, files: string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const file of files) {
+    const text = await readFile(join(dir, file), 'utf8').catch(() => '');
+    if (/^(<{7}|>{7}) /m.test(text) || /^={7}$/m.test(text)) found.push(file);
   }
-  const minutes = Math.round(ms / MINUTE);
-  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
-}
-
-/** Time and silence limits for setup and check commands. */
-function checkLimits(profile: RepoProfile) {
-  const timeoutMs =
-    (profile.limits?.check_timeout_minutes ?? DEFAULT_TASK_LIMITS.check_timeout_minutes) * MINUTE;
-  const stallMs = Math.max(
-    1,
-    Math.round((profile.limits?.check_stall_minutes ?? DEFAULT_TASK_LIMITS.check_stall_minutes) * MINUTE),
-  );
-  return {
-    timeoutMs,
-    stallMs,
-    /** Why a stopped command stopped, in words. */
-    why: (stopped: 'timeout' | 'stalled') =>
-      stopped === 'stalled'
-        ? `printed nothing for ${duration(stallMs)}`
-        : `did not finish within ${duration(timeoutMs)}`,
-  };
-}
-
-/** The cost a failed model call reported, when it reported one. */
-function errorCost(error: unknown): number | null {
-  const cost = (error as { costUsd?: unknown } | null)?.costUsd;
-  return typeof cost === 'number' ? cost : null;
-}
-
-function errorKind(error: unknown): ModelFailure | undefined {
-  return (error as { kind?: ModelFailure } | null)?.kind;
-}
-
-/** A failure message that tells the human what to do next. */
-function failureText(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  switch (errorKind(error)) {
-    case 'usage-limit':
-      return `${message}. The plan's usage limit was reached; run the task again after it resets.`;
-    case 'aborted':
-      return `${message}. Run the task again to continue from the last saved step.`;
-    case 'timeout':
-    case 'stalled':
-      return `${message}. Run the task again to retry this step.`;
-    default:
-      return message;
-  }
-}
-
-/** A TCP port that is free now, for a dev server the runtime check starts. */
-function freePort(): Promise<number> {
-  return new Promise((done, fail) => {
-    const server = createServer();
-    server.once('error', fail);
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number };
-      server.close(() => done(port));
-    });
-  });
-}
-
-/** Keeps an editing agent inside its worktree, off forbidden paths and forbidden commands. */
-export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard {
-  const root = resolve(worktree);
-  return {
-    check(toolName, input) {
-      if (toolName === 'Bash') {
-        const command = String(input.command ?? '');
-        const forbidden = isForbiddenCommand(command, profile);
-        return forbidden ? `The command "${forbidden}" is not allowed for the coder.` : undefined;
-      }
-      const raw = input.file_path ?? input.path ?? input.notebook_path;
-      if (raw === undefined) return undefined;
-      const target = resolve(root, String(raw));
-      const rel = relative(root, target);
-      if (rel.startsWith('..') || isAbsolute(rel) || rel === '..' || target.split(sep).includes('.git'))
-        return `Only files inside the task worktree (${root}) may be used.`;
-      if (
-        (toolName === 'Edit' || toolName === 'Write') &&
-        isForbiddenPath(rel, profile.confirmed.forbidden_paths)
-      )
-        return `The path "${rel}" is forbidden by the repository profile.`;
-      return undefined;
-    },
-  };
+  return found;
 }
 
 export class Driver {
@@ -475,89 +373,9 @@ export class Driver {
     return undefined;
   }
 
-  /**
-   * Checks the profile before any paid run: preflight checks, then setup, test and full_check in
-   * a temporary worktree from the base branch. No model is called. The first failure skips the
-   * remaining steps; the worktree is always removed.
-   */
-  async checkProfile(project: string, repo: string): Promise<ProfileCheckResult> {
-    const profile = await this.deps.readProfile(project);
-    const limits = checkLimits(profile);
-    const steps: ProfileCheckStep[] = [];
-    let failed = false;
-    const step = async (name: string, command: string, cwd: string, timeoutMs: number, stallMs?: number) => {
-      if (failed) {
-        steps.push({ name, command, outcome: 'skipped', duration_ms: 0, output: '' });
-        return;
-      }
-      const started = Date.now();
-      let output = '';
-      this.deps.log(`$ ${command}   # ${name}`);
-      const result = await this.deps.shell.runShell(command, {
-        cwd,
-        captureLimit: 0,
-        onOutput: (chunk) => {
-          output = tail(output + chunk, 4000);
-          this.deps.log(chunk.replace(/\n$/, ''));
-        },
-        timeoutMs,
-        ...(stallMs ? { stallMs } : {}),
-        signal: this.deps.signal,
-        group: true,
-      });
-      if (result.stopped === 'aborted') throw new DriverError('the profile check was stopped');
-      const ok = !result.stopped && result.code === 0;
-      if (!ok)
-        output += `\n[${result.stopped ? `${limits.why(result.stopped)} and was stopped` : `exited with status ${result.code}`}]`;
-      const environment = ok ? undefined : environmentFailure(output, profile.environment_errors);
-      steps.push({
-        name,
-        command,
-        outcome: ok ? 'passed' : 'failed',
-        duration_ms: Date.now() - started,
-        output: output.trim(),
-        ...(environment ? { environment: environment.reason } : {}),
-      });
-      if (!ok) failed = true;
-    };
-    for (const check of profile.preflight ?? [])
-      await step(`Preflight: ${check.name}`, check.run, repo, 2 * MINUTE);
-    const base = profile.repo.base_branch.value;
-    const stamp = `profile-check-${Date.now()}`;
-    const path = this.deps.tasks.worktreePath(project, stamp);
-    const branch = `factory/${stamp}`;
-    let created = false;
-    if (failed) steps.push({ name: `Worktree from ${base}`, outcome: 'skipped', duration_ms: 0, output: '' });
-    else {
-      const started = Date.now();
-      try {
-        await this.deps.git.addWorktree(repo, path, branch, base);
-        created = true;
-        steps.push({
-          name: `Worktree from ${base}`,
-          outcome: 'passed',
-          duration_ms: Date.now() - started,
-          output: path,
-        });
-      } catch (error) {
-        failed = true;
-        steps.push({
-          name: `Worktree from ${base}`,
-          outcome: 'failed',
-          duration_ms: Date.now() - started,
-          output: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    try {
-      if (profile.commands.setup)
-        await step('Setup', profile.commands.setup, path, limits.timeoutMs, limits.stallMs);
-      await step('Test', profile.commands.test, path, limits.timeoutMs, limits.stallMs);
-      await step('Full check', profile.commands.full_check, path, limits.timeoutMs, limits.stallMs);
-    } finally {
-      if (created) await this.deps.git.removeWorktree(repo, path, branch).catch(() => undefined);
-    }
-    return { passed: !failed, steps };
+  /** Runs each profile command once in the repository and reports what passed. */
+  checkProfile(project: string, repo: string): Promise<ProfileCheckResult> {
+    return checkProfile(this.deps, project, repo);
   }
 
   /**
@@ -578,171 +396,15 @@ export class Driver {
     throw new DriverError(message);
   }
 
-  private async checkedWorktree(task: TaskRecord): Promise<{ path: string; branch: string; base: string }> {
-    const { git } = this.deps;
-    const path = this.deps.tasks.worktreePath(task.project, task.id);
-    const branch = `factory/${task.id}`;
-    if (!(await this.deps.definitions.exists(path)))
-      throw new DriverError(`task worktree does not exist: ${path}`);
-    const [worktreeRepo, taskRepo] = await Promise.all([git.commonRepo(path), git.commonRepo(task.repo)]);
-    if (!worktreeRepo || worktreeRepo !== taskRepo)
-      throw new DriverError('task worktree does not belong to the task repository');
-    if ((await git.currentBranch(path)) !== branch)
-      throw new DriverError(`task worktree is not on branch ${branch}`);
-    const base =
-      task.worktree?.base_branch ?? (await this.deps.readProfile(task.project)).repo.base_branch.value;
-    return { path, branch, base };
+  private checkedWorktree(task: TaskRecord): Promise<{ path: string; branch: string; base: string }> {
+    return checkedWorktree(this.deps, task);
   }
 
   // ---------- verification ----------
 
   /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
-  async verify(
-    project: string,
-    id: string,
-  ): Promise<{
-    passed: boolean;
-    output: string;
-    headSha: string;
-    runtime?: RuntimeVerdict;
-    notRunLocally?: string[];
-    testIntegrity?: 'checked' | 'allowed';
-  }> {
-    const task = await this.deps.tasks.read(project, id);
-    const profile = await this.deps.readProfile(project);
-    const { path, base } = await this.checkedWorktree(task);
-    const startingHead = await this.deps.git.headSha(path);
-    const changes = await this.deps.git.diffLineCounts(path, base);
-    const nonTestLines = changes
-      .filter((change) => !isTestPath(change.path))
-      .reduce((sum, change) => sum + (change.added ?? 0) + (change.deleted ?? 0), 0);
-    if (nonTestLines > 400)
-      return {
-        passed: false,
-        output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
-        headSha: startingHead,
-      };
-    // Passing tests prove nothing if the change made them easier to pass.
-    const weakened =
-      task.allow_test_changes === true ? [] : testWeakening(await this.deps.git.diffSince(path, base));
-    if (weakened.length)
-      return {
-        passed: false,
-        output: `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`,
-        headSha: startingHead,
-      };
-    const limits = checkLimits(profile);
-    let output = '';
-    let commandOutput = '';
-    const onOutput = (chunk: string) => {
-      output = tail(output + chunk);
-      commandOutput = tail(commandOutput + chunk);
-      this.deps.log(chunk.replace(/\n$/, ''));
-    };
-    const notRunLocally: string[] = [];
-    for (const [label, command] of [
-      ['test', profile.commands.test],
-      ['full_check', profile.commands.full_check],
-    ] as const) {
-      this.deps.log(`$ ${command}   # ${label}`);
-      commandOutput = '';
-      const result = await this.deps.shell.runShell(command, {
-        cwd: path,
-        captureLimit: 0,
-        onOutput,
-        timeoutMs: limits.timeoutMs,
-        stallMs: limits.stallMs,
-        signal: this.deps.signal,
-        group: true,
-      });
-      if (result.stopped === 'aborted')
-        throw new DriverError(`${label} was stopped because the run was cancelled`);
-      if (result.stopped) {
-        output += `\n[${label} ${limits.why(result.stopped)} and was stopped]\n`;
-        return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
-      }
-      const tooBroad = result.code !== 0 ? tooBroadForLocalCheck(commandOutput) : undefined;
-      if (tooBroad) {
-        // The repository refuses to run this check on a workstation. CI runs it on the pull request.
-        output += `\n[${label} not run locally: ${tooBroad} CI must pass before merge.]\n`;
-        notRunLocally.push(label);
-        continue;
-      }
-      if (result.code !== 0) {
-        output += `\n[${label} exited with status ${result.code}]\n`;
-        return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
-      }
-    }
-    let runtime: RuntimeVerdict | undefined;
-    if (profile.commands.runtime_check) {
-      const command = profile.commands.runtime_check;
-      // Reticle keeps session journals in .reticle/; they must not make the tree dirty.
-      await this.deps.git.excludeLocally?.(path, '.reticle/');
-      this.deps.log(`$ ${command}   # runtime_check`);
-      let checkOutput = '';
-      const result = await this.deps.shell.runShell(command, {
-        cwd: path,
-        // Its own port, so parallel tasks' dev servers do not collide; no usage telemetry.
-        env: { ...process.env, PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
-        captureLimit: 0,
-        onOutput: (chunk) => {
-          checkOutput = tail(checkOutput + chunk);
-          onOutput(chunk);
-        },
-        timeoutMs: limits.timeoutMs,
-        stallMs: limits.stallMs,
-        signal: this.deps.signal,
-        group: true,
-      });
-      if (result.stopped === 'aborted')
-        throw new DriverError('runtime_check was stopped because the run was cancelled');
-      if (result.stopped) {
-        output += `\n[runtime_check ${limits.why(result.stopped)} and was stopped]\n`;
-        return {
-          passed: false,
-          output: tail(output),
-          headSha: await this.deps.git.headSha(path),
-          runtime: 'none',
-        };
-      }
-      runtime = runtimeVerdict(checkOutput);
-      if (runtime === 'no') {
-        output += '\n[runtime_check found faults in the running app; fix each ✗ line above]\n';
-        return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path), runtime };
-      }
-      // Only `yes` is a pass. Anything else cannot fail the coder, but the gate shows it to the human.
-      if (runtime !== 'yes')
-        output += `\n[runtime_check could not decide (verdict: ${runtime}, exit ${result.code}); check the running app before approving]\n`;
-    }
-    // Verification must not change the reviewed change: generated files that are not ignored
-    // would otherwise be missing from the commit, or block opening the pull request.
-    const dirty = await this.deps.git.dirtyFiles(path);
-    if (dirty.length) {
-      output += `\n[verification left uncommitted changes: ${dirty.join(', ')}. Commit them or add them to .gitignore.]\n`;
-      return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
-    }
-    // Build output and caches do not belong in the change, even when the repository forgot to
-    // ignore them (a committed tsconfig.tsbuildinfo once slipped through review this way).
-    const generated = (await this.deps.git.addedOrModifiedSince(path, base)).filter((file) =>
-      isGeneratedPath(file, profile.generated_paths),
-    );
-    if (generated.length) {
-      output += `\n[the change commits generated files: ${generated.join(', ')}. Remove them from the change and add them to .gitignore.]\n`;
-      return { passed: false, output: tail(output), headSha: await this.deps.git.headSha(path) };
-    }
-    const headSha = await this.deps.git.headSha(path);
-    if (headSha !== startingHead) {
-      output += '\n[the commit changed during verification; rerun checks against one unchanged commit.]\n';
-      return { passed: false, output: tail(output), headSha };
-    }
-    return {
-      passed: true,
-      output,
-      headSha,
-      testIntegrity: task.allow_test_changes === true ? 'allowed' : 'checked',
-      ...(runtime ? { runtime } : {}),
-      ...(notRunLocally.length ? { notRunLocally } : {}),
-    };
+  verify(project: string, id: string) {
+    return verifyWorktree(this.deps, project, id);
   }
 
   private async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
@@ -985,6 +647,76 @@ export class Driver {
   }
 
   /**
+   * More work on a task whose PR is open, by a workspace agent on the same branch and PR (see
+   * core follow-ups.ts). It starts from the PR head and refuses a branch that diverged from it. A
+   * conflict follow-up merges the base first: a clean merge goes straight to verification, and
+   * conflicts go to the agent. Either way the task stops at the approval gate with the new commit.
+   */
+  async followUp(
+    project: string,
+    id: string,
+    input: { note: string; kind: FollowUpKind; agent: string; by: string; prHead?: string },
+  ): Promise<TaskRecord> {
+    let task = await this.deps.tasks.read(project, id);
+    const blockers = taskCommandBlockers(task, 'follow-up');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    const { git } = this.deps;
+    if (!this.deps.agentSession || !git.fetchRefs || !git.fastForwardTo || !git.mergeRef)
+      throw new DriverError('Follow-ups are not available here.');
+    const { path, branch, base } = await this.checkedWorktree(task);
+    if (!(await git.isClean(path))) throw new DriverError('the task worktree has uncommitted changes');
+    // Start from the PR head: someone may have pushed to it since the factory did.
+    await git.fetchRefs(path, [branch, base]);
+    if (!(await git.fastForwardTo(path, `origin/${branch}`)))
+      throw new DriverError(`the task branch has diverged from the pull request (origin/${branch})`);
+    const changesAgent = task.workflow !== 'agent' || task.agent !== input.agent;
+    const entry = {
+      at: this.deps.now(),
+      kind: input.kind,
+      note: input.note,
+      agent: input.agent,
+      by: input.by,
+      ...(input.prHead ? { pr_head: input.prHead } : {}),
+    };
+    task = withEvent(
+      {
+        ...task,
+        workflow: 'agent',
+        agent: input.agent,
+        // Another agent starts its own session; the same agent keeps its context.
+        ...(changesAgent ? { agent_session: undefined } : {}),
+        approval: undefined,
+        follow_ups: [...(task.follow_ups ?? []), entry],
+      },
+      this.deps.now(),
+      'follow-up',
+      `${input.by === 'factory' ? 'The factory' : 'You'} added a follow-up for ${input.agent}: ${input.note}`,
+    );
+    await this.deps.tasks.write(task);
+    let note = input.note;
+    if (input.kind === 'conflicts') {
+      this.deps.log(`Merging ${base} into ${branch}…`);
+      const merge = await git.mergeRef(path, `origin/${base}`);
+      if (merge.clean) {
+        // Nothing for an agent: the merged commit goes through verification to the gate.
+        this.deps.log('The merge applied without conflicts. Verifying…');
+        return this.gateAfterFollowUp(project, id);
+      }
+      note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
+    }
+    return this.agentRun(project, id, note);
+  }
+
+  /** Verifies the worktree head and puts a follow-up's commit at the approval gate. */
+  private async gateAfterFollowUp(project: string, id: string): Promise<TaskRecord> {
+    const verified = await this.verifyAndRecord(project, id);
+    if (!verified.verification?.passed) return verified;
+    const ready = withStage(verified, this.deps.now(), 'awaiting-approval', 'Ready for your review');
+    await this.deps.tasks.write(ready);
+    return ready;
+  }
+
+  /**
    * A workspace agent works the task in one session under the coder's guard and sandbox, then the
    * driver commits and verifies. A reply resumes the same session. There is no reviewer step: the
    * person reviews the change before approving it, and only a person opens the pull request.
@@ -1086,14 +818,20 @@ export class Driver {
       if (childCost) costUsd = (costUsd ?? 0) + childCost;
 
       let committed = false;
+      // A conflict follow-up leaves a merge in progress: the commit below completes it.
+      const merging = (await this.deps.git.mergeInProgress?.(path)) ?? false;
       if (outcome === 'completed') {
         const changed = await this.deps.git.stageAll(path);
         const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+        const marked = merging ? await conflictMarkers(path, changed) : [];
         if (forbidden.length) {
           await this.deps.git.unstageAll(path);
           outcome = 'failed';
           error = `${session.name} changed forbidden paths: ${forbidden.join(', ')}`;
-        } else if (changed.length) {
+        } else if (marked.length) {
+          outcome = 'failed';
+          error = `conflict markers remain in ${marked.join(', ')}`;
+        } else if (changed.length || merging) {
           await this.deps.git.commit(
             path,
             `${taskTitle(task)}\n\nFactory task ${task.id} (${session.name}).`,
@@ -1125,6 +863,7 @@ export class Driver {
         `${session.name} ${outcome === 'failed' ? `stopped: ${error}` : 'finished'}${committed ? ` and Factory committed the rest on ${branch}` : ''}`,
       );
       if (outcome === 'failed') {
+        if (merging) await this.deps.git.abortMerge?.(path);
         await this.deps.tasks.write(
           withStage(task, this.deps.now(), 'failed', error ?? `${session.name} failed`),
         );
@@ -1132,6 +871,18 @@ export class Driver {
       }
       const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
       const asked = session.reported();
+      // A follow-up that changed nothing leaves the PR as it was: the task is done again.
+      if (task.pr && asked !== 'blocked' && (await this.deps.git.headSha(path)) === task.pr.head_sha) {
+        await this.deps.tasks.write(
+          withStage(
+            task,
+            this.deps.now(),
+            'pr-opened',
+            `${session.name} made no changes; the pull request is unchanged.`,
+          ),
+        );
+        return await this.deps.tasks.read(project, id);
+      }
       if (asked === 'blocked' || (await this.deps.git.commitCountSince(path, base)) === 0) {
         const message =
           asked === 'blocked'
@@ -1584,47 +1335,9 @@ export class Driver {
     }
   }
 
-  async openPr(project: string, id: string, options: { draft?: boolean } = {}): Promise<TaskRecord> {
-    let task = await this.deps.tasks.read(project, id);
-    const { path, branch, base } = await this.checkedWorktree(task);
-    const head = await this.deps.git.headSha(path);
-    const blockers = openPrBlockers(task, head);
-    if (blockers.length) throw new DriverError(`cannot open a pull request: ${blockers.join('; ')}`);
-    if (!(await this.deps.git.isClean(path)))
-      throw new DriverError('the task worktree has uncommitted changes');
-    if (!(await this.deps.git.remoteUrl(path)))
-      throw new DriverError('the repository has no "origin" remote');
-    // A stacked PR targets its blocker's branch, which GitHub must already have.
-    if (task.stack_on && base === task.stack_on && !(await this.deps.git.remoteBranchExists?.(path, base)))
-      throw new DriverError(
-        `open the pull request of the blocking ticket first: ${base} is not on origin yet`,
-      );
-    this.deps.log(`Pushing ${branch}…`);
-    await this.deps.git.push(path, branch);
-    // A previous attempt may have opened the PR and then failed to record it: adopt that PR
-    // instead of opening a second one.
-    const existing = await this.deps.github.findOpenPullRequest?.({ cwd: path, head: branch });
-    if (existing) this.deps.log(`Pull request already open: ${existing}`);
-    else this.deps.log('Opening pull request…');
-    const url =
-      existing ??
-      (await this.deps.github.createPullRequest({
-        cwd: path,
-        base,
-        head: branch,
-        title: prTitle(task, head),
-        body: prBody(task, head),
-        draft: options.draft,
-      }));
-    task = await this.deps.tasks.read(project, id);
-    task = withStage(
-      { ...task, pr: { url, branch, head_sha: head, at: this.deps.now() } },
-      this.deps.now(),
-      'pr-opened',
-      url,
-    );
-    await this.deps.tasks.write(task);
-    return task;
+  /** Pushes the approved commit and opens its PR, reconciling with GitHub first (see publication.ts). */
+  openPr(project: string, id: string, options: { draft?: boolean } = {}): Promise<TaskRecord> {
+    return openPr(this.deps, project, id, options);
   }
 }
 

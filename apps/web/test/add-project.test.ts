@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { addProject } from '@/app/actions';
 import { suggestName } from '@/components/add-project-form';
 
-vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 const cookieSet = vi.fn();
 vi.mock('next/headers', () => ({ cookies: vi.fn(async () => ({ set: cookieSet })) }));

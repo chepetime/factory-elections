@@ -10,7 +10,6 @@ import { claudeCli, type ClaudeTurnRequest } from '@factory/adapters-claude';
 import { ProjectSettings } from '@factory/core';
 import {
   AUTOMATED_TURN_DENY,
-  MAX_AGENTS,
   ReviewService,
   SKILL_DIR,
   defaultReviewDeps,
@@ -18,6 +17,7 @@ import {
   type AgentTurn,
   type ReviewDeps,
 } from '../src/reviews.ts';
+import { MAX_AGENTS } from '@factory/dispatcher';
 
 const node = (number: number, branch: string) => ({
   number,
@@ -232,6 +232,16 @@ test('a running review blocks duplicates, replies and removal, and can be stoppe
   await assert.rejects(reviews.detail({ project: '../x', number: 7 }));
 });
 
+test('a Stop that arrives after the turn ended keeps the review completed', async (t) => {
+  const { reviews } = await fixture(t);
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  const before = await settle(reviews, 7);
+  await reviews.stop({ project: 'app', number: 7 });
+  const after = await reviews.detail({ project: 'app', number: 7 });
+  assert.deepEqual([after.state, after.stop_reason], [before.state, undefined]);
+  assert.notEqual(after.state, 'stopped');
+});
+
 test('automated turns may not post to GitHub; a message the user typed may ask the agent to', async (t) => {
   const { reviews, turns } = await fixture(t);
   await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
@@ -289,7 +299,7 @@ test('a review turn with no output for the stall limit is stopped and says why',
 
 test('a finished review turn writes one review span with its cost and PR link', async (t) => {
   const { root, reviews } = await fixture(t);
-  const { TraceLog } = await import('../src/traces.ts');
+  const { TraceLog } = await import('@factory/evidence');
   reviews.traces = new TraceLog(root);
   await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
   await settle(reviews, 7);

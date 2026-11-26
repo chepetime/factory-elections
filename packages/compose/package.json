@@ -1,0 +1,20 @@
+{
+  "name": "@factory/compose",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/compose.ts",
+    "./diagnostics": "./src/diagnostics.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-claude": "workspace:*",
+    "@factory/adapters-codex": "workspace:*",
+    "@factory/adapters-data": "workspace:*",
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/adapters-git": "workspace:*",
+    "@factory/adapters-github": "workspace:*",
+    "@factory/adapters-process": "workspace:*",
+    "@factory/core": "workspace:*",
+    "@factory/driver": "workspace:*"
+  }
+}

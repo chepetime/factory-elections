@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import {
   defaultPrefix,
   dropAction,
+  queueWaitLabel,
   Issue,
   IssueBoard,
   issueKey,
   issueNumber,
   ProjectSettings,
+  runHeld,
   runWorking,
   statusFromStage,
   syncedStatus,
@@ -126,4 +128,40 @@ test('a run that waits for you closes when you send its task back to the queue',
     kind: 'requeue',
     status: 'todo',
   });
+});
+
+test('a queued turn shows in Todo, unless a person cancelled the task since', () => {
+  const run = { stage: 'blocked' as const, updated_at: '2026-11-20T10:00:00.000Z', waiting: true };
+  assert.equal(syncedStatus({ status: 'in_progress', status_at: '2026-11-20T11:00:00.000Z' }, run), 'todo');
+  assert.equal(syncedStatus({ status: 'backlog', status_at: '2026-11-20T09:00:00.000Z' }, run), 'todo');
+  assert.equal(
+    syncedStatus({ status: 'cancelled', status_at: '2026-11-20T11:00:00.000Z' }, run),
+    'cancelled',
+  );
+});
+
+test('a queued turn refuses every drop but Cancelled, so no drop closes its run or starts a second turn', () => {
+  const run = { stage: 'blocked' as const, waiting: true };
+  for (const to of ['backlog', 'in_progress', 'done'] as const)
+    assert.equal(dropAction('todo', to, run).kind, 'refused', to);
+  assert.deepEqual(dropAction('todo', 'cancelled', run), { kind: 'reject' });
+  assert.deepEqual(dropAction('todo', 'todo', run), { kind: 'none' });
+});
+
+test('a run is held by a live run when that is known, else by a working stage', () => {
+  assert.equal(runHeld('coding'), true);
+  assert.equal(runHeld('failed'), false);
+  assert.equal(runHeld('coding', false), false, 'an interrupted run is not held');
+  assert.equal(runHeld('failed', true), true, 'a live revision of a failed run is held');
+});
+
+test('a queued turn names what it waits for', () => {
+  assert.equal(queueWaitLabel('agent', 'Devin'), 'Waiting for Devin');
+  assert.equal(queueWaitLabel('agent'), 'Waiting for its agent');
+  assert.equal(queueWaitLabel('slot', 'Devin'), 'Waiting for a free slot', 'a full pool is not the agent');
+});
+
+test('a Done task whose PR is open asks for a follow-up when dropped on In progress; a rejected one starts again', () => {
+  assert.deepEqual(dropAction('done', 'in_progress', { stage: 'pr-opened' }), { kind: 'follow-up' });
+  assert.deepEqual(dropAction('cancelled', 'in_progress', { stage: 'rejected' }), { kind: 'start-run' });
 });

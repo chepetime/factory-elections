@@ -27,6 +27,7 @@ async function setup(
   tasks: TaskRecord[] = [],
   settings: Partial<ProjectSettings> = {},
   failingDelete?: string,
+  waiting: Set<string> = new Set(),
 ) {
   const root = await mkdtemp(join(tmpdir(), 'factory-issues-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -70,6 +71,10 @@ async function setup(
         updated_at: new Date((clock += 1000)).toISOString(),
       };
     },
+    cancelQueued: async (_project, id) => {
+      calls.push(`cancelQueued:${id}`);
+      waiting.delete(id);
+    },
     deleteRun: async (_project, id) => {
       calls.push(`delete:${id}`);
       if (id === failingDelete) throw new Error('git refused');
@@ -78,7 +83,10 @@ async function setup(
         1,
       );
     },
+    followUp: async (_project, id, input) =>
+      void calls.push(`followUp:${id}:${input.kind}:${input.agent}:${input.by}:${input.prHead ?? ''}`),
     now: () => new Date((clock += 1000)),
+    waiting: (_project, id) => (waiting.has(id) ? 'slot' : undefined),
   });
   return { root, service, calls, tasks };
 }
@@ -303,5 +311,151 @@ test('a run that fails to delete is reported and still stays off the board', asy
     (await service.list('change-elections')).items,
     [],
     'the leftover run is not wrapped again',
+  );
+});
+
+test('a turn queued behind a busy agent shows as waiting in Todo, not as its old Blocked stage', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const waiting = new Set<string>();
+  const { service } = await setup(t, [stuck], {}, undefined, waiting);
+  assert.equal((await service.get({ project: 'change-elections', key: 'CE-1' })).status, 'blocked');
+  waiting.add(stuck.id);
+  const queued = await service.get({ project: 'change-elections', key: 'CE-1' });
+  assert.equal(queued.status, 'todo');
+  assert.equal(queued.run?.waiting, true);
+  assert.equal(queued.run?.waiting_for, 'slot');
+  assert.equal(queued.run?.stage, 'blocked', 'the run itself is unchanged until it starts');
+});
+
+test('a task with a queued turn cannot be archived or deleted, so the turn never starts on a removed run', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const waiting = new Set<string>();
+  const { service } = await setup(t, [stuck], {}, undefined, waiting);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: true });
+  waiting.add(stuck.id);
+  await assert.rejects(service.delete({ project: 'change-elections', key: 'CE-1' }), Conflict);
+  await service.archive({ project: 'change-elections', key: 'CE-1', archived: false });
+  await assert.rejects(
+    service.archive({ project: 'change-elections', key: 'CE-1', archived: true }),
+    Conflict,
+  );
+  await assert.rejects(service.move({ project: 'change-elections', key: 'CE-1', to: 'backlog' }), /queued/);
+});
+
+test('a task view says whether a live run holds its latest run', async (t) => {
+  const live = run('Live run', '2026-11-20T10:00:00.000Z', 'failed');
+  const stopped = run('Stopped run', '2026-11-21T10:00:00.000Z', 'coding');
+  const root = await mkdtemp(join(tmpdir(), 'factory-issues-owned-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const service = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => [live, stopped] },
+    owned: (_project, id) => id === live.id,
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false },
+    }),
+    submit: async () => '',
+    run: async () => undefined,
+    reject: async () => undefined,
+    deleteRun: async () => undefined,
+  } as ConstructorParameters<typeof IssueService>[0]);
+  const { items } = await service.list('change-elections');
+  assert.deepEqual(
+    items.map((i) => [i.run!.stage, i.run!.owned]),
+    [
+      ['failed', true],
+      ['coding', false],
+    ],
+  );
+});
+
+test('an interrupted run at coding can be archived and deleted; a live run cannot', async (t) => {
+  const live = run('Live run', '2026-11-20T10:00:00.000Z', 'failed');
+  const stopped = run('Stopped run', '2026-11-21T10:00:00.000Z', 'coding');
+  const root = await mkdtemp(join(tmpdir(), 'factory-issues-held-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const deleted: string[] = [];
+  const service = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => [live, stopped] },
+    owned: (_project, id) => id === live.id,
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false },
+    }),
+    submit: async () => '',
+    run: async () => undefined,
+    reject: async () => undefined,
+    deleteRun: async (_project, id) => void deleted.push(id),
+  } as ConstructorParameters<typeof IssueService>[0]);
+  const { items } = await service.list('change-elections');
+  const key = (id: string) => items.find((i) => i.run!.id === id)!.key;
+  await assert.rejects(
+    service.archive({ project: 'change-elections', key: key(live.id), archived: true }),
+    Conflict,
+  );
+  const archived = await service.archive({
+    project: 'change-elections',
+    key: key(stopped.id),
+    archived: true,
+  });
+  assert.ok(archived.archived_at);
+  await service.delete({ project: 'change-elections', key: key(stopped.id) });
+  assert.deepEqual(deleted, [stopped.id]);
+});
+
+test('Cancelled takes a queued turn out of the queue before it rejects the run', async (t) => {
+  const stuck = run('Update deps', '2026-11-18T10:00:00.000Z', 'blocked');
+  const { service, calls } = await setup(t, [stuck], {}, undefined, new Set([stuck.id]));
+  await service.move({ project: 'change-elections', key: 'CE-1', to: 'cancelled' });
+  assert.deepEqual(
+    calls.filter((c) => /^(cancelQueued|reject):/.test(c)).map((c) => c.split(':')[0]),
+    ['cancelQueued', 'reject'],
+  );
+});
+
+test('a follow-up on a task whose PR is open goes to its agent, and a drop to In progress points to it', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/4',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Ship it', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const working = run('Still coding', '2026-11-18T11:00:00.000Z', 'coding');
+  const { service, calls } = await setup(t, [opened, working]);
+  await assert.rejects(
+    service.move({ project: 'change-elections', key: 'CE-1', to: 'in_progress' }),
+    /Add a follow-up with instructions from the task page/,
+  );
+  const view = await service.followUp({
+    project: 'change-elections',
+    key: 'CE-1',
+    note: 'Fix the copy\nand more',
+  });
+  assert.ok(calls.includes(`followUp:${opened.id}:custom:devin:you:`), calls.join('\n'));
+  assert.equal(view.events.at(-1)?.message, 'Added a follow-up for devin: Fix the copy');
+  assert.equal(view.assignee, 'devin', 'the agent becomes the assignee of an unassigned task');
+
+  await service.followUp({
+    project: 'change-elections',
+    key: opened.id,
+    note: 'Resolve the conflicts.',
+    kind: 'conflicts',
+    by: 'factory',
+    pr_head: 'h1',
+    agent: 'mika',
+  });
+  assert.ok(calls.includes(`followUp:${opened.id}:conflicts:mika:factory:h1`), 'a run id finds the task');
+  await assert.rejects(
+    service.followUp({ project: 'change-elections', key: 'CE-2', note: 'Go' }),
+    /continues a task whose pull request is open/,
   );
 });

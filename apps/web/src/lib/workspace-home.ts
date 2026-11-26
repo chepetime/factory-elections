@@ -1,8 +1,6 @@
 // Numbers for one project card on the app homepage, from its runs and board tasks.
-import type { Issue, IssueStatus, Stage, TaskRecord } from '@factory/core';
-import { NEEDS_YOU } from '@/lib/overview';
+import { runAttention, type Issue, type IssueStatus, type TaskRecord } from '@factory/core';
 
-const RUNNING: Stage[] = ['queued', 'classified', 'coding', 'reviewing'];
 const CLOSED: IssueStatus[] = ['done', 'cancelled'];
 
 export interface ProjectStats {
@@ -10,7 +8,7 @@ export interface ProjectStats {
   openTasks: number;
   /** Runs the factory is working on. */
   running: number;
-  /** Runs that wait for a person: approval, a blocker or a failure. */
+  /** Runs where a person has the next move: review, open the pull request, a blocker or a failure. */
   needsYou: number;
   /** Runs that opened a pull request, all time. */
   pullRequests: number;
@@ -20,7 +18,11 @@ export interface ProjectStats {
   lastActivity?: string;
 }
 
-type BoardTask = Pick<Issue, 'status' | 'updated_at'> & { archived_at?: string | undefined };
+type BoardTask = Pick<Issue, 'status' | 'updated_at'> & {
+  archived_at?: string | undefined;
+  /** The task's latest run, with live ownership when the backend reports it. */
+  run?: { id: string; owned?: boolean | undefined; waiting?: boolean | undefined } | undefined;
+};
 
 export function projectStats(
   runs: readonly TaskRecord[],
@@ -36,10 +38,13 @@ export function projectStats(
     (t): t is string => Boolean(t),
   );
   const lastActivity = times.sort().at(-1);
+  // Ownership is known only for runs the board lists; for the rest the stage decides.
+  const live = new Map(tasks.flatMap((t) => (t.run ? [[t.run.id, t.run]] : [])));
+  const attention = runs.map((r) => runAttention(r.stage, live.get(r.id)?.owned, live.get(r.id)?.waiting));
   return {
     openTasks: tasks.filter((t) => !t.archived_at && !CLOSED.includes(t.status)).length,
-    running: runs.filter((r) => RUNNING.includes(r.stage)).length,
-    needsYou: runs.filter((r) => NEEDS_YOU.includes(r.stage)).length,
+    running: attention.filter((a) => a === 'working').length,
+    needsYou: attention.filter((a) => a === 'needs-you').length,
     pullRequests: runs.filter((r) => r.pr).length,
     spendThisMonth: runs
       .flatMap((r) => r.attempts ?? [])

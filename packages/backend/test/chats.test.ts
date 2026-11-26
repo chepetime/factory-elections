@@ -5,10 +5,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { storageFor } from '@factory/adapters-data';
 import type { ModelRun } from '@factory/core';
-import { AgentService } from '../src/agent-profiles.ts';
-import { ChatService, repositoryReadGuard } from '../src/chats.ts';
+import { AgentService, ChatService, repositoryReadGuard, DelegationServer } from '@factory/agents';
+import { AgentPool, Executions } from '@factory/dispatcher';
 import { Conflict } from '../src/conflict.ts';
-import { DelegationServer } from '../src/delegation.ts';
 import { IssueService } from '../src/issues.ts';
 
 test('a chat resumes its session, shows the reply as it grows, refuses a second message, and creates tasks', async (t) => {
@@ -41,7 +40,7 @@ test('a chat resumes its session, shows the reply as it grows, refuses a second 
   let release!: () => void;
   const gate = new Promise<void>((done) => (release = done));
   let turn = 0;
-  let slots = 1;
+  const pool = new AgentPool({ max: 1 });
   const chats = new ChatService({
     root,
     storage: storageFor(root),
@@ -49,7 +48,7 @@ test('a chat resumes its session, shows the reply as it grows, refuses a second 
     projects: async () => [{ name: 'demo', repo: root }],
     issues,
     delegation,
-    slot: async () => (slots > 0 ? (slots--, () => void slots++) : undefined),
+    executions: new Executions({ pool, log: () => {} }),
     runner: () => ({
       run: async (r) => {
         calls.push(r);
@@ -129,3 +128,47 @@ test('chat reads stay inside the repository and away from env files', () => {
   assert.match(guard.check('Read', { file_path: '/repo/.env.local' }) ?? '', /may not read/);
   assert.match(guard.check('Glob', { pattern: '/etc/**' }) ?? '', /inside the repository/);
 });
+
+test('a reply cut off by shutdown says so, and a stopped one says you stopped it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-chats-stop-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agents = new AgentService({ root, storage: storageFor(root), seed: true });
+  const executions = new Executions({ pool: new AgentPool({ max: 2 }), log: () => {} });
+  let started = 0;
+  const chats = new ChatService({
+    root,
+    storage: storageFor(root),
+    agent: (id) => agents.get({ id }),
+    projects: async () => [],
+    issues: { create: async () => never(), update: async () => never(), list: async () => never() },
+    executions,
+    runner: () => ({
+      run: (r) =>
+        new Promise((_, fail) => {
+          started++;
+          r.signal?.addEventListener('abort', () => fail(new Error('model run stopped: aborted')));
+        }),
+    }),
+  });
+  const ask = async () => {
+    const chat = await chats.start({ agent: 'devin' });
+    await chats.send({ id: chat.id, text: 'Hello' });
+    return chat.id;
+  };
+  const lastError = async (id: string) => (await chats.get({ id })).turns.at(-1)?.error;
+
+  const stopped = await ask();
+  assert.deepEqual(chats.stop({ id: stopped }), { stopped: true });
+  await chats.settled(stopped);
+  assert.equal(await lastError(stopped), 'Stopped by you.');
+
+  const cut = await ask();
+  await executions.drain(10);
+  assert.equal(await lastError(cut), 'The backend stopped during this reply. Send it again.');
+  assert.equal((await chats.get({ id: cut })).working, false);
+  assert.equal(started, 2);
+});
+
+function never(): never {
+  throw new Error('not used in this test');
+}

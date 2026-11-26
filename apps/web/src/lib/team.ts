@@ -1,7 +1,7 @@
 // Server-only typed bridge. Repository access and assignment persistence belong to the backend.
 import 'server-only';
 import { z } from 'zod';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import type { Contributor } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 export type { Contributor };

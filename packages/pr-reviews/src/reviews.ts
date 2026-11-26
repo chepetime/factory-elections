@@ -67,10 +67,10 @@ import {
   type ClaudeTurnRequest,
   type ClaudeTurnResult,
 } from '@factory/adapters-claude';
-import { Conflict } from './conflict.ts';
-import type { DelegationServer, Grant } from './delegation.ts';
-import type { MemoryService } from './memory.ts';
-import type { TraceLog } from './traces.ts';
+import { Conflict } from '@factory/core';
+import { MAX_AGENTS } from '@factory/dispatcher';
+import type { ReviewDelegation, ReviewGrant, ReviewMemory } from './ports.ts';
+import type { TraceLog } from '@factory/evidence';
 
 export const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -81,8 +81,6 @@ export const SKILL_DIR = resolve(
   'skills',
   'senior-pr-review',
 );
-/** Agents that may run at once on the machine's one Claude sign-in: reviews plus task runs. */
-export const MAX_AGENTS = Number(process.env.FACTORY_MAX_AGENTS ?? 6);
 /** A review turn with no new output for this long is stopped. Claude Code's Bash tool stops a
  * command after 10 minutes at most, so a working agent always writes output well within this. */
 export const REVIEW_STALL_MS = Number(process.env.FACTORY_REVIEW_STALL_MS ?? 30 * 60_000);
@@ -296,14 +294,14 @@ export class ReviewService {
   private readonly otherAgents: () => number;
   private sweeper?: ReturnType<typeof setInterval>;
   /** Starts `delegate` child tasks for review turns, when the backend runs the server. */
-  delegation?: DelegationServer;
+  delegation?: ReviewDelegation;
   /** Repository facts for the system prompt; finished turns teach it, and its tool pruning applies. */
-  memory?: MemoryService;
+  memory?: ReviewMemory;
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
   reviewRecords?: PrReviewStore;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
-  private readonly grants = new Map<string, Grant>();
+  private readonly grants = new Map<string, ReviewGrant>();
   /** This backend instance, the owner of the in-process turns it starts. */
   readonly instance = randomUUID();
   /** In-process turns that run now, by PR. */
@@ -993,6 +991,9 @@ export class ReviewService {
     if (!record) throw new Conflict(`PR #${number} has no review to stop`);
     const turns = [...record.turns];
     const last = turns.at(-1)!;
+    // A turn that already ended keeps its result: a late Stop must not relabel a completed review.
+    const exit = join(this.dir(project, number), `turn-${turns.length - 1}.exit`);
+    if (await stat(exit).catch(() => undefined)) return;
     this.stopTurn(project, number, last);
     turns[turns.length - 1] = { ...last, stopped: true };
     await writeJsonAtomic(join(this.dir(project, number), 'run.json'), { ...record, turns });

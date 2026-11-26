@@ -280,3 +280,55 @@ test('missing worktree stops tending and appears in the inbox', async (t) => {
   assert.match((await f.tending.waiting('app', [f.task]))[0]!.reason, /Worktree is missing/);
   assert.equal((await f.tending.tend(f.task, f.settings))?.kind, 'wait');
 });
+
+test('with tending off, a conflicting PR gets one conflict follow-up per head, and a mergeable one none', async () => {
+  let pr: PrState = {
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    state: 'OPEN',
+    head_sha: 'h1',
+    base: 'main',
+    mergeable: 'CONFLICTING',
+    checks: [],
+    threads: [],
+  };
+  const task = {
+    id: 't1',
+    project: 'app',
+    repo: '/r',
+    prompt: 'Ship it',
+    stage: 'pr-opened',
+    worktree: { path: '/r', branch: 'factory/t1', base_branch: 'main' },
+    pr: { url: pr.url, branch: 'factory/t1', head_sha: 'h1', at: 'x' },
+  } as TaskRecord;
+  const added: string[] = [];
+  const tending = new TendingService({
+    projects: { list: async () => [{ name: 'app' }] },
+    tasks: { list: async () => [task], taskPath: () => '/r/task.json' },
+    settings: async () => ProjectSettings.parse({}),
+    profile: async () => ({}) as RepoProfile,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    slot: async () => () => {},
+    storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+    github: {
+      me: async () => 'me',
+      pr: async () => pr,
+      rerunFailed: async () => {},
+      failedLog: async () => '',
+      reply: async () => {},
+      resolve: async () => {},
+    },
+    conflictFollowUp: async (t, p) => void added.push(`${t.id}:${p.head_sha}:${p.base}`),
+  });
+  await tending.tick();
+  assert.deepEqual(added, ['t1:h1:main'], 'the pass adds it when tending is off');
+  const seen = {
+    ...task,
+    follow_ups: [{ at: 'x', kind: 'conflicts', note: 'n', agent: 'devin', by: 'factory', pr_head: 'h1' }],
+  } as TaskRecord;
+  assert.equal(await tending.watchConflict(seen), false, 'one follow-up per PR head');
+  pr = { ...pr, head_sha: 'h2' };
+  assert.equal(await tending.watchConflict(seen), true, 'a new head that conflicts again gets another');
+  pr = { ...pr, mergeable: 'MERGEABLE' };
+  assert.equal(await tending.watchConflict(task), false);
+});

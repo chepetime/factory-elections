@@ -25,7 +25,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
 
-**Pickup.** `AgentPickup` (`packages/backend/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
+**Pickup.** `AgentPickup` (`packages/agents/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
 - It starts the Todo tasks of each agent with "Pick up Todo tasks" on, up to the agent's free slots. The order is priority, then the oldest task.
 - A run waiting for you (in review, blocked) does not use a slot.
 - It skips Backlog tasks, archived tasks, and tasks with an open run.
@@ -36,15 +36,27 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 **Replies.** A comment from you wakes the agent's session, but only while the agent waits: `awaiting-approval`, `verification-failed`, `failed` or `blocked`. A comment on an approved, rejected or merged run starts nothing.
 
-**Tools.** The session gets factory tools through its MCP grant (`packages/backend/src/agent-tools.ts`):
+**Tools.** The session gets factory tools through its MCP grant (`packages/agents/src/agent-tools.ts`):
 
 - `comment`: posts on the task as the agent.
 - `set_status`: sets the task to `in_progress`, `in_review` or `blocked`. Done and cancelled stay with you.
 - `delegate`: starts a child task, as for the coder.
 
+## Follow-ups
+
+A task whose PR is open is done, and its run is finished. More work on it is a **follow-up**: a workspace agent continues the same worktree, branch and PR (`packages/core/src/follow-ups.ts`, `Driver.followUp`).
+
+- **Start one** from the task page (Follow up, under the run), or drag the Done card to In progress, which opens the same form. Pick the agent (default: the run's agent, then the task's assignee) and write instructions, or use the **Resolve merge conflicts** preset.
+- **Safe start.** The driver fetches the PR branch and its base, fast-forwards the worktree to the PR head, and refuses a branch that diverged from it. A conflict follow-up merges the base in. A clean merge needs no agent and goes straight to verification. Otherwise the agent gets the list of conflicted files, and the driver refuses to commit while a conflict marker remains, and aborts the merge on failure.
+- **Board.** The run goes through the usual stages again, so the ticket moves by itself: Todo while it waits for the agent, In progress while it works, Blocked when the agent asks for help (`set_status`), In review with the new commit. If the agent changes nothing, the ticket goes back to Done and the PR is unchanged.
+- **Same gate.** Nothing reaches GitHub without your approval of the new commit. Opening the PR again pushes to the same branch and updates the task's own PR. A closed or merged PR stops it and asks you to reopen it or reject the task.
+- **Automatic conflicts.** When PR tending is off for the project, the tending pass (every 10 minutes) adds a conflict follow-up for the task's agent when its open PR conflicts with the base, once per PR head (`TendingService.watchConflict`). With tending on, tending resolves conflicts itself and pushes after the tests pass.
+
+Each follow-up is recorded on the run (`follow_ups`: kind, instructions, agent, who added it, the PR head) and in the task's activity.
+
 ## Chats
 
-`ChatService` (`packages/backend/src/chats.ts`) runs one model turn per message and resumes the chat's session.
+`ChatService` (`packages/agents/src/chats.ts`) runs one model turn per message and resumes the chat's session.
 
 - A chat can have a project. The agent then reads that repository with read-only tools. A guard keeps the reads inside the repository and away from `.env` files and `.git`.
 - The chat tools are `list_tasks` and `create_task`. A created task goes to Todo and starts no work.

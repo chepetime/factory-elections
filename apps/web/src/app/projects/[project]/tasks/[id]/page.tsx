@@ -4,13 +4,15 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import {
+  stageLabel,
   statusFromStage,
   taskAccess,
   type IssueStatus,
   type ServiceAccess,
-  type Stage,
   type TaskRecord,
+  queueWaitLabel,
 } from '@factory/core';
+import { FollowUpForm } from '@/components/follow-up-form';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import {
@@ -248,8 +250,6 @@ function Feed({
   return blocks.length ? <div className="mt-3 flex flex-col gap-3">{blocks}</div> : null;
 }
 
-const stageLabel = (stage: Stage) => stage.charAt(0).toUpperCase() + stage.slice(1).replace(/-/g, ' ');
-
 /** `https://github.com/o/r/pull/12` reads `o/r#12`; any other URL stays as it is. */
 function prLabel(url: string): string {
   const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
@@ -310,7 +310,7 @@ export default async function TaskPage({
   searchParams,
 }: {
   params: Promise<{ project: string; id: string }>;
-  searchParams?: Promise<{ start?: string; run?: string; panel?: string }>;
+  searchParams?: Promise<{ start?: string; run?: string; panel?: string; followup?: string }>;
 }) {
   const query = (await searchParams) ?? {};
   const { project, id } = await params;
@@ -352,7 +352,11 @@ export default async function TaskPage({
     comment
   );
   const run = runId
-    ? await renderRun(project, runId, { startFailed: query.start === 'failed', fallback: reply })
+    ? await renderRun(project, runId, {
+        startFailed: query.start === 'failed',
+        fallback: reply,
+        runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
+      })
     : undefined;
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
   const feed = feedItems(issue);
@@ -441,8 +445,25 @@ export default async function TaskPage({
                 <p className="min-w-0 flex-1 text-sm">
                   <span className="font-medium">Run {runIndex}</span>
                   {runAuthor && <span className="text-muted-foreground"> · {runAuthor.name}</span>}
-                  <span className="text-muted-foreground"> · {stageLabel(run.value.task.stage)}</span>
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {/* Only the latest run can have a queued turn; an older run shows its own stage. */}
+                    {issue.run?.waiting && runId === issue.run.id
+                      ? queueWaitLabel(issue.run.waiting_for, runAuthor?.name)
+                      : stageLabel(run.value.task.stage)}
+                  </span>
                 </p>
+                {run.value.task.pr && (
+                  <a
+                    href={run.value.task.pr.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <GitPullRequest className="size-4 text-muted-foreground" aria-hidden />
+                    {prLabel(run.value.task.pr.url)}
+                  </a>
+                )}
                 {panel !== 'run' && (
                   <Link
                     href={panelHref('run')}
@@ -452,6 +473,28 @@ export default async function TaskPage({
                   </Link>
                 )}
               </div>
+            )}
+            {/* What the latest run needs from you, on the ticket: not only deep in the Run tab. */}
+            {run?.ok && runId === issue.run?.id && run.value.attention && (
+              <div className="mt-3">{run.value.attention}</div>
+            )}
+            {/* The latest run's PR is open: more work is a follow-up on the same branch and PR. */}
+            {run?.ok && runId === issue.run?.id && run.value.task.stage === 'pr-opened' && (
+              <FollowUpForm
+                project={project}
+                issueKey={issue.key}
+                agents={agents.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name }))}
+                {...(((run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                issue.assignee)
+                  ? {
+                      defaultAgent:
+                        (run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                        issue.assignee!,
+                    }
+                  : {})}
+                base={run.value.task.worktree?.base_branch ?? 'main'}
+                open={query.followup === '1'}
+              />
             )}
             <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
           </div>

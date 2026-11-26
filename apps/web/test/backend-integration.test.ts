@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { backendCall } from '@factory/backend/client';
+import { backendCall } from '@factory/backend-client';
 import { submitTask, reviseTask, approveTask, approveAndOpenPullRequest, assignMember } from '@/app/actions';
 import { backgroundRun } from '@/lib/factory';
 import { saveAssignment, teamMembers } from '@/lib/team';
 import { systemStatus } from '@/lib/status';
 
-vi.mock('@factory/backend/client', () => ({ backendCall: vi.fn() }));
+vi.mock('@factory/backend-client', () => ({ backendCall: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({
   redirect: vi.fn((path: string) => {

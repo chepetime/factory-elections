@@ -11,10 +11,10 @@ import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import * as files from '@factory/adapters-fs';
 import { DataStorage, StorageConfig } from '../src/index.ts';
 import { migrateFiles } from '../src/migrate.ts';
-import { Evidence } from '../../backend/src/evidence.ts';
-import { TraceLog } from '../../backend/src/traces.ts';
+import { Evidence } from '../../evidence/src/evidence.ts';
+import { TraceLog } from '../../evidence/src/traces.ts';
 import { startBackend } from '../../backend/src/server.ts';
-import { backendCall, closeBackendClient } from '../../backend/src/client.ts';
+import { backendCall, closeBackendClient } from '../../backend-client/src/client.ts';
 
 const enabled = !!process.env.FACTORY_TEST_STORAGE;
 async function setup(t: TestContext) {

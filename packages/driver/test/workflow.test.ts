@@ -101,7 +101,10 @@ async function setup(
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
     shell: { runShell },
-    github: { createPullRequest: async (o) => (prs.push(o), 'https://github.com/example/demo/pull/1') },
+    github: {
+      createPullRequest: async (o) => (prs.push(o), 'https://github.com/example/demo/pull/1'),
+      pullRequestsFrom: async () => [],
+    },
     runner,
     definitions: {
       readStep: fsAdapter.readStepDefinition,
@@ -195,7 +198,7 @@ test('task goes from intake to an opened pull request only after approval', asyn
     stored.attempts?.map((a) => a.step),
     ['classifier', 'coder', 'reviewer', 'pr-writer'],
   );
-  await assert.rejects(driver.openPr('demo', task.id), /already open/);
+  await assert.rejects(driver.openPr('demo', task.id), /already has this commit/);
 });
 
 test('the PR draft is written after review and shown at the gate, a failed draft does not block', async () => {
@@ -1066,18 +1069,85 @@ test('opening a PR adopts one that a lost write already opened, instead of openi
     coder: [writeFeature],
     reviewer: [approveReview],
   });
-  const asked: string[] = [];
-  driver.deps.github.findOpenPullRequest = async ({ head }) => (
-    asked.push(head),
-    'https://github.com/example/demo/pull/9'
-  );
   await driver.run('demo', task.id, { maxAttempts: 1 });
   const gate = await driver.gate('demo', task.id);
   await driver.approve('demo', task.id, { head: gate.headSha });
+  const asked: string[] = [];
+  driver.deps.github.pullRequestsFrom = async ({ head }) => (
+    asked.push(head),
+    [
+      { url: 'https://github.com/example/demo/pull/3', state: 'CLOSED', head_sha: 'an-older-commit' },
+      { url: 'https://github.com/example/demo/pull/9', state: 'OPEN', head_sha: gate.headSha },
+    ]
+  );
   const opened = await driver.openPr('demo', task.id);
   assert.equal(opened.pr?.url, 'https://github.com/example/demo/pull/9');
+  assert.equal(opened.publication, undefined, 'the intent is cleared once the PR is recorded');
   assert.deepEqual(asked, [`factory/${task.id}`]);
   assert.equal(prs.length, 0);
+});
+
+test('a PR created but not recorded is found again on retry, and a closed one for the commit needs a person', async () => {
+  const { driver, task, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  // The PR is created on GitHub, then the save that records it fails (a crash at that point).
+  const write = driver.deps.tasks.write.bind(driver.deps.tasks);
+  let failSave = true;
+  driver.deps.tasks.write = async (record) => {
+    if (record.pr && failSave) {
+      failSave = false;
+      throw new Error('disk full');
+    }
+    return write(record);
+  };
+  const github: { url: string; state: 'OPEN' | 'CLOSED' | 'MERGED'; head_sha: string }[] = [];
+  driver.deps.github.createPullRequest = async (o) => {
+    prs.push(o);
+    github.push({ url: 'https://github.com/example/demo/pull/1', state: 'OPEN', head_sha: gate.headSha });
+    return 'https://github.com/example/demo/pull/1';
+  };
+  driver.deps.github.pullRequestsFrom = async () => github;
+  await assert.rejects(driver.openPr('demo', task.id), /disk full/);
+  const lost = await driver.deps.tasks.read('demo', task.id);
+  assert.equal(lost.pr, undefined);
+  assert.deepEqual([lost.publication?.step, lost.publication?.head_sha], ['create', gate.headSha]);
+
+  const retried = await driver.openPr('demo', task.id);
+  assert.equal(retried.pr?.url, 'https://github.com/example/demo/pull/1');
+  assert.equal(prs.length, 1, 'the retry adopted the PR instead of opening a second');
+  assert.equal(retried.publication, undefined);
+
+  // Someone closed that PR; the task is approved again for the same commit and opened again.
+  github[0]!.state = 'CLOSED';
+  await driver.deps.tasks.write({ ...retried, pr: undefined, stage: 'approved' });
+  await assert.rejects(driver.openPr('demo', task.id), /already exists and is closed: .*pull\/1.*Reopen it/);
+  assert.equal(prs.length, 1, 'no second PR for the same commit');
+});
+
+test('the publication intent is saved before the push, so a failed push leaves a visible record', async () => {
+  const { driver, task } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  driver.deps.git = {
+    ...driver.deps.git,
+    push: async () => {
+      throw new Error('network down');
+    },
+  };
+  await assert.rejects(driver.openPr('demo', task.id), /network down/);
+  const record = await driver.deps.tasks.read('demo', task.id);
+  assert.deepEqual([record.publication?.step, record.stage], ['push', 'approved']);
 });
 
 test('a runtime check (Reticle) runs after full_check: yes passes, no fails, unknown passes for a human to check', async () => {

@@ -2,12 +2,7 @@
 // when the run last printed anything. Silence is what tells "still working" apart from "stuck".
 import type { ShellPort } from '@factory/driver';
 
-export interface ActivitySnapshot {
-  run_started_at: string;
-  command?: string;
-  command_started_at?: string;
-  last_output_at?: string;
-}
+import type { ActivitySnapshot } from '@factory/backend-client/protocol';
 
 export class RunActivity {
   private readonly startedAt: string;

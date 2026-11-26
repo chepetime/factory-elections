@@ -1,7 +1,7 @@
 'use client';
 // The sidebar's work lists: open board tasks, then their agents (runs) grouped by what they need.
 import { Bot, LoaderCircle } from 'lucide-react';
-import type { IssueStatus, Stage } from '@factory/core';
+import { runAttention, runNeed, type IssueStatus, type RunAttention, type Stage } from '@factory/core';
 import { STATUS } from '@/components/task-status';
 import { cn } from '@/lib/utils';
 import { SidebarLink } from '@/components/sidebar-link';
@@ -18,37 +18,21 @@ export interface IssueSummary {
   status: IssueStatus;
   archived: boolean;
   updated_at: string;
-  run?: { stage: Stage };
+  /** `waiting`: a new turn is queued until the agent is free. `owned`: a live run holds the task. */
+  run?: { stage: Stage; waiting?: boolean; owned?: boolean };
   /** The agent assigned to the task. */
   agent?: { id: string; name: string; avatar: string };
 }
 
-type Group = 'needs' | 'working' | 'idle' | 'done';
-const GROUP_OF: Partial<Record<Stage, Group>> = {
-  'awaiting-approval': 'needs',
-  approved: 'needs',
-  blocked: 'needs',
-  failed: 'needs',
-  'verification-failed': 'needs',
-  coding: 'working',
-  reviewing: 'working',
-  queued: 'idle',
-  classified: 'idle',
-  'pr-opened': 'done',
-};
+// The groups come from the shared rule; a rejected run ("closed") is not listed.
+type Group = Exclude<RunAttention, 'closed'>;
+const group = (i: IssueSummary): RunAttention => runAttention(i.run!.stage, i.run!.owned, i.run!.waiting);
 const GROUPS: { id: Group; label: string; tone: string }[] = [
-  { id: 'needs', label: 'Needs you', tone: 'text-destructive' },
+  { id: 'needs-you', label: 'Needs you', tone: 'text-destructive' },
   { id: 'working', label: 'Working', tone: 'text-amber-700 dark:text-amber-400' },
-  { id: 'idle', label: 'Idle', tone: 'text-muted-foreground' },
+  { id: 'waiting', label: 'Idle', tone: 'text-muted-foreground' },
   { id: 'done', label: 'Done', tone: 'text-blue-700 dark:text-blue-400' },
 ];
-const NEEDS: Partial<Record<Stage, string>> = {
-  'awaiting-approval': 'review',
-  approved: 'open PR',
-  blocked: 'blocked',
-  failed: 'failed',
-  'verification-failed': 'checks failed',
-};
 const OPEN: IssueStatus[] = ['in_progress', 'in_review', 'blocked', 'todo', 'backlog'];
 /** Done agents older than this leave the list; the board keeps them. */
 const DONE_DAYS = 7;
@@ -95,8 +79,8 @@ export function SidebarWork({
     );
   const cutoff = Date.now() - DONE_DAYS * 86_400_000;
   const agents = live
-    .filter((i) => i.run && GROUP_OF[i.run.stage])
-    .filter((i) => GROUP_OF[i.run!.stage] !== 'done' || Date.parse(i.updated_at) > cutoff)
+    .filter((i) => i.run && group(i) !== 'closed')
+    .filter((i) => group(i) !== 'done' || Date.parse(i.updated_at) > cutoff)
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const href = (key: string) => `/projects/${project}/tasks/${key}`;
 
@@ -142,13 +126,13 @@ export function SidebarWork({
             No agent is working. Assign a Todo task to an agent to start one.
           </p>
         ) : (
-          GROUPS.map((group) => {
-            const members = agents.filter((i) => GROUP_OF[i.run!.stage] === group.id);
+          GROUPS.map((section) => {
+            const members = agents.filter((i) => group(i) === section.id);
             if (!members.length) return null;
             return (
-              <div key={group.id} className="mt-1">
-                <h3 className={cn('px-2 pt-1.5 pb-0.5 text-xs font-medium', group.tone)}>
-                  {group.label} <span className="text-foreground/75 tabular-nums">{members.length}</span>
+              <div key={section.id} className="mt-1">
+                <h3 className={cn('px-2 pt-1.5 pb-0.5 text-xs font-medium', section.tone)}>
+                  {section.label} <span className="text-foreground/75 tabular-nums">{members.length}</span>
                 </h3>
                 <ul className="flex flex-col gap-px">
                   {members.map((i) => (
@@ -171,17 +155,22 @@ export function SidebarWork({
                         <span className="shrink-0 text-xs text-foreground/75 tabular-nums">
                           {ago(i.updated_at)}
                         </span>
-                        {group.id === 'working' && (
+                        {section.id === 'working' && (
                           <LoaderCircle
                             className="size-3.5 shrink-0 text-amber-600 motion-safe:animate-spin dark:text-amber-400"
                             aria-label="Working"
                           />
                         )}
                         {/* The group already says it needs you; only a reason other than "blocked" adds anything. */}
-                        {group.id === 'needs' && i.run!.stage !== 'blocked' && (
-                          <span className="shrink-0 text-xs text-foreground/75">{NEEDS[i.run!.stage]}</span>
+                        {section.id === 'needs-you' && i.run!.stage !== 'blocked' && (
+                          <span className="shrink-0 text-xs text-foreground/75">
+                            {runNeed(i.run!.stage, i.run!.owned, i.run!.waiting)}
+                          </span>
                         )}
-                        {group.id === 'done' && <span className="sr-only">, pull request opened</span>}
+                        {i.run!.waiting && (
+                          <span className="shrink-0 text-xs text-foreground/75">waiting</span>
+                        )}
+                        {section.id === 'done' && <span className="sr-only">, pull request opened</span>}
                       </SidebarLink>
                       {menu(i)}
                     </li>

@@ -38,7 +38,7 @@ While a task has a run, its column follows the run's stage, unless a person set 
 
 | Drop on | Does |
 | --- | --- |
-| In progress | No run, or the last run ended: creates a run from the title and description, then starts it. A runnable stage: runs it again. Otherwise refused. |
+| In progress | The last run's PR is open: opens the follow-up form on the task page (see [Follow-ups](workspace-agents.md#follow-ups)); no second run or PR. No run, or the last run was rejected: creates a run from the title and description, then starts it. A runnable stage: runs it again. Otherwise refused. |
 | Cancelled | An open run: rejects it. Otherwise sets the status. |
 | Backlog, Todo, Done | Sets the status, unless a run is still open (refused). |
 | In review, Blocked | Refused: only the factory moves tasks there. |

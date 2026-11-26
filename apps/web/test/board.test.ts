@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TaskRecord } from '@factory/core';
+import { runAttention, STAGES, type TaskRecord } from '@factory/core';
 import { age, buildBoard, mayRun, type BoardPull, type BoardTask, type Column } from '@/lib/board';
 import type { InboxItem } from '@/lib/inbox';
 
@@ -61,7 +61,7 @@ describe('buildBoard', () => {
       { task: task({ stage: 'rejected' }) },
       { task: task({ stage: 'failed' }) },
     ];
-    const board = buildBoard({ tasks });
+    const board = buildBoard({ tasks, inbox: [] });
     const placed = Object.values(board.columns).flat();
     expect(placed).toHaveLength(4);
     expect(new Set(placed.map((c) => c.id)).size).toBe(4);
@@ -74,6 +74,12 @@ describe('buildBoard', () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it('keeps a failed task in Needs me when the inbox could not be read', () => {
+    const t = task({ stage: 'failed' });
+    expect(columnOf(buildBoard({ tasks: [{ task: t }] }), t.id)).toBe('needs-me');
+    expect(buildBoard({ tasks: [{ task: t }], inbox: [] }).archived).toBe(1);
   });
 
   it('lets a live run win over an open inbox item', () => {
@@ -140,6 +146,14 @@ describe('buildBoard', () => {
     });
     expect(board.columns['in-review'].map((c) => c.live.text).sort()).toEqual(['Changes requested', 'Draft']);
     expect(board.columns['in-review'].every((c) => !c.action)).toBe(true);
+  });
+
+  it('puts in Needs me and Ready only tasks the core rule says need you', () => {
+    const stages = STAGES.map((stage) => task({ stage }));
+    const { columns } = buildBoard({ tasks: stages.map((t) => ({ task: t })), inbox: [] });
+    for (const card of [...columns['needs-me'], ...columns.ready])
+      expect(runAttention(card.stage), card.stage).toBe('needs-you');
+    expect(columns.ready.map((c) => c.stage)).toEqual(['approved']);
   });
 
   it('offers Open PR for an approved task without a PR', () => {

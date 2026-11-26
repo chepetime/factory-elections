@@ -221,9 +221,40 @@ export const TaskRecord = z.looseObject({
     })
     .optional(),
   revision_notes: z.array(z.looseObject({ at: Iso, note: NonEmpty })).optional(),
+  /** Follow-ups added after the PR opened, oldest first (see follow-ups.ts). */
+  follow_ups: z
+    .array(
+      z.looseObject({
+        at: Iso,
+        kind: z.enum(['custom', 'conflicts']),
+        note: NonEmpty,
+        /** The workspace agent that does it. */
+        agent: NonEmpty,
+        /** `you`, or `factory` when the conflict watcher added it. */
+        by: NonEmpty,
+        /** The PR head when it was added; the watcher adds one conflict follow-up per head. */
+        pr_head: NonEmpty.optional(),
+      }),
+    )
+    .optional(),
   /** A person allowed this task to delete, skip or loosen tests (see test-integrity.ts). */
   allow_test_changes: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
+  /**
+   * A PR publication that started and is not recorded yet: saved before each external write
+   * (`push`, then `create`), cleared when `pr` is saved. Its presence after a crash means GitHub
+   * may hold a result that this record does not.
+   */
+  publication: z
+    .looseObject({
+      op_id: NonEmpty,
+      head_sha: NonEmpty,
+      branch: NonEmpty,
+      base: NonEmpty,
+      step: z.enum(['push', 'create']),
+      at: Iso,
+    })
+    .optional(),
   events: z.array(TaskEvent).optional(),
   /** `agent`: one open session by a workspace agent, with no reviewer step. Absent means the pipeline. */
   workflow: z.enum(['pipeline', 'agent']).optional(),

@@ -47,6 +47,14 @@ export interface GitPort {
   remoteBranchExists?(repo: string, branch: string): Promise<boolean>;
   /** Ignores a pattern in this repository only, without a committed .gitignore change. */
   excludeLocally?(dir: string, pattern: string): Promise<void>;
+  /** Fetches these refs from origin. Follow-ups need it, with the next four. */
+  fetchRefs?(dir: string, refs: string[]): Promise<void>;
+  /** Fast-forwards the current branch to `ref`; false when it has diverged. */
+  fastForwardTo?(dir: string, ref: string): Promise<boolean>;
+  /** Merges `ref`: committed when clean, else left in progress with the conflicted paths. */
+  mergeRef?(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }>;
+  mergeInProgress?(dir: string): Promise<boolean>;
+  abortMerge?(dir: string): Promise<void>;
 }
 
 export interface ShellPort {
@@ -69,8 +77,14 @@ export interface ShellPort {
 }
 
 export interface GitHubPort {
-  /** The URL of an open pull request whose head is `head`, if one exists. */
-  findOpenPullRequest?(options: { cwd: string; head: string }): Promise<string | undefined>;
+  /**
+   * The pull requests from branch `head` in any state, with the commit each one points at. Opening
+   * a PR reads this first, so a write that GitHub kept and the task record lost is found again.
+   */
+  pullRequestsFrom(options: {
+    cwd: string;
+    head: string;
+  }): Promise<{ url: string; state: 'OPEN' | 'CLOSED' | 'MERGED'; head_sha: string }[]>;
   createPullRequest(options: {
     cwd: string;
     base: string;

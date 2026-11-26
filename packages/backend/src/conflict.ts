@@ -1,2 +1,2 @@
-/** A request that conflicts with current state; reported as FAILED_PRECONDITION. */
-export class Conflict extends Error {}
+// One class for every package, so the server's instanceof check maps it to FAILED_PRECONDITION.
+export { Conflict } from '@factory/core';

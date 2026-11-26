@@ -160,6 +160,7 @@ test('serve starts the full backend and reports health on 127.0.0.1', async () =
       engine: 'running',
       task_store: 'available',
       telemetry_database: 'not_configured',
+      recovery: { state: 'ok', problems: 0 },
       integrations: [],
       ledger: { missing_parent_links: 0, unknown_cost_spans: 0, write_errors: 0 },
     });

@@ -1,4 +1,3 @@
-import type { ActivitySnapshot } from './activity.ts';
 import type { CleanupRecord, ExecutionPhase } from '@factory/core';
 import { fromJSON } from '@grpc/proto-loader';
 import type { ServiceDefinition } from '@grpc/grpc-js';
@@ -8,6 +7,13 @@ export const definition = fromJSON(descriptor as unknown as Parameters<typeof fr
   keepCase: true,
   defaults: true,
 })['factory.v1.Factory'] as ServiceDefinition;
+/** What a run is doing right now: the current command, when it started, and the last output. */
+export interface ActivitySnapshot {
+  run_started_at: string;
+  command?: string;
+  command_started_at?: string;
+  last_output_at?: string;
+}
 export interface Target {
   project: string;
   id?: string;
@@ -24,6 +30,14 @@ export interface Command extends Target {
   accept_blocking?: boolean;
   draft?: boolean;
   max_attempts?: number;
+  /** follow-up: the agent that does it. */
+  agent?: string;
+  /** follow-up: `custom` or `conflicts`. */
+  kind?: string;
+  /** follow-up: `you` or `factory`. */
+  by?: string;
+  /** follow-up: the PR head when the conflict watcher added it. */
+  pr_head?: string;
 }
 export interface BackgroundRun {
   running: boolean;
@@ -83,6 +97,7 @@ export interface Methods {
   UpdateIssue: [{ project: string; json: string }, { json: string }];
   MoveIssue: [{ project: string; json: string }, { json: string }];
   CommentIssue: [{ project: string; json: string }, { json: string }];
+  FollowUpIssue: [{ project: string; json: string }, { json: string }];
   ArchiveIssue: [{ project: string; json: string }, { json: string }];
   DeleteIssue: [{ project: string; json: string }, { json: string }];
   /** Repo profile: missing, draft, approved or invalid, with its path. DraftProfile drafts a missing one. */

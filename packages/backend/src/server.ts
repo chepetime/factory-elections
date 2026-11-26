@@ -9,11 +9,11 @@ import { ProjectName, type ModelRunner } from '@factory/core';
 import { isReadableDirectory } from '@factory/adapters-fs';
 import { DriverError } from '@factory/driver';
 import { BackendService, Conflict, DRAIN_GRACE_MS } from './service.ts';
-import type { ReviewDeps } from './reviews.ts';
+import type { ReviewDeps } from '@factory/pr-reviews';
 import type { SettingsDetector } from './settings.ts';
-import { Evidence } from './evidence.ts';
-import type { Check } from './diagnostics.ts';
-import { definition, type Command, type Methods, type Target } from './protocol.ts';
+import { Evidence } from '@factory/evidence';
+import type { Check } from '@factory/compose/diagnostics';
+import { definition, type Command, type Methods, type Target } from '@factory/backend-client/protocol';
 
 export interface ServerOptions {
   root: string;
@@ -86,6 +86,10 @@ export async function startBackend(options: ServerOptions) {
           telemetry_database: storageHealth?.postgres ?? 'not_configured',
           ...(storageHealth ? { artifact_store: storageHealth.artifacts } : {}),
           ...(ledger ? { ledger } : {}),
+          recovery: {
+            state: service.recoveryReport().state,
+            problems: service.recoveryReport().problems.length,
+          },
           integrations: [],
         }),
       );
@@ -191,6 +195,11 @@ export async function startBackend(options: ServerOptions) {
       MoveIssue: async (request) => ({
         json: JSON.stringify(
           await service.issues.move({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
+      FollowUpIssue: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.followUp({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
       CommentIssue: async (request) => ({

@@ -1,4 +1,8 @@
 export * from './schemas.ts';
+export * from './conflict.ts';
+export * from './project-accent.ts';
+export * from './recovery.ts';
+export * from './follow-ups.ts';
 export * from './domain.ts';
 export * from './ports.ts';
 export * from './team.ts';
@@ -27,3 +31,5 @@ export * from './receipt.ts';
 export * from './agent-env.ts';
 export * from './agent-profiles.ts';
 export * from './user-settings.ts';
+export * from './feature-controls.ts';
+export * from './run-attention.ts';

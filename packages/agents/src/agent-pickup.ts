@@ -1,7 +1,13 @@
 // Starts Todo tasks assigned to agents when those agents have free slots. A start that fails (an
 // unapproved profile, a dirty repository) leaves one note on the task and waits before trying again.
-import { pickupPlan, type AgentProfile, type PickupCandidate, type TaskRecord } from '@factory/core';
-import type { IssueService } from './issues.ts';
+import {
+  pickupPlan,
+  runFinished,
+  type AgentProfile,
+  type PickupCandidate,
+  type TaskRecord,
+} from '@factory/core';
+import type { AgentBoard } from './ports.ts';
 
 /** How long a task that could not start waits before the next try. */
 export const PICKUP_RETRY_MS = 10 * 60_000;
@@ -10,7 +16,7 @@ export const PICKUP_INTERVAL_MS = 20_000;
 export type PickupDeps = {
   agents: () => Promise<AgentProfile[]>;
   projects: () => Promise<{ name: string }[]>;
-  issues: Pick<IssueService, 'list' | 'move' | 'note' | 'update'>;
+  issues: Pick<AgentBoard, 'list' | 'move' | 'note' | 'update'>;
   tasks: (project: string) => Promise<TaskRecord[]>;
   /** Whether the backend has a run queued or working for the task. Only those occupy an agent. */
   scheduled: (project: string, id: string) => boolean;
@@ -97,12 +103,7 @@ export class AgentPickup {
       const records = new Map(tasks.map((t) => [t.id, t]));
       for (const i of board.items) {
         const latest = i.run ? records.get(i.run.id) : undefined;
-        if (
-          !i.assignee &&
-          i.status === 'todo' &&
-          !i.archived_at &&
-          (!i.run || i.run.stage === 'rejected' || i.run.stage === 'pr-opened')
-        )
+        if (!i.assignee && i.status === 'todo' && !i.archived_at && (!i.run || runFinished(i.run.stage)))
           toRoute.push({
             project: name,
             key: i.key,

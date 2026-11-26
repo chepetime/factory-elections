@@ -133,17 +133,39 @@ export function runWorking(stage: Stage): boolean {
   return stage === 'coding' || stage === 'reviewing';
 }
 
+/**
+ * The factory holds the run now, so its task cannot be archived or deleted. `owned` says whether a
+ * live run holds it, when the caller knows: an interrupted run at `coding` is not held, and a live
+ * revision of a failed run is. Without `owned` the stage decides.
+ */
+export function runHeld(stage: Stage, owned?: boolean): boolean {
+  return owned ?? runWorking(stage);
+}
+
 /** A run that has ended: nothing more happens to it unless a person revises it. */
 export function runFinished(stage: Stage): boolean {
   return stage === 'rejected' || stage === 'pr-opened';
 }
 
-export type RunSummary = { stage: Stage; updated_at?: string };
+/** Why a queued turn has not started: its own agent is busy, or every worker or agent slot is. */
+export const QueueWait = z.enum(['agent', 'slot']);
+export type QueueWait = z.infer<typeof QueueWait>;
+/** What a queued turn waits for, in words; `agent` names the run's agent when it has one. */
+export function queueWaitLabel(wait: QueueWait | undefined, agent?: string): string {
+  return wait === 'agent' ? `Waiting for ${agent ?? 'its agent'}` : 'Waiting for a free slot';
+}
+/** `waiting`: a turn is queued until it gets an agent; `stage` is still the stage before it. */
+export type RunSummary = { stage: Stage; updated_at?: string; waiting?: boolean };
 
-/** The status to show: the latest run's, if it changed after the issue's status was last set. */
+/**
+ * The status to show: the latest run's, if it changed after the issue's status was last set.
+ * A queued turn waits in line like a Todo task, unless a person cancelled the task since.
+ */
 export function syncedStatus(issue: Pick<Issue, 'status' | 'status_at'>, run?: RunSummary): IssueStatus {
   if (!run) return issue.status;
-  if (run.updated_at && Date.parse(run.updated_at) <= Date.parse(issue.status_at)) return issue.status;
+  const setSince = !!run.updated_at && Date.parse(run.updated_at) <= Date.parse(issue.status_at);
+  if (run.waiting) return setSince && issue.status === 'cancelled' ? 'cancelled' : 'todo';
+  if (setSince) return issue.status;
   return statusFromStage(run.stage);
 }
 
@@ -155,6 +177,8 @@ export type DropAction =
   | { kind: 'reject' }
   /** Close a run that waits for a person, then put the task back in Backlog or Todo. */
   | { kind: 'requeue'; status: 'backlog' | 'todo' }
+  /** The task's PR is open: more work is a follow-up with instructions, on the same branch and PR. */
+  | { kind: 'follow-up' }
   | { kind: 'refused'; reason: string };
 
 /**
@@ -167,10 +191,14 @@ const WAITING_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-fai
 
 export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary): DropAction {
   if (from === to) return { kind: 'none' };
+  // The queued turn still uses the run: closing it or starting another turn would race it.
+  if (run?.waiting && to !== 'cancelled')
+    return { kind: 'refused', reason: 'A turn is queued for its agent. Move it to Cancelled to stop it.' };
   const active = run && !runFinished(run.stage);
   if (to === 'in_review' || to === 'blocked')
     return { kind: 'refused', reason: 'The factory moves tasks into this column.' };
   if (to === 'in_progress') {
+    if (run?.stage === 'pr-opened') return { kind: 'follow-up' };
     if (!run || runFinished(run.stage)) return { kind: 'start-run' };
     if (commandAllowedIn('run', run.stage)) return { kind: 'run' };
     return { kind: 'refused', reason: 'Approve, revise or reject it from the task page.' };
@@ -187,3 +215,26 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
     };
   return { kind: 'set-status', status: to };
 }
+
+/** A task's latest run, as the board shows it. */
+/**
+ * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.
+ * `owned`: a live run holds the task now, whatever its stage says.
+ */
+export type IssueRun = {
+  id: string;
+  stage: Stage;
+  updated_at?: string;
+  waiting?: boolean;
+  waiting_for?: QueueWait;
+  owned: boolean;
+};
+export type IssueView = Omit<Issue, 'status'> & {
+  key: string;
+  /** The column it shows in: the latest run's status unless a person set one since. */
+  status: IssueStatus;
+  /** The status stored on the issue, before syncing from the run. */
+  stored_status: IssueStatus;
+  run?: IssueRun;
+};
+export type IssueList = { prefix: string; items: IssueView[] };

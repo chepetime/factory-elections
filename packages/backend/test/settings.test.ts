@@ -56,3 +56,17 @@ test('settings default, save without empty fields, and detection proposes withou
   answer = { nonsense: true };
   await assert.rejects(settings.detect({ project: 'app' }), /unexpected answer/);
 });
+
+test('a picked accent is saved and read back; an empty one goes back to the name color', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-settings-accent-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, 'data');
+  const storage = storageFor(root);
+  await storage.projects.add('app', base);
+  const settings = new ProjectSettingsService(root, storage, storage.projects, async () => ({}));
+  await settings.save({ project: 'app', json: JSON.stringify({ accent: '#14b8a6' }) });
+  assert.equal((await settings.get('app')).accent, '#14b8a6');
+  await settings.save({ project: 'app', json: JSON.stringify({ accent: '' }) });
+  assert.equal((await settings.get('app')).accent, undefined, 'stored as absent');
+  await assert.rejects(settings.save({ project: 'app', json: JSON.stringify({ accent: 'teal' }) }));
+});

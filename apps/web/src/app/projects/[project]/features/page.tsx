@@ -1,3 +1,4 @@
+import { FEATURE_STAGE_LABELS } from '@factory/core';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isProjectName } from '@/lib/factory';
@@ -20,7 +21,7 @@ export default async function FeaturesPage({ params }: { params: Promise<{ proje
                 {f.title}
               </Link>
               <p className="text-sm text-muted-foreground">
-                {f.stage} · {f.tickets} tickets
+                {FEATURE_STAGE_LABELS[f.stage]} · {f.tickets} tickets
               </p>
             </li>
           ))}

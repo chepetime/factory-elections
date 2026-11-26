@@ -216,7 +216,7 @@ The driver's coder step runs one :ModelLadder: rung in the task's verified workt
 # local-backend
 `pnpm backend` starts a loopback gRPC service on port 4319 and the existing health contract on 4318, using the same data root and shared driver composition as the CLI.
 - Effect 3 owns server run fibers, the one-worker semaphore and nested RPC/task/model spans; the core remains pure and the existing async driver is reused.
-- The protobuf service contract is `packages/backend/factory.proto`; canonical task/project JSON snapshots are validated using the core schemas. Every RPC requires the local data root's generated mode-0600 bearer credential or the shared `FACTORY_BACKEND_TOKEN`.
+- The protobuf service contract is `packages/backend-client/factory.proto`; canonical task/project JSON snapshots are validated using the core schemas. Every RPC requires the local data root's generated mode-0600 bearer credential or the shared `FACTORY_BACKEND_TOKEN`.
 - Run/revision acceptance persists the command and run state before acknowledging it. At most 32 runs may be queued/active; only one executes. The task command lock is held from acceptance through completion. Client disconnects do not cancel work; shutdown drains accepted runs.
 - Run directories preserve run records, full plain logs and append-only JSONL events, including ordered log entries, Effect trace/span IDs and every model call's reported cost. Unknown costs remain null. SDK-reported failed-result costs are retained in trace events.
 - While the backend ownership lock exists, common CLI mutations (run, revise, approve, reject, open-pr) are forwarded to it; individual mutating steps require the backend to stop. Standalone behavior remains available with no backend lock. Read commands remain available.

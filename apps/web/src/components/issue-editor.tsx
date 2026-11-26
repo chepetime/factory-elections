@@ -7,7 +7,7 @@ import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
 import { archiveIssue, commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
 import { Markdown } from '@/components/markdown';
 import { useConfirm } from '@/components/confirm-dialog';
-import { decideDrop, MoveMenu } from '@/components/task-board';
+import { decideDrop, followUpHref, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -58,7 +58,11 @@ export function IssueTitle({
           size="icon-sm"
           aria-label="Edit the title"
           className="mt-1 text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
-          onClick={() => setEditing(true)}
+          // Start from the title on the page now, not the one from the first render.
+          onClick={() => {
+            setValue(title);
+            setEditing(true);
+          }}
         >
           <Pencil aria-hidden />
         </Button>
@@ -121,7 +125,10 @@ export function IssueDescription({
           variant="ghost"
           size="sm"
           className="mt-2 -ml-2 text-muted-foreground"
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            setValue(description);
+            setEditing(true);
+          }}
         >
           <Pencil aria-hidden /> {description.trim() ? 'Edit description' : 'Add a description'}
         </Button>
@@ -287,6 +294,7 @@ export function IssueStatusField({
     const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') return setNotice({ kind: 'error', text: action.reason });
+    if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     start(async () => {
       const result = await moveIssue(project, issue.key, to);
       setNotice(

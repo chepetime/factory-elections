@@ -11,8 +11,9 @@ import {
 } from '@factory/core';
 import type { AgentSession } from '@factory/driver';
 import { taskTools, type SessionReport } from './agent-tools.ts';
-import { Conflict } from './conflict.ts';
-import type { IssueService, IssueView } from './issues.ts';
+import { Conflict } from '@factory/core';
+import type { IssueView } from '@factory/core';
+import type { AgentBoard } from './ports.ts';
 
 const FACTORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 /** Where agent skills come from, first match wins: Factory's own definitions, then the skills this repo ships for Claude. */
@@ -85,7 +86,7 @@ export async function buildAgentSession(input: {
   task: TaskRecord;
   reply?: string;
   agent: AgentProfile;
-  issues: Pick<IssueService, 'get' | 'comment' | 'setStatus'>;
+  issues: Pick<AgentBoard, 'get' | 'comment' | 'setStatus'>;
   profile: { test: string; full_check: string; forbidden_paths: readonly string[] };
   /** Names the backend's operator lets any agent pass; agent config alone cannot add host secrets. */
   allowedEnv?: string;

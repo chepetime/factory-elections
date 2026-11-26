@@ -1,0 +1,12 @@
+{
+  "name": "@factory/dispatcher",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/core": "workspace:*",
+    "effect": "^3.22.4"
+  }
+}

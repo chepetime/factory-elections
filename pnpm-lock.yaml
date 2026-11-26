@@ -239,12 +239,21 @@ importers:
       '@factory/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@factory/backend-client':
+        specifier: workspace:*
+        version: link:../../packages/backend-client
+      '@factory/compose':
+        specifier: workspace:*
+        version: link:../../packages/compose
       '@factory/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@factory/driver':
         specifier: workspace:*
         version: link:../../packages/driver
+      '@factory/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -318,9 +327,9 @@ importers:
       '@factory/affect-ui':
         specifier: workspace:*
         version: link:../../packages/affect-ui
-      '@factory/backend':
+      '@factory/backend-client':
         specifier: workspace:*
-        version: link:../../packages/backend
+        version: link:../../packages/backend-client
       '@factory/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -361,6 +370,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@factory/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
       '@storybook/addon-a11y':
         specifier: 10.6.7
         version: 10.6.7(storybook@10.6.7(@types/react@19.3.0)(prettier@3.10.1)(react@19.3.1))
@@ -489,7 +501,103 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/agents:
+    dependencies:
+      '@factory/adapters-claude':
+        specifier: workspace:*
+        version: link:../adapters-claude
+      '@factory/adapters-data':
+        specifier: workspace:*
+        version: link:../adapters-data
+      '@factory/adapters-fs':
+        specifier: workspace:*
+        version: link:../adapters-fs
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      '@factory/dispatcher':
+        specifier: workspace:*
+        version: link:../dispatcher
+      '@factory/driver':
+        specifier: workspace:*
+        version: link:../driver
+      effect:
+        specifier: ^3.22.4
+        version: 3.22.4
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/backend:
+    dependencies:
+      '@factory/adapters-claude':
+        specifier: workspace:*
+        version: link:../adapters-claude
+      '@factory/adapters-data':
+        specifier: workspace:*
+        version: link:../adapters-data
+      '@factory/adapters-fs':
+        specifier: workspace:*
+        version: link:../adapters-fs
+      '@factory/adapters-git':
+        specifier: workspace:*
+        version: link:../adapters-git
+      '@factory/adapters-github':
+        specifier: workspace:*
+        version: link:../adapters-github
+      '@factory/adapters-process':
+        specifier: workspace:*
+        version: link:../adapters-process
+      '@factory/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@factory/backend-client':
+        specifier: workspace:*
+        version: link:../backend-client
+      '@factory/compose':
+        specifier: workspace:*
+        version: link:../compose
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      '@factory/dispatcher':
+        specifier: workspace:*
+        version: link:../dispatcher
+      '@factory/driver':
+        specifier: workspace:*
+        version: link:../driver
+      '@factory/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      '@factory/pr-reviews':
+        specifier: workspace:*
+        version: link:../pr-reviews
+      '@grpc/grpc-js':
+        specifier: ^1.14.7
+        version: 1.14.7
+      effect:
+        specifier: ^3.22.4
+        version: 3.22.4
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  packages/backend-client:
+    dependencies:
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      '@grpc/grpc-js':
+        specifier: ^1.14.7
+        version: 1.14.7
+      '@grpc/proto-loader':
+        specifier: ^0.8.1
+        version: 0.8.1
+
+  packages/compose:
     dependencies:
       '@factory/adapters-claude':
         specifier: workspace:*
@@ -518,27 +626,21 @@ importers:
       '@factory/driver':
         specifier: workspace:*
         version: link:../driver
-      '@grpc/grpc-js':
-        specifier: ^1.14.7
-        version: 1.14.7
-      '@grpc/proto-loader':
-        specifier: ^0.8.1
-        version: 0.8.1
-      effect:
-        specifier: ^3.22.4
-        version: 3.22.4
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
 
   packages/core:
     dependencies:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  packages/dispatcher:
+    dependencies:
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      effect:
+        specifier: ^3.22.4
+        version: 3.22.4
 
   packages/driver:
     dependencies:
@@ -555,6 +657,57 @@ importers:
       '@factory/adapters-process':
         specifier: workspace:*
         version: link:../adapters-process
+
+  packages/evidence:
+    dependencies:
+      '@factory/adapters-data':
+        specifier: workspace:*
+        version: link:../adapters-data
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      effect:
+        specifier: ^3.22.4
+        version: 3.22.4
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  packages/pr-reviews:
+    dependencies:
+      '@factory/adapters-claude':
+        specifier: workspace:*
+        version: link:../adapters-claude
+      '@factory/adapters-data':
+        specifier: workspace:*
+        version: link:../adapters-data
+      '@factory/adapters-fs':
+        specifier: workspace:*
+        version: link:../adapters-fs
+      '@factory/adapters-git':
+        specifier: workspace:*
+        version: link:../adapters-git
+      '@factory/adapters-github':
+        specifier: workspace:*
+        version: link:../adapters-github
+      '@factory/adapters-process':
+        specifier: workspace:*
+        version: link:../adapters-process
+      '@factory/core':
+        specifier: workspace:*
+        version: link:../core
+      '@factory/dispatcher':
+        specifier: workspace:*
+        version: link:../dispatcher
+      '@factory/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      effect:
+        specifier: ^3.22.4
+        version: 3.22.4
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
 packages:
 

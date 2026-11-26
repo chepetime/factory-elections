@@ -12,7 +12,7 @@ pnpm web           # production build, backend and Next.js
 
 ## Execution and Effect
 
-`packages/backend/src/compose.ts` supplies the same driver and adapters to the CLI and service. Domain rules and exact-head approval checks remain in the driver/core. The async driver is not rewritten: Effect 3 provides server execution fibers, the single-worker semaphore and nested tracing spans around task operations, RPCs and model calls. This partially supersedes ADR 0002's deferral of Effect without introducing Effect into the pure core.
+`packages/compose/src/compose.ts` supplies the same driver and adapters to the CLI and service. Domain rules and exact-head approval checks remain in the driver/core. The async driver is not rewritten: Effect 3 provides server execution fibers, the worker semaphore (in `packages/dispatcher`) and nested tracing spans around task operations, RPCs and model calls. This partially supersedes ADR 0002's deferral of Effect without introducing Effect into the pure core.
 
 Run/revision acceptance is persisted before returning. Up to 32 runs may be accepted. Up to `FACTORY_TASK_WORKERS` (default 3) execute at once, each in its own worktree; the git adapter runs one repository's administrative commands (worktree add/remove, fetch, push) one at a time. Task runs and PR reviews share one agent limit, `FACTORY_MAX_AGENTS` (default 6): a run waits in `queued` while running agents fill it, and a review start is refused. A task's exclusive command lock is held while queued, running and finalizing evidence. Approval/rejection/PR commands also take that lock. Client disconnects do not cancel accepted work.
 
@@ -53,7 +53,7 @@ Codex runs ignore the user's `config.toml`, like Claude runs ignore user setting
 
 ### Repository memory, tool pruning, loop guard and context size
 
-These follow [TokenEconomizer](https://github.com/microsoft/TokenEconomizer). The rules are in `packages/core/src/memory.ts`, and the service is in `packages/backend/src/memory.ts`. Files live under `$FACTORY_ROOT/<project>/memory/`.
+These follow [TokenEconomizer](https://github.com/microsoft/TokenEconomizer). The rules are in `packages/core/src/memory.ts`, and the service is in `packages/agents/src/memory.ts`. Files live under `$FACTORY_ROOT/<project>/memory/`.
 
 - **Facts.** Each tool-using model call of a task run, and each finished review turn, is one session. The backend stores a short digest of each session: commands, failures with their command, tools used, and the outcome. After every 3 sessions, a small model (`FACTORY_MEMORY_MODEL`, default `claude-haiku-5-5`, up to $0.20 for each review) reads the recent digests and the current facts. It proposes facts, and each fact names the sessions that show it. Session IDs that the model was not shown are ignored. A fact goes into the system prompts of the coder, reviewer, PR writer and review turns only after 3 sessions confirm it. A session that contradicts a fact drops it. Text that looks like a credential is never stored. Review costs are in `costs.jsonl`. RPCs: `GetMemory`, `ForgetFact` and `RestoreTools`.
 - **Tool pruning.** Review turns record which built-in tools they were offered and which they used. A tool that goes unused for 5 review sessions is left out of the next turns (`--tools`). Core tools are always kept: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `ToolSearch`, `Task` and `Agent`. `RestoreTools` brings all tools back, and pruning then waits 5 more sessions.
@@ -118,7 +118,7 @@ Log appends are synchronous and ordered to keep buffering bounded for the curren
 
 ## The span ledger (one trace model)
 
-Every unit of agent work writes one span record when it ends, to `<project>/trace/spans-YYYY-MM.jsonl` (mode 0600). With Postgres and S3 configured, each line goes to S3 and its record to `factory_trace_events` with kind `span`, so SQL can count across runs. The JSONL log is the plain log that a metrics store rebuilds from. The schema is `SpanRecord` in `packages/core/src/trace.ts`, and `TraceLog` in `packages/backend/src/traces.ts` writes and reads it.
+Every unit of agent work writes one span record when it ends, to `<project>/trace/spans-YYYY-MM.jsonl` (mode 0600). With Postgres and S3 configured, each line goes to S3 and its record to `factory_trace_events` with kind `span`, so SQL can count across runs. The JSONL log is the plain log that a metrics store rebuilds from. The schema is `SpanRecord` in `packages/core/src/trace.ts`, and `TraceLog` in `packages/evidence/src/traces.ts` writes and reads it.
 
 | Span type | Written by | Parent |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ Rules:
 
 ## PR tending
 
-Tending is off by default. Turn it on in the project settings with `"tending": { "enabled": true, "answer_threads": false }`. Every 10 minutes the backend checks each task in `pr-opened` and does one action (`nextTendAction` in `packages/core/src/tending.ts`), in this order:
+Tending is off by default. Turn it on in the project settings with `"tending": { "enabled": true, "answer_threads": false }`. While it is off, the same pass still watches for conflicts: a PR that conflicts with its base gets a [follow-up](workspace-agents.md#follow-ups) for the task's agent, which waits for your approval before the PR is updated. Every 10 minutes the backend checks each task in `pr-opened` and does one action (`nextTendAction` in `packages/core/src/tending.ts`), in this order:
 
 1. **The PR is merged or closed:** tending ends for that PR.
 2. **The PR conflicts with its base:** tending merges the base in. An agent resolves the conflicts, and the merge is committed.
@@ -191,7 +191,7 @@ Each tending model call is a `model` span with step `tend:<action>`, under the t
 
 ## Communication and configuration
 
-The versioned contract is `packages/backend/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.
+The versioned contract is `packages/backend-client/factory.proto`. Explicit commands use protobuf fields; canonical task/project snapshots are JSON envelopes validated with the existing Zod schemas, avoiding a second task-record definition. Regenerate the checked-in portable descriptor with `pnpm rpc:generate` after changing the proto.
 
 Next.js and the CLI use one reusable gRPC channel and deadline-bound requests. The web client keeps its channel across development module reloads. The server binds loopback only and requires a bearer credential on every RPC. The local client reads the same data root's token file, or both processes can use `FACTORY_BACKEND_TOKEN` (at least 32 characters).
 
@@ -203,11 +203,13 @@ Task reads, submissions, execution, progress, environment/profile diagnostics, c
 
 Shutdown stops acceptance and lets running runs finish for `FACTORY_DRAIN_GRACE_MS` (default 5 min), then aborts their model calls and checks; the run is recorded as failed with the reason, and running the task again continues from the last saved step. Runs still queued are not started during shutdown. On the next start the backend settles what the previous one left: a run that was queued is queued again, a run that was running is marked `interrupted` and its `coding`/`reviewing` task is set to `failed` so it can run again. In file mode a task's `command.lock` is removed only when the process that wrote it no longer exists. An in-process PR review turn ends at shutdown without an exit file, so it reads as `interrupted`; its session is saved, and a reply continues it. A detached review turn (`FACTORY_REVIEW_TRANSPORT=cli`, or Codex) is a separate process and keeps running across a restart.
 
+Recovery reports what it cannot settle. A missing run record is not a problem. A project list or run read that fails, or a record that does not parse, goes into the recovery report: `/health` shows `recovery: { state: 'degraded', problems: n }`, and the inbox shows one `recovery` item per problem. While a task is in the report, `StartRun` and the synchronous commands refuse it, because the backend cannot tell who owns its work. Every `FACTORY_RECOVERY_RETRY_MS` (default 30 s) the backend reconciles only the reported tasks and projects; when one succeeds, its problem and inbox item go away. A run is queued again only after its record is read again under the task lock, so a retry never runs work twice.
+
 After a hard kill (SIGKILL, power loss) the next start still settles the run records as above, but shutdown did not stop the work first. A hard kill can leave both ownership locks and child processes behind. Inspect the recorded PID, its descendants, the worktree and the run evidence before removing stale locks. Never remove a live owner's lock.
 
 After establishing that all old work stopped, remove the stale `backend.lock` to restart. If a task's `command.lock` stays because a live process holds its PID, confirm that process is not a factory worker before removing the lock. A model step that was cut off starts again from its beginning; the work it saved before (verdict, worktree, commits, verification) is kept. A transport deadline does not prove a command did not happen: inspect the task/run before retrying, especially a PR operation.
 
-Opening a PR first looks for an open PR from the task branch and adopts it, so a retry after a lost write does not open a second one. Still deferred: resuming a model step inside its session, cancelling a run from the UI, streamed SSE progress, log rotation, pagination and distributed execution. The approval gate is unchanged: nothing pushes or opens a PR on its own.
+Opening a PR saves a `publication` intent on the task (operation ID, commit, branch, base, and step `push` or `create`) before each GitHub write, and clears it when the PR is recorded. It then lists the branch's PRs in any state: an open PR for the same commit is adopted, so a retry after a lost write does not open a second one; a closed or merged PR for the same commit stops the attempt and asks a person to reopen it or reject the task, because opening another would repeat an ambiguous write. Still deferred: resuming a model step inside its session, cancelling a run from the UI, streamed SSE progress, log rotation, pagination and distributed execution. The approval gate is unchanged: nothing pushes or opens a PR on its own.
 
 ## Light checks
 

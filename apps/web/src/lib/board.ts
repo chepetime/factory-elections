@@ -12,7 +12,9 @@
 //   3. Archived  — rejected; failed with no open inbox item (dismissed); or its PR is no longer
 //                  open (merged or closed) when the open-PR list is known. Not on the board.
 //   4. Ready     — approved without a PR yet (next step: open it), or the PR is approved and not a
-//                  draft (next step: merge it).
+//                  draft (next step: merge it). Ready is the "finish it" part of what needs you:
+//                  the core rule (`runAttention`) calls an approved run "needs you", and the
+//                  sidebar and home count it there.
 //   5. In review — the stage is `awaiting-approval` (the gate is the review, so its inbox item does
 //                  not move the task to Needs me), or a PR is open and waits on people or checks.
 //   6. Working   — the rest (queued, classified, coding, reviewing) with no live run: the workflow
@@ -21,6 +23,7 @@
 // Card fields come only from recorded state. When a field is missing, it is left out.
 import {
   executionBusy,
+  runNeed,
   taskTitle,
   type ExecutionPhase,
   type PullRequestSummary,
@@ -200,13 +203,18 @@ export function buildBoard(input: BoardInput): Board {
     // 3. Archived: off the board.
     const failed = task.stage === 'failed' || task.stage === 'verification-failed';
     const prClosed = task.pr !== undefined && pulls !== undefined && !pull;
+    // A failure with no open inbox item was dismissed. With no inbox data that is unknown, so it stays.
+    if (failed && input.inbox === undefined) {
+      place('needs-me', eventLine(task, 'needs-me', 'Failed'));
+      continue;
+    }
     if (task.stage === 'rejected' || failed || prClosed) {
       archived++;
       continue;
     }
 
     // 4. Ready.
-    if (task.stage === 'approved' && !task.pr) {
+    if (runNeed(task.stage) === 'open PR' && !task.pr) {
       place('ready', eventLine(task, 'ready', 'Approved'), { label: 'Open PR', href });
       continue;
     }

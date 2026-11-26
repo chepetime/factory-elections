@@ -40,6 +40,8 @@ vi.mock('@/app/actions', () => ({
   approveAndOpenPullRequest: vi.fn(),
   approveTask: vi.fn(),
   dismissLog: vi.fn(),
+  followUpIssue: vi.fn(),
+  confirmCleanup: vi.fn(),
   openPullRequest: vi.fn(),
   rejectTask: vi.fn(),
   runTask: vi.fn(),
@@ -432,6 +434,9 @@ it('lists the runs and pull requests in the side panel', async () => {
   page = await html(undefined, 'details');
   expect(page).toContain('o/r#12');
   expect(page).not.toContain('No pull request yet.');
+  // An open PR is continued by a follow-up on the same branch, not by a new run.
+  expect(page).toContain('Follow up');
+  expect(page).toContain('Resolve merge conflicts');
 });
 
 it('folds runs of events and shows comment threads with their replies', async () => {
@@ -487,4 +492,73 @@ it('opens the run in the right panel, with its session, and keeps a short card i
   const details = await html(undefined, 'details');
   expect(details).toMatch(/href="[^"]*panel=run"[^>]*>Open</);
   expect(details).toContain('Properties');
+});
+
+it('puts what the run needs from you on the ticket, also with the Details tab open', async () => {
+  // At the gate: the ready card and the decision, without opening the Run tab.
+  const ready = TaskRecord.parse({
+    ...task,
+    workflow: 'agent',
+    agent: 'devin',
+    stage: 'awaiting-approval',
+    verification: { passed: true, head_sha: 'abc123abc123abc', at: '2026-01-01T00:00:00Z', output_tail: '' },
+  });
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: issue({ id: task.id, stage: 'awaiting-approval' }),
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: ready,
+      execution: 'completed',
+      head_sha: 'abc123abc123abc',
+      diff_stat: ' 1 file changed, 2 insertions(+)',
+      actions: taskActions(ready, 'completed', 'abc123abc123abc'),
+    },
+  });
+  let page = await html(undefined, 'details');
+  expect(page).toContain('Ready for your approval');
+  expect(page).toContain('Approve and open draft PR');
+  expect(page).toMatch(/href="\/projects\/demo\/tasks\/DE-1\?panel=run"[^>]*>Ask for changes/);
+
+  // Approved: the push button is on the ticket.
+  const approved = {
+    ...ready,
+    stage: 'approved' as const,
+    approval: { decision: 'approved' as const, head_sha: 'abc123abc123abc', at: '2026-01-01T00:00:00Z' },
+  };
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue({ id: task.id, stage: 'approved' }) });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: approved,
+      execution: 'completed',
+      head_sha: 'abc123abc123abc',
+      diff_stat: '',
+      actions: taskActions(approved, 'completed', 'abc123abc123abc'),
+    },
+  });
+  page = await html(undefined, 'details');
+  expect(page).toContain('Approved: open the pull request');
+  expect(page).toContain('Push and open pull request');
+
+  // Blocked: the agent's question is on the ticket, with how to answer.
+  const blocked = TaskRecord.parse({
+    ...task,
+    workflow: 'agent',
+    agent: 'devin',
+    stage: 'blocked',
+    events: [{ at: '2026-01-01T00:00:00Z', kind: 'stage:blocked', message: 'devin needs you. Which page?' }],
+  });
+  vi.mocked(getIssue).mockResolvedValue({ ok: true, value: issue({ id: task.id, stage: 'blocked' }) });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: blocked, execution: 'completed', actions: taskActions(blocked, 'completed') },
+  });
+  page = await html(undefined, 'details');
+  expect(page).toContain('needs you');
+  expect(page).toContain('Which page?');
+  expect(page).toContain('Reply in a comment below');
 });

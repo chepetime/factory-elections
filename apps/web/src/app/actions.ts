@@ -34,6 +34,7 @@ import {
   commentIssueRun,
   createIssueRun,
   deleteIssueRun,
+  followUpIssueRun,
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
@@ -322,28 +323,54 @@ export async function approveProfile(project: string): Promise<ActionState> {
   return result.ok ? { message: 'Approved the profile.' } : { error: result.error };
 }
 
+/** What the feature page says after each command it can send. The backend decides if it is allowed. */
+const FEATURE_GATE_MESSAGES: Record<string, string> = {
+  grill: 'Sent. The agent reads it now.',
+  'skip-grill': 'Skipped the questions.',
+  'write-spec': 'Writing the specification.',
+  'save-spec': 'Saved. Approve the specification again.',
+  'approve-spec': 'Approved.',
+  plan: 'Planning started. Refresh to check progress.',
+  'save-board': 'Saved the board.',
+  'approve-board': 'Approved.',
+  'mark-merged': 'Marked as merged.',
+  'retry-ticket': 'Started the ticket again.',
+  'write-qa': 'Writing the QA plan.',
+  complete: 'Completed.',
+  cancel: 'Cancelled.',
+};
+
 export async function featureGateAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const project = field(form, 'project');
   const id = field(form, 'id');
   const action = field(form, 'action');
-  if (
-    !isProjectName(project) ||
-    !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) ||
-    !['approve-spec', 'plan', 'approve-board'].includes(action)
-  )
+  const ticket = field(form, 'ticket');
+  const text = field(form, 'text');
+  let tickets: unknown;
+  if (action === 'save-board')
+    try {
+      tickets = JSON.parse(field(form, 'tickets'));
+    } catch {
+      return { error: 'The tickets could not be read. Reload the page and try again.' };
+    }
+  const message = Object.hasOwn(FEATURE_GATE_MESSAGES, action) ? FEATURE_GATE_MESSAGES[action] : undefined;
+  if (!isProjectName(project) || !/^[a-z0-9][a-z0-9-]{2,40}$/.test(id) || !message)
     return { error: 'Invalid feature action.' };
   try {
-    const { backendCall } = await import('@factory/backend/client');
+    const { backendCall } = await import('@factory/backend-client');
     await backendCall('FeatureAction', {
       project,
       json: JSON.stringify({
         id,
         action,
         ...(action === 'approve-board' ? { mirror: form.get('mirror') === 'on' } : {}),
+        ...((action === 'grill' || action === 'save-spec') && text ? { text } : {}),
+        ...(action === 'save-board' ? { tickets } : {}),
+        ...(action === 'mark-merged' || action === 'retry-ticket' ? { ticket } : {}),
       }),
     });
     revalidatePath(`/projects/${project}/features/${id}`);
-    return { message: action === 'plan' ? 'Planning started. Refresh to check progress.' : 'Approved.' };
+    return { message };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Could not update feature.' };
   }
@@ -354,7 +381,7 @@ export async function dismissInboxItem(_prev: ActionState, form: FormData): Prom
   const project = field(form, 'project');
   if (!id || id.length > 400 || !isProjectName(project)) return { error: 'Invalid inbox item.' };
   try {
-    const { backendCall } = await import('@factory/backend/client');
+    const { backendCall } = await import('@factory/backend-client');
     await backendCall('DismissInboxItem', { project, json: JSON.stringify({ id }) });
     revalidatePath('/', 'layout');
     return { message: 'Dismissed.' };
@@ -421,6 +448,22 @@ export async function commentIssue(_prev: ActionState, form: FormData): Promise<
   revalidatePath(`/projects/${project}/tasks/${key}`);
   if (!commented.ok) return { error: commented.error };
   return { message: parent ? 'Reply added.' : 'Comment added.' };
+}
+
+/** Adds a follow-up on a task whose PR is open. The agent continues the same branch and PR. */
+export async function followUpIssue(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const project = field(form, 'project');
+  const key = field(form, 'key');
+  const note = field(form, 'note').trim();
+  const kind = field(form, 'kind') === 'conflicts' ? 'conflicts' : 'custom';
+  const agent = field(form, 'agent') || undefined;
+  if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
+  if (!note) return { error: 'Write what the agent should do.' };
+  const followed = await followUpIssueRun(project, key, { note, kind, ...(agent ? { agent } : {}) });
+  revalidatePath(`/projects/${project}/tasks/${key}`);
+  revalidatePath(`/projects/${project}`);
+  if (!followed.ok) return { error: followed.error };
+  return { message: 'Follow-up queued. The task moves back through the board as the agent works.' };
 }
 
 /** Archives a board task, or restores it with `archived: false`. */

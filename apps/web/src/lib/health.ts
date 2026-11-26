@@ -17,6 +17,13 @@ const EngineHealth = z
         write_errors: z.number().int().nonnegative(),
       })
       .optional(),
+    /** What startup recovery could not settle; `pending` until it ends. */
+    recovery: z
+      .object({
+        state: z.enum(['pending', 'ok', 'degraded']),
+        problems: z.number().int().nonnegative(),
+      })
+      .optional(),
     integrations: z.array(z.never()).max(0),
   })
   .strict();

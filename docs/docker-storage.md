@@ -35,7 +35,7 @@ The existing app has been imported and activated. Repositories and worktree path
 
 In configured mode, Postgres is authoritative for task/project records and run/team metadata. Task schema validation, the workflow driver, Effect orchestration and exact-head approval checks are retained. Task writes update JSONB snapshots; indexes support project/stage lookup. File mode remains available for isolated tests and roots without a storage configuration.
 
-Run acceptance and the latest-run pointer are committed in one database transaction. Per-task Postgres advisory locks are held on dedicated connections while work is queued/running, and are released when the connection closes. The host backend ownership file still prevents two servers owning one local root. This remains a single-worker local application, not a distributed scheduler.
+Run acceptance and the latest-run pointer are committed in one database transaction. Per-task Postgres advisory locks are held on dedicated connections while work is queued/running, and are released when the connection closes. The host backend ownership file still prevents two servers owning one local root. It is one backend per data root, running up to `FACTORY_TASK_WORKERS` task runs at once (default 3), not a distributed scheduler.
 
 The importer:
 
@@ -67,6 +67,7 @@ For a consistent backup, stop the host backend first so no new artifact/index wr
 - A Postgres `pg_dump` in custom format (`pg_dump -U factory -d factory -Fc` inside the Postgres service).
 - The SeaweedFS artifact volume, copied while the file service is stopped, or a complete S3 object export with its keys intact.
 - `.factory-data.env`, the host `storage.json`, and project profile YAML files, stored privately.
+- The host-only stores under `FACTORY_ROOT`: `receipt-key/`, `<project>/features/`, `<project>/memory/` and `<project>/reviews/`. Postgres does not hold them. See [Storage ownership](storage-ownership.md) for every entity.
 
 Restore database and artifact data from the same backup point. Worktrees/repositories need their own Git/filesystem backup; they are deliberately outside Docker. The preserved original task files are only the import-time snapshot, not a backup of later runs.
 

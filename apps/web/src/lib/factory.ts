@@ -1,7 +1,7 @@
 // Server-only gRPC bridge. Task state, execution and evidence belong to the local backend.
 import 'server-only';
-import { backendCall } from '@factory/backend/client';
-import type { Command } from '@factory/backend/protocol';
+import { backendCall } from '@factory/backend-client';
+import type { Command } from '@factory/backend-client/protocol';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -60,6 +60,8 @@ async function readJson<T extends z.ZodType>(
 export const ProjectSummary = Project.extend({
   display_name: z.string().optional(),
   icon: z.string().optional(),
+  /** The accent a person picked; absent means the name's color (see projectAccent). */
+  accent: z.string().optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 export function listProjects(): Promise<Result<ProjectSummary[]>> {

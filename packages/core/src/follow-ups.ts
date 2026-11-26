@@ -1,0 +1,25 @@
+// Follow-ups: more work on a run whose PR is already open, by a workspace agent, on the same branch
+// and PR. The run goes through the usual stages again (coding, the approval gate with the new commit,
+// then a push to the same PR), so the board shows the ticket in progress, in review or blocked, and
+// nothing reaches GitHub without a person approving that exact commit.
+import type { TaskRecord } from './schemas.ts';
+
+export type FollowUpKind = 'custom' | 'conflicts';
+
+/** The instructions of a conflict follow-up; `base` is the PR's base branch. */
+export function conflictFollowUpNote(base: string): string {
+  return [
+    `The pull request conflicts with ${base}. The factory merged ${base} into this branch and stopped on conflicts.`,
+    'Resolve every conflict so both changes keep working, remove all conflict markers, and run the tests.',
+  ].join(' ');
+}
+
+/** The agent a follow-up uses when the person does not pick one: the one that did the run. */
+export function followUpAgent(task: TaskRecord, assignee?: string): string | undefined {
+  return (task.workflow === 'agent' ? task.agent : undefined) ?? assignee ?? task.agent;
+}
+
+/** Whether the conflict watcher already added a follow-up for this PR head. */
+export function conflictFollowUpSeen(task: TaskRecord, prHead: string): boolean {
+  return (task.follow_ups ?? []).some((f) => f.kind === 'conflicts' && f.pr_head === prHead);
+}

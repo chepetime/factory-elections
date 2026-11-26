@@ -12,10 +12,15 @@ import { Button } from '@/components/ui/button';
 import {
   dropAction,
   ISSUE_STATUSES,
-  runWorking,
+  runAttention,
+  runNeed,
+  runHeld,
+  stageLabel,
   type DropAction,
   type IssueStatus,
   type Stage,
+  queueWaitLabel,
+  type QueueWait,
 } from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
 import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
@@ -28,29 +33,43 @@ export type BoardIssue = {
   status: IssueStatus;
   jira_key?: string;
   updated_at: string;
-  run?: { id: string; stage: Stage; updated_at?: string };
+  /** `waiting`: a new turn is queued until its agent is free. `owned`: a live run holds the task. */
+  run?: {
+    id: string;
+    stage: Stage;
+    updated_at?: string;
+    waiting?: boolean;
+    waiting_for?: QueueWait;
+    owned?: boolean;
+  };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
-};
-
-const STAGE_LABEL: Partial<Record<Stage, string>> = {
-  queued: 'Queued',
-  classified: 'Classified',
-  coding: 'Coding',
-  reviewing: 'Reviewing',
-  'awaiting-approval': 'Awaiting approval',
-  'verification-failed': 'Checks failed',
-  approved: 'Approved',
-  'pr-opened': 'PR opened',
-  blocked: 'Blocked',
-  failed: 'Failed',
-  rejected: 'Rejected',
 };
 
 /**
  * The drop's action once the person agrees, or its refusal. Undefined when they decline: a drop
  * that starts, reruns or cancels paid model work never happens without a yes.
  */
+/** The column a card shows in while its move is sent: the column the backend will put it in. */
+export function optimisticStatus(
+  action: Exclude<DropAction, { kind: 'none' | 'refused' | 'follow-up' }>,
+): IssueStatus {
+  switch (action.kind) {
+    case 'reject':
+      return 'cancelled';
+    case 'set-status':
+    case 'requeue':
+      return action.status;
+    case 'start-run':
+    case 'run':
+      return 'in_progress';
+  }
+}
+
+/** The task page with the follow-up form open. */
+export const followUpHref = (project: string, key: string) =>
+  `/projects/${project}/tasks/${key}?panel=details&followup=1#follow-up`;
+
 export async function decideDrop(
   issue: Pick<BoardIssue, 'key' | 'status' | 'run'>,
   to: IssueStatus,
@@ -193,18 +212,15 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       setNotice({ kind: 'error', text: `${issue.key}: ${action.reason}` });
       return;
     }
+    // The PR is open: more work is a follow-up, written on the task page.
+    if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     if (moving.current.has(issue.key)) return;
     moving.current.add(issue.key);
     setNotice(undefined);
     startMove(async () => {
       setOptimistic({
         key: issue.key,
-        to:
-          action.kind === 'reject'
-            ? 'cancelled'
-            : action.kind === 'set-status'
-              ? action.status
-              : 'in_progress',
+        to: optimisticStatus(action),
       });
       const result = await moveIssue(project, issue.key, to);
       moving.current.delete(issue.key);
@@ -375,10 +391,14 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                     <div className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
                       {issue.run ? (
                         <span className="inline-flex items-center gap-1">
-                          {issue.run.stage === 'coding' || issue.run.stage === 'reviewing' ? (
+                          {runAttention(issue.run.stage, issue.run.owned, issue.run.waiting) === 'working' ? (
                             <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden />
                           ) : null}
-                          {STAGE_LABEL[issue.run.stage] ?? issue.run.stage}
+                          {issue.run.waiting
+                            ? queueWaitLabel(issue.run.waiting_for, issue.agent?.name)
+                            : runNeed(issue.run.stage, issue.run.owned) === 'interrupted'
+                              ? 'Interrupted'
+                              : stageLabel(issue.run.stage)}
                         </span>
                       ) : (
                         <span>No run yet</span>
@@ -450,9 +470,9 @@ export function MoveMenu({
               <>
                 <Menu.Separator className="my-1 h-px bg-border" />
                 <Menu.Item
-                  disabled={!!issue.run && runWorking(issue.run.stage)}
+                  disabled={!!issue.run && runHeld(issue.run.stage, issue.run.owned)}
                   title={
-                    issue.run && runWorking(issue.run.stage)
+                    issue.run && runHeld(issue.run.stage, issue.run.owned)
                       ? 'Wait for the run to stop, or cancel it.'
                       : undefined
                   }
