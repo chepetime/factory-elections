@@ -1,4 +1,4 @@
-# Software Factory
+# Harbor Lighthouse
 
 A factory that turns work requested for a repository into a reviewed change.
 

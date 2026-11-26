@@ -5,9 +5,19 @@
 // Affect UI source or assets.
 import { Menu } from '@base-ui/react/menu';
 import {
+  Activity,
   Archive,
   Blocks,
   Bot,
+  Bug,
+  Cpu,
+  FolderOpen,
+  LayoutDashboard,
+  Plug,
+  Radio,
+  Sparkles,
+  SquareTerminal,
+  Wrench,
   Check,
   ChevronsUpDown,
   Copy,
@@ -15,7 +25,9 @@ import {
   GitPullRequest,
   Home,
   KanbanSquare,
-  ListTodo,
+  CalendarClock,
+  ChevronRight,
+  Network,
   MessageSquare,
   Users,
   Menu as MenuIcon,
@@ -31,7 +43,7 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { FactoryMark } from '@/components/factory-mark';
+import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { UserSidebar } from '@/components/user-sidebar';
@@ -148,8 +160,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     home ||
     pathname === '/board' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
-    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname) ||
-    /^\/chat(\/[^/]+)?$/.test(pathname);
+    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+|chat|chat\/[^/]+)$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -219,7 +230,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           !drawer && 'max-[899px]:-translate-x-full',
         )}
       >
-        <Rail project={project} pathname={pathname} />
+        <Rail pathname={pathname} />
         {!global && (
           // The sidebar and the main container form one light panel on the black frame.
           <div className="flex bg-sidebar min-[900px]:my-2 min-[900px]:rounded-l-xl">
@@ -269,7 +280,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <MenuIcon className="size-4" />
             </button>
             <span className="truncate text-sm font-medium">
-              {global ? 'Software Factory' : user ? 'User settings' : (project ?? 'Software Factory')}
+              {global ? 'Harbor Lighthouse' : user ? 'User settings' : (project ?? 'Harbor Lighthouse')}
             </span>
           </div>
           {fullBleed ? (
@@ -285,46 +296,124 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
-  const tasksHref = project ? `/projects/${project}/tasks` : '/board';
-  const items = [
-    { label: 'Board', href: '/board', icon: KanbanSquare, active: pathname === '/board' },
-    { label: 'Tasks', href: tasksHref, icon: ListTodo, active: Boolean(project) && pathname === tasksHref },
-    { label: 'Agents', href: '/agents', icon: Bot, active: pathname.startsWith('/agents') },
-    { label: 'Chat', href: '/chat', icon: MessageSquare, active: pathname.startsWith('/chat') },
-    { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
+/** The rail's two groups: the work the factory does, then what it is built from. */
+/** The rail: the whole installation, not one project. */
+function railItems(pathname: string) {
+  return [
+    { label: 'Home', href: '/', icon: Home, active: pathname === '/' },
+    { label: 'Network', href: '/network', icon: Network, active: pathname === '/network' },
   ];
+}
+
+/**
+ * Pages that left the rail. They wait in the project sidebar, switched off, until each is made to
+ * work per project; their routes still open by URL.
+ */
+const PARKED = [
+  { label: 'Dashboard', icon: LayoutDashboard },
+  { label: 'Findings', icon: Bug },
+  { label: 'Traffic', icon: Activity },
+  { label: 'Tool execution', icon: SquareTerminal },
+  { label: 'LLM recording', icon: Radio },
+  { label: 'Workspace', icon: FolderOpen },
+  { label: 'Components', icon: Blocks },
+] as const;
+
+/** Project pages for the agents' setup: what they talk with, run on, and can reach. */
+const AGENT_PAGES = [
+  { segment: 'chat', label: 'Chat', icon: MessageSquare },
+  { segment: 'agents', label: 'Agents', icon: Bot },
+  { segment: 'mcp', label: 'MCP', icon: Plug },
+  { segment: 'skills', label: 'Skills', icon: Sparkles },
+] as const;
+
+/** Project pages used less often: they work, but sit folded under More pages. */
+const MORE_PAGES = [
+  { segment: 'weekly', label: 'Weekly', icon: CalendarClock },
+  { segment: 'features', label: 'Features', icon: Tickets },
+  { segment: 'llms', label: 'LLMs', icon: Cpu },
+  { segment: 'tools', label: 'Tools', icon: Wrench },
+] as const;
+
+/**
+ * Less-used pages and the parked ones, folded under one toggle so the task list keeps its room. It
+ * opens by itself on one of its pages, so the current link stays in view.
+ */
+function MorePages({ project, pathname }: { project: string; pathname: string }) {
+  const pages = MORE_PAGES.map((page) => {
+    const href = `/projects/${project}/${page.segment}`;
+    return { ...page, href, current: pathname === href || pathname.startsWith(`${href}/`) };
+  });
   return (
-    <nav aria-label="Main navigation" className="flex w-14 flex-col items-center gap-1 bg-neutral-950 py-3">
+    <details className="group/more" open={pages.some((p) => p.current) || undefined}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground select-none hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          className="size-4 transition-transform group-open/more:rotate-90 motion-reduce:transition-none"
+        />
+        More pages
+      </summary>
+      <div className="mt-px flex flex-col gap-px">
+        {pages.map(({ segment, label, icon: Icon, href, current }) => (
+          <SidebarLink key={segment} href={href} current={current}>
+            <Icon className="size-4 text-muted-foreground" /> {label}
+          </SidebarLink>
+        ))}
+      </div>
+      <p className="mt-2 px-3 text-xs text-muted-foreground">Not available yet</p>
+      <ul aria-label="More pages, not available yet" className="mt-px flex flex-col gap-px">
+        {PARKED.map(({ label, icon: Icon }) => (
+          <li
+            key={label}
+            aria-disabled="true"
+            title="Not available yet"
+            className="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground pointer-coarse:min-h-11"
+          >
+            <Icon className="size-4 opacity-60" aria-hidden /> {label}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function Rail({ pathname }: { pathname: string }) {
+  return (
+    <nav
+      aria-label="Main navigation"
+      className="flex w-14 flex-col items-center gap-1 overflow-y-auto bg-neutral-950 py-3 [scrollbar-width:none]"
+    >
       <Link
         href="/"
-        aria-label="Software Factory home"
+        aria-label="Harbor Lighthouse home"
         title="Home"
         aria-current={pathname === '/' ? 'page' : undefined}
-        className="mb-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
+        className="mb-3 shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
       >
-        <FactoryMark className="ring-1 ring-white/15 rounded-lg" />
+        <HarborMark className="ring-1 ring-white/15 rounded-lg" />
       </Link>
 
-      {items.map(({ label, href, icon: Icon, active }) => (
-        <Link
-          key={label}
-          href={href}
-          aria-label={label}
-          title={label}
-          aria-current={active ? 'page' : undefined}
-          className={cn(railItem, active && railActive)}
-        >
-          <Icon className="size-4" />
-        </Link>
-      ))}
+      <div role="group" aria-label="Installation" className="flex flex-col items-center gap-1">
+        {railItems(pathname).map(({ label, href, icon: Icon, active }) => (
+          <Link
+            key={label}
+            href={href}
+            aria-label={label}
+            title={label}
+            aria-current={active ? 'page' : undefined}
+            className={cn(railItem, 'shrink-0', active && railActive)}
+          >
+            <Icon className="size-4" />
+          </Link>
+        ))}
+      </div>
 
       <Link
         href="/settings"
         aria-label="Settings"
         title="Settings"
         aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
-        className={cn(railItem, 'mt-auto mb-2', pathname.startsWith('/settings') && railActive)}
+        className={cn(railItem, 'mt-auto mb-2 shrink-0', pathname.startsWith('/settings') && railActive)}
       >
         <Settings className="size-4" />
       </Link>
@@ -332,10 +421,14 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
         href="/user"
         title="User settings"
         aria-label="User settings"
-        aria-current={pathname.startsWith('/user') ? 'page' : undefined}
+        aria-current={
+          pathname.startsWith('/user') && !pathname.startsWith('/user/providers') ? 'page' : undefined
+        }
         className={cn(
-          'flex size-8 items-center justify-center rounded-full bg-white/12 text-neutral-300 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 pointer-coarse:size-11',
-          pathname.startsWith('/user') && 'ring-1 ring-orange-400 text-orange-300',
+          'flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12 text-neutral-300 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 pointer-coarse:size-11',
+          pathname.startsWith('/user') &&
+            !pathname.startsWith('/user/providers') &&
+            'ring-1 ring-orange-400 text-orange-300',
         )}
       >
         <User aria-hidden="true" className="size-4" />
@@ -383,7 +476,7 @@ function Sidebar({
     <aside
       aria-label="Tasks"
       style={{ width }}
-      className="relative m-2 flex flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
+      className="relative m-2 flex min-h-0 flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
     >
       <div className="flex items-center gap-1 p-2">
         <Menu.Root>
@@ -500,89 +593,101 @@ function Sidebar({
         </button>
       </div>
 
-      {project && (
-        <div className="flex flex-col gap-1 px-2 pb-2">
-          <SidebarLink href={`/projects/${project}`} current={pathname === `/projects/${project}`}>
-            <Home className="size-4 text-muted-foreground" /> Home
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/tasks`}
-            current={pathname === `/projects/${project}/tasks`}
-          >
-            <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/team`}
-            current={/^\/projects\/[^/]+\/team(?:\/|$)/.test(pathname)}
-          >
-            <Users className="size-4 text-muted-foreground" /> Team members
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/reviews`}
-            current={/^\/projects\/[^/]+\/reviews(?:\/|$)/.test(pathname)}
-          >
-            <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/tickets`}
-            current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
-          >
-            <Tickets className="size-4 text-muted-foreground" /> Tickets
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/features`}
-            current={/^\/projects\/[^/]+\/features(?:\/|$)/.test(pathname)}
-          >
-            <Tickets className="size-4 text-muted-foreground" /> Features
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/weekly`}
-            current={/^\/projects\/[^/]+\/weekly(?:\/|$)/.test(pathname)}
-          >
-            <span aria-hidden="true">◷</span> Weekly
-          </SidebarLink>
-          <div role="separator" className="my-2 h-px bg-border" />
-          <Link
-            href={`/projects/${project}/tasks/new`}
-            aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}
-            className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <Plus className="size-4" /> New task
-          </Link>
-        </div>
-      )}
+      {/* Below the project switcher, one column scrolls: links, New task, tasks and the footer. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="flex min-h-full flex-col">
+          {project && (
+            <div className="flex flex-col gap-1 px-2 pb-2">
+              <SidebarLink href={`/projects/${project}`} current={pathname === `/projects/${project}`}>
+                <Home className="size-4 text-muted-foreground" /> Home
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/tasks`}
+                current={pathname === `/projects/${project}/tasks`}
+              >
+                <KanbanSquare className="size-4 text-muted-foreground" /> Tasks
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/team`}
+                current={/^\/projects\/[^/]+\/team(?:\/|$)/.test(pathname)}
+              >
+                <Users className="size-4 text-muted-foreground" /> Team members
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/reviews`}
+                current={/^\/projects\/[^/]+\/reviews(?:\/|$)/.test(pathname)}
+              >
+                <GitPullRequest className="size-4 text-muted-foreground" /> PR reviews
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/tickets`}
+                current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
+              >
+                <Tickets className="size-4 text-muted-foreground" /> Tickets
+              </SidebarLink>
+              <div role="separator" className="my-1 h-px bg-border" />
+              {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {
+                const href = `/projects/${project}/${segment}`;
+                return (
+                  <SidebarLink
+                    key={segment}
+                    href={href}
+                    current={pathname === href || pathname.startsWith(`${href}/`)}
+                  >
+                    <Icon className="size-4 text-muted-foreground" /> {label}
+                  </SidebarLink>
+                );
+              })}
+              <MorePages project={project} pathname={pathname} />
+              <div role="separator" className="my-2 h-px bg-border" />
+              <Link
+                href={`/projects/${project}/tasks/new`}
+                aria-current={pathname.endsWith('/tasks/new') ? 'page' : undefined}
+                className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <Plus className="size-4" /> New task
+              </Link>
+            </div>
+          )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {!project ? null : tasks.kind === 'loading' ? (
-          <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading tasks</p>
-        ) : tasks.kind === 'failed' ? (
-          <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
-        ) : (
-          <SidebarWork project={project} issues={tasks.value} activeKey={activeId} onChanged={onRefresh} />
-        )}
-      </div>
-
-      {project && (
-        <div className="flex flex-col gap-px border-t px-2 py-2">
-          <SidebarLink
-            href={`/projects/${project}/tasks/archived`}
-            current={pathname === `/projects/${project}/tasks/archived`}
-          >
-            <Archive className="size-4 text-muted-foreground" /> Archived
-            {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
-              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                {tasks.value.filter((i) => i.archived).length}
-              </span>
+          <div className="flex-1 px-2 pb-2">
+            {!project ? null : tasks.kind === 'loading' ? (
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading tasks</p>
+            ) : tasks.kind === 'failed' ? (
+              <p className="px-2 py-1.5 text-sm text-destructive">Tasks unavailable. Refresh to try again.</p>
+            ) : (
+              <SidebarWork
+                project={project}
+                issues={tasks.value}
+                activeKey={activeId}
+                onChanged={onRefresh}
+              />
             )}
-          </SidebarLink>
-          <SidebarLink
-            href={`/projects/${project}/settings`}
-            current={/^\/projects\/[^/]+\/settings(?:\/|$)/.test(pathname)}
-          >
-            <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
-          </SidebarLink>
+          </div>
+
+          {project && (
+            <div className="flex flex-col gap-px border-t px-2 py-2">
+              <SidebarLink
+                href={`/projects/${project}/tasks/archived`}
+                current={pathname === `/projects/${project}/tasks/archived`}
+              >
+                <Archive className="size-4 text-muted-foreground" /> Archived
+                {tasks.kind === 'loaded' && tasks.value.some((i) => i.archived) && (
+                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                    {tasks.value.filter((i) => i.archived).length}
+                  </span>
+                )}
+              </SidebarLink>
+              <SidebarLink
+                href={`/projects/${project}/settings`}
+                current={/^\/projects\/[^/]+\/settings(?:\/|$)/.test(pathname)}
+              >
+                <SlidersHorizontal className="size-4 text-muted-foreground" /> Project settings
+              </SidebarLink>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <div
         role="separator"

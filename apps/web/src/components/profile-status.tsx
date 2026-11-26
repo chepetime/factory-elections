@@ -1,10 +1,11 @@
 'use client';
 // The repo profile's state in the Setup check pane: draft a missing profile, or review and approve a draft.
-import { CircleAlert, CircleCheck, CircleDashed, FileText, LoaderCircle } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleDashed, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { approveProfile, draftProfile, type ActionState } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
+import { LatticeLoader } from '@/components/bits/lattice-loader';
 import { Button } from '@/components/ui/button';
 import type { ProfileStatus } from '@/lib/settings';
 import { cn } from '@/lib/utils';
@@ -85,21 +86,23 @@ export function ProfileStatusRow({ project, status }: { project: string; status:
             onClick={() => act(() => draftProfile(project))}
           >
             {pending ? (
-              <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+              <LatticeLoader label="Drafting…" fontSize={13} />
             ) : (
-              <FileText aria-hidden />
+              <>
+                <FileText aria-hidden /> Draft profile
+              </>
             )}
-            {pending ? 'Drafting…' : 'Draft profile'}
           </Button>
         )}
         {status.state === 'draft' && (
           <Button size="sm" disabled={pending} onClick={approve}>
             {pending ? (
-              <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+              <LatticeLoader label="Approving…" fontSize={13} showTimer={false} />
             ) : (
-              <CircleCheck aria-hidden />
+              <>
+                <CircleCheck aria-hidden /> Approve profile
+              </>
             )}
-            {pending ? 'Approving…' : 'Approve profile'}
           </Button>
         )}
       </div>

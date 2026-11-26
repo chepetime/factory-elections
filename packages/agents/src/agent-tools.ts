@@ -103,7 +103,13 @@ export function chatTools(input: {
         const { project, title, description, assign_to_me } = args.data;
         if (!(await known(project)))
           return { text: `No project ${project}. Projects: ${(await projects()).join(', ')}`, isError: true };
-        const created = await issues.create({ project, title, description, status: 'todo' });
+        const created = await issues.create({
+          project,
+          title,
+          description,
+          status: 'todo',
+          created_by: agent.id,
+        });
         if (assign_to_me) await issues.update({ project, key: created.key, assignee: agent.id });
         onCreated({ project, key: created.key });
         return { text: `Created ${created.key} in ${project}.` };

@@ -4,6 +4,7 @@ Keep this directory name (`harnes`) stable for existing task links. Record exper
 
 - [01: Token optimization](LEARNING_01_TOKEN_OPTIMIZATION.md): compact task routing, bounded output, source adaptations and a reproducible measurement protocol.
 - [02: Worktrees and CI](LEARNING_02_WORKTREES_AND_CI.md): isolation fixes, dependency selection and observed validation.
+- [03: Dev loop tooling](LEARNING_03_DEV_LOOP.md): what repeated in one long session, and the scripts, hooks and skill that replace it.
 
 For each experiment record the revision, task, model, enabled tools/skills, input/cache/output tokens, checks passed, elapsed time and limitations. Separate observed measurements from hypotheses. Include failed tasks and retries; reduced cost with reduced task success is not a win. Never commit raw sessions containing credentials or private task content.
 

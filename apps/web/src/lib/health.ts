@@ -24,6 +24,8 @@ const EngineHealth = z
         problems: z.number().int().nonnegative(),
       })
       .optional(),
+    /** The agent session the backend was started from; its agents may run with capped permissions. */
+    host_session: z.literal('claude-code').optional(),
     integrations: z.array(z.never()).max(0),
   })
   .strict();

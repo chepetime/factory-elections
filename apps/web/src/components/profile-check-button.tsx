@@ -1,7 +1,8 @@
 'use client';
-import { LoaderCircle, PlayCircle } from 'lucide-react';
+import { PlayCircle } from 'lucide-react';
 import { useActionState } from 'react';
 import { checkProjectSetup, type ActionState } from '@/app/actions';
+import { LatticeLoader } from '@/components/bits/lattice-loader';
 import { Button } from '@/components/ui/button';
 
 export function ProfileCheckButton({
@@ -21,11 +22,12 @@ export function ProfileCheckButton({
       {blocked && !busy && <p className="text-xs text-muted-foreground">{blocked}</p>}
       <Button type="submit" variant="outline" size="sm" disabled={busy || !!blocked}>
         {busy ? (
-          <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+          <LatticeLoader label="Checking…" fontSize={13} />
         ) : (
-          <PlayCircle aria-hidden />
+          <>
+            <PlayCircle aria-hidden /> Check setup
+          </>
         )}
-        {busy ? 'Checking…' : 'Check setup'}
       </Button>
       {state.error && (
         <p role="alert" className="text-xs text-destructive">

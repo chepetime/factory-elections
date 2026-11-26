@@ -48,6 +48,16 @@ try {
         throw new Error(
           `Install failed; checkout preserved at ${destination}. Retry pnpm install --frozen-lockfile there.`,
         );
+      // The web app type-checks against affect-ui's built declarations; without them tsc reports
+      // dozens of errors that are not in the change.
+      const built = spawnSync('pnpm', ['--filter', '@factory/affect-ui', 'build'], {
+        cwd: destination,
+        stdio: 'inherit',
+      });
+      if (built.status !== 0)
+        throw new Error(
+          `affect-ui build failed in ${destination}. Run pnpm --filter @factory/affect-ui build there.`,
+        );
     }
   } else if (command === 'run' && (args.length === 2 || args.length === 3)) {
     const ports = args.map(Number);

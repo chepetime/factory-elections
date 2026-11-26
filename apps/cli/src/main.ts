@@ -21,6 +21,7 @@ import { composeDriver as createDriver } from '@factory/compose';
 import { saveTaskReceipt, verifyTaskReceipt } from '@factory/evidence';
 import { serveHealth } from './serve.ts';
 import { doctor } from './doctor.ts';
+import { issueList, issueShow, paths, reviewDiagnose, spans } from './inspect.ts';
 
 export const HELP = `Usage: factory [options] <command>
 
@@ -47,6 +48,13 @@ Workflow
   task confirm-cleanup --project <p> --id <id>           After you checked: nothing from the last run still runs
   receipt issue --project <p> --id <id>                  Sign the evidence receipt: what is proven, what is not
   receipt verify --project <p> --id <id> [--rerun]       Check the receipt's signature and head; --rerun runs the checks again
+
+Inspect (read-only)
+  paths                                           Data root, logs, review and task folders, ports
+  issue show --project <p> --key <KEY>            One ticket with its events and runs (JSON, from the backend)
+  issue list --project <p>                        The project's tickets (JSON, from the backend)
+  review diagnose --project <p> --number <n>      What each review turn did: exit, permission mode, refused calls
+  spans --type <tool|model|review|…> [--project <p>] [--limit N]   Newest spans of one type (JSON)
 
 Individual steps
   task show | list | readiness | classify | prepare-worktree | verify | review | draft-pr | record-verdict | prepare-classifier
@@ -81,6 +89,10 @@ const OPTIONS = {
   quiet: { type: 'boolean', short: 'q' },
   rerun: { type: 'boolean' },
   json: { type: 'boolean' },
+  key: { type: 'string' },
+  number: { type: 'string' },
+  type: { type: 'string' },
+  limit: { type: 'string' },
 } as const;
 
 class UsageError extends Error {}
@@ -287,6 +299,25 @@ export async function main(argv: string[]): Promise<number> {
           return check.ok ? 0 : 1;
         }
         break;
+      }
+      case 'paths':
+        return (out(paths(root)), 0);
+      case 'issue':
+        if (sub === 'show') return (out(await issueShow(project(), required(v.key, 'key'))), 0);
+        if (sub === 'list') return (out(await issueList(project())), 0);
+        break;
+      case 'review':
+        if (sub === 'diagnose') {
+          const number = Number(required(v.number, 'number'));
+          if (!Number.isInteger(number) || number < 1) throw new UsageError('--number must be a PR number');
+          return (out(await reviewDiagnose(root, project(), number)), 0);
+        }
+        break;
+      case 'spans': {
+        const limit = v.limit === undefined ? 50 : Number(v.limit);
+        if (!Number.isInteger(limit) || limit < 1) throw new UsageError('--limit must be a positive integer');
+        const scope = v.project ? project() : '';
+        return (out(await spans(scope, required(v.type, 'type'), limit)), 0);
       }
       case 'task': {
         const execute = () => taskCommand(sub, { driver, tasks, project, id, v, root });

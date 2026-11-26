@@ -17,8 +17,8 @@ import type { PrReviewStore } from './pr-review-records.ts';
 //   <root>/<project>/reviews/<N>/payload.json    the report payload the agent writes
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
@@ -40,15 +40,11 @@ import {
   spanTokens,
   ToolSpans,
   type AgentEvent,
-  type ContextStatus,
   type ReviewWaiting,
   triagePullRequests,
   type AgentCli,
   type HeadlessTurn,
   type ProjectSettings,
-  type PullRequestSummary,
-  type ReviewChatEntry,
-  type ReviewState,
 } from '@factory/core';
 import { type ProjectStore, writeJsonAtomic } from '@factory/adapters-fs';
 import {
@@ -71,6 +67,22 @@ import { Conflict } from '@factory/core';
 import { MAX_AGENTS } from '@factory/dispatcher';
 import type { ReviewDelegation, ReviewGrant, ReviewMemory } from './ports.ts';
 import type { TraceLog } from '@factory/evidence';
+import {
+  headLines,
+  PrNumber,
+  readLines,
+  registered,
+  ReviewMode,
+  ReviewTarget,
+  RunFile,
+  reviewWorktree,
+} from './review-files.ts';
+import { missingReportReason, offeredTools, permissionModeOf } from './review-turn-log.ts';
+import type { ReviewDetail, ReviewFindingRow, ReviewRow, ReviewStatus } from './review-types.ts';
+
+export { reviewWorktree } from './review-files.ts';
+export { missingReportReason, permissionModeOf } from './review-turn-log.ts';
+export type * from './review-types.ts';
 
 export const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -105,75 +117,6 @@ export const AUTOMATED_TURN_DENY = [
   'Bash(gh api:*)',
   'Bash(git push:*)',
 ];
-const PrNumber = z.number().int().positive().max(1_000_000_000);
-const ReviewTarget = z.object({ project: ProjectName, number: PrNumber });
-const ReviewMode = z.enum(['review', 'rereview']);
-type ReviewMode = z.infer<typeof ReviewMode>;
-const Turn = z.object({
-  at: z.string(),
-  text: z.string(),
-  label: z.string().optional(),
-  /** The detached CLI process group of the turn. */
-  pid: z.number().int().positive().optional(),
-  /** The backend instance that runs the turn in-process; a new instance has not started it. */
-  owner: z.string().max(100).optional(),
-  stopped: z.boolean().optional(),
-  /** Set when the backend stopped the turn, not the user. */
-  stop_reason: z.enum(['stalled']).optional(),
-  /** The turn's span in the trace ledger; its children hang under it. */
-  trace_id: z.string().optional(),
-  span_id: z.string().optional(),
-});
-const RunFile = z.object({
-  number: PrNumber,
-  branch: z.string().min(1),
-  url: z.string(),
-  title: z.string().optional(),
-  worktree: z.string(),
-  started_at: z.string(),
-  session_id: z.string().optional(),
-  turns: z.array(Turn).min(1),
-});
-type RunFile = z.infer<typeof RunFile>;
-
-export interface ReviewStatus {
-  /** State of the latest agent turn. */
-  state?: ReviewState;
-  started_at?: string;
-  finished_at?: string;
-  exit_code?: number;
-  /** User messages in the chat, including the kickoff. */
-  turns: number;
-  /** The agent saved a report payload. */
-  report: boolean;
-  /** Verdict and risk from the payload, for the list. */
-  decision?: string;
-  risk?: string;
-  /** A review worktree is registered for this PR's branch. */
-  worktree: boolean;
-  /** Why the last start failed after it was accepted (fetching the PR or preparing its worktree). */
-  error?: string;
-  stop_reason?: 'stalled';
-}
-export interface ReviewRow extends PullRequestSummary {
-  review: ReviewStatus;
-}
-export interface ReviewDetail extends ReviewStatus {
-  number: number;
-  branch?: string;
-  url?: string;
-  title?: string;
-  /** Whether a follow-up message can continue this chat now. */
-  can_reply: boolean;
-  conversation: ReviewChatEntry[];
-  payload?: ReviewPayload;
-  payload_error?: string;
-  /** Dollars the agent reported over all turns; absent when no turn reported a cost. */
-  cost_usd?: number;
-  /** The latest turn's context size against the project's limit (warn at 80%). */
-  context?: ContextStatus;
-}
-
 /** One review turn, as the provider CLI receives it. */
 export type AgentTurn = HeadlessTurn;
 export interface ReviewDeps {
@@ -196,55 +139,6 @@ export const defaultReviewDeps: ReviewDeps = {
   ...(process.env.FACTORY_REVIEW_TRANSPORT === 'cli' ? {} : { claudeTurn: runClaudeTurn }),
 };
 
-export function reviewWorktree(repo: string, branch: string) {
-  return {
-    path: join(dirname(repo), 'reviews', `${basename(repo)}-${branch.replaceAll('/', '-')}`),
-    branch: `review/${branch}`,
-  };
-}
-
-/** Whether git lists this worktree. Git reports resolved paths (e.g. /private/var on macOS). */
-async function registered(worktrees: readonly string[], path: string): Promise<boolean> {
-  if (worktrees.includes(path)) return true;
-  const real = await realpath(path).catch(() => undefined);
-  return real !== undefined && worktrees.includes(real);
-}
-
-/** Lines of a stream-json log, keeping at most the last `bytes`. */
-async function readLines(path: string, bytes = 4 * 1024 * 1024): Promise<string[]> {
-  const file = await open(path, 'r').catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return undefined;
-    throw error;
-  });
-  if (!file) return [];
-  try {
-    const { size } = await file.stat();
-    const start = Math.max(0, size - bytes);
-    const buffer = Buffer.alloc(size - start);
-    await file.read(buffer, 0, buffer.length, start);
-    const lines = buffer.toString('utf8').split('\n');
-    if (start > 0) lines.shift();
-    return lines.filter((l) => l.trim() !== '');
-  } finally {
-    await file.close();
-  }
-}
-
-/** The first lines of a file, reading at most `bytes`. */
-async function headLines(path: string, bytes = 64 * 1024): Promise<string[]> {
-  const file = await open(path, 'r').catch(() => undefined);
-  if (!file) return [];
-  try {
-    const buffer = Buffer.alloc(bytes);
-    const { bytesRead } = await file.read(buffer, 0, bytes, 0);
-    const lines = buffer.subarray(0, bytesRead).toString('utf8').split('\n');
-    if (bytesRead === bytes) lines.pop();
-    return lines.filter((l) => l.trim() !== '');
-  } finally {
-    await file.close();
-  }
-}
-
 /**
  * The agent allowlist (packages/core/src/agent-env.ts), not the backend's environment. It also
  * keeps out CLAUDECODE and CLAUDE_CODE_*, so the agent does not think it is nested in the session
@@ -256,22 +150,6 @@ function agentEnv(provider: AgentCli['id']): NodeJS.ProcessEnv {
 
 /** The review model, for its context limit. */
 const REVIEW_MODEL = 'claude-opus-5-5';
-
-/** Built-in tools a Claude turn was offered, from its init line (MCP tools are not pruned). */
-function offeredTools(lines: readonly string[]): string[] {
-  for (const line of lines.slice(0, 40)) {
-    try {
-      const e = JSON.parse(line) as { subtype?: unknown; tools?: unknown };
-      if (e.subtype === 'init' && Array.isArray(e.tools))
-        return (e.tools as unknown[]).filter(
-          (t): t is string => typeof t === 'string' && !t.startsWith('mcp__'),
-        );
-    } catch {
-      // Not JSON.
-    }
-  }
-  return [];
-}
 
 function stripFrontmatter(text: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
@@ -300,6 +178,17 @@ export class ReviewService {
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
   reviewRecords?: PrReviewStore;
+  /**
+   * Called once when a review's first turn ends: with its payload when it finished with a decision,
+   * or undefined when it stopped or failed. The backend's review loop listens here.
+   */
+  /** A first review turn ended: its payload, or why there is none. */
+  onReviewEnded?: (
+    project: string,
+    number: number,
+    payload: ReviewPayload | undefined,
+    reason?: string,
+  ) => unknown;
   /** The live grant of each PR's latest turn; a new turn replaces it. */
   private readonly grants = new Map<string, ReviewGrant>();
   /** This backend instance, the owner of the in-process turns it starts. */
@@ -394,8 +283,27 @@ export class ReviewService {
         continue;
       const lines = await readLines(join(dir, `turn-${k}.jsonl`));
       const events = lines.flatMap((l) => this.deps.agent.parse(l));
-      const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
+      const head = await headLines(join(dir, `turn-${k}.jsonl`));
+      const offered = offeredTools(head);
       await this.traceTurn(project, record, k, events).catch(() => undefined);
+      // The first turn's result, for the review loop: the payload when the turn finished with one.
+      if (k === 0 && this.onReviewEnded) {
+        const exit = await readFile(join(dir, `turn-${k}.exit`), 'utf8').catch(() => '');
+        const stopped = record.turns[k]!.stopped === true;
+        const read = exit.trim() === '0' && !stopped ? await this.readPayload(project, record.number) : {};
+        const payload = read.payload?.meta.decision?.trim() ? read.payload : undefined;
+        const reason = payload
+          ? undefined
+          : missingReportReason(events, {
+              exit: exit.trim(),
+              stopped,
+              payloadError: read.error,
+              permissionMode: permissionModeOf(head),
+            });
+        await Promise.resolve(this.onReviewEnded(project, record.number, payload, reason)).catch(
+          () => undefined,
+        );
+      }
       if (k === 0 && this.reviewRecords && !record.turns[k]!.stopped) {
         const exitPath = join(dir, `turn-${k}.exit`);
         const exit = await readFile(exitPath, 'utf8').catch(() => '');
@@ -593,6 +501,42 @@ export class ReviewService {
       }),
     );
     return { me, pulls };
+  }
+
+  /**
+   * Every finding the saved review reports of a project hold, newest review first. Reads only
+   * files on disk: no GitHub call, so the list works offline and for closed PRs.
+   */
+  async findings(raw: unknown): Promise<ReviewFindingRow[]> {
+    const { project } = z.object({ project: ProjectName }).parse(raw);
+    const dir = join(this.root, project, 'reviews');
+    const numbers = (await readdir(dir).catch(() => [] as string[]))
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const rows = await Promise.all(
+      numbers.map(async (number) => {
+        const record = await this.readRun(project, number).catch(() => undefined);
+        const { payload } = await this.readPayload(project, number);
+        if (!record || !payload) return [];
+        const at = record.turns.at(-1)?.at ?? record.started_at;
+        return payload.findings.map((f, index) => ({
+          project,
+          number,
+          index,
+          title: record.title ?? payload.meta.pr_title ?? `PR #${number}`,
+          url: record.url,
+          at,
+          decision: payload.meta.decision ?? undefined,
+          severity: f.severity ?? undefined,
+          axis: f.axis ?? undefined,
+          finding: f.title ?? f.impact ?? 'Untitled finding',
+          file: f.file ?? undefined,
+          line_range: f.line_range ?? undefined,
+          fix: f.fix ?? undefined,
+        }));
+      }),
+    );
+    return rows.flat().sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index);
   }
 
   async detail(raw: unknown): Promise<ReviewDetail> {

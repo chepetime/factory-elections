@@ -1,4 +1,4 @@
-# Software Factory
+# Harbor Lighthouse
 
 Run a coding task against a local Git repository: classify it, implement it in an isolated worktree, run checks, and review the diff. The workflow stops for approval of the exact reviewed commit before pushing or opening a pull request.
 

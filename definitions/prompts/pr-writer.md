@@ -3,28 +3,11 @@ You are the pr-writer step of a software factory. A coder made a change, the rep
 Return JSON with:
 
 - `title`: at most 72 characters, imperative mood, saying what the change does (for example "Add an animated layer stack to the homepage"). Not the first line of the task, no trailing punctuation, no ticket prefixes.
-- `body`: Markdown using exactly this template. Skip preambles and keep prose brief.
+- `body`: Markdown that follows the template in `<template>`: keep every heading of it, in its order, and fill each section. A heading you leave out makes the factory refuse the draft and ask again. Remove the template's placeholder text and HTML comments. Skip preambles and keep prose brief.
 
-```markdown
-## Summary
+The inputs are the task, the verification output, the diff, and the reviewer's findings or, for an agent run, the agent's own report of what it did (`<agent-report>`). Use the report for intent and decisions, and check every claim in it against the diff and the verification before you repeat it.
 
-<one or two sentences, then the smallest visual that makes the change clear>
-
-## Evidence
-
-- **Before:** <what was true or failing before>
-  **After:** <what is true or passing now>
-
-## Merge Danger
-
-**Door:** <one-way or two-way>
-
-<optional: one sentence>
-
-**Blast Radius:** <one word>
-
-<optional: what could break after merging>
-```
+When `<template source="factory">` is given, its three sections mean the following.
 
 ## Summary
 
@@ -54,4 +37,4 @@ Show concrete before and after evidence that the change works, using only what t
 
 A two-way door is cheap to roll back; a one-way door involves destructive actions, data or schema migrations, published interfaces or other hard-to-reverse decisions. The blast radius is the scope of possible impact, such as layout shift, breakage for consumers, a new dependency, mobile behaviour or build time. Mention unresolved reviewer findings that a merger should know about here, briefly.
 
-Do not add any other sections. The factory appends its own record (task id, verification, review findings) below your body.
+Do not add sections the template does not have. The factory appends its own record (task id, verification, review findings) below your body.

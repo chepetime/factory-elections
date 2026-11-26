@@ -1,10 +1,11 @@
 'use client';
 // One PR review: a chat with the review agent beside its report. Polls while the agent works.
-import { ArrowLeft, Bot, ExternalLink, LoaderCircle, RotateCcw, Square } from 'lucide-react';
+import { ArrowLeft, Bot, ExternalLink, RotateCcw, Square } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { sendReviewMessage, startReviews, stopReview } from '@/app/actions';
+import { ThoughtLine } from '@/components/bits/thought-line';
 import { ChatComposer } from '@/components/chat-composer';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
@@ -244,10 +245,14 @@ export function ReviewChat({
               ),
             )}
             {(running || preparing) && (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-                <LoaderCircle className="size-4 motion-safe:animate-spin" />
-                {preparing ? 'Fetching the PR and preparing its worktree…' : 'The agent is working…'}
-              </p>
+              <ThoughtLine
+                // A new clock when preparing hands over to the agent.
+                key={preparing ? 'preparing' : 'running'}
+                label={preparing ? 'Fetching the PR and preparing its worktree…' : 'The agent is working…'}
+                collapsible={false}
+                fontSize={14}
+                className="text-muted-foreground"
+              />
             )}
             {detail.error && !preparing && (
               <p className="text-sm text-destructive" role="alert">

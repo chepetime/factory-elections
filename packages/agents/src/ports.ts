@@ -11,6 +11,8 @@ export interface AgentBoard {
     title: string;
     description?: string;
     status?: 'backlog' | 'todo';
+    /** The agent that creates it. */
+    created_by?: string;
   }): Promise<IssueView>;
   /** `assignee`: an agent id, or null to unassign. */
   update(

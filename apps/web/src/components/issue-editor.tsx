@@ -11,13 +11,23 @@ import { decideDrop, followUpHref, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { MentionTextarea, type MentionAgent } from '@/components/mention-textarea';
 import { cn } from '@/lib/utils';
 
-function useSave(project: string, key: string) {
+export function useSave(project: string, key: string) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
-  const save = (patch: { title?: string; description?: string; priority?: string }, done?: () => void) =>
+  const save = (
+    patch: {
+      title?: string;
+      description?: string;
+      priority?: string;
+      start_date?: string | null;
+      due_date?: string | null;
+    },
+    done?: () => void,
+  ) =>
     start(async () => {
       const result = await updateIssue(project, key, patch);
       setError(result.error);
@@ -115,7 +125,14 @@ export function IssueDescription({
     return (
       <div className="group relative">
         {description.trim() ? (
-          <div className="text-sm leading-relaxed">
+          // A fixed height with its own scroll: a long description must not push the activity away.
+          // Focusable, so the region scrolls from the keyboard too.
+          <div
+            role="region"
+            aria-label="Description"
+            tabIndex={0}
+            className="max-h-80 overflow-y-auto overscroll-contain rounded-lg border bg-muted/20 px-4 py-3 text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-ring"
+          >
             <Markdown text={description} />
           </div>
         ) : (
@@ -157,7 +174,7 @@ export function IssueDescription({
             setEditing(false);
           }
         }}
-        className="text-sm"
+        className="h-80 max-h-80 field-sizing-fixed text-sm"
       />
       {error && (
         <p role="alert" className="mt-1 text-sm text-destructive">
@@ -197,11 +214,13 @@ export function IssuePriorityField({
   issueKey,
   priority,
   id,
+  className,
 }: {
   project: string;
   issueKey: string;
   priority: IssuePriority;
   id: string;
+  className?: string;
 }) {
   const { pending, error, save } = useSave(project, issueKey);
   return (
@@ -211,7 +230,10 @@ export function IssuePriorityField({
         defaultValue={priority}
         disabled={pending}
         onChange={(e) => save({ priority: e.target.value })}
-        className="-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={cn(
+          '-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          className,
+        )}
       >
         {PRIORITIES.map((p) => (
           <option key={p.value} value={p.value}>
@@ -228,6 +250,50 @@ export function IssuePriorityField({
   );
 }
 
+/** A planning date (start or due). Clearing the input removes the date. */
+export function IssueDateField({
+  project,
+  issueKey,
+  field,
+  value,
+  id,
+  overdue,
+}: {
+  project: string;
+  issueKey: string;
+  field: 'start_date' | 'due_date';
+  value?: string;
+  id: string;
+  /** Shows the date as late: a due date in the past on an open task. */
+  overdue?: boolean;
+}) {
+  const { pending, error, save } = useSave(project, issueKey);
+  return (
+    <>
+      <input
+        id={id}
+        type="date"
+        defaultValue={value ?? ''}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value || null;
+          if (next !== (value ?? null)) save({ [field]: next });
+        }}
+        className={cn(
+          'h-7 cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          !value && 'text-muted-foreground',
+          overdue && 'text-destructive',
+        )}
+      />
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
 /** The agent that works this task. Moving the task to In progress starts it. */
 export function IssueAssigneeField({
   project,
@@ -235,12 +301,14 @@ export function IssueAssigneeField({
   assignee,
   agents,
   id,
+  className,
 }: {
   project: string;
   issueKey: string;
   assignee?: string;
   agents: { id: string; name: string; avatar: string; archived: boolean }[];
   id: string;
+  className?: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -258,7 +326,10 @@ export function IssueAssigneeField({
             router.refresh();
           })
         }
-        className="-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={cn(
+          '-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          className,
+        )}
       >
         <option value="">No agent</option>
         {agents
@@ -342,11 +413,14 @@ export function IssueStatusField({
 export function IssueCommentBox({
   project,
   issueKey,
-  placeholder = 'Leave a comment…',
+  placeholder = 'Leave a comment… Type @ to mention an agent.',
+  agents = [],
 }: {
   project: string;
   issueKey: string;
   placeholder?: string;
+  /** Agents the comment can @mention. */
+  agents?: readonly MentionAgent[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
   const [text, setText] = useState('');
@@ -364,13 +438,14 @@ export function IssueCommentBox({
           <label htmlFor={id} className="sr-only">
             Comment
           </label>
-          <Textarea
+          <MentionTextarea
             id={id}
             name="body"
             rows={2}
             value={text}
             placeholder={placeholder}
-            onChange={(e) => setText(e.target.value)}
+            agents={agents}
+            onValueChange={setText}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim() && !pending) {
                 e.preventDefault();
@@ -404,10 +479,12 @@ export function IssueReplyBox({
   project,
   issueKey,
   parent,
+  agents = [],
 }: {
   project: string;
   issueKey: string;
   parent: string;
+  agents?: readonly MentionAgent[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(commentIssue, {});
   const [text, setText] = useState('');
@@ -425,13 +502,14 @@ export function IssueReplyBox({
         <label htmlFor={id} className="sr-only">
           Reply
         </label>
-        <Textarea
+        <MentionTextarea
           id={id}
           name="body"
           rows={1}
           value={text}
           placeholder="Leave a reply…"
-          onChange={(e) => setText(e.target.value)}
+          agents={agents}
+          onValueChange={setText}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

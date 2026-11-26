@@ -147,6 +147,25 @@ export class FeatureService {
       throw error;
     }
   }
+  /** Per feature: the tail of its queue of read-change-write updates. */
+  private readonly updates = new Map<string, Promise<unknown>>();
+  /**
+   * Reads the newest record, applies `change` and writes it, one update at a time per feature. A
+   * background step and the tick both write the feature; a plain read then write lets the later
+   * writer put back an older copy (a tick once wrote `implementing` over the QA step's `qa`).
+   */
+  private update(project: string, id: string, change: (feature: Feature) => Feature): Promise<Feature> {
+    const key = `${project}/${id}`;
+    const next = (this.updates.get(key) ?? Promise.resolve()).then(async () =>
+      this.write(change(await this.read(project, id))),
+    );
+    const tail = next.catch(() => undefined);
+    this.updates.set(key, tail);
+    void tail.then(() => {
+      if (this.updates.get(key) === tail) this.updates.delete(key);
+    });
+    return next;
+  }
   private async write(feature: Feature): Promise<Feature> {
     const next = { ...feature, updated_at: now() };
     await mkdir(this.dir(feature.project, feature.id), { recursive: true });
@@ -364,25 +383,23 @@ export class FeatureService {
         key,
         action,
         accept: async () => {
-          accepted = await this.write({
-            ...feature,
+          accepted = await this.update(feature.project, feature.id, (latest) => ({
+            ...latest,
             working: { action, started_at: now() },
             error: undefined,
-          });
+          }));
         },
         // Model calls read the signal through call(), by the feature's key.
         work: () => work(),
         finalize: async ({ outcome, error }) => {
-          const latest = await this.read(feature.project, feature.id).catch(() => undefined);
-          if (!latest) return;
-          await this.write({
+          await this.update(feature.project, feature.id, (latest) => ({
             ...latest,
             working: undefined,
             ...(outcome === 'failed' ? { error } : {}),
             ...(outcome === 'interrupted'
               ? { error: 'The backend stopped during this step. Run it again.' }
               : {}),
-          });
+          })).catch(() => undefined);
         },
       });
     } catch (error) {
@@ -451,10 +468,11 @@ export class FeatureService {
     cost: number | null,
     change: (f: Feature) => Feature = (f) => f,
   ) {
-    const latest = await this.read(project, id);
-    const next = change({ ...latest, cost_usd: latest.cost_usd + (cost ?? 0) });
-    // A step that ends after the feature was cancelled keeps its cost and text, not its stage.
-    return this.write(featureEnded(latest.stage) ? { ...next, stage: latest.stage } : next);
+    return this.update(project, id, (latest) => {
+      const next = change({ ...latest, cost_usd: latest.cost_usd + (cost ?? 0) });
+      // A step that ends after the feature was cancelled keeps its cost and text, not its stage.
+      return featureEnded(latest.stage) ? { ...next, stage: latest.stage } : next;
+    });
   }
 
   private async grillTurn(project: string, id: string, answer: string | undefined): Promise<void> {
@@ -735,7 +753,9 @@ export class FeatureService {
       tickets = tickets.map((t) =>
         t.id === start.ticket.id ? { ...t, task_id: created.id, state: 'running' } : t,
       );
-      await this.write({ ...feature, tickets });
+      // Only the tickets change: a step may have written the feature since the tick read it.
+      const written = tickets;
+      await this.update(project, feature.id, (latest) => ({ ...latest, tickets: written }));
       try {
         await this.deps.startRun(project, created.id);
       } catch (error) {
@@ -752,9 +772,9 @@ export class FeatureService {
       await this.deps.reviewPr(project, number).catch(() => undefined);
       tickets = tickets.map((x) => (x.id === t.id ? { ...x, senior_review_at: now() } : x));
     }
-    const latest = await this.read(project, feature.id);
     const allDone = tickets.every((t) => t.state === 'done');
-    await this.write({ ...latest, tickets });
+    const final = tickets;
+    const latest = await this.update(project, feature.id, (current) => ({ ...current, tickets: final }));
     // When every ticket is done, the QA plan is next. It starts once: after a failure a person
     // retries it with `write-qa`, so a failing step is not paid for again on every pass.
     if (

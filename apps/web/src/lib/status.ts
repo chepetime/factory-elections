@@ -90,6 +90,15 @@ export async function systemStatus(): Promise<StatusReport> {
             ? 'Open the inbox for each item; fix the storage error and the backend retries on its own.'
             : undefined,
       });
+    if (health.health.host_session)
+      checks.push({
+        id: 'engine-host',
+        group: 'Engine',
+        name: 'Started from',
+        status: 'warn',
+        detail: 'A Claude Code session',
+        fix: 'Agent turns may run with that session’s permission limits and fail to save their work, such as a PR review report. Stop the factory and start it from a terminal.',
+      });
     checks.push({
       id: 'engine-integrations',
       group: 'Engine',

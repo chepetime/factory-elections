@@ -81,3 +81,11 @@ export function agentEnvironment(
   }
   return env;
 }
+
+/**
+ * The agent session that started this process, when one did: the factory runs inside it, and its
+ * agents' permissions may be capped by it. Agent turns never get its variables (see above).
+ */
+export function hostAgentSession(source: NodeJS.ProcessEnv): 'claude-code' | undefined {
+  return source.CLAUDECODE === '1' || source.CLAUDE_CODE_SESSION_ID ? 'claude-code' : undefined;
+}

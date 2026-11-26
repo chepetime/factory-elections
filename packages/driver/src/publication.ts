@@ -2,6 +2,7 @@
 // and GitHub is read before any new one, so a lost or ambiguous write is never repeated.
 import { openPrBlockers, prBody, prTitle, withStage, type TaskRecord } from '@factory/core';
 import { DriverError, type DriverDeps } from './ports.ts';
+import { readPrTemplate } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 
 export async function openPr(
@@ -67,7 +68,7 @@ export async function openPr(
       base,
       head: branch,
       title: prTitle(task, head),
-      body: prBody(task, head),
+      body: prBody(task, head, (await readPrTemplate(path)).text),
       draft: options.draft,
     }));
   task = await deps.tasks.read(project, id);

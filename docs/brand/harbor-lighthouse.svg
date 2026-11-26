@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">The Harbor lighthouse</title>
+  <desc id="desc">A rounded black lighthouse silhouette without light rays, on a transparent background.</desc>
+  <g fill="#000000">
+    <!-- Lantern finial -->
+    <circle cx="256" cy="62" r="14" />
+
+    <!-- Rounded lantern roof -->
+    <path d="M211 121
+      C211 97 231 77 256 77
+      C281 77 301 97 301 121
+      C301 128 297 132 290 129
+      C280 124 269 121 256 121
+      C243 121 232 124 222 129
+      C215 132 211 128 211 121Z" />
+
+    <!-- Lantern room -->
+    <rect x="230" y="132" width="52" height="32" rx="8" />
+
+    <!-- Gallery / ledge -->
+    <rect x="208" y="171" width="96" height="24" rx="12" />
+
+    <!-- Tapered tower -->
+    <path d="M222 203
+      L290 203
+      L319 358
+      C321 367 315 373 306 373
+      L206 373
+      C197 373 191 367 193 358Z" />
+
+    <!-- Curved foundation -->
+    <path d="M194 355
+      C209 344 228 339 246 339
+      L266 339
+      C284 339 303 344 318 355
+      C334 367 348 379 354 392
+      C358 401 353 408 343 408
+      L169 408
+      C159 408 154 401 158 392
+      C164 379 178 367 194 355Z" />
+  </g>
+</svg>

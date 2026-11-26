@@ -57,7 +57,16 @@ function SaveRow({ pending, dirty, state }: { pending: boolean; dirty: boolean; 
   );
 }
 
-export function ChatWithAgent({ agent, disabled }: { agent: string; disabled?: boolean }) {
+/** Opens a chat with the agent in `project`, the project whose pages this is on. */
+export function ChatWithAgent({
+  agent,
+  project,
+  disabled,
+}: {
+  agent: string;
+  project: string;
+  disabled?: boolean;
+}) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
   return (
@@ -67,7 +76,7 @@ export function ChatWithAgent({ agent, disabled }: { agent: string; disabled?: b
         disabled={pending || disabled}
         onClick={() =>
           start(async () => {
-            const result = await startChat(agent);
+            const result = await startChat(agent, project);
             if (result?.error) setError(result.error);
           })
         }

@@ -1,11 +1,14 @@
 'use client';
-// The homepage scene: dithered waves on black, and one dark reflective metal card per project. The
-// scene is black in both app themes.
+// The homepage scene: an animated background on black, and one dark reflective metal card per
+// project. The scene is black in both app themes. On load the cards rise in one after another while the
+// background plays its own intro, and the add button follows the last card.
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Dither } from '@/components/backdrops/dither';
+import { LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
+import { SpecularButton } from '@/components/bits/specular-button';
 import { ReflectiveCard } from '@/components/backdrops/reflective-card';
+import { HomeBackground } from '@/components/home-background';
 import { LocalTime } from '@/components/local-time';
 import type { ProjectStats } from '@/lib/workspace-home';
 import { cn } from '@/lib/utils';
@@ -25,24 +28,11 @@ export interface HomeCard {
   missing: string[];
 }
 
-/** The homepage frame: dithered waves on black behind a scrolling body. */
+/** The homepage frame: an animated background on black behind a scrolling body. */
 export function HomeScene({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex h-full flex-col bg-black">
-      <div aria-hidden="true" className="absolute inset-0">
-        <Dither
-          waveColor="#bcbcbc"
-          backgroundColor="#000000"
-          ditherMode="bayer"
-          colorNum={4}
-          pixelSize={2}
-          waveSpeed={0.05}
-          waveFrequency={3}
-          waveAmplitude={0.3}
-          mouseEffect="erase"
-          mouseRadius={0.3}
-        />
-      </div>
+      <HomeBackground />
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {/* Centered in the window while it fits; it scrolls from the top when it does not. */}
         <div className="mx-auto flex min-h-full max-w-6xl flex-col justify-center px-6 py-8">{children}</div>
@@ -78,13 +68,33 @@ function lighten(color: string, amount: number): string {
 const CARD_HEIGHT = 360;
 const muted = { color: 'var(--rc-muted)' } satisfies CSSProperties;
 
+/** Intro timing, in seconds: the first card waits for the background to start, then one per step. */
+const INTRO = { delay: 0.6, stagger: 0.09, duration: 0.7 } as const;
+/** A strong ease-out: fast at the start, a long soft landing. */
+const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+
 /** Every project as a reflective card that opens the project. */
 export function ProjectCards({ cards }: { cards: HomeCard[] }) {
+  const reduceMotion = useReducedMotion();
+  const enter = (delay: number, from: { y: number; scale?: number }) =>
+    reduceMotion
+      ? { initial: false as const }
+      : {
+          initial: { opacity: 0, ...from },
+          animate: { opacity: 1, y: 0, scale: 1 },
+          transition: { delay, duration: INTRO.duration, ease: EASE_OUT },
+        };
+  // The button starts when the last card lands.
+  const cardsDone = INTRO.delay + Math.max(0, cards.length - 1) * INTRO.stagger + INTRO.duration;
   return (
-    <>
+    <LazyMotion features={domAnimation}>
       <ul className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map((card) => (
-          <li key={card.name} className="min-w-0">
+        {cards.map((card, index) => (
+          <m.li
+            key={card.name}
+            className="min-w-0"
+            {...enter(INTRO.delay + index * INTRO.stagger, { y: 28, scale: 0.96 })}
+          >
             <Link
               href={`/projects/${encodeURIComponent(card.name)}`}
               className="block rounded-[24px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
@@ -101,16 +111,16 @@ export function ProjectCards({ cards }: { cards: HomeCard[] }) {
                 <CardContent card={card} />
               </ReflectiveCard>
             </Link>
-          </li>
+          </m.li>
         ))}
       </ul>
-      <Link
-        href="/projects"
-        className="mt-6 inline-flex h-9 self-start items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:h-11"
-      >
-        <Plus aria-hidden="true" className="size-4" /> Add project
-      </Link>
-    </>
+      <m.div className="mt-6 self-start" {...enter(cardsDone, { y: 8 })}>
+        {/* Glass with a lit edge that turns toward the cursor, over the animated background. */}
+        <SpecularButton href="/projects" size="sm" radius={10} tintOpacity={0.08} blur={6} proximity={200}>
+          <Plus aria-hidden="true" className="size-4" /> Add project
+        </SpecularButton>
+      </m.div>
+    </LazyMotion>
   );
 }
 

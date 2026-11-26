@@ -139,7 +139,14 @@ test('doctor pnpm check reports the version or an install hint', async () => {
 test('serve starts the full backend and reports health on 127.0.0.1', async () => {
   const { root } = await env();
   const child = spawn(BIN, ['serve', '--port', '43187'], {
-    env: { ...process.env, FACTORY_ROOT: root, FACTORY_BACKEND_PORT: '43189' },
+    // Not the agent session this test may run in: health would report it (host_session).
+    env: {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_')),
+      ),
+      FACTORY_ROOT: root,
+      FACTORY_BACKEND_PORT: '43189',
+    },
   });
   try {
     await new Promise<void>((ok, reject) => {

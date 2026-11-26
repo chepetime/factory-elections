@@ -17,7 +17,7 @@ function currentLinks(html: string) {
 }
 
 it.each([
-  ['tasks', ['/projects/demo/tasks', '/projects/demo/tasks']],
+  ['tasks', ['/projects/demo/tasks']],
   ['tasks/FE-1', []],
   ['tasks/new', ['/projects/demo/tasks/new']],
   ['tasks/archived', ['/projects/demo/tasks/archived']],
@@ -55,14 +55,32 @@ it('allows the current task and its agent entry to both be selected', () => {
   expect(currentLinks(html)).toEqual(['/projects/demo/tasks/FE-1', '/projects/demo/tasks/FE-1']);
 });
 
-it.each([
-  ['/', ['/']],
-  ['/board', ['/board']],
-])('marks the logo as home and the Board rail item on %s', (pathname, expected) => {
-  route.pathname = pathname;
+it('the rail holds the logo, Home and Network, and marks the page you are on', () => {
+  route.pathname = '/';
+  const home = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  expect(home).toContain('aria-label="Harbor Lighthouse home"');
+  // The logo and the Home item both open the homepage.
+  expect(currentLinks(home)).toEqual(['/', '/']);
+  const start = home.indexOf('role="group" aria-label="Installation"');
+  const items = [
+    ...home.slice(start, home.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g),
+  ];
+  expect(items.map((m) => m[1])).toEqual(['Home', 'Network']);
+  route.pathname = '/network';
+  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toEqual(['/network']);
+});
+
+it('parks the old rail pages in the project sidebar, switched off', () => {
+  route.pathname = '/projects/demo/tasks';
   const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
-  expect(currentLinks(html).filter((href) => href === '/' || href === '/board')).toEqual(expected);
-  expect(html).toContain('aria-label="Software Factory home"');
+  const start = html.indexOf('aria-label="More pages, not available yet"');
+  const parked = html.slice(start, html.indexOf('</ul>', start));
+  expect([...parked.matchAll(/<li[^>]*aria-disabled="true"/g)]).toHaveLength(7);
+  expect(parked).toContain('Tool execution');
+  expect(parked).not.toContain('Chat');
+  // Parked pages are not links, and they no longer sit on the rail.
+  expect(parked).not.toContain('<a ');
+  expect(html).not.toContain('href="/tool-calls"');
 });
 
 it('shows the project sidebar everywhere but the homepage, and user settings have their own', () => {
@@ -77,4 +95,47 @@ it('shows the project sidebar everywhere but the homepage, and user settings hav
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
   route.pathname = '/board';
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).toContain('<aside');
+});
+
+it.each([
+  ['chat', '/projects/demo/chat'],
+  ['chat/0b0c1f6e-1f1c-4c39-9a3e-2d7c9c1f0a11', '/projects/demo/chat'],
+  ['llms', '/projects/demo/llms'],
+  ['agents/ada', '/projects/demo/agents'],
+  ['mcp', '/projects/demo/mcp'],
+  ['skills', '/projects/demo/skills'],
+  ['tools', '/projects/demo/tools'],
+])('the project sidebar links its agent pages and marks %s', (path, expected) => {
+  route.pathname = `/projects/demo/${path}`;
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  for (const page of ['chat', 'llms', 'agents', 'mcp', 'skills', 'tools'])
+    expect(html).toContain(`href="/projects/demo/${page}"`);
+  expect(currentLinks(html)).toEqual([expected]);
+});
+
+it('keeps the project switcher fixed and scrolls everything below it as one column', () => {
+  route.pathname = '/projects/demo/tasks';
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  const aside = html.slice(html.indexOf('<aside'), html.indexOf('</aside>'));
+  const scroller = aside.indexOf('overflow-y-auto');
+  // One scroll area in the sidebar, after the switcher, holding the links, New task and the footer.
+  expect(aside.match(/overflow-y-auto/g)).toHaveLength(1);
+  expect(aside.indexOf('aria-haspopup')).toBeLessThan(scroller);
+  for (const text of ['Team members', 'New task', 'More pages', 'Project settings'])
+    expect(aside.indexOf(text)).toBeGreaterThan(scroller);
+});
+
+it('folds Weekly, Features, LLMs and Tools under More pages, open only on one of them', () => {
+  route.pathname = '/projects/demo/tasks';
+  const board = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  const more = (html: string) => html.slice(html.indexOf('<details'), html.indexOf('</details>'));
+  for (const page of ['weekly', 'features', 'llms', 'tools'])
+    expect(more(board)).toContain(`href="/projects/demo/${page}"`);
+  // The main list keeps the rest; the four are links, not parked items.
+  expect(more(board)).not.toContain('href="/projects/demo/chat"');
+  expect(more(board)).not.toMatch(/aria-disabled="true"[^>]*>[^<]*<svg[^>]*>.*Weekly/);
+  expect(board).toMatch(/<details[^>]*class="group\/more"[^>]*>/);
+  expect(board).not.toMatch(/<details[^>]*open/);
+  route.pathname = '/projects/demo/llms';
+  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).toMatch(/<details[^>]*open/);
 });

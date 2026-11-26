@@ -1,4 +1,4 @@
-import { outcomeTraceIds } from '@factory/core';
+import { hostAgentSession, outcomeTraceIds } from '@factory/core';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -90,6 +90,7 @@ export async function startBackend(options: ServerOptions) {
             state: service.recoveryReport().state,
             problems: service.recoveryReport().problems.length,
           },
+          ...(hostAgentSession(process.env) ? { host_session: hostAgentSession(process.env) } : {}),
           integrations: [],
         }),
       );
@@ -260,6 +261,15 @@ export async function startBackend(options: ServerOptions) {
         json: JSON.stringify(
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
+      }),
+      ListSpans: async (request) => ({
+        json: JSON.stringify(await service.spans({ ...jsonObject(request.json), project: request.project })),
+      }),
+      ListFindings: async (request) => ({
+        json: JSON.stringify(await service.findings({ project: request.project })),
+      }),
+      GetSystemCatalog: async (request) => ({
+        json: JSON.stringify(await service.catalog(request.project || undefined)),
       }),
       ListPrReviewRecords: async (request) => {
         await service.projects.read(request.project);

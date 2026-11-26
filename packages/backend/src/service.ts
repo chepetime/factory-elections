@@ -24,6 +24,7 @@ import {
   envNames,
   type QueueWait,
   recoveryBlocker,
+  prBody,
   conflictFollowUpNote,
   recoveryInboxItems,
   type RecoveryProblem,
@@ -31,7 +32,9 @@ import {
 } from '@factory/core';
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
-import type { Driver } from '@factory/driver';
+import { readPrTemplate, type Driver } from '@factory/driver';
+import { editPullRequestBody, markPullRequestReady, pullRequestIsDraft } from '@factory/adapters-github';
+import { ReviewLoop } from './review-loop.ts';
 import { composeDriver } from '@factory/compose';
 import {
   DelegationServer,
@@ -52,6 +55,7 @@ import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
+import { systemCatalog } from './system-catalog.ts';
 import { AgentPool, Dispatcher, Executions, MAX_AGENTS, type Release } from '@factory/dispatcher';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 import { UserSettingsService } from './user-settings.ts';
@@ -93,6 +97,8 @@ export class BackendService {
   readonly pool: AgentPool;
   /** The task run queue. */
   private readonly dispatcher: Dispatcher;
+  /** Senior-pr-review rounds on agents' draft PRs (review-loop.ts). */
+  readonly reviewLoop: ReviewLoop;
   /** Background executions other than task runs: feature steps. */
   readonly executions: Executions;
   /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
@@ -284,6 +290,7 @@ export class BackendService {
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
       agentName: async (id) => (await this.agents.active(id)).name,
+      agentIds: async () => (await this.agents.list()).filter((a) => !a.archived_at).map((a) => a.id),
       changed: () => this.pickup?.kick(),
       waiting: (project, id) => this.isWaiting(project, id),
       root,
@@ -304,7 +311,8 @@ export class BackendService {
           by: input.by ?? 'you',
           pr_head: input.prHead ?? '',
         } as Command),
-      run: (project, id) => this.start({ project, id, action: 'run' } as Command),
+      run: (project, id, reply) =>
+        this.start({ project, id, action: 'run', ...(reply ? { note: reply } : {}) } as Command),
       reject: (project, id, note) => this.execute({ project, id, action: 'reject', note } as Command),
       cancelQueued: (project, id) => this.cancelQueued(project, id),
       deleteRun: (project, id) => this.deleteRun(project, id),
@@ -328,6 +336,22 @@ export class BackendService {
       accepting: () => this.dispatcher.accepting,
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.reviewLoop = new ReviewLoop({
+      tasks: this.tasks,
+      storage: this.storage,
+      startReview: async (project, number) => {
+        const [result] = await this.reviews.start({ project, numbers: [number], mode: 'review' });
+        if (!result?.ok) throw new Error(result?.error ?? 'the review was refused');
+      },
+      followUp: (project, id, note) =>
+        this.issues.followUp({ project, key: id, note, kind: 'review', by: 'factory' }),
+      note: (project, id, message) => this.issues.note({ project, key: id, kind: 'review-loop', message }),
+      body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
+      github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
+    this.reviews.onReviewEnded = (project, number, payload, reason) =>
+      this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
       conflictFollowUp: (task, pr) =>
         this.issues.followUp({
@@ -624,8 +648,18 @@ export class BackendService {
             ),
           )
           .then(async (result) => {
-            if (command.action === 'open-pr')
+            if (command.action === 'open-pr') {
               await this.taskTraces.pr(command.project, command.id).catch(() => undefined);
+              // An agent's draft PR, or a follow-up pushed to its open PR, starts a review cycle. It
+              // runs on after this command returns.
+              const opened = await this.tasks.read(command.project, command.id);
+              void this.reviewLoop
+                .prChanged(
+                  opened,
+                  before?.pr ? { kind: 'updated' } : { kind: 'opened', draft: command.draft },
+                )
+                .catch((error: unknown) => process.stderr.write(`review loop: ${String(error)}\n`));
+            }
             if (command.action === 'approve' || command.action === 'open-pr')
               await this.issueReceipt(command.project, command.id).catch(() => undefined);
             if (before && ['approve', 'reject'].includes(command.action))
@@ -714,7 +748,13 @@ export class BackendService {
         },
         work: (release) => this.executor.run(command, record, dir, release),
         cancelled: () => this.closeUnstarted(record, dir),
-        settle: unlock,
+        settle: async () => {
+          await unlock();
+          // After the lock is free: a review fix that was pushed starts the next review round.
+          void this.reviewLoop
+            .runSettled(command.project, command.id)
+            .catch((error: unknown) => process.stderr.write(`review loop: ${String(error)}\n`));
+        },
       },
       reservation,
     );
@@ -736,6 +776,21 @@ export class BackendService {
   /** Counts across runs for one project, or every project, over `[from, to)` (default: 7 days). */
   metrics(raw: unknown) {
     return this.taskTraces.metrics(raw);
+  }
+  /** The newest spans of one type, e.g. every tool call or model call, for the Functions pages. */
+  spans(raw: unknown) {
+    return this.taskTraces.spans(raw);
+  }
+  /** Saved review findings of one project, or of every project. */
+  async findings(raw: unknown) {
+    const { project } = z.object({ project: z.union([ProjectName, z.literal('')]).optional() }).parse(raw);
+    const projects = project ? [project] : (await this.projects.list()).map((p) => p.name);
+    const rows = (await Promise.all(projects.map((p) => this.reviews.findings({ project: p })))).flat();
+    return rows.sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index);
+  }
+  /** MCP servers, tools and skills the factory gives its agents; `project` scopes calls and repo skills. */
+  catalog(project?: string) {
+    return systemCatalog({ projects: this.projects, traces: this.traces }, project);
   }
   private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);

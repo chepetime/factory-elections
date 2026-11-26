@@ -53,8 +53,9 @@ async function setup(
       calls.push(`submit:${prompt}`);
       return created.id;
     },
-    run: async (_project, id) => {
+    run: async (_project, id, reply) => {
       calls.push(`run:${id}`);
+      if (reply) calls.push(`reply:${id}:${reply}`);
       const task = tasks.find((x) => x.id === id)!;
       tasks[tasks.indexOf(task)] = {
         ...task,
@@ -87,6 +88,9 @@ async function setup(
       void calls.push(`followUp:${id}:${input.kind}:${input.agent}:${input.by}:${input.prHead ?? ''}`),
     now: () => new Date((clock += 1000)),
     waiting: (_project, id) => (waiting.has(id) ? 'slot' : undefined),
+    agentIds: async () => ['devin', 'mika'],
+    agentName: async (id) =>
+      id === 'mika' ? 'Mika' : id === 'devin' ? 'Devin' : Promise.reject(new Error('no agent')),
   });
   return { root, service, calls, tasks };
 }
@@ -187,6 +191,40 @@ test('updates record what changed, and comments append', async (t) => {
     service.comment({ project: 'change-elections', key: 'CE-1', body: 'Lost', parent: 'missing' }),
     /replied to is gone/,
   );
+});
+
+test('a task records who created it, and planning dates set, clear, and stay in order', async (t) => {
+  const { service } = await setup(t);
+  const mine = await service.create({ project: 'change-elections', title: 'Mine' });
+  assert.equal(mine.created_by, 'you');
+  const theirs = await service.create({ project: 'change-elections', title: 'Theirs', created_by: 'devin' });
+  assert.equal(theirs.created_by, 'devin');
+
+  const planned = await service.update({
+    project: 'change-elections',
+    key: mine.key,
+    start_date: '2026-12-01',
+    due_date: '2026-12-05',
+  });
+  assert.deepEqual([planned.start_date, planned.due_date], ['2026-12-01', '2026-12-05']);
+  assert.deepEqual(
+    planned.events.slice(1).map((e) => e.message),
+    ['Set the start date to 2026-12-01', 'Set the due date to 2026-12-05'],
+  );
+  await assert.rejects(
+    service.update({ project: 'change-elections', key: mine.key, due_date: '2026-11-30' }),
+    /due date is before the start date/,
+  );
+  await assert.rejects(
+    service.update({ project: 'change-elections', key: mine.key, due_date: '12/05/2026' }),
+    /YYYY-MM-DD/,
+  );
+  const cleared = await service.update({ project: 'change-elections', key: mine.key, start_date: null });
+  assert.equal(cleared.start_date, undefined);
+  assert.equal(cleared.due_date, '2026-12-05');
+  assert.equal(cleared.events.at(-1)?.message, 'Removed the start date');
+  const same = await service.update({ project: 'change-elections', key: mine.key, due_date: '2026-12-05' });
+  assert.equal(same.events.length, cleared.events.length, 'the same date adds no event');
 });
 
 test('moving without a run only sets the status', async (t) => {
@@ -441,7 +479,7 @@ test('a follow-up on a task whose PR is open goes to its agent, and a drop to In
     note: 'Fix the copy\nand more',
   });
   assert.ok(calls.includes(`followUp:${opened.id}:custom:devin:you:`), calls.join('\n'));
-  assert.equal(view.events.at(-1)?.message, 'Added a follow-up for devin: Fix the copy');
+  assert.equal(view.events.at(-1)?.message, 'Added a follow-up for Devin: Fix the copy');
   assert.equal(view.assignee, 'devin', 'the agent becomes the assignee of an unassigned task');
 
   await service.followUp({
@@ -458,4 +496,85 @@ test('a follow-up on a task whose PR is open goes to its agent, and a drop to In
     service.followUp({ project: 'change-elections', key: 'CE-2', note: 'Go' }),
     /continues a task whose pull request is open/,
   );
+});
+
+test('a second follow-up is refused while one waits for its agent', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/4',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Ship it', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, calls } = await setup(t, [opened], {}, undefined, new Set([opened.id]));
+  await assert.rejects(
+    service.followUp({ project: 'change-elections', key: 'CE-1', note: 'Again' }),
+    /already queued or working/,
+  );
+  assert.ok(!calls.some((c) => c.startsWith('followUp:')), 'nothing was queued');
+});
+
+test('a comment on a blocked agent task reaches the agent as its reply', async (t) => {
+  const blocked = run('Ship it', '2026-11-18T10:00:00.000Z', 'blocked', {
+    workflow: 'agent',
+    agent: 'devin',
+  });
+  const { service, calls } = await setup(t, [blocked]);
+  await service.comment({ project: 'change-elections', key: 'CE-1', body: 'Use the staging API.' });
+  assert.ok(calls.includes(`reply:${blocked.id}:Use the staging API.`), calls.join('\n'));
+});
+
+test('@mentions are stored and route the comment: the run agent continues, an open PR gets a follow-up, an unassigned task gets the agent', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/4',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Ship it', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const blocked = run('Ask me', '2026-11-18T11:00:00.000Z', 'blocked', { workflow: 'agent', agent: 'devin' });
+  const { service, calls } = await setup(t, [opened, blocked]);
+
+  // CE-1: the PR is open, so @mika gets a follow-up with the comment as its note.
+  const followed = await service.comment({
+    project: 'change-elections',
+    key: 'CE-1',
+    body: '@mika check the copy, not `@devin`',
+  });
+  assert.deepEqual(followed.comments.at(-1)?.mentions, ['mika'], 'a mention in code is not a mention');
+  assert.ok(calls.includes(`followUp:${opened.id}:custom:mika:you:`), calls.join('\n'));
+
+  // CE-2: blocked on Devin. @devin continues Devin's session with the comment.
+  await service.comment({ project: 'change-elections', key: 'CE-2', body: 'Raise it @Devin' });
+  assert.ok(calls.includes(`reply:${blocked.id}:Raise it @Devin`), calls.join('\n'));
+  // @mika on Devin's blocked run starts nothing and says why.
+  const other = await service.comment({
+    project: 'change-elections',
+    key: 'CE-2',
+    body: '@mika take a look',
+  });
+  assert.match(other.events.at(-1)?.message ?? '', /Mika was mentioned, but another agent works this run/);
+
+  // A new task without a run or an agent: the mentioned agent is assigned.
+  const fresh = await service.create({ project: 'change-elections', title: 'New' });
+  const assigned = await service.comment({ project: 'change-elections', key: fresh.key, body: 'Hi @mika' });
+  assert.equal(assigned.assignee, 'mika');
+  // Unknown names and agents' own comments route nothing.
+  const before = calls.length;
+  const unknown = await service.comment({
+    project: 'change-elections',
+    key: fresh.key,
+    body: '@nobody hello',
+  });
+  assert.equal(unknown.comments.at(-1)?.mentions, undefined);
+  await service.comment({ project: 'change-elections', key: 'CE-1', body: '@mika again', author: 'devin' });
+  assert.equal(calls.length, before, 'no call for an unknown mention or an agent comment');
 });

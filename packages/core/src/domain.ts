@@ -1,4 +1,5 @@
 // Pure task rules: readiness, gates and record updates. No I/O; time is passed in.
+import { templateFallback } from './pr-template.ts';
 import { receiptClaims, receiptMarkdown } from './receipt.ts';
 import type { ClassifierVerdict, ReadinessDecision, RepoProfile, Stage, TaskRecord } from './schemas.ts';
 import type { ModelFailure } from './ports.ts';
@@ -135,23 +136,26 @@ export function taskTitle(task: TaskRecord): string {
 }
 
 /**
- * The PR description: the drafted body when there is one for this commit, otherwise a short
- * summary of the task. Either way, the factory's record goes in a collapsed footer.
+ * The PR description: the drafted body when there is one for this commit, otherwise the task in
+ * the template's shape (or a short summary without a template). Either way, the factory's record goes in a collapsed footer.
  */
-export function prBody(task: TaskRecord, headSha: string): string {
+export function prBody(task: TaskRecord, headSha: string, template?: string): string {
   const draft = currentPrDraft(task, headSha);
   const lines: string[] = [];
+  const prompt = task.prompt.trim();
+  const preview =
+    prompt.length > PROMPT_PREVIEW_CHARS
+      ? `${prompt.slice(0, PROMPT_PREVIEW_CHARS)}\n\n… (truncated)`
+      : prompt;
   if (draft) lines.push(draft.body.trim(), '');
-  else {
-    const prompt = task.prompt.trim();
+  // Without a draft the body still keeps the repository's template.
+  else if (template)
     lines.push(
-      '## Task',
-      '',
-      prompt.length > PROMPT_PREVIEW_CHARS
-        ? `${prompt.slice(0, PROMPT_PREVIEW_CHARS)}\n\n… (truncated)`
-        : prompt,
+      templateFallback(template, task.review ? `${task.review.summary}\n\n${preview}` : preview),
       '',
     );
+  else {
+    lines.push('## Task', '', preview, '');
     if (task.review) lines.push('## Summary', '', task.review.summary, '');
   }
   lines.push('---', '', '<details>', '<summary>Factory record</summary>', '');
@@ -183,6 +187,18 @@ function oneLine(text: string): string {
 /** Dollars spent on a task so far. Unknown costs count as zero here; they stay null in the record. */
 export function taskSpend(task: TaskRecord): number {
   return (task.attempts ?? []).reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
+}
+
+/**
+ * Dollars spent on the task's current work: since its latest follow-up, or since it started. A
+ * follow-up is new work on the same branch, so it gets the whole task budget again; the earlier
+ * spend stays in `taskSpend`. Unknown costs count as zero, as in `taskSpend`.
+ */
+export function workSpend(task: TaskRecord): number {
+  const since = task.follow_ups?.at(-1)?.at;
+  return (task.attempts ?? [])
+    .filter((a) => !since || a.started_at >= since)
+    .reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
 }
 
 /**

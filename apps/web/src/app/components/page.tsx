@@ -10,7 +10,7 @@ import { FreeComponentLibrary } from '@/components/free-component-library';
 
 export const metadata: Metadata = {
   title: 'Components',
-  description: 'An interactive gallery of components for the Software Factory.',
+  description: 'An interactive gallery of components for Harbor Lighthouse.',
 };
 
 export default function ComponentsPage() {

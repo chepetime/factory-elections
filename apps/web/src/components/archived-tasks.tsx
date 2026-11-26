@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { IssueStatus } from '@factory/core';
 import { archiveIssue, deleteIssue } from '@/app/actions';
-import { useConfirm } from '@/components/confirm-dialog';
+import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
 import { LocalTime } from '@/components/local-time';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,6 @@ export type ArchivedTask = {
 
 export function ArchivedTasks({ project, tasks }: { project: string; tasks: ArchivedTask[] }) {
   const router = useRouter();
-  const [confirm, confirmDialog] = useConfirm();
   const [busy, setBusy] = useState<string>();
   const [, start] = useTransition();
   const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
@@ -40,28 +39,19 @@ export function ArchivedTasks({ project, tasks }: { project: string; tasks: Arch
       router.refresh();
     });
   };
-  const remove = async (task: ArchivedTask) => {
-    const yes = await confirm({
-      title: `Delete ${task.key} for good?`,
-      body:
-        task.runs > 0
-          ? `This deletes the task and its ${task.runs === 1 ? 'run' : `${task.runs} runs`}: worktrees, branches and run records. Traces and cost history stay. You cannot undo this.`
-          : 'This deletes the task, its description and its comments. You cannot undo this.',
-      confirm: 'Delete',
-      cancel: 'Keep it',
-      tone: 'destructive',
-    });
-    if (yes) act(task, () => deleteIssue(project, task.key));
-  };
+  /** What a delete removes. Holding the button is the confirmation, so the title says it. */
+  const consequence = (task: ArchivedTask) =>
+    task.runs > 0
+      ? `Deletes the task and its ${task.runs === 1 ? 'run' : `${task.runs} runs`}: worktrees, branches and run records. Traces and cost history stay. You cannot undo this.`
+      : 'Deletes the task, its description and its comments. You cannot undo this.';
 
   return (
     <div className="h-full overflow-y-auto">
-      {confirmDialog}
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="text-2xl font-semibold tracking-tight">Archived tasks</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Archived tasks leave the board and the sidebar and keep their runs. Restore one to put it back, or
-          delete it for good.
+          hold Delete to remove it for good.
         </p>
         <p
           role={notice?.kind === 'error' ? 'alert' : 'status'}
@@ -119,16 +109,17 @@ export function ArchivedTasks({ project, tasks }: { project: string; tasks: Arch
                 >
                   <ArchiveRestore aria-hidden /> Restore
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <HoldButton
+                  {...DESTRUCTIVE_HOLD}
                   disabled={!!busy}
-                  className="text-destructive hover:text-destructive"
-                  aria-label={`Delete ${task.key}`}
-                  onClick={() => remove(task)}
+                  doneLabel="Deleting…"
+                  resetAfter={0}
+                  aria-label={`Hold to delete ${task.key} for good`}
+                  title={consequence(task)}
+                  onHold={() => act(task, () => deleteIssue(project, task.key))}
                 >
-                  <Trash2 aria-hidden /> Delete
-                </Button>
+                  <Trash2 aria-hidden /> Hold to delete
+                </HoldButton>
               </li>
             ))}
           </ul>

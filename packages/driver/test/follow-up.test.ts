@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { ModelResult, ModelRun, ModelRunner, TaskRecord } from '@factory/core';
@@ -236,4 +236,50 @@ test('a follow-up refuses a branch that diverged from the PR, and other commands
     ctx.driver.revise('demo', ctx.task.id, 'x', { maxAttempts: 1 }),
     /Add a follow-up instead/,
   );
+});
+
+test('a review follow-up pushes its fix to the same PR once the checks pass, and keeps a failing one', async () => {
+  const ctx = await opened();
+  ctx.turns.push(write('feature.txt', 'from devin, reviewed\n'));
+  const pushed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: '1. [must-fix] Handle the empty case',
+    kind: 'review',
+    agent: 'devin',
+    by: 'factory',
+  });
+  assert.equal(pushed.stage, 'pr-opened', 'no approval gate for a review fix');
+  assert.match(pushed.approval?.note ?? '', /review loop/);
+  assert.equal(pushed.pr?.url, 'https://github.com/example/demo/pull/1');
+  assert.notEqual(pushed.pr?.head_sha, ctx.task.pr?.head_sha, 'the PR has the fix');
+  assert.equal(ctx.prs(), 1);
+
+  // A fix that breaks the checks stays in the worktree and is not pushed.
+  ctx.turns.push(async (r) => {
+    await rm(join(r.cwd!, 'feature.txt'));
+    return { text: 'Removed it.', costUsd: 0.1 };
+  });
+  const failed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: '1. [must-fix] Remove the file',
+    kind: 'review',
+    agent: 'devin',
+    by: 'factory',
+  });
+  assert.equal(failed.stage, 'verification-failed');
+  assert.equal((await ctx.read()).pr?.head_sha, pushed.pr?.head_sha, 'the PR keeps the last good fix');
+});
+
+test('a follow-up gets the task budget again: the first run spent more than it, and the follow-up still runs', async () => {
+  const ctx = await opened(async (r) => {
+    await writeFile(join(r.cwd!, 'feature.txt'), 'from devin\n');
+    return { text: 'Done.', costUsd: 6 };
+  });
+  ctx.turns.push(write('feature.txt', 'from devin, again\n'));
+  const followed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: 'Change the text.',
+    kind: 'custom',
+    agent: 'devin',
+    by: 'you',
+  });
+  assert.equal(followed.stage, 'awaiting-approval', 'not blocked on the $5 budget');
+  assert.match(ctx.calls.at(-1)!.prompt, /Change the text/);
 });

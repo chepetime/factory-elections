@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(rg:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(pnpm factory paths)",
+      "Bash(pnpm factory issue show:*)",
+      "Bash(pnpm factory issue list:*)",
+      "Bash(pnpm factory review diagnose:*)",
+      "Bash(pnpm factory spans:*)",
+      "Bash(pnpm -s factory paths)",
+      "Bash(pnpm -s factory issue show:*)",
+      "Bash(pnpm -s factory issue list:*)",
+      "Bash(pnpm -s factory review diagnose:*)",
+      "Bash(pnpm -s factory spans:*)",
+      "Bash(pnpm restart --dry-run)",
+      "Bash(pnpm shot:*)",
+      "Bash(node scripts/shot.mjs:*)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm check)",
+      "Bash(pnpm exec tsc --noEmit:*)",
+      "Bash(pnpm exec vitest run:*)",
+      "Bash(node --test:*)",
+      "Bash(node scripts/unused-files.mjs)",
+      "Bash(curl -s http://127.0.0.1:4318/health)",
+      "Bash(curl -s http://localhost:3000/api/projects:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/session-status.mjs",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/format-edited.mjs",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

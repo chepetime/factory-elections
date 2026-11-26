@@ -157,7 +157,10 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
       return {
         text: '',
         costUsd: 0.02,
-        structured: { title: 'Add feature file', body: 'Adds the feature.' },
+        structured: {
+          title: 'Add feature file',
+          body: '## Summary\n\nAdds the feature.\n\n## Evidence\n\n- **After:** test passes\n\n## Merge Danger\n\n**Door:** two-way',
+        },
       };
     },
   };

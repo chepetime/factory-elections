@@ -21,7 +21,7 @@ import {
   readinessDecision,
   contextLimit,
   contextWarning,
-  taskSpend,
+  workSpend,
   withEvent,
   withStage,
   type ModelLadder,
@@ -31,6 +31,8 @@ import {
   type StepAttempt,
   type StepDefinition,
   type FollowUpKind,
+  followUpPushesItself,
+  missingHeadings,
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
@@ -49,12 +51,13 @@ import {
   errorCost,
   failureText,
   worktreeGuard,
+  readPrTemplate,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 import { checkProfile, verifyWorktree } from './verification.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
-export { worktreeGuard } from './support.ts';
+export { readPrTemplate, worktreeGuard } from './support.ts';
 
 /** Changed files that still hold a conflict marker line. */
 async function conflictMarkers(dir: string, files: string[]): Promise<string[]> {
@@ -113,7 +116,7 @@ export class Driver {
   private async budgetLeft(task: TaskRecord): Promise<number> {
     const profile = await this.deps.readProfile(task.project);
     const budget = profile.limits?.task_budget_usd ?? DEFAULT_TASK_LIMITS.task_budget_usd;
-    return budget - taskSpend(task);
+    return budget - workSpend(task);
   }
 
   /** Stops the task before a model call when its budget is spent. */
@@ -121,7 +124,7 @@ export class Driver {
     const task = await this.deps.tasks.read(project, id);
     const left = await this.budgetLeft(task);
     if (left > 0) return;
-    const spent = taskSpend(task).toFixed(2);
+    const spent = workSpend(task).toFixed(2);
     const message = `Task budget reached ($${spent} spent) before the ${step} step. Raise limits.task_budget_usd in the profile to continue.`;
     await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
     throw new DriverError(message);
@@ -704,7 +707,21 @@ export class Driver {
       }
       note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
     }
-    return this.agentRun(project, id, note);
+    const done = await this.agentRun(project, id, note);
+    return followUpPushesItself(input.kind) ? this.pushReviewFix(project, id, done) : done;
+  }
+
+  /**
+   * A review fix that passed the checks is approved by the review loop and pushed to the same PR.
+   * Anything else (a failed check, a question, no change) stays where the run left it.
+   */
+  private async pushReviewFix(project: string, id: string, task: TaskRecord): Promise<TaskRecord> {
+    if (task.stage !== 'awaiting-approval' || !task.verification?.passed) return task;
+    await this.approve(project, id, {
+      head: task.verification.head_sha,
+      note: 'Approved by the review loop: the checks passed. Review the PR on GitHub.',
+    });
+    return openPr(this.deps, project, id, {});
   }
 
   /** Verifies the worktree head and puts a follow-up's commit at the approval gate. */
@@ -730,9 +747,11 @@ export class Driver {
       const profile = await this.deps.readProfile(project);
       const { path, branch } = await this.checkedWorktree(task);
       const session = await this.deps.agentSession(task, reply);
-      const left = session.budgetUsd - taskSpend(task);
+      const spent = workSpend(task);
+      const left = session.budgetUsd - spent;
       if (left <= 0) {
-        const message = `${session.name} spent this task's budget ($${taskSpend(task).toFixed(2)}). Raise the agent's task budget to continue.`;
+        const work = task.follow_ups?.length ? 'this follow-up' : 'this task';
+        const message = `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
         await this.deps.tasks.write(withStage(task, this.deps.now(), 'blocked', message));
         return await this.deps.tasks.read(project, id);
       }
@@ -773,6 +792,8 @@ export class Driver {
       let error: string | undefined;
       let costUsd: number | null = null;
       let sessionId = task.agent_session;
+      // The agent's last message: what it says it did, for the PR writer.
+      let report = '';
       let saving: Promise<void> = Promise.resolve();
       try {
         const result = await this.deps.runner.run({
@@ -805,6 +826,7 @@ export class Driver {
         });
         costUsd = result.costUsd;
         sessionId = result.sessionId ?? sessionId;
+        report = result.text?.trim() ?? '';
       } catch (e) {
         outcome = 'failed';
         error = failureText(e);
@@ -893,8 +915,10 @@ export class Driver {
       }
       await this.deps.tasks.write(task);
       this.deps.log('Verifying…');
-      const verified = await this.verifyAndRecord(project, id);
-      if (!verified.verification?.passed) return verified;
+      const checked = await this.verifyAndRecord(project, id);
+      if (!checked.verification?.passed) return checked;
+      // The PR text is written now, so you read it at the gate; a failure leaves the template fallback.
+      const verified = await this.draftPrQuietly(project, id, { agentReport: report });
       const ready = withStage(
         verified,
         this.deps.now(),
@@ -1052,10 +1076,14 @@ export class Driver {
   }
 
   /** Drafts the PR text after a review; a failure leaves the task at the gate without a draft. */
-  private async draftPrQuietly(project: string, id: string): Promise<TaskRecord> {
+  private async draftPrQuietly(
+    project: string,
+    id: string,
+    options: { agentReport?: string } = {},
+  ): Promise<TaskRecord> {
     if (!this.deps.steps.prWriter) return this.deps.tasks.read(project, id);
     try {
-      return await this.draftPr(project, id);
+      return await this.draftPr(project, id, options);
     } catch (e) {
       this.deps.log(`PR draft not written (${(e as Error).message}); the PR will use the task summary.`);
       return this.deps.tasks.read(project, id);
@@ -1066,14 +1094,22 @@ export class Driver {
    * Writes the pull-request title and description for the reviewed commit, so the human sees them
    * at the approval gate. Does not change the task's stage.
    */
-  async draftPr(project: string, id: string): Promise<TaskRecord> {
+  async draftPr(
+    project: string,
+    id: string,
+    options: { agentReport?: string; retryFor?: string[] } = {},
+  ): Promise<TaskRecord> {
     const paths = this.deps.steps.prWriter;
     if (!paths) throw new DriverError('no pr-writer step is configured');
     let task = await this.deps.tasks.read(project, id);
     const { path, base } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
-    if (!task.review || task.review.head_sha !== head)
+    // An agent run has no reviewer step; its verified commit and report are the inputs instead.
+    if (task.workflow !== 'agent' && (!task.review || task.review.head_sha !== head))
       throw new DriverError('the current commit has not been reviewed');
+    if (task.workflow === 'agent' && task.verification?.head_sha !== head)
+      throw new DriverError('the current commit has not been verified');
+    const template = await readPrTemplate(path);
     const { step, prompt: systemPrompt } = await this.deps.definitions.readStep(paths.step);
     const limits = await this.callLimits(task, step);
     if ((await this.budgetLeft(task)) <= 0) throw new DriverError('the task budget is spent');
@@ -1107,13 +1143,29 @@ export class Driver {
           '<verification>',
           tail(task.verification?.output_tail ?? 'not recorded', 4000),
           '</verification>',
-          '<review>',
-          JSON.stringify({
-            verdict: task.review.verdict,
-            summary: task.review.summary,
-            findings: task.review.findings,
-          }),
-          '</review>',
+          ...(task.review
+            ? [
+                '<review>',
+                JSON.stringify({
+                  verdict: task.review.verdict,
+                  summary: task.review.summary,
+                  findings: task.review.findings,
+                }),
+                '</review>',
+              ]
+            : []),
+          ...(options.agentReport?.trim()
+            ? ['<agent-report>', tail(options.agentReport.trim(), 6000), '</agent-report>']
+            : []),
+          `<template source="${template.source}">`,
+          template.text.trim(),
+          '</template>',
+          ...(options.retryFor?.length
+            ? [
+                `Your last body left out these template headings: ${options.retryFor.join(', ')}.`,
+                'Return the whole JSON object again, with every heading of the template, in order.',
+              ]
+            : []),
           `<diff-stat base="${base}">`,
           await this.deps.git.diffSince(path, base, true),
           '</diff-stat>',
@@ -1147,8 +1199,17 @@ export class Driver {
     }
     if (!parsed.success)
       throw new DriverError(`pr-writer returned an invalid draft: ${describeIssues(parsed.error)}`);
+    // The template is enforced: one more try with the missing headings named, then a refusal.
+    const missing = missingHeadings(parsed.data.body, template.text);
+    if (missing.length) {
+      if (!options.retryFor) return this.draftPr(project, id, { ...options, retryFor: missing });
+      throw new DriverError(`pr-writer left out template headings: ${missing.join(', ')}`);
+    }
     task = withEvent(
-      { ...task, pr_draft: { ...parsed.data, head_sha: head, at: this.deps.now() } },
+      {
+        ...task,
+        pr_draft: { ...parsed.data, head_sha: head, at: this.deps.now(), template: template.source },
+      },
       this.deps.now(),
       'pr-draft',
       `PR drafted: ${parsed.data.title}`,
@@ -1160,11 +1221,16 @@ export class Driver {
   // ---------- full run ----------
 
   /** Runs every automated step and stops at the human approval gate. Never pushes. */
-  async run(project: string, id: string, options: { maxAttempts: number }): Promise<TaskRecord> {
+  async run(
+    project: string,
+    id: string,
+    options: { maxAttempts: number; reply?: string },
+  ): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
     const blockers = taskCommandBlockers(task, 'run');
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
-    if (task.workflow === 'agent') return this.agentRun(project, id);
+    // A person's comment on a blocked agent task: the agent reads it as the reply to its question.
+    if (task.workflow === 'agent') return this.agentRun(project, id, options.reply);
     await this.preflight(project, id);
     task = await this.deps.tasks.read(project, id);
     if (!task.verdict) task = await this.classify(project, id);

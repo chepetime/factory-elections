@@ -32,6 +32,12 @@ vi.mock('@/components/issue-editor', () => ({
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
   IssueAssigneeField: () => <span>assignee</span>,
+  IssueDateField: ({ field, value, overdue }: { field: string; value?: string; overdue?: boolean }) => (
+    <span>
+      {field}:{value ?? 'unset'}
+      {overdue ? ':late' : ''}
+    </span>
+  ),
   IssueCommentBox: () => <span>comment-box</span>,
   IssueReplyBox: ({ parent }: { parent: string }) => <span>reply-box:{parent}</span>,
   IssueArchivedBanner: () => <span>archived-banner</span>,
@@ -66,7 +72,7 @@ const task = TaskRecord.parse({
   stage: 'coding',
   worktree: { path: '/w', branch: 'factory/test', base_branch: 'main' },
 });
-function issue(run?: { id: string; stage: TaskRecord['stage'] }) {
+function issue(run?: { id: string; stage: TaskRecord['stage']; waiting?: boolean }) {
   return {
     number: 1,
     key: 'DE-1',
@@ -96,7 +102,7 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
     phase,
   });
 }
-async function html(start?: string, panel?: 'run' | 'details') {
+async function html(start?: string, panel?: 'run' | 'timeline' | 'changes' | 'details') {
   return renderToStaticMarkup(
     await TaskPage({
       params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
@@ -287,7 +293,8 @@ it('while a run works: a stop composer, the latest activity and the following li
   });
   const page = await html();
   expect(page).toContain('composer:running');
-  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  // The current command is the latest step under the run line.
+  expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
   expect(page).toMatch(/aria-label="Live output"[\s\S]*Progress: resolved 3784/);
   expect(await html(undefined, 'details')).toMatch(/Stage timeline[\s\S]*running/);
 });
@@ -306,7 +313,8 @@ it('a silent command shows its elapsed time and a notice that it is still runnin
     },
   });
   const page = await html();
-  expect(page).toContain('Now: $ pnpm install --frozen-lockfile');
+  // The current command is the latest step under the run line.
+  expect(page).toMatch(/<li[^>]*>(?:(?!<\/li>)[\s\S])*\$ pnpm install --frozen-lockfile/);
   expect(page).toMatch(/15m[\s\S]*no output for 14m/);
   expect(page).toMatch(/role="status"[^>]*>[\s\S]*No output for 14m/);
 });
@@ -410,12 +418,75 @@ it('a task without a run shows its description and takes comments', async () => 
   expect(vi.mocked(readTaskControls)).not.toHaveBeenCalled();
 });
 
+it('sums up the task under its title: status, priority, agent, creator, dates and feature', async () => {
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: { ...issue(), created_by: 'you', start_date: '2026-01-02', due_date: '2026-01-03' },
+  });
+  const page = await html();
+  const summary = page.slice(page.indexOf('aria-label="Summary"'), page.indexOf('description:Fix it'));
+  expect(summary).toMatch(/Status[\s\S]*status[\s\S]*Priority[\s\S]*priority[\s\S]*Agent[\s\S]*assignee/);
+  expect(summary).toMatch(/Created by[\s\S]*>You</);
+  expect(summary).toContain('start_date:2026-01-02');
+  // A due date in the past on an open task shows as late.
+  expect(summary).toMatch(/Due date \(late\)[\s\S]*due_date:2026-01-03:late/);
+  expect(summary).toMatch(/Feature[\s\S]*None/);
+
+  // A task from a feature links to it; an old task without a creator says so.
+  observe('completed', 'coding');
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: { ...task, ticket: { feature: 'checkout', id: 't1' } },
+      execution: 'completed',
+      actions: taskActions(task, 'completed'),
+    },
+  });
+  const linked = await html();
+  expect(linked).toContain('href="/projects/demo/features/checkout"');
+  expect(linked).toMatch(/Created by[\s\S]*Not recorded/);
+  expect(linked).toContain('due_date:unset');
+});
+
+it('has Run, Timeline, Changes and Details tabs; the timeline and the diff each have their own', async () => {
+  observe('completed', 'coding');
+  const timeline = await html(undefined, 'timeline');
+  expect(timeline).toMatch(/aria-current="page"[^>]*>Timeline</);
+  expect(timeline).toMatch(/Ticket timeline[\s\S]*Nothing has happened yet/);
+  expect(timeline).not.toContain('Execution log');
+
+  vi.mocked(readDiff).mockResolvedValue({
+    ok: true,
+    value: [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1..2 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1,2 @@',
+      '-old',
+      '+new',
+      '+more',
+    ].join('\n'),
+  });
+  const changes = await html(undefined, 'changes');
+  expect(vi.mocked(readDiff)).toHaveBeenCalledWith('demo', task.id);
+  expect(changes).toMatch(/aria-current="page"[^>]*>Changes</);
+  expect(changes).toContain('1 file changed');
+  expect(changes).toMatch(/src\/a\.ts[\s\S]*Modified[\s\S]*\+2[\s\S]*−1/);
+
+  vi.mocked(readDiff).mockResolvedValue({ ok: false, error: 'no worktree' });
+  expect(await html(undefined, 'changes')).toContain('Changes unavailable: no worktree');
+  vi.mocked(readDiff).mockClear();
+  await html(undefined, 'details');
+  expect(vi.mocked(readDiff)).not.toHaveBeenCalled();
+});
+
 it('lists the runs and pull requests in the side panel', async () => {
   observe('completed', 'coding');
   let page = await html(undefined, 'details');
   expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
   expect(page).toContain('No pull request yet.');
-  expect(page).toMatch(/Project[\s\S]*demo/);
+  expect(page).not.toContain('Nothing has happened yet');
 
   const opened = {
     ...task,
@@ -491,7 +562,7 @@ it('opens the run in the right panel, with its session, and keeps a short card i
   expect(page).toMatch(/Run 1<\/span>/);
   const details = await html(undefined, 'details');
   expect(details).toMatch(/href="[^"]*panel=run"[^>]*>Open</);
-  expect(details).toContain('Properties');
+  expect(details).not.toContain('Properties');
 });
 
 it('puts what the run needs from you on the ticket, also with the Details tab open', async () => {
@@ -561,4 +632,60 @@ it('puts what the run needs from you on the ticket, also with the Details tab op
   expect(page).toContain('needs you');
   expect(page).toContain('Which page?');
   expect(page).toContain('Reply in a comment below');
+});
+
+it('puts the actions after the newest activity, and hides the follow-up form while one waits', async () => {
+  const ready = TaskRecord.parse({
+    ...task,
+    workflow: 'agent',
+    agent: 'devin',
+    stage: 'awaiting-approval',
+    verification: { passed: true, head_sha: 'abc123abc123abc', at: '2026-01-01T00:00:00Z', output_tail: '' },
+  });
+  const latest = {
+    id: 'c1',
+    at: '2026-01-03T00:00:00.000Z',
+    body: 'The newest note on the task',
+    author: 'devin',
+  };
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: { ...issue({ id: task.id, stage: 'awaiting-approval' }), comments: [latest] },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: ready,
+      execution: 'completed',
+      head_sha: 'abc123abc123abc',
+      diff_stat: ' 1 file changed',
+      actions: taskActions(ready, 'completed', 'abc123abc123abc'),
+    },
+  });
+  const page = await html(undefined, 'details');
+  expect(page.indexOf('The newest note on the task')).toBeGreaterThan(-1);
+  expect(page.indexOf('The newest note on the task')).toBeLessThan(page.indexOf('Ready for your approval'));
+
+  // A follow-up waits for Devin: the run is still at pr-opened, but no second one can be started.
+  const opened = {
+    ...task,
+    stage: 'pr-opened' as const,
+    pr: {
+      url: 'https://github.com/o/r/pull/12',
+      head_sha: 'abcdef1234567890',
+      branch: 'factory/test',
+      at: '2026-01-02T00:00:00.000Z',
+    },
+  };
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: issue({ id: task.id, stage: 'pr-opened', waiting: true }),
+  });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: opened, execution: 'completed', actions: taskActions(opened, 'completed') },
+  });
+  const waiting = await html(undefined, 'details');
+  expect(waiting).not.toContain('Resolve merge conflicts');
 });

@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import {
   metricsSummary,
+  SpanType,
   newSpanId,
   newTraceId,
   ProjectName,
@@ -191,5 +192,32 @@ export class TaskTraces {
       await Promise.all(projects.map((p) => this.deps.traces.read(p, { since: historyStart })))
     ).flat();
     return metricsSummary(spans, from, to);
+  }
+
+  /**
+   * The newest spans of one type over all projects (or one), for the tool and model call lists.
+   * Replay inputs stay out: they can be large, and the trace page has them.
+   */
+  async spans(raw: unknown) {
+    const q = z
+      .object({
+        project: z.union([ProjectName, z.literal('')]).optional(),
+        type: SpanType,
+        days: z.number().int().min(1).max(90).default(14),
+        limit: z.number().int().min(1).max(500).default(200),
+      })
+      .parse(raw);
+    const since = new Date(Date.now() - q.days * 86_400_000).toISOString();
+    const projects = q.project ? [q.project] : (await this.deps.projects.list()).map((p) => p.name);
+    const all = (await Promise.all(projects.map((p) => this.deps.traces.read(p, { since }))))
+      .flat()
+      .filter((s) => s.type === q.type)
+      .sort((a, b) => b.ended_at.localeCompare(a.ended_at));
+    return {
+      since,
+      total: all.length,
+      failed: all.filter((s) => s.outcome !== 'completed').length,
+      items: all.slice(0, q.limit).map(({ replay: _replay, ...span }) => span),
+    };
   }
 }

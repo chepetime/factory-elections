@@ -38,7 +38,7 @@ import {
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
-import { IssueStatus } from '@factory/core';
+import { HOME_BACKGROUNDS, IssueStatus, type HomeBackground } from '@factory/core';
 import { saveUserSettingsRun, userSettings, type UserSettings } from '@/lib/user-settings';
 
 export interface ActionState {
@@ -422,12 +422,19 @@ export async function moveIssue(
 export async function updateIssue(
   project: string,
   key: string,
-  patch: { title?: string; description?: string; priority?: string; assignee?: string | null },
+  patch: {
+    title?: string;
+    description?: string;
+    priority?: string;
+    assignee?: string | null;
+    start_date?: string | null;
+    due_date?: string | null;
+  },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
   const updated = await updateIssueRun(project, { key, ...patch });
   revalidatePath(`/projects/${project}/tasks`, 'layout');
-  if (patch.assignee !== undefined) revalidatePath('/agents', 'layout');
+  if (patch.assignee !== undefined) revalidatePath('/projects/[project]/agents', 'layout');
   return updated.ok ? { message: 'Saved.' } : { error: updated.error };
 }
 
@@ -495,6 +502,19 @@ const USER_SECTIONS = [
   'rules',
 ] as const;
 type UserSection = (typeof USER_SECTIONS)[number];
+
+/** Saves the homepage background the person picked with the arrows; keeps the other preferences. */
+export async function saveHomeBackground(background: HomeBackground): Promise<ActionState> {
+  if (!HOME_BACKGROUNDS.includes(background)) return { error: 'Unknown background.' };
+  const current = await userSettings();
+  if (!current.ok) return { error: current.error };
+  const saved = await saveUserSettingsRun({
+    ...current.value,
+    preferences: { ...current.value.preferences, home_background: background },
+  });
+  revalidatePath('/', 'layout');
+  return saved.ok ? { message: 'Saved' } : { error: saved.error };
+}
 
 /** Saves one section of the user settings and keeps the rest as stored. */
 export async function updateUserSettings<K extends UserSection>(

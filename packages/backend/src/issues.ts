@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
+  parseMentions,
   defaultPrefix,
   dropAction,
   Issue,
@@ -21,6 +22,7 @@ import {
   TaskId,
   type DropAction,
   type FollowUpKind,
+  PlanDate,
   followUpAgent,
   type ProjectSettings,
   type Stage,
@@ -44,7 +46,8 @@ export type IssueDeps = {
   submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
   /** Sends a person's note to a waiting run; agent runs resume their session with it. */
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
-  run: (project: string, id: string) => Promise<unknown>;
+  /** Starts the task's run; `reply` is a person's comment the agent reads (blocked agent tasks). */
+  run: (project: string, id: string, reply?: string) => Promise<unknown>;
   reject: (project: string, id: string, note: string) => Promise<unknown>;
   /** Queues a follow-up on a run whose PR is open (core follow-ups.ts). */
   followUp?: (
@@ -58,6 +61,8 @@ export type IssueDeps = {
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
+  /** The ids of the agents a comment can @mention (not archived). */
+  agentIds?: () => Promise<string[]>;
   /** Why the run's queued turn has not started yet; undefined when no turn waits. */
   waiting?: (project: string, runId: string) => QueueWait | undefined;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
@@ -73,6 +78,8 @@ const CreateInput = z.object({
   status: z.enum(['backlog', 'todo']).default('backlog'),
   priority: IssuePriority.default('none'),
   jira_key: z.string().trim().max(100).optional(),
+  /** `you` from the board; an agent's id when its tool creates the task. */
+  created_by: z.string().min(1).max(100).default('you'),
 });
 const UpdateInput = z.object({
   project: ProjectName,
@@ -82,13 +89,16 @@ const UpdateInput = z.object({
   priority: IssuePriority.optional(),
   /** An agent id, or null to unassign. */
   assignee: z.string().min(1).nullable().optional(),
+  /** A `YYYY-MM-DD` day, or null to clear it. */
+  start_date: PlanDate.nullable().optional(),
+  due_date: PlanDate.nullable().optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
 const FollowUpInput = z.object({
   project: ProjectName,
   key: Key,
   note: z.string().trim().min(1).max(20_000),
-  kind: z.enum(['custom', 'conflicts']).default('custom'),
+  kind: z.enum(['custom', 'conflicts', 'review']).default('custom'),
   /** The workspace agent; absent uses the run's agent, then the task's assignee. */
   agent: z.string().min(1).optional(),
   /** `factory` when the conflict watcher adds it. */
@@ -183,6 +193,7 @@ export class IssueService {
         status_at: at,
         runs: [task.id],
         jira_key: task.jira_key,
+        created_by: 'factory',
         events: [{ at, kind: 'created', message: 'Created from a factory run' }],
         created_at: at,
         updated_at: task.updated_at ?? at,
@@ -283,6 +294,7 @@ export class IssueService {
         status_at: at,
         priority: input.priority,
         jira_key: input.jira_key || undefined,
+        created_by: input.created_by,
         events: [{ at, kind: 'created', message: 'Created' }],
         created_at: at,
         updated_at: at,
@@ -295,7 +307,7 @@ export class IssueService {
   }
 
   async update(raw: unknown): Promise<IssueView> {
-    const { project, key, assignee, ...patch } = UpdateInput.parse(raw);
+    const { project, key, assignee, start_date, due_date, ...patch } = UpdateInput.parse(raw);
     if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
     const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
     const updated = await this.change(project, key, (issue, at) => {
@@ -317,6 +329,22 @@ export class IssueService {
           message: assignee ? `Assigned to ${agentName}` : 'Removed the agent',
         });
       }
+      const start = start_date === undefined ? issue.start_date : (start_date ?? undefined);
+      const due = due_date === undefined ? issue.due_date : (due_date ?? undefined);
+      if (start && due && due < start) throw new Conflict('The due date is before the start date.');
+      for (const [field, value, label] of [
+        ['start_date', start_date, 'start date'],
+        ['due_date', due_date, 'due date'],
+      ] as const) {
+        if (value === undefined || (value ?? undefined) === issue[field]) continue;
+        const { [field]: _old, ...rest } = next;
+        next = value ? { ...rest, [field]: value } : rest;
+        events.push({
+          at,
+          kind: `edit:${field}`,
+          message: value ? `Set the ${label} to ${value}` : `Removed the ${label}`,
+        });
+      }
       if (!events.length) return issue;
       return { ...next, events: [...issue.events, ...events] };
     });
@@ -326,6 +354,7 @@ export class IssueService {
 
   async comment(raw: unknown): Promise<IssueView> {
     const { project, key, body, parent, author = 'you' } = CommentInput.parse(raw);
+    const mentions = parseMentions(body, (await this.deps.agentIds?.()) ?? []);
     const view = await this.change(project, key, (issue, at) => {
       const target = parent ? issue.comments.find((c) => c.id === parent) : undefined;
       if (parent && !target) throw new Conflict('The comment you replied to is gone.');
@@ -335,12 +364,59 @@ export class IssueService {
         ...issue,
         comments: [
           ...issue.comments,
-          { id: randomUUID(), at, body, author, ...(root ? { parent: root } : {}) },
+          {
+            id: randomUUID(),
+            at,
+            body,
+            author,
+            ...(root ? { parent: root } : {}),
+            ...(mentions.length ? { mentions } : {}),
+          },
         ],
       };
     });
-    if (author === 'you') await this.wakeAgent(project, view, body);
+    // Only a person's comment starts work: an agent's mention never wakes another agent.
+    if (author !== 'you') return view;
+    const routed = mentions.length ? await this.routeMention(project, view, body, mentions) : undefined;
+    if (routed) return routed;
+    await this.wakeAgent(project, view, body);
     return view;
+  }
+
+  /**
+   * A person @mentioned agents. The first one that can act on the ticket gets the comment:
+   * - the agent of the run: its session continues, as with any comment (returns undefined);
+   * - the PR is open: a follow-up for the mentioned agent, with the comment as its note;
+   * - no run and no agent yet: the mentioned agent is assigned.
+   * Otherwise the ticket says why the mention started nothing.
+   */
+  private async routeMention(
+    project: string,
+    view: IssueView,
+    body: string,
+    mentions: string[],
+  ): Promise<IssueView | undefined> {
+    const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
+    const runAgent = record?.workflow === 'agent' ? record.agent : undefined;
+    if (runAgent && mentions.includes(runAgent)) return undefined;
+    const [agent] = mentions as [string, ...string[]];
+    const name = this.deps.agentName ? await this.deps.agentName(agent).catch(() => agent) : agent;
+    const explain = (message: string) =>
+      this.change(project, view.key, (issue, at) => ({
+        ...issue,
+        events: [...issue.events, { at, kind: 'mention', message }],
+      }));
+    if (view.run?.stage === 'pr-opened') {
+      if (view.run.waiting || view.run.owned)
+        return explain(`${name} was mentioned, but a follow-up is already queued or working on this task.`);
+      return this.followUp({ project, key: view.key, note: body, kind: 'custom', agent, by: 'you' });
+    }
+    if (!view.run && !view.assignee) return this.update({ project, key: view.key, assignee: agent });
+    if (!view.run)
+      return explain(`${name} was mentioned; the task is assigned to another agent, so nothing started.`);
+    return explain(
+      `${name} was mentioned, but ${runAgent ? 'another agent works this run' : 'the pipeline works this run'}. Mention its agent, or add a follow-up once the PR is open.`,
+    );
   }
 
   /**
@@ -354,6 +430,9 @@ export class IssueService {
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
     if (!view.run || !record || view.run.stage !== 'pr-opened')
       throw new Conflict('A follow-up continues a task whose pull request is open.');
+    // One at a time: a second start would wait for the lock the queued turn holds.
+    if (view.run.waiting || view.run.owned)
+      throw new Conflict('A follow-up is already queued or working on this task.');
     const agent = picked ?? followUpAgent(record, view.assignee);
     if (!agent) throw new Conflict('Pick the agent that does the follow-up.');
     // Refuses a missing or archived agent before anything is queued.
@@ -390,7 +469,7 @@ export class IssueService {
     if (record?.workflow !== 'agent') return;
     const start =
       record.stage === 'blocked'
-        ? this.deps.run(project, record.id)
+        ? this.deps.run(project, record.id, body)
         : ['awaiting-approval', 'verification-failed', 'failed'].includes(record.stage) && this.deps.revise
           ? this.deps.revise(project, record.id, body)
           : undefined;

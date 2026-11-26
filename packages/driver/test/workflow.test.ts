@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { ModelRun, ModelResult, ModelRunner, RepoProfile } from '@factory/core';
@@ -152,7 +152,10 @@ const writeOther: Script = async (r) => (
 );
 const defaultDraft: Script = () => ({
   text: '',
-  structured: { title: 'Add the feature file', body: '## Summary\n\nAdds `feature.txt`.' },
+  structured: {
+    title: 'Add the feature file',
+    body: '## Summary\n\nAdds `feature.txt`.\n\n## Evidence\n\n- **Before:** none\n  **After:** test passes\n\n## Merge Danger\n\n**Door:** two-way',
+  },
   costUsd: 0.02,
 });
 const approveReview: Script = () => ({
@@ -239,7 +242,66 @@ test('a draft written for an older commit is not used', async () => {
   await driver.approve('demo', task.id, { head: gate.headSha });
   await driver.openPr('demo', task.id);
   assert.notEqual(prs[0]?.title, 'Add the feature file');
-  assert.match(prs[0]!.body, /^## Task/);
+  // Without a draft for this commit the body still keeps the factory template's headings.
+  assert.match(prs[0]!.body, /^## Summary\n\nLooks right\./);
+  assert.match(prs[0]!.body, /## Evidence\n[\s\S]*## Merge Danger\n/);
+});
+
+test('a draft that leaves out a template heading is asked again, and refused after a second miss', async () => {
+  const partial: Script = () => ({
+    text: '',
+    structured: { title: 'Add the feature file', body: '## Summary\n\nAdds it.' },
+    costUsd: 0.01,
+  });
+  const ok = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+    prWriter: [partial, defaultDraft],
+  });
+  const drafted = await ok.driver.run('demo', ok.task.id, { maxAttempts: 1 });
+  assert.equal(drafted.pr_draft?.title, 'Add the feature file');
+  assert.equal((drafted.pr_draft as { template?: string }).template, 'factory');
+  const retry = ok.runner.calls.filter((c) => c.step === 'pr-writer').at(-1)!;
+  assert.match(retry.prompt, /left out these template headings: Evidence, Merge Danger/);
+
+  const bad = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+    prWriter: [partial, partial],
+  });
+  const refused = await bad.driver.run('demo', bad.task.id, { maxAttempts: 1 });
+  assert.equal(refused.stage, 'awaiting-approval', 'a refused draft does not block the gate');
+  assert.equal(refused.pr_draft, undefined);
+});
+
+test("the repository's own PR template wins over the factory's", async () => {
+  const own: Script = () => ({
+    text: '',
+    structured: { title: 'Add the feature file', body: '## What\n\nAdds it.\n\n## Why\n\nAsked for.' },
+    costUsd: 0.01,
+  });
+  const ctx = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+    prWriter: [own],
+  });
+  const repo = ctx.repo;
+  await mkdir(join(repo, '.github'), { recursive: true });
+  await writeFile(
+    join(repo, '.github', 'pull_request_template.md'),
+    '## What\n\n<!-- the change -->\n\n## Why\n',
+  );
+  execFileSync('git', ['add', '.'], { cwd: repo });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-qm', 'template'], {
+    cwd: repo,
+  });
+  const drafted = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 1 });
+  assert.equal((drafted.pr_draft as { template?: string }).template, '.github/pull_request_template.md');
+  const call = ctx.runner.calls.find((c) => c.step === 'pr-writer')!;
+  assert.match(call.prompt, /<template source="\.github\/pull_request_template\.md">\n## What/);
 });
 
 test('verification failure climbs the ladder with the failure output', async () => {

@@ -1,11 +1,10 @@
-import { LoaderCircle } from 'lucide-react';
+import { LatticeLoader } from '@/components/bits/lattice-loader';
 
 /** Profile and providers check the CLIs on this machine, which takes a few seconds. */
 export default function Loading() {
   return (
-    <p className="mx-auto flex max-w-2xl items-center gap-2 text-sm text-muted-foreground" role="status">
-      <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
-      Loading your settings
-    </p>
+    <div className="mx-auto max-w-2xl text-muted-foreground">
+      <LatticeLoader label="Loading your settings" showTimer={false} />
+    </div>
   );
 }

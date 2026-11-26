@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
 import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
+import { HoldButton } from '@/components/bits/hold-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -103,8 +104,10 @@ export function TaskChatComposer({ className, ...props }: ComposerProps & { clas
 function RunningComposer({ project, id, reason }: Extract<ComposerProps, { mode: 'running' }>) {
   const [state, action, pending] = useActionState<ActionState, FormData>(stopTask, {});
   const stopping = pending || Boolean(state.message);
+  const form = useRef<HTMLFormElement>(null);
   return (
     <form
+      ref={form}
       action={action}
       className="flex items-center gap-3 rounded-2xl border bg-muted/40 py-2 pr-2 pl-4 text-sm text-muted-foreground"
     >
@@ -119,21 +122,38 @@ function RunningComposer({ project, id, reason }: Extract<ComposerProps, { mode:
           reason
         )}
       </p>
-      <Button
-        type="submit"
-        size="icon"
-        variant="destructive"
-        className="shrink-0 rounded-full pointer-coarse:size-11"
-        disabled={stopping}
-        aria-label={stopping ? 'Stopping the run' : 'Stop the run'}
-        title="Stop the run"
-      >
-        {stopping ? (
+      {stopping ? (
+        <Button
+          size="icon"
+          variant="destructive"
+          className="shrink-0 rounded-full pointer-coarse:size-11"
+          disabled
+          aria-label="Stopping the run"
+        >
           <LoaderCircle className="motion-safe:animate-spin" />
-        ) : (
+        </Button>
+      ) : (
+        // A short hold, so a slip of the cursor does not kill a working agent.
+        <HoldButton
+          size="icon"
+          radius={999}
+          fillDirection="up"
+          holdTime={800}
+          backgroundColor="color-mix(in srgb, var(--destructive) 14%, transparent)"
+          textColor="var(--destructive)"
+          fillColor="var(--destructive)"
+          fillTextColor="var(--background)"
+          glow={false}
+          waveAmplitude={3}
+          resetAfter={0}
+          doneLabel={<Square className="fill-current" aria-hidden />}
+          aria-label="Hold to stop the run"
+          title="Hold to stop the run"
+          onHold={() => form.current?.requestSubmit()}
+        >
           <Square className="fill-current" aria-hidden />
-        )}
-      </Button>
+        </HoldButton>
+      )}
     </form>
   );
 }

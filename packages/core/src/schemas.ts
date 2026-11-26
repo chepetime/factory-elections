@@ -226,7 +226,7 @@ export const TaskRecord = z.looseObject({
     .array(
       z.looseObject({
         at: Iso,
-        kind: z.enum(['custom', 'conflicts']),
+        kind: z.enum(['custom', 'conflicts', 'review']),
         note: NonEmpty,
         /** The workspace agent that does it. */
         agent: NonEmpty,
