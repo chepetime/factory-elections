@@ -147,7 +147,14 @@ export function runFinished(stage: Stage): boolean {
   return stage === 'rejected' || stage === 'pr-opened';
 }
 
-/** `waiting`: a turn is queued until its agent is free; `stage` is still the stage before it. */
+/** Why a queued turn has not started: its own agent is busy, or every worker or agent slot is. */
+export const QueueWait = z.enum(['agent', 'slot']);
+export type QueueWait = z.infer<typeof QueueWait>;
+/** What a queued turn waits for, in words; `agent` names the run's agent when it has one. */
+export function queueWaitLabel(wait: QueueWait | undefined, agent?: string): string {
+  return wait === 'agent' ? `Waiting for ${agent ?? 'its agent'}` : 'Waiting for a free slot';
+}
+/** `waiting`: a turn is queued until it gets an agent; `stage` is still the stage before it. */
 export type RunSummary = { stage: Stage; updated_at?: string; waiting?: boolean };
 
 /**

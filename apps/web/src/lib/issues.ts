@@ -2,7 +2,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { backendCall } from '@factory/backend/client';
-import { Issue, IssueStatus, Stage } from '@factory/core';
+import { Issue, IssueStatus, QueueWait, Stage } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 
 export const IssueView = Issue.extend({
@@ -15,6 +15,7 @@ export const IssueView = Issue.extend({
       stage: Stage,
       updated_at: z.string().optional(),
       waiting: z.boolean().optional(),
+      waiting_for: QueueWait.optional(),
       /** A live run holds the task now. Absent from an older backend: the stage decides. */
       owned: z.boolean().optional(),
     })

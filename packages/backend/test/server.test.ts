@@ -753,12 +753,12 @@ test('a queued run cancelled before it starts leaves the queue at once, frees it
     (await backendCall('StartRun', { project: 'demo', id: third, action: 'run' })).json,
   );
   for (let i = 0; i < 200 && calls < 1; i++) await new Promise((done) => setTimeout(done, 10));
-  assert.equal(server.service.isWaiting('demo', second), true);
+  assert.equal(server.service.isWaiting('demo', second), 'slot', 'a busy worker is a slot wait');
   const stageBefore = (await server.service.tasks.read('demo', second)).stage;
 
   // The worker is still busy, so this only returns because the run left the queue.
   await server.service.cancelQueued('demo', second);
-  assert.equal(server.service.isWaiting('demo', second), false);
+  assert.equal(server.service.isWaiting('demo', second), undefined);
   const unlock = await server.service.tasks.acquireLock('demo', second);
   await unlock();
   // StopRun on a queued run takes the same way out.
@@ -784,4 +784,46 @@ test('a queued run cancelled before it starts leaves the queue at once, frees it
   await finished(id);
   await new Promise((done) => setTimeout(done, 50));
   assert.equal(calls, 1, 'the cancelled runs never reached the model');
+});
+
+test('a turn behind its busy agent says so, and a cancel takes it out of the wait at once', async (t) => {
+  let release!: () => void;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  let calls = 0;
+  const runner: ModelRunner = {
+    async run() {
+      calls++;
+      await hold;
+      throw Object.assign(new Error('scripted end'), { kind: 'aborted' });
+    },
+  };
+  t.after(() => release());
+  const { server } = await fixture(t, runner);
+  const call = async (method: 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'GetIssue', body: object) =>
+    JSON.parse((await backendCall(method, { project: 'demo', json: JSON.stringify(body) })).json);
+  await server.service.agents.update({ id: 'devin', concurrency: 1, auto_pickup: false });
+  const keys: string[] = [];
+  for (const title of ['First for Devin', 'Second for Devin']) {
+    const created = await call('CreateIssue', { title, status: 'todo' });
+    await call('UpdateIssue', { key: created.key, assignee: 'devin' });
+    await call('MoveIssue', { key: created.key, to: 'in_progress' });
+    keys.push(created.key);
+  }
+  for (let i = 0; i < 300 && calls < 1; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(calls, 1);
+  const second = await call('GetIssue', { key: keys[1] });
+  assert.equal(second.run.waiting, true);
+  assert.equal(second.run.waiting_for, 'agent', 'it waits for Devin, not for a free slot');
+
+  const started = Date.now();
+  await call('MoveIssue', { key: keys[1], to: 'cancelled' });
+  assert.ok(Date.now() - started < 1000, `the cancel did not wait for the poll (${Date.now() - started} ms)`);
+  const cancelled = await call('GetIssue', { key: keys[1] });
+  assert.equal(cancelled.run.waiting, undefined);
+  assert.equal(cancelled.run.stage, 'rejected');
+  release();
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(calls, 1, 'the cancelled turn never reached the model');
 });

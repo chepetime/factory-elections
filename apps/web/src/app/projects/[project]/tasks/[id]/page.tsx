@@ -10,6 +10,7 @@ import {
   type IssueStatus,
   type ServiceAccess,
   type TaskRecord,
+  queueWaitLabel,
 } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
@@ -443,7 +444,7 @@ export default async function TaskPage({
                     {' · '}
                     {/* Only the latest run can have a queued turn; an older run shows its own stage. */}
                     {issue.run?.waiting && runId === issue.run.id
-                      ? `Waiting for ${runAuthor?.name ?? 'a free agent'}`
+                      ? queueWaitLabel(issue.run.waiting_for, runAuthor?.name)
                       : stageLabel(run.value.task.stage)}
                   </span>
                 </p>

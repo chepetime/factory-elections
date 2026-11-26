@@ -84,7 +84,7 @@ async function setup(
       );
     },
     now: () => new Date((clock += 1000)),
-    waiting: (_project, id) => waiting.has(id),
+    waiting: (_project, id) => (waiting.has(id) ? 'slot' : undefined),
   });
   return { root, service, calls, tasks };
 }
@@ -321,6 +321,7 @@ test('a turn queued behind a busy agent shows as waiting in Todo, not as its old
   const queued = await service.get({ project: 'change-elections', key: 'CE-1' });
   assert.equal(queued.status, 'todo');
   assert.equal(queued.run?.waiting, true);
+  assert.equal(queued.run?.waiting_for, 'slot');
   assert.equal(queued.run?.stage, 'blocked', 'the run itself is unchanged until it starts');
 });
 

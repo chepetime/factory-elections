@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   defaultPrefix,
   dropAction,
+  queueWaitLabel,
   Issue,
   IssueBoard,
   issueKey,
@@ -152,4 +153,10 @@ test('a run is held by a live run when that is known, else by a working stage', 
   assert.equal(runHeld('failed'), false);
   assert.equal(runHeld('coding', false), false, 'an interrupted run is not held');
   assert.equal(runHeld('failed', true), true, 'a live revision of a failed run is held');
+});
+
+test('a queued turn names what it waits for', () => {
+  assert.equal(queueWaitLabel('agent', 'Devin'), 'Waiting for Devin');
+  assert.equal(queueWaitLabel('agent'), 'Waiting for its agent');
+  assert.equal(queueWaitLabel('slot', 'Devin'), 'Waiting for a free slot', 'a full pool is not the agent');
 });

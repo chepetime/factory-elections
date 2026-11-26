@@ -19,6 +19,8 @@ import {
   type DropAction,
   type IssueStatus,
   type Stage,
+  queueWaitLabel,
+  type QueueWait,
 } from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
 import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
@@ -32,7 +34,14 @@ export type BoardIssue = {
   jira_key?: string;
   updated_at: string;
   /** `waiting`: a new turn is queued until its agent is free. `owned`: a live run holds the task. */
-  run?: { id: string; stage: Stage; updated_at?: string; waiting?: boolean; owned?: boolean };
+  run?: {
+    id: string;
+    stage: Stage;
+    updated_at?: string;
+    waiting?: boolean;
+    waiting_for?: QueueWait;
+    owned?: boolean;
+  };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
 };
@@ -378,7 +387,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                             <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden />
                           ) : null}
                           {issue.run.waiting
-                            ? 'Waiting for its agent'
+                            ? queueWaitLabel(issue.run.waiting_for, issue.agent?.name)
                             : runNeed(issue.run.stage, issue.run.owned) === 'interrupted'
                               ? 'Interrupted'
                               : stageLabel(issue.run.stage)}

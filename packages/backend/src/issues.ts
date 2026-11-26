@@ -23,15 +23,23 @@ import {
   type ProjectSettings,
   type Stage,
   type TaskRecord,
+  type QueueWait,
 } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 
 /**
- * `waiting`: a new turn is queued until its agent has a free slot; the stage is still the old one.
+ * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.
  * `owned`: a live run holds the task now, whatever its stage says.
  */
-export type IssueRun = { id: string; stage: Stage; updated_at?: string; waiting?: boolean; owned: boolean };
+export type IssueRun = {
+  id: string;
+  stage: Stage;
+  updated_at?: string;
+  waiting?: boolean;
+  waiting_for?: QueueWait;
+  owned: boolean;
+};
 export type IssueView = Omit<Issue, 'status'> & {
   key: string;
   /** The column it shows in: the latest run's status unless a person set one since. */
@@ -61,8 +69,8 @@ export type IssueDeps = {
   deleteRun: (project: string, id: string) => Promise<void>;
   /** The name of an agent that may take work; it throws for a missing or archived agent. */
   agentName?: (id: string) => Promise<string>;
-  /** Whether the run has a turn queued that has not started yet (its agent is busy). */
-  waiting?: (project: string, runId: string) => boolean;
+  /** Why the run's queued turn has not started yet; undefined when no turn waits. */
+  waiting?: (project: string, runId: string) => QueueWait | undefined;
   /** Called after a person edits, moves or creates a task, e.g. to let agents pick up work. */
   changed?: () => void;
   now?: () => Date;
@@ -185,8 +193,8 @@ export class IssueService {
   }
 
   /** A turn is queued for the run: it will use the run's worktree once its agent is free. */
-  private queued(project: string, runId: string): boolean {
-    return this.deps.waiting?.(project, runId) === true;
+  private queued(project: string, runId: string): QueueWait | undefined {
+    return this.deps.waiting?.(project, runId);
   }
 
   /** The factory holds the run now: a live run, or a working stage when live runs are not known. */
@@ -197,13 +205,13 @@ export class IssueService {
   private view(prefix: string, issue: Issue, runs: Map<string, TaskRecord>): IssueView {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
-    const waiting = task ? this.queued(task.project, task.id) : false;
+    const waiting = task ? this.queued(task.project, task.id) : undefined;
     const run = task
       ? {
           id: task.id,
           stage: task.stage,
           updated_at: task.updated_at,
-          ...(waiting ? { waiting: true } : {}),
+          ...(waiting ? { waiting: true, waiting_for: waiting } : {}),
           owned: this.deps.owned?.(task.project, task.id) ?? false,
         }
       : undefined;

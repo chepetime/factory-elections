@@ -44,6 +44,7 @@ import {
   modelRefused,
   withUserRules,
   type AgentEvent,
+  type QueueWait,
 } from '@factory/core';
 import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -216,10 +217,30 @@ export class BackendService {
   private readonly scheduled = new Map<string, number>();
   /** Runs that started working, per `project/task id`; a scheduled run not in here waits for a slot. */
   private readonly working = new Set<string>();
-  /** A turn is queued for the task but has not started: its agent, or every agent slot, is busy. */
-  isWaiting(project: string, id: string): boolean {
+  /** Queued runs blocked by their own agent's limit, per `project/task id`. Others wait for a slot. */
+  private readonly agentWaits = new Set<string>();
+  /** Why a turn queued for the task has not started; undefined when none waits. */
+  isWaiting(project: string, id: string): QueueWait | undefined {
     const key = `${project}/${id}`;
-    return this.scheduled.has(key) && !this.working.has(key);
+    if (!this.scheduled.has(key) || this.working.has(key)) return undefined;
+    return this.agentWaits.has(key) ? 'agent' : 'slot';
+  }
+  /** Wakes every run that waits for a slot, so it checks again now instead of at its next poll. */
+  private readonly wakers = new Set<() => void>();
+  private wake(): void {
+    for (const waker of this.wakers) waker();
+  }
+  /** Waits until the next poll or a wake(), whichever comes first. */
+  private nap(): Promise<void> {
+    return new Promise((done) => {
+      const waker = () => {
+        clearTimeout(timer);
+        this.wakers.delete(waker);
+        done();
+      };
+      const timer = setTimeout(waker, POOL_WAIT_MS);
+      this.wakers.add(waker);
+    });
   }
   /** Whether this backend has a run queued or working for the task. */
   isScheduled(project: string, id: string): boolean {
@@ -800,14 +821,17 @@ export class BackendService {
     // A run that had not started when shutdown began stays queued; the next start runs it.
     // A run a person stopped while it waited never starts: its task keeps the stage it had.
     const stopped = () => this.stopRequests.has(record.id);
-    if (!(await this.takeAgentSlot(stopped))) {
+    // Its own agent first: a turn that waits for a busy agent must not hold a slot others could use.
+    const own = await this.takeOwnAgentSlot(command.project, command.id, stopped);
+    if (!own) {
       if (stopped()) await this.closeUnstarted(record, dir);
       return;
     }
-    const own = await this.takeOwnAgentSlot(command.project, command.id, stopped);
-    if (!own || stopped()) {
-      own?.();
-      this.executing--;
+    const pooled = await this.takeAgentSlot(stopped);
+    if (!pooled || stopped()) {
+      if (pooled) this.executing--;
+      own();
+      this.wake();
       if (stopped()) await this.closeUnstarted(record, dir);
       return;
     }
@@ -932,6 +956,8 @@ export class BackendService {
       this.executing--;
       this.working.delete(workingKey);
       own();
+      // The freed slots go to the next waiting run now, not at its next poll.
+      this.wake();
       // A slot is free again: an agent may take its next Todo task.
       this.pickup?.kick();
       record.finished_at = new Date().toISOString();
@@ -1218,6 +1244,7 @@ export class BackendService {
     if (!controller) {
       // Waiting for a worker: leave that queue now. Waiting for an agent: the wait loop sees the stop.
       this.unstarted.get(latest.record.id)?.();
+      this.wake();
       return 'Stopping the run before it starts.';
     }
     controller.abort();
@@ -1234,6 +1261,7 @@ export class BackendService {
     if (!latest || !completion || this.controllers.has(latest.record.id)) return;
     this.stopRequests.add(latest.record.id);
     this.unstarted.get(latest.record.id)?.();
+    this.wake();
     await completion;
   }
   /** Records a queued run a person stopped before it started. */
@@ -1293,7 +1321,7 @@ export class BackendService {
         this.executing++;
         return true;
       }
-      await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
+      await this.nap();
     }
   }
   /** For an agent run, waits until that agent has a free slot (its concurrency). Other runs pass at once. */
@@ -1306,18 +1334,24 @@ export class BackendService {
     const name = task?.workflow === 'agent' ? task.agent : undefined;
     if (!name) return () => {};
     const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
-    for (;;) {
-      if (!this.accepting || stopped()) return undefined;
-      const used = this.agentRuns.get(name) ?? 0;
-      if (used < limit) {
-        this.agentRuns.set(name, used + 1);
-        let released = false;
-        return () => {
-          if (!released) this.agentRuns.set(name, (this.agentRuns.get(name) ?? 1) - 1);
-          released = true;
-        };
+    const key = `${project}/${id}`;
+    try {
+      for (;;) {
+        if (!this.accepting || stopped()) return undefined;
+        const used = this.agentRuns.get(name) ?? 0;
+        if (used < limit) {
+          this.agentRuns.set(name, used + 1);
+          let released = false;
+          return () => {
+            if (!released) this.agentRuns.set(name, (this.agentRuns.get(name) ?? 1) - 1);
+            released = true;
+          };
+        }
+        this.agentWaits.add(key);
+        await this.nap();
       }
-      await new Promise((done) => setTimeout(done, POOL_WAIT_MS));
+    } finally {
+      this.agentWaits.delete(key);
     }
   }
   /** Takes a free agent slot at once, for a child task; undefined when none is free. */
@@ -1334,6 +1368,8 @@ export class BackendService {
   }
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     this.accepting = false;
+    // Waiting runs see the shutdown now and stay queued for the next start.
+    this.wake();
     this.pickup.stop();
     this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
