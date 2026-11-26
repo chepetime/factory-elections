@@ -7,8 +7,9 @@
 PR CI compares the merge base with the checked-out PR merge commit, including changes
 introduced by merging the current base. Workspace manifests and relative source/test imports define dependencies;
 reverse traversal includes all transitive consumers, including test dependencies.
-Node tests run once per affected workspace; web unit tests run only when web or a
-dependency changes. Root TypeScript remains one program, so code changes retain its
+Node tests run once per affected workspace; web unit tests and the production build run
+only when web or a dependency changes. `pnpm check` also ends with the web build, because
+route-structure and server/client boundary errors appear only in `next build`. Root TypeScript remains one program, so code changes retain its
 whole-program check. Formatting and lint are also repository-wide. Manual CI dispatch runs all checks. Unknown/shared inputs select all
 workspaces. Deleted paths use `--no-renames`, retaining both sides of moves.
 Markdown under `docs/`, root Markdown and AGENTS files skips application tests.

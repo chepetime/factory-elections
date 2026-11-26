@@ -17,7 +17,7 @@
     "lint": "oxlint --deny-warnings .",
     "format": "prettier --write .",
     "format:check": "prettier --list-different --ignore-unknown .",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @factory/web build",
     "start": "node scripts/start.mjs",
     "web": "node scripts/web.mjs",
     "storybook": "pnpm --filter @factory/web storybook",
