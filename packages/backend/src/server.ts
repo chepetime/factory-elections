@@ -264,6 +264,14 @@ export async function startBackend(options: ServerOptions) {
           await service.metrics({ ...jsonObject(request.json), project: request.project }),
         ),
       }),
+      RestartReviewLoop: async (request) => {
+        const t = service.target(request);
+        const task = await service.tasks.read(t.project, t.id);
+        if (task.workflow !== 'agent' || task.stage !== 'pr-opened' || !task.pr)
+          throw new Conflict('Only an agent task with an open PR has a self-review.');
+        await service.reviewLoop.prChanged(task, { kind: 'updated' });
+        return { json: JSON.stringify((await service.reviewLoop.state(task)) ?? null) };
+      },
       GetReviewLoop: async (request) => {
         const t = service.target(request);
         return {

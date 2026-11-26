@@ -18,6 +18,7 @@ import { saveAssignment } from '@/lib/team';
 import {
   createReviewTicketRun,
   decideReviewRun,
+  restartReviewLoopRun,
   isPrNumber,
   removeReviewRun,
   sendReviewMessageRun,
@@ -243,6 +244,14 @@ export async function createReviewTicket(
   revalidatePath(`/projects/${project}/reviews`);
   revalidatePath(`/projects/${project}/tasks`, 'layout');
   return made.ok ? { message: 'Review ticket ready.', key: made.value } : { error: made.error };
+}
+
+/** Runs the self-review of a task's agent PR again (after it stopped). */
+export async function restartSelfReview(project: string, id: string): Promise<ActionState> {
+  if (!isProjectName(project) || !isTaskId(id)) return { error: 'Invalid task.' };
+  const started = await restartReviewLoopRun(project, id);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return started.ok ? { message: 'Self-review started.' } : { error: started.error };
 }
 
 /** Your choice of what to post for a review ticket's proposal. */

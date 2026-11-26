@@ -137,3 +137,10 @@ export function getReviewLoop(project: string, id: string): Promise<Result<Revie
     ReviewLoopState.nullable().parse(JSON.parse((await backendCall('GetReviewLoop', { project, id })).json)),
   );
 }
+/** Starts a new self-review cycle of a task's agent PR. */
+export function restartReviewLoopRun(project: string, id: string): Promise<Result<string>> {
+  return attempt(async () => {
+    await backendCall('RestartReviewLoop', { project, id }, 60_000);
+    return 'Started.';
+  });
+}

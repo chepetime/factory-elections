@@ -5,7 +5,11 @@ import { ExternalLink, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { lastRound, reviewOptions, roundRunning, type Issue, type ReviewLoopState } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
-import { ReviewDecisionButtons, StartReviewButton } from '@/components/review-cycle-actions';
+import {
+  RestartSelfReviewButton,
+  ReviewDecisionButtons,
+  StartReviewButton,
+} from '@/components/review-cycle-actions';
 import { cn } from '@/lib/utils';
 
 const TONE: Record<string, string> = {
@@ -176,7 +180,16 @@ const LOOP_STATE: Record<ReviewLoopState['state'], string> = {
 };
 
 /** The factory's own agent PR: its self-review loop, round by round. */
-export function SelfReviewCard({ project, loop }: { project: string; loop: ReviewLoopState }) {
+export function SelfReviewCard({
+  project,
+  runId,
+  loop,
+}: {
+  project: string;
+  /** The run whose PR this is; with it, a stopped loop offers to review again. */
+  runId?: string;
+  loop: ReviewLoopState;
+}) {
   return (
     <Frame
       title="Self-review"
@@ -215,10 +228,15 @@ export function SelfReviewCard({ project, loop }: { project: string; loop: Revie
           ))}
         </ol>
       )}
-      {loop.state === 'stopped' && loop.reason && (
-        <p role="alert" className="mt-3 text-sm text-destructive">
-          {loop.reason}
-        </p>
+      {loop.state === 'stopped' && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          {loop.reason && (
+            <p role="alert" className="text-sm text-destructive">
+              {loop.reason}
+            </p>
+          )}
+          {runId && <RestartSelfReviewButton project={project} runId={runId} />}
+        </div>
       )}
     </Frame>
   );

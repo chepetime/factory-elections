@@ -3,7 +3,7 @@
 import { LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { decideReview, moveIssue } from '@/app/actions';
+import { decideReview, moveIssue, restartSelfReview } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 
 function useAct() {
@@ -93,6 +93,24 @@ export function ReviewDecisionButtons({
         </Button>
       ))}
       <Notice notice={notice} />
+    </div>
+  );
+}
+
+export function RestartSelfReviewButton({ project, runId }: { project: string; runId: string }) {
+  const { pending, busy, notice, act } = useAct();
+  return (
+    <div className="flex items-center gap-2">
+      <Notice notice={notice} />
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={pending}
+        onClick={() => act('restart', () => restartSelfReview(project, runId))}
+      >
+        {busy === 'restart' && <LoaderCircle className="size-3.5 motion-safe:animate-spin" />}
+        Review again
+      </Button>
     </div>
   );
 }

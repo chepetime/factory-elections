@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ReviewTicketCard, SelfReviewCard } from '@/components/review-cycle';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
-vi.mock('@/app/actions', () => ({ decideReview: vi.fn(), moveIssue: vi.fn() }));
+vi.mock('@/app/actions', () => ({ decideReview: vi.fn(), moveIssue: vi.fn(), restartSelfReview: vi.fn() }));
 vi.mock('@/components/local-time', () => ({ LocalTime: ({ iso }: { iso?: string }) => <time>{iso}</time> }));
 
 const base = {
@@ -96,6 +96,7 @@ describe('self-review card', () => {
     const html = renderToStaticMarkup(
       <SelfReviewCard
         project="demo"
+        runId="11111111-2222-4333-8444-555555555555"
         loop={{
           pr: 4,
           state: 'stopped',
@@ -118,6 +119,7 @@ describe('self-review card', () => {
     expect(html).toMatch(/Round 1[\s\S]*Request changes[\s\S]*2 sent back to the agent · 1 noted for people/);
     expect(html).toMatch(/Round 2[\s\S]*nothing sent back/);
     expect(html).toContain('The senior PR review ended without a report.');
+    expect(html).toContain('Review again');
     expect(html).toContain('href="/projects/demo/reviews/4"');
   });
 });

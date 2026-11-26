@@ -98,6 +98,7 @@ service Factory {
   rpc CreateReviewTicket(SettingsUpdate) returns (Snapshot);
   rpc DecideReview(SettingsUpdate) returns (Snapshot);
   rpc GetReviewLoop(Target) returns (Snapshot);
+  rpc RestartReviewLoop(Target) returns (Snapshot);
   rpc ListFindings(Target) returns (Snapshot);
   rpc GetSystemCatalog(Target) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);

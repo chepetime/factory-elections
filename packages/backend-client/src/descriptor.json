@@ -451,6 +451,10 @@
                   "requestType": "Target",
                   "responseType": "Snapshot"
                 },
+                "RestartReviewLoop": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
                 "ListFindings": {
                   "requestType": "Target",
                   "responseType": "Snapshot"

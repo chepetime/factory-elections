@@ -267,7 +267,9 @@ export default async function TaskPage({
                 {...(reviewReport ? { report: reviewReport } : {})}
               />
             )}
-            {selfReview && <SelfReviewCard project={project} loop={selfReview} />}
+            {selfReview && (
+              <SelfReviewCard project={project} {...(runId ? { runId } : {})} loop={selfReview} />
+            )}
 
             <h2 className="mt-10 border-t pt-6 text-base font-semibold">Activity</h2>
             <Feed items={before} project={project} issueKey={issue.key} authors={authors} />

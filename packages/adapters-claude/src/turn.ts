@@ -32,6 +32,34 @@ export interface ClaudeTurnResult {
   reported: boolean;
 }
 
+/**
+ * The deny rule that refuses a tool call, if any. Rules are `Tool` or `Bash(prefix:*)`; a Bash
+ * command is checked part by part (split on `&&`, `||`, `;`, `|` and new lines), so a refused
+ * command cannot hide behind another.
+ */
+export function deniedBy(
+  deny: readonly string[],
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  for (const rule of deny) {
+    const m = /^(\w+)\((.*)\)$/.exec(rule);
+    if (!m) {
+      if (rule === toolName) return rule;
+      continue;
+    }
+    if (m[1] !== toolName) continue;
+    const pattern = m[2]!.replace(/:\*$/, '').trim();
+    if (toolName !== 'Bash') continue;
+    const command = String(input.command ?? '');
+    const parts = command
+      .split(/&&|\|\||;|\||\n/)
+      .map((p) => p.trim().replace(/^(sudo|env\s+\S+=\S+)\s+/, ''));
+    if (parts.some((p) => p === pattern || p.startsWith(`${pattern} `))) return rule;
+  }
+  return undefined;
+}
+
 /** SDK options equal to `claudeCli.args` for the same turn (see cli.ts for the reasons). */
 export function claudeTurnOptions(
   request: Omit<ClaudeTurnRequest, 'onLine' | 'signal'>,
@@ -41,9 +69,17 @@ export function claudeTurnOptions(
   return {
     model: turn.model ?? CLAUDE_TURN_MODEL,
     cwd: request.cwd,
-    // --dangerously-skip-permissions: deny rules still apply in this mode.
-    permissionMode: 'bypassPermissions',
-    allowDangerouslySkipPermissions: true,
+    // The CLI path skips permissions (--dangerously-skip-permissions). On the SDK, bypass mode did not
+    // take effect (turns ran in `default` and every write was refused), so the turn runs in `default`
+    // and this guard answers each permission check: allow, except what a deny rule names. The CLI
+    // also applies `disallowedTools` before asking, so the deny rules hold twice.
+    permissionMode: 'default',
+    canUseTool: async (toolName, input) => {
+      const denied = deniedBy(turn.deny, toolName, input);
+      return denied
+        ? { behavior: 'deny', message: `${toolName} is not allowed in this turn (${denied}).` }
+        : { behavior: 'allow', updatedInput: input };
+    },
     // --setting-sources project --strict-mcp-config --disable-slash-commands
     settingSources: ['project'],
     strictMcpConfig: true,

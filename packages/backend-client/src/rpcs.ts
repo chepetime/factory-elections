@@ -81,6 +81,8 @@ export const RPCS = {
   DecideReview: ['SettingsUpdate', 'Snapshot'],
   /** The self-review loop of a task's agent PR (review-loop.json), or `null`. */
   GetReviewLoop: ['Target', 'Snapshot'],
+  /** Starts a new self-review cycle of a task's agent PR, e.g. after the loop stopped. */
+  RestartReviewLoop: ['Target', 'Snapshot'],
   /** Saved senior-pr-review findings; empty `project`: every project. */
   ListFindings: ['Target', 'Snapshot'],
   /** MCP servers, tools and skills the factory gives its agents; `project` scopes calls and repo skills. */
