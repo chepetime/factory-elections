@@ -52,7 +52,7 @@ function toHomeCard({ project, stats, profile, missing }: Card): HomeCard {
   };
 }
 
-/** The app homepage: every registered project as a card, on the dithered background. */
+/** The app homepage: every registered project as a card, on dithered waves on black. */
 export default async function Home() {
   const projects = await listProjects();
   if (!projects.ok)
@@ -65,7 +65,7 @@ export default async function Home() {
     );
   if (projects.value.length === 0)
     return (
-      <HomeScene count={0}>
+      <HomeScene>
         <HomePanel className="mx-auto mt-[10vh] w-full max-w-xl">
           <h2 className="text-lg font-semibold">No projects yet</h2>
           <p className="mt-1 mb-6 text-sm text-muted-foreground">Add a local repository to start.</p>
@@ -75,7 +75,7 @@ export default async function Home() {
     );
   const cards = await Promise.all(projects.value.map(loadCard));
   return (
-    <HomeScene count={cards.length}>
+    <HomeScene>
       <ProjectCards cards={cards.map(toHomeCard)} />
     </HomeScene>
   );
