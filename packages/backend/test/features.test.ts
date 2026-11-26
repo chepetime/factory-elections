@@ -428,3 +428,66 @@ test('a feature step runs as an execution: cancel stops its model call, and shut
   assert.match(interrupted.error!, /backend stopped during this step/);
   assert.equal(pool.inUse(), 0);
 });
+
+test('a tick that starts a ticket never writes back an older copy of the feature', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-feature-race-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, 'data');
+  const repo = join(base, 'repo');
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  const projects = new ProjectStore(root);
+  await projects.add('app', repo);
+  const store = new TaskStore(root);
+  // Task creation waits for the test, so a cancel lands while the tick is starting the ticket.
+  let creating!: () => void;
+  const created = new Promise<void>((done) => (creating = done));
+  let release!: () => void;
+  const gate = new Promise<void>((done) => (release = done));
+  const tasks = Object.assign(Object.create(store) as TaskStore, {
+    create: async (...args: Parameters<TaskStore['create']>) => {
+      creating();
+      await gate;
+      return store.create(...args);
+    },
+  });
+  const features = new FeatureService({
+    root,
+    projects,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    executions: new Executions({ pool: new AgentPool({ max: 3 }) }),
+    settings: async () => ProjectSettings.parse({}),
+    facts: async () => undefined,
+    tasks,
+    startRun: async () => undefined,
+  });
+  const feature = await features.create({ project: 'app', idea: 'Race me' });
+  const act = (action: string, extra: object = {}) =>
+    features.act({ project: 'app', id: feature.id, action, ...extra } as never);
+  // A board that is approved, with one ticket ready to start.
+  const path = join(root, 'app', 'features', feature.id, 'feature.json');
+  await writeFile(
+    path,
+    JSON.stringify({
+      ...(await features.read('app', feature.id)),
+      stage: 'implementing',
+      board_approved_at: '2026-11-26T10:00:00.000Z',
+      tickets: [
+        {
+          id: 'T1',
+          title: 'Do it',
+          description: 'd',
+          acceptance: ['a'],
+          blocked_by: [],
+          size: 'S',
+          state: 'waiting',
+        },
+      ],
+    }),
+  );
+  const tick = features.tick();
+  await created;
+  await act('cancel');
+  release();
+  await tick;
+  assert.equal((await features.read('app', feature.id)).stage, 'cancelled', 'the cancel survives the tick');
+});
