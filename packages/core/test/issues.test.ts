@@ -46,7 +46,9 @@ test('run stages map to board columns', () => {
   assert.equal(statusFromStage('queued'), 'todo');
   assert.equal(statusFromStage('coding'), 'in_progress');
   assert.equal(statusFromStage('awaiting-approval'), 'in_review');
-  assert.equal(statusFromStage('pr-opened'), 'done');
+  // An open PR is still in review; the merge moves the task to Done (IssueService.prOutcome).
+  assert.equal(statusFromStage('pr-opened'), 'in_review');
+  assert.equal(statusFromStage('approved'), 'in_review');
   assert.equal(statusFromStage('verification-failed'), 'blocked');
   assert.equal(statusFromStage('rejected'), 'cancelled');
 });

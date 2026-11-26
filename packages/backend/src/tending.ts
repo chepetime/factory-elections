@@ -26,6 +26,7 @@ import {
   type TendFix,
   type TendingWaiting,
   conflictFollowUpSeen,
+  PrStatus,
 } from '@factory/core';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
@@ -33,6 +34,8 @@ import { run, runShell } from '@factory/adapters-process';
 export interface TendingGitHub {
   me(): Promise<string>;
   pr(cwd: string, number: number): Promise<PrState>;
+  /** State and draft flag only: one cheap call per PR per pass. */
+  status(cwd: string, number: number): Promise<PrStatus>;
   rerunFailed(cwd: string, runId: string): Promise<void>;
   failedLog(cwd: string, runId: string): Promise<string>;
   reply(cwd: string, threadId: string, body: string): Promise<void>;
@@ -53,6 +56,11 @@ export interface TendingDeps {
     writeDocument(path: string, data: unknown): Promise<void>;
   };
   github?: TendingGitHub;
+  /**
+   * Every pass reads each open-PR task's PR once and reports it: the board moves a merged task to
+   * Done, and an agent's draft PR without a review loop gets one.
+   */
+  prObserved?(task: TaskRecord, pr: PrStatus): Promise<unknown>;
   /**
    * Adds a conflict follow-up for the task's agent. Called when tending is off for the project and
    * the PR conflicts with its base, once per PR head.
@@ -122,6 +130,12 @@ export const ghTending: TendingGitHub = {
         })),
       })),
     });
+  },
+  async status(cwd, number) {
+    const view = JSON.parse(
+      await gh(cwd, ['pr', 'view', String(number), '--json', 'number,state,isDraft']),
+    ) as { number: number; state: string; isDraft: boolean };
+    return PrStatus.parse({ number: view.number, state: view.state, draft: view.isDraft });
   },
   async rerunFailed(cwd, runId) {
     await gh(cwd, ['run', 'rerun', runId, '--failed']);
@@ -211,26 +225,32 @@ export class TendingService {
     for (const { name } of await this.deps.projects.list()) {
       const settings = await this.deps.settings(name).catch(() => undefined);
       if (!settings) continue;
-      if (!settings.tending.enabled) {
-        // Without tending, a conflicting PR still gets help: a follow-up its agent picks up.
-        if (this.deps.conflictFollowUp)
-          for (const task of await this.deps.tasks.list(name))
-            await this.watchConflict(task).catch((error: unknown) =>
-              this.deps.log?.(
-                `conflict watch ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            );
-        continue;
-      }
       for (const task of await this.deps.tasks.list(name)) {
         if (task.stage !== 'pr-opened' || !task.pr) continue;
-        await this.tend(task, settings).catch((error: unknown) =>
+        const log = (what: string) => (error: unknown) =>
           this.deps.log?.(
-            `tending ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
+            `${what} ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        // A merged or closed PR needs no conflict watch and no tending.
+        const open = await this.observe(task).catch((error: unknown) => (log('pr watch')(error), true));
+        if (!open) continue;
+        if (!settings.tending.enabled) {
+          // Without tending, a conflicting PR still gets help: a follow-up its agent picks up.
+          if (this.deps.conflictFollowUp) await this.watchConflict(task).catch(log('conflict watch'));
+          continue;
+        }
+        await this.tend(task, settings).catch(log('tending'));
       }
     }
+  }
+
+  /** Reads the task's PR state and reports it; true while the PR is open. */
+  async observe(task: TaskRecord): Promise<boolean> {
+    const number = Number(/\/pull\/(\d+)/.exec(task.pr?.url ?? '')?.[1]);
+    if (!Number.isFinite(number)) return true;
+    const pr = await this.github.status(task.worktree?.path ?? task.repo, number);
+    await this.deps.prObserved?.(task, pr);
+    return pr.state === 'OPEN';
   }
 
   /** Adds a conflict follow-up when the task's open PR conflicts and none exists for its head. */

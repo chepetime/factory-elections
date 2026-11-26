@@ -56,6 +56,10 @@ export const Issue = z.object({
   /** Planning: the day work should start and the day it is due (`YYYY-MM-DD`). */
   start_date: PlanDate.optional(),
   due_date: PlanDate.optional(),
+  /** How the task's PR ended on GitHub, once the factory saw it: merged or closed. */
+  pr_outcome: z
+    .object({ state: z.enum(['MERGED', 'CLOSED']), number: z.number().int().positive(), at: Iso })
+    .optional(),
   comments: z
     .array(
       z.object({
@@ -135,8 +139,10 @@ const STAGE_STATUS: Record<Stage, IssueStatus> = {
   coding: 'in_progress',
   reviewing: 'in_review',
   'awaiting-approval': 'in_review',
-  approved: 'done',
-  'pr-opened': 'done',
+  // Approved or with an open PR, the work is in review until the PR merges: then the factory sets
+  // the task Done (a closed PR: Cancelled), see IssueService.prOutcome.
+  approved: 'in_review',
+  'pr-opened': 'in_review',
   blocked: 'blocked',
   failed: 'blocked',
   'verification-failed': 'blocked',
