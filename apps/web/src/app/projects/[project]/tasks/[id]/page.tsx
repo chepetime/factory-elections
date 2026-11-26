@@ -474,29 +474,34 @@ export default async function TaskPage({
                 )}
               </div>
             )}
-            {/* What the latest run needs from you, on the ticket: not only deep in the Run tab. */}
+            <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
+            {/* What the latest run needs from you comes last, after the newest activity. */}
             {run?.ok && runId === issue.run?.id && run.value.attention && (
               <div className="mt-3">{run.value.attention}</div>
             )}
-            {/* The latest run's PR is open: more work is a follow-up on the same branch and PR. */}
-            {run?.ok && runId === issue.run?.id && run.value.task.stage === 'pr-opened' && (
-              <FollowUpForm
-                project={project}
-                issueKey={issue.key}
-                agents={agents.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name }))}
-                {...(((run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
-                issue.assignee)
-                  ? {
-                      defaultAgent:
-                        (run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
-                        issue.assignee!,
-                    }
-                  : {})}
-                base={run.value.task.worktree?.base_branch ?? 'main'}
-                open={query.followup === '1'}
-              />
-            )}
-            <Feed items={after} project={project} issueKey={issue.key} authors={authors} />
+            {/* The latest run's PR is open: more work is a follow-up on the same branch and PR. It is
+                hidden while a follow-up waits or works: one at a time. */}
+            {run?.ok &&
+              runId === issue.run?.id &&
+              run.value.task.stage === 'pr-opened' &&
+              !issue.run?.waiting &&
+              !issue.run?.owned && (
+                <FollowUpForm
+                  project={project}
+                  issueKey={issue.key}
+                  agents={agents.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name }))}
+                  {...(((run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                  issue.assignee)
+                    ? {
+                        defaultAgent:
+                          (run.value.task.workflow === 'agent' ? run.value.task.agent : undefined) ??
+                          issue.assignee!,
+                      }
+                    : {})}
+                  base={run.value.task.worktree?.base_branch ?? 'main'}
+                  open={query.followup === '1'}
+                />
+              )}
           </div>
         </div>
 

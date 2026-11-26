@@ -354,6 +354,9 @@ export class IssueService {
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
     if (!view.run || !record || view.run.stage !== 'pr-opened')
       throw new Conflict('A follow-up continues a task whose pull request is open.');
+    // One at a time: a second start would wait for the lock the queued turn holds.
+    if (view.run.waiting || view.run.owned)
+      throw new Conflict('A follow-up is already queued or working on this task.');
     const agent = picked ?? followUpAgent(record, view.assignee);
     if (!agent) throw new Conflict('Pick the agent that does the follow-up.');
     // Refuses a missing or archived agent before anything is queued.

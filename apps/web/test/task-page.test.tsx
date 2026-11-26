@@ -66,7 +66,7 @@ const task = TaskRecord.parse({
   stage: 'coding',
   worktree: { path: '/w', branch: 'factory/test', base_branch: 'main' },
 });
-function issue(run?: { id: string; stage: TaskRecord['stage'] }) {
+function issue(run?: { id: string; stage: TaskRecord['stage']; waiting?: boolean }) {
   return {
     number: 1,
     key: 'DE-1',
@@ -561,4 +561,60 @@ it('puts what the run needs from you on the ticket, also with the Details tab op
   expect(page).toContain('needs you');
   expect(page).toContain('Which page?');
   expect(page).toContain('Reply in a comment below');
+});
+
+it('puts the actions after the newest activity, and hides the follow-up form while one waits', async () => {
+  const ready = TaskRecord.parse({
+    ...task,
+    workflow: 'agent',
+    agent: 'devin',
+    stage: 'awaiting-approval',
+    verification: { passed: true, head_sha: 'abc123abc123abc', at: '2026-01-01T00:00:00Z', output_tail: '' },
+  });
+  const latest = {
+    id: 'c1',
+    at: '2026-01-03T00:00:00.000Z',
+    body: 'The newest note on the task',
+    author: 'devin',
+  };
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: { ...issue({ id: task.id, stage: 'awaiting-approval' }), comments: [latest] },
+  });
+  vi.mocked(backgroundRun).mockResolvedValue({ running: false, phase: 'completed' });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: {
+      task: ready,
+      execution: 'completed',
+      head_sha: 'abc123abc123abc',
+      diff_stat: ' 1 file changed',
+      actions: taskActions(ready, 'completed', 'abc123abc123abc'),
+    },
+  });
+  const page = await html(undefined, 'details');
+  expect(page.indexOf('The newest note on the task')).toBeGreaterThan(-1);
+  expect(page.indexOf('The newest note on the task')).toBeLessThan(page.indexOf('Ready for your approval'));
+
+  // A follow-up waits for Devin: the run is still at pr-opened, but no second one can be started.
+  const opened = {
+    ...task,
+    stage: 'pr-opened' as const,
+    pr: {
+      url: 'https://github.com/o/r/pull/12',
+      head_sha: 'abcdef1234567890',
+      branch: 'factory/test',
+      at: '2026-01-02T00:00:00.000Z',
+    },
+  };
+  vi.mocked(getIssue).mockResolvedValue({
+    ok: true,
+    value: issue({ id: task.id, stage: 'pr-opened', waiting: true }),
+  });
+  vi.mocked(readTaskControls).mockResolvedValue({
+    ok: true,
+    value: { task: opened, execution: 'completed', actions: taskActions(opened, 'completed') },
+  });
+  const waiting = await html(undefined, 'details');
+  expect(waiting).not.toContain('Resolve merge conflicts');
 });

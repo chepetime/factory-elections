@@ -459,3 +459,23 @@ test('a follow-up on a task whose PR is open goes to its agent, and a drop to In
     /continues a task whose pull request is open/,
   );
 });
+
+test('a second follow-up is refused while one waits for its agent', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/4',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Ship it', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, calls } = await setup(t, [opened], {}, undefined, new Set([opened.id]));
+  await assert.rejects(
+    service.followUp({ project: 'change-elections', key: 'CE-1', note: 'Again' }),
+    /already queued or working/,
+  );
+  assert.ok(!calls.some((c) => c.startsWith('followUp:')), 'nothing was queued');
+});
