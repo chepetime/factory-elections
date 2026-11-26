@@ -37,6 +37,7 @@ message Assignment {
   repeated string tags = 4;
 }
 service Factory {
+  // Generated from packages/backend-client/src/rpcs.ts by `pnpm rpc:generate`; edit the list there.
   rpc GetDiagnostics(Empty) returns (Snapshot);
   rpc GetTeam(Target) returns (Snapshot);
   rpc ListTeamRecords(Target) returns (Snapshot);
