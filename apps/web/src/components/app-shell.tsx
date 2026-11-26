@@ -41,7 +41,7 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { FactoryMark } from '@/components/factory-mark';
+import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { UserSidebar } from '@/components/user-sidebar';
@@ -279,7 +279,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <MenuIcon className="size-4" />
             </button>
             <span className="truncate text-sm font-medium">
-              {global ? 'Software Factory' : user ? 'User settings' : (project ?? 'Software Factory')}
+              {global ? 'Harbor Lighthouse' : user ? 'User settings' : (project ?? 'Harbor Lighthouse')}
             </span>
           </div>
           {fullBleed ? (
@@ -340,12 +340,12 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
     >
       <Link
         href="/"
-        aria-label="Software Factory home"
+        aria-label="Harbor Lighthouse home"
         title="Home"
         aria-current={pathname === '/' ? 'page' : undefined}
         className="mb-3 shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
       >
-        <FactoryMark className="ring-1 ring-white/15 rounded-lg" />
+        <HarborMark className="ring-1 ring-white/15 rounded-lg" />
       </Link>
 
       {railGroups(project, pathname).map((group, g) => (

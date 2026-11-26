@@ -17,7 +17,7 @@ const meta = {
   },
   args: {
     label: 'Project name',
-    defaultValue: 'Software Factory',
+    defaultValue: 'Harbor Lighthouse',
     hint: 'A name for your local workspace.',
     clearable: true,
     onChange: fn(),

@@ -1,4 +1,4 @@
-# Software Factory runtime
+# Harbor Lighthouse runtime
 
 General domain language lives in [CONTEXT.md](CONTEXT.md). These terms distinguish workflow progress, current execution and available commands.
 

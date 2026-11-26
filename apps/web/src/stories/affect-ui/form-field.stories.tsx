@@ -22,7 +22,7 @@ const meta = {
       <input
         {...control}
         id={id}
-        defaultValue="Software Factory"
+        defaultValue="Harbor Lighthouse"
         className="min-h-11 w-full rounded-lg border bg-background px-3 text-base"
       />
     ),

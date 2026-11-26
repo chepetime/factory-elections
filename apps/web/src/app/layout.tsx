@@ -8,9 +8,9 @@ import { userSettings } from '@/lib/user-settings';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: { default: 'Software Factory', template: '%s · Software Factory' },
+  title: { default: 'Harbor Lighthouse', template: '%s · Harbor Lighthouse' },
   description: 'Local task-to-pull-request factory',
-  applicationName: 'Software Factory',
+  applicationName: 'Harbor Lighthouse',
 };
 
 // "System" follows the OS setting, which only the browser knows: set the class before first paint.

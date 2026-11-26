@@ -41,7 +41,7 @@ description: Next.js frontend for the software factory.
 ***functional specs***
 
 # app-home
-`GET /` returns a page with the heading `Software Factory`.
+`GET /` returns a page with the heading `Harbor Lighthouse`.
 
 # component-placeholders
 The home page displays a non-interactive placeholder card for each name in :ComponentPlaceholderList: inside an app shell.

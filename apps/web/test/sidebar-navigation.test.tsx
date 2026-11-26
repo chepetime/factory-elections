@@ -61,7 +61,7 @@ it('marks the logo as home, and the Tasks rail item on the board', () => {
   route.pathname = '/board';
   const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
   expect(html).toMatch(/aria-label="Tasks" title="Tasks" aria-current="page"/);
-  expect(html).toContain('aria-label="Software Factory home"');
+  expect(html).toContain('aria-label="Harbor Lighthouse home"');
 });
 
 it('groups the rail into Functions and System, and marks the page you are on', () => {

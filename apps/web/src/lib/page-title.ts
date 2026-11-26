@@ -1,4 +1,4 @@
-// Browser-tab titles. The root layout appends " · Software Factory"; pages give the specific part,
+// Browser-tab titles. The root layout appends " · Harbor Lighthouse"; pages give the specific part,
 // most specific first, so a row of tabs stays tellable apart. A leading glyph shows state at a glance.
 import 'server-only';
 import { cache } from 'react';
