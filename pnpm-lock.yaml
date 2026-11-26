@@ -515,6 +515,9 @@ importers:
       '@factory/core':
         specifier: workspace:*
         version: link:../core
+      '@factory/dispatcher':
+        specifier: workspace:*
+        version: link:../dispatcher
       '@factory/driver':
         specifier: workspace:*
         version: link:../driver

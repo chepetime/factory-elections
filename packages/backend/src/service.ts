@@ -51,7 +51,7 @@ import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
-import { AgentPool, Dispatcher, MAX_AGENTS, type Release } from '@factory/dispatcher';
+import { AgentPool, Dispatcher, Executions, MAX_AGENTS, type Release } from '@factory/dispatcher';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 import { UserSettingsService } from './user-settings.ts';
 export { Conflict };
@@ -92,6 +92,8 @@ export class BackendService {
   readonly pool: AgentPool;
   /** The task run queue. */
   private readonly dispatcher: Dispatcher;
+  /** Background executions other than task runs: feature steps. */
+  readonly executions: Executions;
   /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
   private readonly taskTraces: TaskTraces;
   /** Executes accepted runs and holds what is live about each one. */
@@ -166,6 +168,7 @@ export class BackendService {
     // Reviews read their state from storage; the pool caches that count for all its waiters.
     this.pool = new AgentPool({ max: MAX_AGENTS, external: () => this.reviews.agentsInUse() });
     this.dispatcher = new Dispatcher({ workers: taskWorkers(), pool: this.pool });
+    this.executions = new Executions({ pool: this.pool });
     this.team = new TeamService(root);
     this.profileChecks = new ProfileChecks({
       root,
@@ -228,7 +231,7 @@ export class BackendService {
       },
       runner: (project) =>
         project ? this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'chat') : base,
-      slot: () => this.pool.tryAcquire(),
+      executions: this.executions,
       delegation: this.delegation,
     });
     this.features = new FeatureService({
@@ -245,7 +248,7 @@ export class BackendService {
             'feature-step',
           ),
         ),
-      slot: () => this.pool.tryAcquire(),
+      executions: this.executions,
       settings: (p) => this.settings.get(p),
       facts: (p) => this.memory.prompt(p),
       tasks: this.tasks,
@@ -873,7 +876,7 @@ export class BackendService {
     }, graceMs);
     try {
       // Acceptance already in flight may be reserving a lock or writing its durable record.
-      await this.dispatcher.drained();
+      await Promise.all([this.dispatcher.drained(), this.executions.drain(graceMs)]);
     } finally {
       clearTimeout(deadline);
     }

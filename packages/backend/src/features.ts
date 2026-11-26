@@ -6,7 +6,8 @@
 //   <root>/<project>/features/<id>/qa.md          the QA plan for the human
 //
 // Agent steps (a grill turn, the spec, the critique, the board, the QA plan) are accepted at once and
-// run in the background with an agent slot; `working` and `error` on the feature show their state.
+// run in the background as Executions: an agent slot, an abort signal for cancel and shutdown, and
+// one finalize. `working` and `error` on the feature show their state.
 // Implementation reuses the task pipeline: each startable ticket becomes a task run.
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -40,6 +41,7 @@ import {
 import { type ProjectStore, writeJsonAtomic } from '@factory/adapters-fs';
 import { run, runShell } from '@factory/adapters-process';
 import { Conflict } from './conflict.ts';
+import { ExecutionRefused, type Executions } from '@factory/dispatcher';
 
 const DEFINITIONS = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -78,8 +80,8 @@ export interface FeatureDeps {
   projects: ProjectStore;
   /** The runner for a feature's steps (recorded in the project's memory, traced under the feature). */
   runner(project: string, feature: string): ModelRunner;
-  /** Takes an agent slot at once, or undefined when every slot is busy. */
-  slot(): Promise<(() => void) | undefined>;
+  /** Runs each agent step: slot, interruption, shutdown and finalize. */
+  executions: Executions;
   settings(project: string): Promise<ProjectSettings>;
   facts(project: string): Promise<string | undefined>;
   tasks: {
@@ -124,9 +126,8 @@ const now = () => new Date().toISOString();
 
 export class FeatureService {
   private readonly deps: FeatureDeps;
-  /** Features whose agent step is running in this process. */
-  private readonly busy = new Set<string>();
-  private readonly steps = new Set<Promise<void>>();
+  /** Keys of the steps this service submitted, for idle(). */
+  private readonly steps = new Set<string>();
   private ticker?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
   constructor(deps: FeatureDeps) {
@@ -162,7 +163,7 @@ export class FeatureService {
     const features = await Promise.all(ids.map((id) => this.read(project, id).catch(() => undefined)));
     return features
       .filter((f): f is Feature => f !== undefined)
-      .map((f) => (this.busy.has(`${project}/${f.id}`) ? f : { ...f, working: undefined }));
+      .map((f) => (this.working(`${project}/${f.id}`) ? f : { ...f, working: undefined }));
   }
   async list(rawProject: unknown) {
     const project = ProjectName.parse(rawProject);
@@ -175,7 +176,7 @@ export class FeatureService {
         ...f,
         grill_turns: grill.turns.length,
         tickets: f.tickets.length,
-        working: this.busy.has(`${project}/${f.id}`) ? f.working : undefined,
+        working: this.working(`${project}/${f.id}`) ? f.working : undefined,
       }));
   }
   async detail(raw: unknown) {
@@ -193,7 +194,7 @@ export class FeatureService {
         const task = await this.deps.tasks.read(project, t.task_id).catch(() => undefined);
         for (const a of task?.attempts ?? []) ticketsCost += a.cost_usd ?? 0;
       }
-    const busy = this.busy.has(`${project}/${id}`);
+    const busy = this.working(`${project}/${id}`);
     return {
       ...feature,
       spec,
@@ -252,7 +253,7 @@ export class FeatureService {
       },
       action.action,
       {
-        busy: this.busy.has(`${project}/${id}`),
+        busy: this.working(`${project}/${id}`),
         ...(action.action === 'grill' ? { text: action.text } : {}),
       },
     );
@@ -319,6 +320,8 @@ export class FeatureService {
       case 'cancel': {
         // An old step error says nothing about a cancelled feature.
         feature = await this.write({ ...feature, stage: 'cancelled', error: undefined });
+        // A step that still runs stops now instead of spending on a cancelled feature.
+        this.deps.executions.interrupt(`${project}/${id}`);
         const failed = await this.closeRuns(feature);
         return failed.length
           ? this.write({
@@ -347,35 +350,53 @@ export class FeatureService {
     return failed;
   }
 
-  /** Accepts an agent step and runs it in the background with an agent slot. */
+  /** Whether an agent step of the feature runs in this process. */
+  private working(key: string): boolean {
+    return this.deps.executions.observe(key) !== undefined;
+  }
+
+  /** Accepts an agent step and runs it in the background as an execution. */
   private async background(feature: Feature, action: string, work: () => Promise<void>): Promise<Feature> {
     const key = `${feature.project}/${feature.id}`;
-    const release = await this.deps.slot();
-    if (!release) throw new Conflict('Every agent slot is in use; try again when one finishes');
-    this.busy.add(key);
-    const accepted = await this.write({
-      ...feature,
-      working: { action, started_at: now() },
-      error: undefined,
-    });
-    const step: Promise<void> = work()
-      .catch(async (error: unknown) => {
-        const latest = await this.read(feature.project, feature.id);
-        await this.write({ ...latest, error: error instanceof Error ? error.message : String(error) });
-      })
-      .finally(async () => {
-        this.busy.delete(key);
-        release();
-        const latest = await this.read(feature.project, feature.id).catch(() => undefined);
-        if (latest) await this.write({ ...latest, working: undefined });
-        this.steps.delete(step);
+    let accepted: Feature | undefined;
+    try {
+      await this.deps.executions.submit({
+        key,
+        action,
+        accept: async () => {
+          accepted = await this.write({
+            ...feature,
+            working: { action, started_at: now() },
+            error: undefined,
+          });
+        },
+        // Model calls read the signal through call(), by the feature's key.
+        work: () => work(),
+        finalize: async ({ outcome, error }) => {
+          const latest = await this.read(feature.project, feature.id).catch(() => undefined);
+          if (!latest) return;
+          await this.write({
+            ...latest,
+            working: undefined,
+            ...(outcome === 'failed' ? { error } : {}),
+            ...(outcome === 'interrupted'
+              ? { error: 'The backend stopped during this step. Run it again.' }
+              : {}),
+          });
+        },
       });
-    this.steps.add(step);
-    return accepted;
+    } catch (error) {
+      if (error instanceof ExecutionRefused) throw new Conflict(error.message);
+      throw error;
+    }
+    this.steps.add(key);
+    void this.deps.executions.settled(key).then(() => this.steps.delete(key));
+    return accepted!;
   }
   /** Resolves when every background step has finished. */
   async idle(): Promise<void> {
-    while (this.steps.size) await Promise.allSettled(this.steps);
+    while (this.steps.size)
+      await Promise.all([...this.steps].map((key) => this.deps.executions.settled(key)));
   }
 
   /** The step's instructions: the bundled contract, the repository's own skill, and confirmed facts. */
@@ -406,7 +427,9 @@ export class FeatureService {
     request: Partial<ModelRun> & Pick<ModelRun, 'prompt'>,
   ) {
     const { repo } = await this.deps.projects.read(project);
+    const signal = this.deps.executions.signal(`${project}/${id}`);
     return this.deps.runner(project, id).run({
+      ...(signal ? { signal } : {}),
       step: `feature:${step}`,
       model: FEATURE_MODELS[step],
       effort: 'high',
@@ -738,7 +761,7 @@ export class FeatureService {
       allDone &&
       latest.stage === 'implementing' &&
       !latest.error &&
-      !this.busy.has(`${project}/${feature.id}`)
+      !this.working(`${project}/${feature.id}`)
     )
       await this.background({ ...latest, tickets }, 'write-qa', () =>
         this.writeQa(project, feature.id),

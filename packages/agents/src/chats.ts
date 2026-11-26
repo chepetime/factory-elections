@@ -21,6 +21,7 @@ import { agentSkills } from './agent-sessions.ts';
 import { chatTools } from './agent-tools.ts';
 import { WORKSPACE_DIR } from './agent-profiles.ts';
 import { Conflict } from '@factory/core';
+import { ExecutionRefused, type Executions } from '@factory/dispatcher';
 import type { DelegationServer } from './delegation.ts';
 import type { AgentBoard } from './ports.ts';
 
@@ -61,11 +62,14 @@ export type ChatDeps = {
   issues: Pick<AgentBoard, 'create' | 'update' | 'list'>;
   /** Runs a turn; the backend passes a traced runner for chats with a project. */
   runner: (project?: string) => ModelRunner;
-  /** Takes an agent slot at once, or undefined when every slot is in use. */
-  slot: () => Promise<(() => void) | undefined>;
+  /** Runs each reply: slot, stop, shutdown and finalize. */
+  executions: Executions;
   delegation?: Pick<DelegationServer, 'grant'>;
   now?: () => Date;
 };
+
+/** The execution key of a chat's reply. */
+const chatKey = (id: string) => `chat/${id}`;
 
 const StartInput = z.object({ agent: AgentId, project: ProjectName.optional() });
 const SendInput = z.object({ id: z.uuid(), text: z.string().trim().min(1).max(20_000) });
@@ -102,8 +106,6 @@ export class ChatService {
   private readonly partial = new Map<string, string>();
   /** Tool calls so far, per chat, while a turn runs. */
   private readonly steps = new Map<string, NonNullable<ChatTurn['tools']>>();
-  private readonly controllers = new Map<string, AbortController>();
-  private readonly running = new Map<string, Promise<void>>();
   constructor(deps: ChatDeps) {
     this.deps = deps;
   }
@@ -168,7 +170,7 @@ export class ChatService {
     const { id } = IdInput.parse(raw);
     const read = await this.read(id);
     // A reply cut off by a backend restart is not running any more.
-    const chat = read.working && !this.running.has(id) ? { ...read, working: false } : read;
+    const chat = read.working && !this.replying(id) ? { ...read, working: false } : read;
     const partial = this.partial.get(id);
     const steps = this.steps.get(id);
     return {
@@ -208,7 +210,7 @@ export class ChatService {
 
   async remove(raw: unknown): Promise<{ id: string }> {
     const { id } = IdInput.parse(raw);
-    if (this.running.has(id)) throw new Conflict('Stop the reply first.');
+    if (this.replying(id)) throw new Conflict('Stop the reply first.');
     await this.serial(async () => {
       const index = await this.index();
       await this.deps.storage.writeDocument(this.indexPath, {
@@ -220,62 +222,70 @@ export class ChatService {
 
   stop(raw: unknown): { stopped: boolean } {
     const { id } = IdInput.parse(raw);
-    const controller = this.controllers.get(id);
-    controller?.abort();
-    return { stopped: Boolean(controller) };
+    return { stopped: this.deps.executions.interrupt(chatKey(id)) };
+  }
+
+  /** Whether the agent is replying in this chat now. */
+  private replying(id: string): boolean {
+    return this.deps.executions.observe(chatKey(id)) !== undefined;
   }
 
   /** Adds your message and starts the agent's reply in the background. Poll `get` for it. */
   async send(raw: unknown): Promise<AgentChat> {
     const { id, text } = SendInput.parse(raw);
-    if (this.running.has(id)) throw new Conflict('The agent is still replying. Wait, or stop it.');
-    const release = await this.deps.slot();
-    if (!release) throw new Conflict('Every agent slot is in use. Try again in a moment.');
-    let chat: AgentChat;
-    let agent: AgentProfile;
+    let chat!: AgentChat;
+    let agent!: AgentProfile;
     try {
-      chat = await this.read(id);
-      agent = await this.deps.agent(chat.agent);
-      if (agent.archived_at) throw new Conflict(`${agent.name} is archived.`);
-      // Chats read the repository; Codex cannot screen those reads, so chats need Claude for now.
-      if (parseModelRef(agent.model).provider !== 'claude')
-        throw new Conflict(`${agent.name} uses ${agent.model}. Chats need a Claude model for now.`);
-      const at = this.now();
-      chat = await this.serial(async () => {
-        const current = await this.read(id);
-        const next: AgentChat = {
-          ...current,
-          title: current.turns.length ? current.title : text.split('\n')[0]!.slice(0, 80),
-          turns: [...current.turns, { at, role: 'user', text }],
-          working: true,
-          updated_at: at,
-        };
-        await this.save(next);
-        return next;
+      await this.deps.executions.submit({
+        key: chatKey(id),
+        action: 'reply',
+        accept: async () => {
+          chat = await this.read(id);
+          agent = await this.deps.agent(chat.agent);
+          if (agent.archived_at) throw new Conflict(`${agent.name} is archived.`);
+          // Chats read the repository; Codex cannot screen those reads, so chats need Claude for now.
+          if (parseModelRef(agent.model).provider !== 'claude')
+            throw new Conflict(`${agent.name} uses ${agent.model}. Chats need a Claude model for now.`);
+          const at = this.now();
+          chat = await this.serial(async () => {
+            const current = await this.read(id);
+            const next: AgentChat = {
+              ...current,
+              title: current.turns.length ? current.title : text.split('\n')[0]!.slice(0, 80),
+              turns: [...current.turns, { at, role: 'user', text }],
+              working: true,
+              updated_at: at,
+            };
+            await this.save(next);
+            return next;
+          });
+        },
+        work: (signal) => this.turn(chat, agent, text, signal),
+        finalize: async () => {
+          this.partial.delete(id);
+          this.steps.delete(id);
+        },
       });
     } catch (error) {
-      release();
+      if (error instanceof ExecutionRefused)
+        throw new Conflict(
+          /already working/.test(error.message)
+            ? 'The agent is still replying. Wait, or stop it.'
+            : /slot/.test(error.message)
+              ? 'Every agent slot is in use. Try again in a moment.'
+              : error.message,
+        );
       throw error;
     }
-    const turn = this.turn(chat, agent, text).finally(() => {
-      release();
-      this.running.delete(id);
-      this.partial.delete(id);
-      this.steps.delete(id);
-      this.controllers.delete(id);
-    });
-    this.running.set(id, turn);
     return chat;
   }
 
   /** Waits for the chat's reply in progress; for tests and shutdown. */
   async settled(id: string): Promise<void> {
-    await this.running.get(id);
+    await this.deps.executions.settled(chatKey(id));
   }
 
-  private async turn(chat: AgentChat, agent: AgentProfile, text: string): Promise<void> {
-    const controller = new AbortController();
-    this.controllers.set(chat.id, controller);
+  private async turn(chat: AgentChat, agent: AgentProfile, text: string, signal: AbortSignal): Promise<void> {
     const projects = await this.deps.projects();
     const repo = chat.project ? projects.find((p) => p.name === chat.project)?.repo : undefined;
     const created: { project: string; key: string }[] = [];
@@ -284,7 +294,7 @@ export class ChatService {
       cwd: repo ?? this.deps.root,
       access: 'read-only',
       budgetUsd: 0.5,
-      signal: controller.signal,
+      signal,
       tools: chatTools({
         issues: this.deps.issues,
         projects: async () => (await this.deps.projects()).map((p) => p.name),
@@ -321,7 +331,7 @@ export class ChatService {
         timeoutMs: TURN_TIMEOUT_MS,
         stallMs: TURN_STALL_MS,
         maxTurns: 40,
-        signal: controller.signal,
+        signal,
         ...(grant ? { mcp: grant.endpoint } : {}),
         onEvent: (event) => {
           if ('sub' in event && event.sub) return;
@@ -349,14 +359,18 @@ export class ChatService {
       };
       chat = { ...chat, ...(result.sessionId ? { session_id: result.sessionId } : {}) };
     } catch (error) {
-      const stopped = controller.signal.aborted;
+      const stopped = signal.aborted
+        ? this.deps.executions.observe(chatKey(chat.id))?.stop_reason === 'interrupted'
+          ? 'The backend stopped during this reply. Send it again.'
+          : 'Stopped by you.'
+        : undefined;
       reply = {
         at: this.now(),
         role: 'agent',
         text: this.partial.get(chat.id) ?? '',
         ...(this.steps.get(chat.id)?.length ? { tools: this.steps.get(chat.id) } : {}),
         ...(created.length ? { tasks_created: created } : {}),
-        error: stopped ? 'Stopped by you.' : error instanceof Error ? error.message : String(error),
+        error: stopped ?? (error instanceof Error ? error.message : String(error)),
       };
     } finally {
       grant?.revoke();

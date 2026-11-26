@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { ProjectStore, TaskStore } from '@factory/adapters-fs';
 import { ProjectSettings, type ModelRun, type TaskRecord } from '@factory/core';
+import { AgentPool, Executions } from '@factory/dispatcher';
 import { FeatureService } from '../src/features.ts';
 
 test('a feature goes grill → spec → board → implement (stacked, mirrored) → QA', async (t) => {
@@ -101,12 +102,12 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   const settings = ProjectSettings.parse({
     task_manager: { kind: 'jira', create_ticket: `printf 'Created VOTE-123 %s\\n' {summary}` },
   });
-  let slots = 3;
+  const pool = new AgentPool({ max: 3 });
   const features = new FeatureService({
     root,
     projects,
     runner: () => runner,
-    slot: async () => (slots > 0 ? (slots--, () => void slots++) : undefined),
+    executions: new Executions({ pool }),
     settings: async () => settings,
     facts: async () => '## What earlier sessions learned about this repository\n\n- [f1] Use pnpm.',
     tasks,
@@ -237,7 +238,7 @@ test('a feature goes grill → spec → board → implement (stacked, mirrored) 
   assert.equal(calls.at(-1)!.tools, 'none');
   assert.equal(Number(done.cost_usd.toFixed(2)), 1.7);
   assert.equal(done.total_cost_usd, done.cost_usd + done.tickets_cost_usd);
-  assert.equal(slots, 3, 'every step returned its agent slot');
+  assert.equal(pool.inUse(), 0, 'every step returned its agent slot');
   await features.act({ project: 'app', id: feature.id, action: 'complete' });
   assert.equal((await features.read('app', feature.id)).stage, 'done');
   assert.equal((await features.list('app'))[0]!.tickets, 3);
@@ -282,7 +283,7 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
     root,
     projects,
     runner: () => runner,
-    slot: async () => () => undefined,
+    executions: new Executions({ pool: new AgentPool({ max: 3 }) }),
     settings: async () => ProjectSettings.parse({}),
     facts: async () => undefined,
     tasks,
@@ -368,4 +369,62 @@ test('feature commands follow the shared policy: ended features stay ended, a fa
   // An open pull request is not closed.
   await tasks.write({ ...(await tasks.read('app', ticket!.task_id!)), stage: 'pr-opened' });
   assert.equal(closed.length, 1);
+});
+
+test('a feature step runs as an execution: cancel stops its model call, and shutdown interrupts it', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-feature-lifecycle-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, 'data');
+  const repo = join(base, 'repo');
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  const projects = new ProjectStore(root);
+  await projects.add('app', repo);
+  let started = 0;
+  let aborted = 0;
+  const runner = {
+    // The spec step waits until its signal aborts, like a model call that a stop cuts off.
+    run: (r: ModelRun) =>
+      new Promise<never>((_, reject) => {
+        started++;
+        r.signal?.addEventListener('abort', () => {
+          aborted++;
+          reject(Object.assign(new Error('model run stopped: aborted'), { kind: 'aborted' }));
+        });
+      }),
+  };
+  const pool = new AgentPool({ max: 3 });
+  const executions = new Executions({ pool, log: () => {} });
+  const features = new FeatureService({
+    root,
+    projects,
+    runner: () => runner,
+    executions,
+    settings: async () => ProjectSettings.parse({}),
+    facts: async () => undefined,
+    tasks: new TaskStore(root),
+    startRun: async () => undefined,
+  });
+  const waitFor = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((done) => setTimeout(done, 5));
+  };
+
+  const cancelled = await features.create({ project: 'app', idea: 'Cancel me' });
+  await features.act({ project: 'app', id: cancelled.id, action: 'write-spec' });
+  await waitFor(() => started === 1);
+  assert.equal(pool.inUse(), 1);
+  await features.act({ project: 'app', id: cancelled.id, action: 'cancel' });
+  await features.idle();
+  assert.equal(aborted, 1, 'the cancel reached the model call');
+  assert.equal(pool.inUse(), 0, 'the slot came back');
+  const after = await features.read('app', cancelled.id);
+  assert.deepEqual([after.stage, after.working, after.error], ['cancelled', undefined, undefined]);
+
+  const stopped = await features.create({ project: 'app', idea: 'Stop me at shutdown' });
+  await features.act({ project: 'app', id: stopped.id, action: 'write-spec' });
+  await waitFor(() => started === 2);
+  await executions.drain(10);
+  const interrupted = await features.read('app', stopped.id);
+  assert.equal(interrupted.working, undefined);
+  assert.match(interrupted.error!, /backend stopped during this step/);
+  assert.equal(pool.inUse(), 0);
 });

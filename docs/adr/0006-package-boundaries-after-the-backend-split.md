@@ -13,11 +13,11 @@ ADR 0001 named a `packages/dispatcher` that was never built. Queueing, agent lim
    | Package | Owns | May depend on |
    | --- | --- | --- |
    | `backend-client` | `factory.proto`, the `Methods` contract, `backendCall` | core |
-   | `dispatcher` | The task run queue and the one `AgentPool`: worker permits, agent limits, stop before start, shutdown | core |
+   | `dispatcher` | The task run queue, the one `AgentPool` (worker permits, agent limits, stop before start, shutdown), and `Executions`: one lifecycle (submit, observe, interrupt, drain, finalize) for background work other than task runs | core |
    | `evidence` | Event logs, the span ledger, receipts, outcomes, experiments | core, adapters-data |
    | `compose` | Driver composition and local environment checks, for the CLI and the backend | core, driver, adapters |
    | `pr-reviews` | Review turns, records and worktrees, behind `ReviewDelegation` and `ReviewMemory` | core, dispatcher, evidence, adapters |
-   | `agents` | Profiles, routing, pickup, chats, sessions, tools, delegation, memory, behind `AgentBoard` | core, driver, adapters |
+   | `agents` | Profiles, routing, pickup, chats, sessions, tools, delegation, memory, behind `AgentBoard` | core, driver, dispatcher, adapters |
    | `backend` | RPC, command ownership, recovery, the board, features, tending, and the composition of the packages above | all of the above |
 
 2. **The web app reaches the backend only through `backend-client`.** It may not import `backend`, `driver` or any adapter.
@@ -28,5 +28,7 @@ ADR 0001 named a `packages/dispatcher` that was never built. Queueing, agent lim
 `.oxlintrc.json` enforces items 1 to 4 with `no-restricted-imports` overrides per package.
 
 ## Consequences
+
+Feature steps and chat replies run as `Executions`: a failed start frees its slot, a cancel or stop reaches the model call, shutdown interrupts what outlasts the grace period, and each one finalizes once. Delegated children and PR tending still take a pool slot directly, and PR reviews still count from outside the pool; they move to `Executions` one at a time.
 
 The dispatcher, evidence and port-based packages are tested with fakes, without gRPC, git or a running backend. A new backend capability that a package needs is added to that package's port, not imported. Injecting `run` into every git and GitHub function would remove the process layer, but it would add churn without changing what the adapters can do, so the layer stays. The backend is still the largest package. Inside it, `run-executor.ts` runs one accepted task run, `task-traces.ts` writes and reads the run, PR and gate spans, and `service.ts` composes them with the RPC-facing methods.
