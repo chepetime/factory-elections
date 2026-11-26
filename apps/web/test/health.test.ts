@@ -1,6 +1,4 @@
-import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EngineHealthView } from '@/components/engine-health-panel';
 import { HEALTH_TIMEOUT_MS, readEngineHealth, type HealthSeam } from '@/lib/health';
 
 const valid = (task_store: string) => ({
@@ -23,44 +21,36 @@ const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
   );
 
-async function render(fetchImpl: HealthSeam['fetch']) {
-  return renderToStaticMarkup(<EngineHealthView state={await readEngineHealth(seam(fetchImpl))} />);
-}
+const read = (fetchImpl: HealthSeam['fetch']) => readEngineHealth(seam(fetchImpl));
+const health = async (fetchImpl: HealthSeam['fetch']) => {
+  const state = await read(fetchImpl);
+  if (state.status !== 'ok') throw new Error('expected a healthy engine');
+  return state.health;
+};
 
 afterEach(() => vi.useRealTimers());
 
-describe('engine health panel', () => {
-  it.each(['available', 'unavailable'])(
-    'shows configured Postgres and artifact storage as %s',
+// Settings, System status shows these fields (lib/status.ts); this tests the reading of them.
+describe('engine health', () => {
+  it.each(['available', 'unavailable'] as const)(
+    'reads configured Postgres and artifact storage as %s',
     async (state) => {
       const body = { ...valid('available'), telemetry_database: state, artifact_store: state };
-      const html = await render(() => json(body));
-      expect(html).toContain('Artifact storage');
-      expect(html).toContain(state === 'available' ? 'Available' : 'Unavailable');
-      expect(html).not.toContain('Not configured');
+      expect(await health(() => json(body))).toMatchObject({
+        telemetry_database: state,
+        artifact_store: state,
+      });
     },
   );
-  it.each([
-    ['available', 'Available'],
-    ['not_initialized', 'Not initialized'],
-    ['unavailable', 'Unavailable'],
-  ])('shows task store %s', async (value, label) => {
-    const html = await render(() => json(valid(value)));
-    expect(html).toContain('Engine health');
-    expect(html).toContain('Running');
-    expect(html).toContain(label);
-    expect(html).toContain('Not configured');
-    expect(html).toContain('No integrations configured');
+  it.each(['available', 'not_initialized', 'unavailable'])('reads task store %s', async (value) => {
+    expect((await health(() => json(valid(value)))).task_store).toBe(value);
   });
 
   it.each([
-    [{ state: 'ok', problems: 0 }, 'Settled'],
-    [{ state: 'degraded', problems: 2 }, '2 could not be read'],
-  ])('shows recovery %o as %s, not as an unavailable engine', async (recovery, label) => {
-    const html = await render(() => json({ ...valid('available'), recovery }));
-    expect(html).toContain('Recovery after restart');
-    expect(html).toContain(label);
-    expect(html).not.toContain('Engine unavailable');
+    { state: 'ok', problems: 0 },
+    { state: 'degraded', problems: 2 },
+  ])('reads recovery %o, not as an unavailable engine', async (recovery) => {
+    expect((await health(() => json({ ...valid('available'), recovery }))).recovery).toEqual(recovery);
   });
 
   it.each([
@@ -69,10 +59,8 @@ describe('engine health panel', () => {
     ['invalid', () => json({ ...valid('available'), engine: 'stopped' })],
     ['extra integration', () => json({ ...valid('available'), integrations: ['x'] })],
     ['failed', () => Promise.reject(new Error('ECONNREFUSED'))],
-  ] as const)('shows unavailable for a %s response', async (_name, impl) => {
-    const html = await render(impl as HealthSeam['fetch']);
-    expect(html).toContain('Engine unavailable');
-    expect(html).not.toContain('Running');
+  ] as const)('reads a %s response as unavailable', async (_name, impl) => {
+    expect((await read(impl as HealthSeam['fetch'])).status).toBe('unavailable');
   });
 
   it('fetches separately for each request and shows changed data', async () => {
@@ -83,8 +71,8 @@ describe('engine health panel', () => {
       expect(init.cache).toBe('no-store');
       return json(valid(answers[calls.length - 1]!));
     };
-    expect(await render(impl)).toContain('Available');
-    expect(await render(impl)).toContain('Unavailable');
+    expect((await health(impl)).task_store).toBe('available');
+    expect((await health(impl)).task_store).toBe('unavailable');
     expect(calls).toEqual(['http://127.0.0.1:4318/health', 'http://127.0.0.1:4318/health']);
   });
 

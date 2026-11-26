@@ -2,6 +2,9 @@
 // One command from a cold machine to a running app: clears a backend lock left by a reboot,
 // starts the Docker data services when storage is configured, then runs scripts/web.mjs.
 // Pass --dev to start Next.js in dev mode. Other arguments go to web.mjs unchanged.
+// It refuses to start inside a Claude Code session: agent turns started under it can run with that
+// session's permission limits (a PR review then cannot save its report). Start it from a terminal,
+// or pass --from-agent-session to accept that; Settings, System status still warns.
 import './load-env.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
@@ -9,6 +12,7 @@ import { uptime } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataRoot } from '../packages/adapters-fs/src/index.ts';
+import { hostAgentSession } from '../packages/core/src/agent-env.ts';
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = dataRoot();
@@ -71,6 +75,17 @@ function run(script, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+const ACCEPT_AGENT_SESSION = '--from-agent-session';
+const passThrough = process.argv.slice(2).filter((a) => a !== ACCEPT_AGENT_SESSION);
+if (hostAgentSession(process.env) && !process.argv.includes(ACCEPT_AGENT_SESSION)) {
+  console.error(
+    'This shell runs inside a Claude Code session. Agent turns started from it can run with that ' +
+      "session's permission limits, so PR reviews may not save their reports.\n" +
+      `Start the factory from a terminal, or run again with ${ACCEPT_AGENT_SESSION} to accept that.`,
+  );
+  process.exit(1);
+}
+
 clearStaleLock();
 // Without storage.json the backend uses file mode and needs no data services.
 if (existsSync(join(root, 'storage.json'))) {
@@ -85,7 +100,7 @@ if (existsSync(join(root, 'storage.json'))) {
   run('data.mjs', ['up']);
 }
 
-const web = spawn(process.execPath, [join(repo, 'scripts', 'web.mjs'), ...process.argv.slice(2)], {
+const web = spawn(process.execPath, [join(repo, 'scripts', 'web.mjs'), ...passThrough], {
   cwd: repo,
   stdio: 'inherit',
 });

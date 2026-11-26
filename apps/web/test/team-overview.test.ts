@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskRecord } from '@factory/core';
 import { overview, ACTIVITY_WEEKS } from '@/lib/overview';
-import { aggregateLog } from '@/lib/team-log';
+import { aggregateLog } from '@factory/core';
 
 describe('aggregateLog', () => {
   it('merges authors by email, keeps their latest name, and sorts by commits', () => {
