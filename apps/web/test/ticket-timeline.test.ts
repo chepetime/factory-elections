@@ -126,7 +126,7 @@ describe('review turns', () => {
       e.title.startsWith('Senior'),
     );
     expect(entries.map((e) => [e.title, e.detail, e.tone])).toEqual([
-      ['Senior PR review turn', 'PR #4', undefined],
+      ['Senior PR review', 'PR #4', undefined],
       ['Senior PR review reply', undefined, 'bad'],
     ]);
     expect(entries[0]!.models).toEqual([

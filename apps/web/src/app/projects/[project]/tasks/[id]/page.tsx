@@ -21,7 +21,7 @@ import {
 import { StageBadge } from '@/components/stage-badge';
 import { StatusLabel } from '@/components/task-status';
 import { Fact, Facts, renderRun, Section } from '@/components/task-run';
-import { isProjectName, isTaskId, showTask } from '@/lib/factory';
+import { isProjectName, isTaskId, readDiff, showTask } from '@/lib/factory';
 import { getIssue } from '@/lib/issues';
 import { listAgents } from '@/lib/agents';
 import { ResizablePane } from '@/components/resizable-pane';
@@ -31,6 +31,7 @@ import { TASK_DETAILS_PANE } from '@/lib/pane-spec';
 import { modelTotals, ticketTimeline } from '@/lib/ticket-timeline';
 import { listSpans } from '@/lib/system';
 import { TicketTimeline } from '@/components/ticket-timeline';
+import { TaskChanges } from '@/components/task-changes';
 import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
@@ -113,12 +114,19 @@ export default async function TaskPage({
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
   const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
   const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
-  // The right panel shows the run when there is one; Details holds properties and run details.
-  const panel: 'run' | 'details' =
-    query.panel === 'details' || (!runId && query.panel !== 'run') ? 'details' : 'run';
-  const panelHref = (p: 'run' | 'details') =>
+  // The right panel shows the run when there is one; Timeline is the ticket's history, Changes the
+  // run's diff, and Details holds access, PRs, the execution log and dates.
+  type Panel = 'run' | 'timeline' | 'changes' | 'details';
+  const panel: Panel =
+    query.panel === 'timeline' || query.panel === 'changes' || query.panel === 'details'
+      ? query.panel
+      : !runId && query.panel !== 'run'
+        ? 'details'
+        : 'run';
+  const panelHref = (p: Panel) =>
     `/projects/${project}/tasks/${issue.key}?panel=${p}${query.run ? `&run=${query.run}` : ''}`;
   const session = runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
+  const changes = runId && panel === 'changes' ? await readDiff(project, runId) : undefined;
   const [agentList, detailsWidth, ...loaded] = await Promise.all([
     Promise.resolve(roster),
     paneWidth(TASK_DETAILS_PANE),
@@ -149,13 +157,16 @@ export default async function TaskPage({
   const creator = issueCreator(issue);
   const agentName = (id?: string) => (id ? (agents.find((a) => a.id === id)?.name ?? id) : undefined);
   const prUrls = new Set(pulls.map((p) => p.url));
-  const reviewSpans = prUrls.size ? await listSpans('review', 500, { project, days: 90 }) : undefined;
+  // Review turns are read only for the Timeline tab: they need a span query.
+  const reviewSpans =
+    panel === 'timeline' && prUrls.size ? await listSpans('review', 500, { project, days: 90 }) : undefined;
   const reviewTurns = reviewSpans?.ok
     ? reviewSpans.value.items
         .filter((s) => s.pr && prUrls.has(s.pr.url))
         .map((s) => ({
           at: s.started_at,
           name: s.name,
+          ...(typeof s.attributes?.turn === 'number' ? { turn: s.attributes.turn } : {}),
           outcome: s.outcome,
           ...(s.model ? { model: s.model } : {}),
           ...(s.cost_usd !== undefined ? { cost_usd: s.cost_usd } : {}),
@@ -306,6 +317,8 @@ export default async function TaskPage({
           {(
             [
               ['run', 'Run'],
+              ['timeline', 'Timeline'],
+              ['changes', 'Changes'],
               ['details', 'Details'],
             ] as const
           ).map(([id, label]) => (
@@ -375,6 +388,39 @@ export default async function TaskPage({
               </>
             )}
           </div>
+        ) : panel === 'timeline' ? (
+          <div className="min-h-0 flex-1 px-5 py-4 lg:overflow-y-auto">
+            <p className="mb-4 flex items-center justify-between text-sm">
+              <span className="font-medium">Ticket timeline</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {timeline.length} {timeline.length === 1 ? 'event' : 'events'}
+              </span>
+            </p>
+            <TicketTimeline entries={timeline} models={modelTotals(records, reviewTurns)} />
+          </div>
+        ) : panel === 'changes' ? (
+          <div className="min-h-0 flex-1 lg:overflow-y-auto">
+            {!runId || !run?.ok ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                No changes yet. A run writes its changes on its own branch.
+              </p>
+            ) : !run.value.task.worktree ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                Run {runIndex} has no branch yet, so it has no changes.
+              </p>
+            ) : changes && !changes.ok ? (
+              <p role="alert" className="px-5 py-6 text-sm text-destructive">
+                Changes unavailable: {changes.error}
+              </p>
+            ) : (
+              <TaskChanges
+                diff={changes?.ok ? changes.value : ''}
+                {...(run.value.task.worktree.base_branch
+                  ? { base: run.value.task.worktree.base_branch }
+                  : {})}
+              />
+            )}
+          </div>
         ) : (
           <div className="min-h-0 flex-1 lg:overflow-y-auto">
             <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
@@ -416,13 +462,6 @@ export default async function TaskPage({
                   No pull request yet. A run opens one after you approve its change.
                 </p>
               )}
-            </Section>
-
-            <Section
-              title="Timeline"
-              aside={`${timeline.length} ${timeline.length === 1 ? 'event' : 'events'}`}
-            >
-              <TicketTimeline entries={timeline} models={modelTotals(records, reviewTurns)} />
             </Section>
 
             <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>

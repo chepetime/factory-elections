@@ -102,7 +102,7 @@ function observe(phase: ExecutionPhase, stage = task.stage) {
     phase,
   });
 }
-async function html(start?: string, panel?: 'run' | 'details') {
+async function html(start?: string, panel?: 'run' | 'timeline' | 'changes' | 'details') {
   return renderToStaticMarkup(
     await TaskPage({
       params: Promise.resolve({ project: 'demo', id: 'DE-1' }),
@@ -448,12 +448,45 @@ it('sums up the task under its title: status, priority, agent, creator, dates an
   expect(linked).toContain('due_date:unset');
 });
 
+it('has Run, Timeline, Changes and Details tabs; the timeline and the diff each have their own', async () => {
+  observe('completed', 'coding');
+  const timeline = await html(undefined, 'timeline');
+  expect(timeline).toMatch(/aria-current="page"[^>]*>Timeline</);
+  expect(timeline).toMatch(/Ticket timeline[\s\S]*Nothing has happened yet/);
+  expect(timeline).not.toContain('Execution log');
+
+  vi.mocked(readDiff).mockResolvedValue({
+    ok: true,
+    value: [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1..2 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1,2 @@',
+      '-old',
+      '+new',
+      '+more',
+    ].join('\n'),
+  });
+  const changes = await html(undefined, 'changes');
+  expect(vi.mocked(readDiff)).toHaveBeenCalledWith('demo', task.id);
+  expect(changes).toMatch(/aria-current="page"[^>]*>Changes</);
+  expect(changes).toContain('1 file changed');
+  expect(changes).toMatch(/src\/a\.ts[\s\S]*Modified[\s\S]*\+2[\s\S]*−1/);
+
+  vi.mocked(readDiff).mockResolvedValue({ ok: false, error: 'no worktree' });
+  expect(await html(undefined, 'changes')).toContain('Changes unavailable: no worktree');
+  vi.mocked(readDiff).mockClear();
+  await html(undefined, 'details');
+  expect(vi.mocked(readDiff)).not.toHaveBeenCalled();
+});
+
 it('lists the runs and pull requests in the side panel', async () => {
   observe('completed', 'coding');
   let page = await html(undefined, 'details');
   expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
   expect(page).toContain('No pull request yet.');
-  expect(page).toMatch(/Timeline[\s\S]*Nothing has happened yet/);
+  expect(page).not.toContain('Nothing has happened yet');
 
   const opened = {
     ...task,

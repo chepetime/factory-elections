@@ -98,6 +98,8 @@ function joinFields(fields: string[]): string {
 export interface ReviewTurn {
   at: string;
   name: string;
+  /** The turn's index in its review chat: 0 is the review itself, later ones are replies. */
+  turn?: number;
   model?: string;
   outcome: string;
   cost_usd?: number | null;
@@ -222,7 +224,8 @@ export function ticketTimeline(
     entries.push({
       at: t.at,
       kind: 'review',
-      title: t.name === 'review' ? 'Senior PR review turn' : 'Senior PR review reply',
+      title:
+        (t.turn ?? (/^review$/i.test(t.name) ? 0 : 1)) === 0 ? 'Senior PR review' : 'Senior PR review reply',
       ...(t.pr?.number ? { detail: `PR #${t.pr.number}` } : {}),
       ...(t.outcome === 'completed' ? {} : { tone: 'bad' as const }),
       models: [reviewUse(t)],
