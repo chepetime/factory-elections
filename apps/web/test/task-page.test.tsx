@@ -451,6 +451,7 @@ it('lists the runs and pull requests in the side panel', async () => {
   let page = await html(undefined, 'details');
   expect(page).toMatch(/Execution log[\s\S]*Run 1[\s\S]*Coding/);
   expect(page).toContain('No pull request yet.');
+  expect(page).toMatch(/Timeline[\s\S]*Nothing has happened yet/);
 
   const opened = {
     ...task,

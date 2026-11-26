@@ -37,6 +37,8 @@ import { ResizablePane } from '@/components/resizable-pane';
 import { RunSessionView } from '@/components/run-session';
 import { readRunSession } from '@/lib/run-session';
 import { TASK_DETAILS_PANE } from '@/lib/pane-spec';
+import { modelTotals, ticketTimeline } from '@/lib/ticket-timeline';
+import { TicketTimeline } from '@/components/ticket-timeline';
 import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
@@ -515,6 +517,14 @@ export default async function TaskPage({
   const cost = totalCost(records.filter((r): r is TaskRecord => !!r));
   const rows = issue.runs.map((rid, i) => ({ rid, index: i + 1, record: records[i] })).reverse();
   const [latestRow, ...pastRows] = rows;
+  const creator = issueCreator(issue);
+  const agentName = (id?: string) => (id ? (agents.find((a) => a.id === id)?.name ?? id) : undefined);
+  const timeline = ticketTimeline(issue, records, {
+    ...(creator
+      ? { creator: creator === 'you' ? 'you' : creator === 'factory' ? 'the factory' : agentName(creator)! }
+      : {}),
+    agent: agentName,
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:flex-row">
@@ -758,6 +768,13 @@ export default async function TaskPage({
                   No pull request yet. A run opens one after you approve its change.
                 </p>
               )}
+            </Section>
+
+            <Section
+              title="Timeline"
+              aside={`${timeline.length} ${timeline.length === 1 ? 'event' : 'events'}`}
+            >
+              <TicketTimeline entries={timeline} models={modelTotals(records)} />
             </Section>
 
             <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
