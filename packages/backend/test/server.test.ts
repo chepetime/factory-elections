@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
 import { TaskControls, type ModelRunner } from '@factory/core';
 import { backendCall, closeBackendClient } from '@factory/backend-client';
-import { Evidence } from '../src/evidence.ts';
+import { Evidence } from '@factory/evidence';
 import { startBackend } from '../src/server.ts';
 
 const token = 'factory-test-credential-with-at-least-32-characters';

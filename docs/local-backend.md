@@ -12,7 +12,7 @@ pnpm web           # production build, backend and Next.js
 
 ## Execution and Effect
 
-`packages/backend/src/compose.ts` supplies the same driver and adapters to the CLI and service. Domain rules and exact-head approval checks remain in the driver/core. The async driver is not rewritten: Effect 3 provides server execution fibers, the single-worker semaphore and nested tracing spans around task operations, RPCs and model calls. This partially supersedes ADR 0002's deferral of Effect without introducing Effect into the pure core.
+`packages/compose/src/compose.ts` supplies the same driver and adapters to the CLI and service. Domain rules and exact-head approval checks remain in the driver/core. The async driver is not rewritten: Effect 3 provides server execution fibers, the worker semaphore (in `packages/dispatcher`) and nested tracing spans around task operations, RPCs and model calls. This partially supersedes ADR 0002's deferral of Effect without introducing Effect into the pure core.
 
 Run/revision acceptance is persisted before returning. Up to 32 runs may be accepted. Up to `FACTORY_TASK_WORKERS` (default 3) execute at once, each in its own worktree; the git adapter runs one repository's administrative commands (worktree add/remove, fetch, push) one at a time. Task runs and PR reviews share one agent limit, `FACTORY_MAX_AGENTS` (default 6): a run waits in `queued` while running agents fill it, and a review start is refused. A task's exclusive command lock is held while queued, running and finalizing evidence. Approval/rejection/PR commands also take that lock. Client disconnects do not cancel accepted work.
 
@@ -118,7 +118,7 @@ Log appends are synchronous and ordered to keep buffering bounded for the curren
 
 ## The span ledger (one trace model)
 
-Every unit of agent work writes one span record when it ends, to `<project>/trace/spans-YYYY-MM.jsonl` (mode 0600). With Postgres and S3 configured, each line goes to S3 and its record to `factory_trace_events` with kind `span`, so SQL can count across runs. The JSONL log is the plain log that a metrics store rebuilds from. The schema is `SpanRecord` in `packages/core/src/trace.ts`, and `TraceLog` in `packages/backend/src/traces.ts` writes and reads it.
+Every unit of agent work writes one span record when it ends, to `<project>/trace/spans-YYYY-MM.jsonl` (mode 0600). With Postgres and S3 configured, each line goes to S3 and its record to `factory_trace_events` with kind `span`, so SQL can count across runs. The JSONL log is the plain log that a metrics store rebuilds from. The schema is `SpanRecord` in `packages/core/src/trace.ts`, and `TraceLog` in `packages/evidence/src/traces.ts` writes and reads it.
 
 | Span type | Written by | Parent |
 | --- | --- | --- |

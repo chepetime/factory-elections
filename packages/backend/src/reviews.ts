@@ -70,7 +70,7 @@ import {
 import { Conflict } from './conflict.ts';
 import type { DelegationServer, Grant } from './delegation.ts';
 import type { MemoryService } from './memory.ts';
-import type { TraceLog } from './traces.ts';
+import type { TraceLog } from '@factory/evidence';
 
 export const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),

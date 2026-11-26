@@ -1,0 +1,14 @@
+{
+  "name": "@factory/evidence",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-data": "workspace:*",
+    "@factory/core": "workspace:*",
+    "effect": "^3.22.4",
+    "zod": "^4.6.7"
+  }
+}

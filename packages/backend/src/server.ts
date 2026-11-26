@@ -11,8 +11,8 @@ import { DriverError } from '@factory/driver';
 import { BackendService, Conflict, DRAIN_GRACE_MS } from './service.ts';
 import type { ReviewDeps } from './reviews.ts';
 import type { SettingsDetector } from './settings.ts';
-import { Evidence } from './evidence.ts';
-import type { Check } from './diagnostics.ts';
+import { Evidence } from '@factory/evidence';
+import type { Check } from '@factory/compose/diagnostics';
 import { definition, type Command, type Methods, type Target } from '@factory/backend-client/protocol';
 
 export interface ServerOptions {

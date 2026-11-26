@@ -17,8 +17,8 @@ import { headSha } from '@factory/adapters-git';
 import * as fsAdapter from '@factory/adapters-fs';
 import { storageFor } from '@factory/adapters-data';
 import { Driver, DriverError, type StepPaths } from '@factory/driver';
-import { composeDriver as createDriver } from '@factory/backend/compose';
-import { saveTaskReceipt, verifyTaskReceipt } from '@factory/backend/receipts';
+import { composeDriver as createDriver } from '@factory/compose';
+import { saveTaskReceipt, verifyTaskReceipt } from '@factory/evidence';
 import { serveHealth } from './serve.ts';
 import { doctor } from './doctor.ts';
 

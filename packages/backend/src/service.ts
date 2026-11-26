@@ -45,10 +45,18 @@ import {
   type AgentEvent,
   type QueueWait,
 } from '@factory/core';
-import { callManifest, saveTaskReceipt, withManifest } from './receipts.ts';
+import {
+  callManifest,
+  Evidence,
+  ExperimentStore,
+  OutcomeStore,
+  saveTaskReceipt,
+  TraceLog,
+  withManifest,
+} from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
-import { composeDriver } from './compose.ts';
+import { composeDriver } from '@factory/compose';
 import { DelegationServer } from './delegation.ts';
 import { MemoryService } from './memory.ts';
 import { FeatureService } from './features.ts';
@@ -61,13 +69,9 @@ import { routeTask } from './agent-router.ts';
 import { SessionLog, transcriptEntries, type SessionEntry } from './session-log.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
-import { TraceLog } from './traces.ts';
-import { ExperimentStore } from './experiments.ts';
 import { PrReviewStore } from './pr-review-records.ts';
-import { OutcomeStore } from './outcomes.ts';
 import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
-import { Evidence } from './evidence.ts';
 import { Conflict } from './conflict.ts';
 import { MAX_AGENTS, ReviewService, type ReviewDeps } from './reviews.ts';
 import { AgentPool, Dispatcher, type Release } from '@factory/dispatcher';
@@ -76,7 +80,7 @@ import { UserSettingsService } from './user-settings.ts';
 export { Conflict };
 import { TeamService } from './team.ts';
 import { TicketService } from './tickets.ts';
-import { environmentChecks, type Check } from './diagnostics.ts';
+import { environmentChecks, type Check } from '@factory/compose/diagnostics';
 import type { BackgroundRun, Command, Target } from '@factory/backend-client/protocol';
 import { RunActivity, trackShell } from './activity.ts';
 import { ProfileChecks } from './profile-check.ts';

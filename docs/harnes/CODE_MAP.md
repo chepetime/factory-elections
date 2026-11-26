@@ -7,6 +7,8 @@
 | Workflow execution and gates | `packages/driver/src`, `definitions/` | `docs/state-machines.md` |
 | Run queue, worker and agent limits, stop before start | `packages/dispatcher/src` | `docs/local-backend.md` |
 | RPC, memory, delegation | `packages/backend/src` | `docs/local-backend.md` |
+| Run evidence: event log, span ledger, receipts, outcomes, experiments | `packages/evidence/src` | `docs/adr/0005-execution-contract.md` |
+| Driver composition and local environment checks (CLI and backend) | `packages/compose/src` | `docs/local-backend.md` |
 | RPC contract and client (proto, Methods, `backendCall`) | `packages/backend-client/src` | `docs/local-backend.md` |
 | Provider execution | `packages/adapters-claude/src`, `packages/adapters-codex/src` | `docs/agent-execution-review.md` |
 | Git, filesystem, storage, processes | matching `packages/adapters-*` | `docs/docker-storage.md` for data |

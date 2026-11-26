@@ -299,7 +299,7 @@ test('a review turn with no output for the stall limit is stopped and says why',
 
 test('a finished review turn writes one review span with its cost and PR link', async (t) => {
   const { root, reviews } = await fixture(t);
-  const { TraceLog } = await import('../src/traces.ts');
+  const { TraceLog } = await import('@factory/evidence');
   reviews.traces = new TraceLog(root);
   await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
   await settle(reviews, 7);
