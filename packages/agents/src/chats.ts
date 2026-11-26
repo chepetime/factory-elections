@@ -2,7 +2,7 @@
 // agent may read the chat's repository and create board tasks; it never changes files or starts work.
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Semaphore } from 'effect';
 import { z } from 'zod';
 import {
   AGENT_CHAT_INSTRUCTIONS,
@@ -100,7 +100,7 @@ export function repositoryReadGuard(repo: string): ToolGuard {
 }
 
 export class ChatService {
-  private readonly lock = Effect.runSync(Effect.makeSemaphore(1));
+  private readonly lock = Effect.runSync(Semaphore.make(1));
   private readonly deps: ChatDeps;
   /** Reply text so far, per chat, while a turn runs. */
   private readonly partial = new Map<string, string>();

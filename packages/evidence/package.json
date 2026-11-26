@@ -8,7 +8,7 @@
   "dependencies": {
     "@factory/adapters-data": "workspace:*",
     "@factory/core": "workspace:*",
-    "effect": "^3.22.4",
+    "effect": "^4.1.6",
     "zod": "^4.6.7"
   }
 }
