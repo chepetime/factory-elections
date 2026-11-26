@@ -1,9 +1,9 @@
 // Factory tools a workspace agent calls through its MCP grant: task tools while it works a task,
-// chat tools while it talks with a person. Each one changes the board through IssueService.
+// chat tools while it talks with a person. Each one changes the board through the AgentBoard port.
 import { z } from 'zod';
 import { IssueStatus, ProjectName } from '@factory/core';
 import { toolSchema, type FactoryTool } from './delegation.ts';
-import type { IssueService } from './issues.ts';
+import type { AgentBoard } from './ports.ts';
 
 const CommentArgs = z.object({ body: z.string().trim().min(1).max(20_000).describe('Markdown') });
 /** An agent reports progress; done and cancelled stay with the person. */
@@ -14,7 +14,7 @@ const StatusArgs = z.object({ status: AgentStatus });
 export type SessionReport = { status?: z.infer<typeof AgentStatus> };
 
 export function taskTools(input: {
-  issues: Pick<IssueService, 'comment' | 'setStatus'>;
+  issues: Pick<AgentBoard, 'comment' | 'setStatus'>;
   project: string;
   key: string;
   agent: { id: string; name: string };
@@ -64,7 +64,7 @@ const CreateArgs = z.object({
 const ListArgs = z.object({ project: ProjectName, status: IssueStatus.optional() });
 
 export function chatTools(input: {
-  issues: Pick<IssueService, 'create' | 'update' | 'list'>;
+  issues: Pick<AgentBoard, 'create' | 'update' | 'list'>;
   projects: () => Promise<string[]>;
   agent: { id: string };
   onCreated: (task: { project: string; key: string }) => void;

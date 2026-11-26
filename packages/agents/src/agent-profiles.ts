@@ -4,7 +4,7 @@ import { Cause, Effect, Exit } from 'effect';
 import { z } from 'zod';
 import { AgentId, AgentInput, AgentProfile, AgentRoster, agentSlug } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
-import { Conflict } from './conflict.ts';
+import { Conflict } from '@factory/core';
 
 /** Workspace documents live under a dotted folder: project names cannot contain a dot. */
 export const WORKSPACE_DIR = '.workspace';

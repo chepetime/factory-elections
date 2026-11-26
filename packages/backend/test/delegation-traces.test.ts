@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { ModelRun, ModelRunner } from '@factory/core';
-import { DelegationServer } from '../src/delegation.ts';
+import { DelegationServer } from '@factory/agents';
 import { TraceLog } from '@factory/evidence';
 
 test('a traced call writes its model span, tool spans, the loop judge and a child task under it', async (t) => {

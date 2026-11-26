@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { storageFor } from '@factory/adapters-data';
 import { TaskRecord } from '@factory/core';
-import { AgentService } from '../src/agent-profiles.ts';
+import { AgentService } from '@factory/agents';
 import { Conflict } from '../src/conflict.ts';
 import { IssueService } from '../src/issues.ts';
 

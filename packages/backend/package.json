@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@factory/core": "workspace:*",
+    "@factory/agents": "workspace:*",
     "@factory/backend-client": "workspace:*",
     "@factory/dispatcher": "workspace:*",
     "@factory/compose": "workspace:*",

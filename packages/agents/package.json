@@ -1,0 +1,17 @@
+{
+  "name": "@factory/agents",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@factory/adapters-claude": "workspace:*",
+    "@factory/adapters-data": "workspace:*",
+    "@factory/adapters-fs": "workspace:*",
+    "@factory/core": "workspace:*",
+    "@factory/driver": "workspace:*",
+    "effect": "^3.22.4",
+    "zod": "^4.6.7"
+  }
+}

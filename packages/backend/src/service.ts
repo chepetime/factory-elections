@@ -57,16 +57,21 @@ import {
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import type { Driver } from '@factory/driver';
 import { composeDriver } from '@factory/compose';
-import { DelegationServer } from './delegation.ts';
-import { MemoryService } from './memory.ts';
+import {
+  DelegationServer,
+  MemoryService,
+  AgentService,
+  availableSkills,
+  buildAgentSession,
+  ChatService,
+  AgentPickup,
+  routeTask,
+  SessionLog,
+  transcriptEntries,
+  type SessionEntry,
+} from '@factory/agents';
 import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
-import { AgentService } from './agent-profiles.ts';
-import { availableSkills, buildAgentSession } from './agent-sessions.ts';
-import { ChatService } from './chats.ts';
-import { AgentPickup } from './agent-pickup.ts';
-import { routeTask } from './agent-router.ts';
-import { SessionLog, transcriptEntries, type SessionEntry } from './session-log.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
 import { TendingService } from './tending.ts';

@@ -24,31 +24,12 @@ import {
   type Stage,
   type TaskRecord,
   type QueueWait,
+  type IssueList,
+  type IssueRun,
+  type IssueView,
 } from '@factory/core';
 import type { DataStorage } from '@factory/adapters-data';
-import { Conflict } from './conflict.ts';
-
-/**
- * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.
- * `owned`: a live run holds the task now, whatever its stage says.
- */
-export type IssueRun = {
-  id: string;
-  stage: Stage;
-  updated_at?: string;
-  waiting?: boolean;
-  waiting_for?: QueueWait;
-  owned: boolean;
-};
-export type IssueView = Omit<Issue, 'status'> & {
-  key: string;
-  /** The column it shows in: the latest run's status unless a person set one since. */
-  status: IssueStatus;
-  /** The status stored on the issue, before syncing from the run. */
-  stored_status: IssueStatus;
-  run?: IssueRun;
-};
-export type IssueList = { prefix: string; items: IssueView[] };
+import { Conflict } from '@factory/core';
 
 export type IssueDeps = {
   root: string;
@@ -563,3 +544,5 @@ export class IssueService {
     return { key: issueKey(removed.prefix, removed.issue.number), failed };
   }
 }
+
+export type { IssueList, IssueRun, IssueView };

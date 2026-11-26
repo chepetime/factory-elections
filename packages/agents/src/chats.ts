@@ -20,9 +20,9 @@ import type { DataStorage } from '@factory/adapters-data';
 import { agentSkills } from './agent-sessions.ts';
 import { chatTools } from './agent-tools.ts';
 import { WORKSPACE_DIR } from './agent-profiles.ts';
-import { Conflict } from './conflict.ts';
+import { Conflict } from '@factory/core';
 import type { DelegationServer } from './delegation.ts';
-import type { IssueService } from './issues.ts';
+import type { AgentBoard } from './ports.ts';
 
 const TURN_BUDGET_USD = 1;
 const TURN_TIMEOUT_MS = 10 * 60_000;
@@ -58,7 +58,7 @@ export type ChatDeps = {
   storage: Pick<DataStorage, 'readDocument' | 'writeDocument'>;
   agent: (id: string) => Promise<AgentProfile>;
   projects: () => Promise<{ name: string; repo: string }[]>;
-  issues: Pick<IssueService, 'create' | 'update' | 'list'>;
+  issues: Pick<AgentBoard, 'create' | 'update' | 'list'>;
   /** Runs a turn; the backend passes a traced runner for chats with a project. */
   runner: (project?: string) => ModelRunner;
   /** Takes an agent slot at once, or undefined when every slot is in use. */

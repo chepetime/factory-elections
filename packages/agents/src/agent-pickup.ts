@@ -7,7 +7,7 @@ import {
   type PickupCandidate,
   type TaskRecord,
 } from '@factory/core';
-import type { IssueService } from './issues.ts';
+import type { AgentBoard } from './ports.ts';
 
 /** How long a task that could not start waits before the next try. */
 export const PICKUP_RETRY_MS = 10 * 60_000;
@@ -16,7 +16,7 @@ export const PICKUP_INTERVAL_MS = 20_000;
 export type PickupDeps = {
   agents: () => Promise<AgentProfile[]>;
   projects: () => Promise<{ name: string }[]>;
-  issues: Pick<IssueService, 'list' | 'move' | 'note' | 'update'>;
+  issues: Pick<AgentBoard, 'list' | 'move' | 'note' | 'update'>;
   tasks: (project: string) => Promise<TaskRecord[]>;
   /** Whether the backend has a run queued or working for the task. Only those occupy an agent. */
   scheduled: (project: string, id: string) => boolean;

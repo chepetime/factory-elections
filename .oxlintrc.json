@@ -115,6 +115,22 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/agents/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@factory/backend", "@factory/backend/*"],
+                "message": "packages/agents must not depend on the backend: use the AgentBoard port"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

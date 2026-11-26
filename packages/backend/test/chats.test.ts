@@ -5,10 +5,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { storageFor } from '@factory/adapters-data';
 import type { ModelRun } from '@factory/core';
-import { AgentService } from '../src/agent-profiles.ts';
-import { ChatService, repositoryReadGuard } from '../src/chats.ts';
+import { AgentService, ChatService, repositoryReadGuard, DelegationServer } from '@factory/agents';
 import { Conflict } from '../src/conflict.ts';
-import { DelegationServer } from '../src/delegation.ts';
 import { IssueService } from '../src/issues.ts';
 
 test('a chat resumes its session, shows the reply as it grows, refuses a second message, and creates tasks', async (t) => {

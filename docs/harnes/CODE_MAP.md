@@ -6,7 +6,8 @@
 | Tasks board (issues, keys, drops) | `packages/core/src/issues.ts`, `packages/backend/src/issues.ts` | `docs/tasks-board.md` |
 | Workflow execution and gates | `packages/driver/src`, `definitions/` | `docs/state-machines.md` |
 | Run queue, worker and agent limits, stop before start | `packages/dispatcher/src` | `docs/local-backend.md` |
-| RPC, memory, delegation | `packages/backend/src` | `docs/local-backend.md` |
+| RPC, board, features, tending, composition of the packages | `packages/backend/src` | `docs/local-backend.md` |
+| Agents: profiles, routing, pickup, chats, sessions, tools, delegation, memory | `packages/agents/src` | `docs/local-backend.md` |
 | PR reviews: turns, records, review worktrees | `packages/pr-reviews/src` | `docs/local-backend.md` |
 | Run evidence: event log, span ledger, receipts, outcomes, experiments | `packages/evidence/src` | `docs/adr/0005-execution-contract.md` |
 | Driver composition and local environment checks (CLI and backend) | `packages/compose/src` | `docs/local-backend.md` |

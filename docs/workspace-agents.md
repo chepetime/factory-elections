@@ -25,7 +25,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
 
-**Pickup.** `AgentPickup` (`packages/backend/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
+**Pickup.** `AgentPickup` (`packages/agents/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
 - It starts the Todo tasks of each agent with "Pick up Todo tasks" on, up to the agent's free slots. The order is priority, then the oldest task.
 - A run waiting for you (in review, blocked) does not use a slot.
 - It skips Backlog tasks, archived tasks, and tasks with an open run.
@@ -36,7 +36,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 **Replies.** A comment from you wakes the agent's session, but only while the agent waits: `awaiting-approval`, `verification-failed`, `failed` or `blocked`. A comment on an approved, rejected or merged run starts nothing.
 
-**Tools.** The session gets factory tools through its MCP grant (`packages/backend/src/agent-tools.ts`):
+**Tools.** The session gets factory tools through its MCP grant (`packages/agents/src/agent-tools.ts`):
 
 - `comment`: posts on the task as the agent.
 - `set_status`: sets the task to `in_progress`, `in_review` or `blocked`. Done and cancelled stay with you.
@@ -44,7 +44,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 ## Chats
 
-`ChatService` (`packages/backend/src/chats.ts`) runs one model turn per message and resumes the chat's session.
+`ChatService` (`packages/agents/src/chats.ts`) runs one model turn per message and resumes the chat's session.
 
 - A chat can have a project. The agent then reads that repository with read-only tools. A guard keeps the reads inside the repository and away from `.env` files and `.git`.
 - The chat tools are `list_tasks` and `create_task`. A created task goes to Todo and starts no work.
