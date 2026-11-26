@@ -17,7 +17,7 @@ function currentLinks(html: string) {
 }
 
 it.each([
-  ['tasks', ['/projects/demo/tasks', '/projects/demo/tasks']],
+  ['tasks', ['/projects/demo/tasks']],
   ['tasks/FE-1', []],
   ['tasks/new', ['/projects/demo/tasks/new']],
   ['tasks/archived', ['/projects/demo/tasks/archived']],
@@ -55,42 +55,29 @@ it('allows the current task and its agent entry to both be selected', () => {
   expect(currentLinks(html)).toEqual(['/projects/demo/tasks/FE-1', '/projects/demo/tasks/FE-1']);
 });
 
-it('marks the logo as home, and the Tasks rail item on the board', () => {
+it('the rail holds the logo, Home and Network, and marks the page you are on', () => {
   route.pathname = '/';
-  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toContain('/');
-  route.pathname = '/board';
-  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
-  expect(html).toMatch(/aria-label="Tasks" title="Tasks" aria-current="page"/);
-  expect(html).toContain('aria-label="Harbor Lighthouse home"');
+  const home = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  expect(home).toContain('aria-label="Harbor Lighthouse home"');
+  // The logo and the Home item both open the homepage.
+  expect(currentLinks(home)).toEqual(['/', '/']);
+  const start = home.indexOf('role="group" aria-label="Installation"');
+  const items = [...home.slice(start, home.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g)];
+  expect(items.map((m) => m[1])).toEqual(['Home', 'Network']);
+  route.pathname = '/network';
+  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toEqual(['/network']);
 });
 
-it('groups the rail into Functions and System, and marks the page you are on', () => {
-  route.pathname = '/tool-calls';
+it('parks the old rail pages in the project sidebar, switched off', () => {
+  route.pathname = '/projects/demo/tasks';
   const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
-  const group = (label: string) => {
-    const start = html.indexOf(`role="group" aria-label="${label}"`);
-    return [...html.slice(start, html.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g)].map(
-      (m) => m[1],
-    );
-  };
-  expect(group('Functions')).toEqual([
-    'Dashboard',
-    'Chat',
-    'Tasks',
-    'Findings',
-    'Traffic',
-    'Tool execution',
-    'LLM recording',
-    'Workspace',
-  ]);
-  expect(group('System')).toEqual(['LLM', 'Agent', 'MCP', 'Skill', 'Tools', 'Components']);
-  expect(currentLinks(html)).toEqual(['/tool-calls']);
-  // The providers page is the LLM item, not the user menu.
-  route.pathname = '/user/providers';
-  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toContain('/user/providers');
-  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toMatch(
-    /href="\/user" title="User settings" aria-label="User settings" aria-current/,
-  );
+  const start = html.indexOf('aria-label="More pages, not available yet"');
+  const parked = html.slice(start, html.indexOf('</ul>', start));
+  expect([...parked.matchAll(/<li[^>]*aria-disabled="true"/g)]).toHaveLength(13);
+  expect(parked).toContain('Tool execution');
+  // Parked pages are not links, and they no longer sit on the rail.
+  expect(parked).not.toContain('<a ');
+  expect(html).not.toContain('href="/tool-calls"');
 });
 
 it('shows the project sidebar everywhere but the homepage, and user settings have their own', () => {

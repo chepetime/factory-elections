@@ -25,7 +25,8 @@ import {
   GitPullRequest,
   Home,
   KanbanSquare,
-  ListTodo,
+  ChevronRight,
+  Network,
   MessageSquare,
   Users,
   Menu as MenuIcon,
@@ -229,7 +230,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           !drawer && 'max-[899px]:-translate-x-full',
         )}
       >
-        <Rail project={project} pathname={pathname} />
+        <Rail pathname={pathname} />
         {!global && (
           // The sidebar and the main container form one light panel on the black frame.
           <div className="flex bg-sidebar min-[900px]:my-2 min-[900px]:rounded-l-xl">
@@ -296,43 +297,67 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 /** The rail's two groups: the work the factory does, then what it is built from. */
-function railGroups(project: string | undefined, pathname: string) {
-  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
-  const tasksHref = project ? `/projects/${project}/tasks` : '/board';
+/** The rail: the whole installation, not one project. */
+function railItems(pathname: string) {
   return [
-    {
-      label: 'Functions',
-      items: [
-        { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, active: under('/dashboard') },
-        { label: 'Chat', href: '/chat', icon: MessageSquare, active: under('/chat') },
-        {
-          label: 'Tasks',
-          href: tasksHref,
-          icon: ListTodo,
-          active: pathname === '/board' || (Boolean(project) && pathname === tasksHref),
-        },
-        { label: 'Findings', href: '/findings', icon: Bug, active: under('/findings') },
-        { label: 'Traffic', href: '/traffic', icon: Activity, active: under('/traffic') },
-        { label: 'Tool execution', href: '/tool-calls', icon: SquareTerminal, active: under('/tool-calls') },
-        { label: 'LLM recording', href: '/llm-calls', icon: Radio, active: under('/llm-calls') },
-        { label: 'Workspace', href: '/projects', icon: FolderOpen, active: pathname === '/projects' },
-      ],
-    },
-    {
-      label: 'System',
-      items: [
-        { label: 'LLM', href: '/user/providers', icon: Cpu, active: under('/user/providers') },
-        { label: 'Agent', href: '/agents', icon: Bot, active: under('/agents') },
-        { label: 'MCP', href: '/system/mcp', icon: Plug, active: under('/system/mcp') },
-        { label: 'Skill', href: '/system/skills', icon: Sparkles, active: under('/system/skills') },
-        { label: 'Tools', href: '/system/tools', icon: Wrench, active: under('/system/tools') },
-        { label: 'Components', href: '/components', icon: Blocks, active: under('/components') },
-      ],
-    },
+    { label: 'Home', href: '/', icon: Home, active: pathname === '/' },
+    { label: 'Network', href: '/network', icon: Network, active: pathname === '/network' },
   ];
 }
 
-function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
+/**
+ * Pages that left the rail. They wait in the project sidebar, switched off, until each is made to
+ * work per project; their routes still open by URL.
+ */
+const PARKED = [
+  { label: 'Dashboard', icon: LayoutDashboard },
+  { label: 'Chat', icon: MessageSquare },
+  { label: 'Findings', icon: Bug },
+  { label: 'Traffic', icon: Activity },
+  { label: 'Tool execution', icon: SquareTerminal },
+  { label: 'LLM recording', icon: Radio },
+  { label: 'Workspace', icon: FolderOpen },
+  { label: 'LLM', icon: Cpu },
+  { label: 'Agent', icon: Bot },
+  { label: 'MCP', icon: Plug },
+  { label: 'Skill', icon: Sparkles },
+  { label: 'Tools', icon: Wrench },
+  { label: 'Components', icon: Blocks },
+] as const;
+
+/** The parked pages, folded under one toggle so the task list keeps its room. */
+function ParkedPages() {
+  return (
+    <details className="group/parked">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground select-none hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          className="size-4 transition-transform group-open/parked:rotate-90 motion-reduce:transition-none"
+        />
+        More pages
+        <span className="ml-auto text-xs">Off</span>
+      </summary>
+      <ul
+        aria-label="More pages, not available yet"
+        // Capped, so opening it does not push the task list and footer out of the sidebar.
+        className="mt-px flex max-h-52 flex-col gap-px overflow-y-auto"
+      >
+        {PARKED.map(({ label, icon: Icon }) => (
+          <li
+            key={label}
+            aria-disabled="true"
+            title="Not available yet"
+            className="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground pointer-coarse:min-h-11"
+          >
+            <Icon className="size-4 opacity-60" aria-hidden /> {label}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function Rail({ pathname }: { pathname: string }) {
   return (
     <nav
       aria-label="Main navigation"
@@ -348,28 +373,20 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
         <HarborMark className="ring-1 ring-white/15 rounded-lg" />
       </Link>
 
-      {railGroups(project, pathname).map((group, g) => (
-        <div
-          key={group.label}
-          role="group"
-          aria-label={group.label}
-          className="flex flex-col items-center gap-1"
-        >
-          {g > 0 && <span aria-hidden className="my-2 h-px w-6 bg-white/15" />}
-          {group.items.map(({ label, href, icon: Icon, active }) => (
-            <Link
-              key={label}
-              href={href}
-              aria-label={label}
-              title={label}
-              aria-current={active ? 'page' : undefined}
-              className={cn(railItem, 'shrink-0', active && railActive)}
-            >
-              <Icon className="size-4" />
-            </Link>
-          ))}
-        </div>
-      ))}
+      <div role="group" aria-label="Installation" className="flex flex-col items-center gap-1">
+        {railItems(pathname).map(({ label, href, icon: Icon, active }) => (
+          <Link
+            key={label}
+            href={href}
+            aria-label={label}
+            title={label}
+            aria-current={active ? 'page' : undefined}
+            className={cn(railItem, 'shrink-0', active && railActive)}
+          >
+            <Icon className="size-4" />
+          </Link>
+        ))}
+      </div>
 
       <Link
         href="/settings"
@@ -597,6 +614,7 @@ function Sidebar({
           >
             <span aria-hidden="true">◷</span> Weekly
           </SidebarLink>
+          <ParkedPages />
           <div role="separator" className="my-2 h-px bg-border" />
           <Link
             href={`/projects/${project}/tasks/new`}
