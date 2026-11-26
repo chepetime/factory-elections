@@ -62,7 +62,9 @@ it('the rail holds the logo, Home and Network, and marks the page you are on', (
   // The logo and the Home item both open the homepage.
   expect(currentLinks(home)).toEqual(['/', '/']);
   const start = home.indexOf('role="group" aria-label="Installation"');
-  const items = [...home.slice(start, home.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g)];
+  const items = [
+    ...home.slice(start, home.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g),
+  ];
   expect(items.map((m) => m[1])).toEqual(['Home', 'Network']);
   route.pathname = '/network';
   expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toEqual(['/network']);
@@ -73,8 +75,9 @@ it('parks the old rail pages in the project sidebar, switched off', () => {
   const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
   const start = html.indexOf('aria-label="More pages, not available yet"');
   const parked = html.slice(start, html.indexOf('</ul>', start));
-  expect([...parked.matchAll(/<li[^>]*aria-disabled="true"/g)]).toHaveLength(13);
+  expect([...parked.matchAll(/<li[^>]*aria-disabled="true"/g)]).toHaveLength(7);
   expect(parked).toContain('Tool execution');
+  expect(parked).not.toContain('Chat');
   // Parked pages are not links, and they no longer sit on the rail.
   expect(parked).not.toContain('<a ');
   expect(html).not.toContain('href="/tool-calls"');
@@ -92,4 +95,20 @@ it('shows the project sidebar everywhere but the homepage, and user settings hav
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toContain('<aside');
   route.pathname = '/board';
   expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).toContain('<aside');
+});
+
+it.each([
+  ['chat', '/projects/demo/chat'],
+  ['chat/0b0c1f6e-1f1c-4c39-9a3e-2d7c9c1f0a11', '/projects/demo/chat'],
+  ['llms', '/projects/demo/llms'],
+  ['agents/ada', '/projects/demo/agents'],
+  ['mcp', '/projects/demo/mcp'],
+  ['skills', '/projects/demo/skills'],
+  ['tools', '/projects/demo/tools'],
+])('the project sidebar links its agent pages and marks %s', (path, expected) => {
+  route.pathname = `/projects/demo/${path}`;
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  for (const page of ['chat', 'llms', 'agents', 'mcp', 'skills', 'tools'])
+    expect(html).toContain(`href="/projects/demo/${page}"`);
+  expect(currentLinks(html)).toEqual([expected]);
 });

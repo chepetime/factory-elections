@@ -268,7 +268,9 @@ export async function startBackend(options: ServerOptions) {
       ListFindings: async (request) => ({
         json: JSON.stringify(await service.findings({ project: request.project })),
       }),
-      GetSystemCatalog: async () => ({ json: JSON.stringify(await service.catalog()) }),
+      GetSystemCatalog: async (request) => ({
+        json: JSON.stringify(await service.catalog(request.project || undefined)),
+      }),
       ListPrReviewRecords: async (request) => {
         await service.projects.read(request.project);
         return { json: JSON.stringify(await service.prReviewRecords.list(request.project)) };

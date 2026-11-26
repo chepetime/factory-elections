@@ -1,15 +1,26 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+
 import { cell, DataTable, PageHeader, Unavailable } from '@/components/system-page';
+import { isProjectName } from '@/lib/factory';
+import { projectTitle } from '@/lib/page-title';
 import { getSystemCatalog, type SystemCatalog } from '@/lib/system';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Tools' };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}): Promise<Metadata> {
+  const { project } = await params;
+  return { title: isProjectName(project) ? await projectTitle(project, 'Tools') : 'Tools' };
+}
 
 function ToolTable({ label, tools, days }: { label: string; tools: SystemCatalog['tools']; days: number }) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-sm font-medium">{label}</h2>
-      <DataTable label={label} head={['Tool', 'What it does', 'Who gets it', `Calls, ${days} days`]}>
+      <DataTable label={label} head={['Tool', 'What it does', 'Who gets it', `Calls here, ${days} days`]}>
         {tools.map((t) => (
           <tr key={t.name}>
             <td className={`${cell} font-mono text-xs whitespace-nowrap`}>{t.name}</td>
@@ -26,9 +37,11 @@ function ToolTable({ label, tools, days }: { label: string; tools: SystemCatalog
   );
 }
 
-/** The tools agents can call, and how often they did. */
-export default async function ToolsPage() {
-  const catalog = await getSystemCatalog();
+/** The tools agents can call, and how often they did in this project. */
+export default async function ToolsPage({ params }: { params: Promise<{ project: string }> }) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
+  const catalog = await getSystemCatalog(project);
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Tools">

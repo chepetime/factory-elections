@@ -1,14 +1,23 @@
 import type { Metadata } from 'next';
 import { NewChat } from '@/components/agent-chat';
 import { listAgents } from '@/lib/agents';
-import { listProjects } from '@/lib/factory';
+import { notFound } from 'next/navigation';
+import { isProjectName } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Chat' };
 
-export default async function ChatHome({ searchParams }: { searchParams?: Promise<{ agent?: string }> }) {
+export default async function ChatHome({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ project: string }>;
+  searchParams?: Promise<{ agent?: string }>;
+}) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
   const { agent } = (await searchParams) ?? {};
-  const [agents, projects] = await Promise.all([listAgents(), listProjects()]);
+  const agents = await listAgents();
   if (!agents.ok)
     return (
       <p role="alert" className="p-6 text-destructive">
@@ -18,9 +27,7 @@ export default async function ChatHome({ searchParams }: { searchParams?: Promis
   return (
     <NewChat
       agents={agents.value.filter((a) => !a.archived_at)}
-      projects={
-        projects.ok ? projects.value.map((p) => ({ name: p.name, label: p.display_name || p.name })) : []
-      }
+      project={project}
       {...(agent ? { initialAgent: agent } : {})}
     />
   );

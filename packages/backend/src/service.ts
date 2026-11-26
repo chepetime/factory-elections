@@ -786,9 +786,9 @@ export class BackendService {
     const rows = (await Promise.all(projects.map((p) => this.reviews.findings({ project: p })))).flat();
     return rows.sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index);
   }
-  /** MCP servers, tools and skills the factory gives its agents. */
-  catalog() {
-    return systemCatalog({ projects: this.projects, traces: this.traces });
+  /** MCP servers, tools and skills the factory gives its agents; `project` scopes calls and repo skills. */
+  catalog(project?: string) {
+    return systemCatalog({ projects: this.projects, traces: this.traces }, project);
   }
   private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);

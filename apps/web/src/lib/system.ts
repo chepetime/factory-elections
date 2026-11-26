@@ -113,8 +113,11 @@ const Catalog = z.object({
 export type SystemCatalog = z.infer<typeof Catalog>;
 
 /** MCP servers, tools and skills the factory gives its agents. */
-export function getSystemCatalog(): Promise<Result<SystemCatalog>> {
-  return attempt(async () => Catalog.parse(json((await backendCall('GetSystemCatalog', {})).json)));
+/** With `project`: tool calls and repo skills of that project only. */
+export function getSystemCatalog(project?: string): Promise<Result<SystemCatalog>> {
+  return attempt(async () =>
+    Catalog.parse(json((await backendCall('GetSystemCatalog', { project: project ?? '' })).json)),
+  );
 }
 
 /** Where a span of a task run opens: its trace. Spans outside a task have no page. */
@@ -133,4 +136,35 @@ export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+
+export interface ModelUsage {
+  provider: string;
+  model: string;
+  calls: number;
+  failed: number;
+  /** Null when no call reported a cost. */
+  cost: number | null;
+  input: number;
+  output: number;
+}
+
+/** Model spans grouped by provider and model, busiest first. */
+export function modelUsage(
+  spans: Pick<ListedSpan, 'provider' | 'model' | 'outcome' | 'cost_usd' | 'tokens'>[],
+): ModelUsage[] {
+  const rows = new Map<string, ModelUsage>();
+  for (const span of spans) {
+    const provider = span.provider ?? 'unknown';
+    const model = span.model ?? 'unknown';
+    const key = `${provider}\u0000${model}`;
+    const row = rows.get(key) ?? { provider, model, calls: 0, failed: 0, cost: null, input: 0, output: 0 };
+    row.calls++;
+    if (span.outcome !== 'completed') row.failed++;
+    if (typeof span.cost_usd === 'number') row.cost = (row.cost ?? 0) + span.cost_usd;
+    row.input += span.tokens?.input ?? 0;
+    row.output += span.tokens?.output ?? 0;
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => b.calls - a.calls || a.model.localeCompare(b.model));
 }

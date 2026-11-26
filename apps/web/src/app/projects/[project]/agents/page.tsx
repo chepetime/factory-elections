@@ -1,20 +1,28 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { LocalTime } from '@/components/local-time';
 import { NewAgentButton } from '@/components/new-agent-dialog';
 import { modelName } from '@/lib/agent-models';
 import { agentStats, listAgents } from '@/lib/agents';
+import { isProjectName } from '@/lib/factory';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Agents' };
 
+/** The workspace's agents, from inside a project: they are shared by every project. */
 export default async function AgentsPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ project: string }>;
   searchParams?: Promise<{ show?: string; q?: string }>;
 }) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
+  const base = `/projects/${project}/agents`;
   const { show, q = '' } = (await searchParams) ?? {};
   const archived = show === 'archived';
   const listed = await listAgents();
@@ -47,10 +55,10 @@ export default async function AgentsPage({
           <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Teammates that work board tasks in their own session, comment and set status. You approve every
-            change before it becomes a pull request.
+            change before it becomes a pull request. Every project shares the same agents.
           </p>
         </div>
-        <NewAgentButton />
+        <NewAgentButton base={base} />
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -68,11 +76,11 @@ export default async function AgentsPage({
             className="h-8 w-full rounded-lg border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </form>
-        <Link href="/agents" aria-current={!archived ? 'page' : undefined} className={chip(!archived)}>
+        <Link href={base} aria-current={!archived ? 'page' : undefined} className={chip(!archived)}>
           All <span className="tabular-nums text-muted-foreground">{counts.all}</span>
         </Link>
         <Link
-          href="/agents?show=archived"
+          href={`${base}?show=archived`}
           aria-current={archived ? 'page' : undefined}
           className={chip(archived)}
         >
@@ -125,7 +133,7 @@ export default async function AgentsPage({
                         <AgentAvatar agent={agent} decorative />
                         <div className="min-w-0">
                           <Link
-                            href={`/agents/${agent.id}`}
+                            href={`${base}/${agent.id}`}
                             className="font-medium outline-none after:absolute after:inset-0 group-hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
                           >
                             {agent.name}

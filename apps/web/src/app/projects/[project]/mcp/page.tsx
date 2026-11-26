@@ -1,13 +1,26 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+
 import { Empty, PageHeader, Unavailable } from '@/components/system-page';
+import { isProjectName } from '@/lib/factory';
+import { projectTitle } from '@/lib/page-title';
 import { getSystemCatalog } from '@/lib/system';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'MCP' };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}): Promise<Metadata> {
+  const { project } = await params;
+  return { title: isProjectName(project) ? await projectTitle(project, 'MCP') : 'MCP' };
+}
 
 /** The MCP servers agent turns can reach. Read-only: the backend sets them per turn. */
-export default async function McpPage() {
-  const catalog = await getSystemCatalog();
+export default async function McpPage({ params }: { params: Promise<{ project: string }> }) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
+  const catalog = await getSystemCatalog(project);
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="MCP">

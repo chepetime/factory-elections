@@ -1,21 +1,31 @@
 import { Plus } from 'lucide-react';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { ChatList } from '@/components/agent-chat';
 import { listAgents, listChats } from '@/lib/agents';
+import { isProjectName } from '@/lib/factory';
 import { ResizablePane } from '@/components/resizable-pane';
 import { CHAT_LIST_PANE } from '@/lib/pane-spec';
 import { paneWidth } from '@/lib/pane-width';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ChatLayout({ children }: { children: ReactNode }) {
-  const [chats, agents, listWidth] = await Promise.all([
-    listChats(),
-    listAgents(),
-    paneWidth(CHAT_LIST_PANE),
-  ]);
+/** A project's chats: the list beside the open chat or the new-chat form. */
+export default async function ChatLayout({
+  children,
+  params,
+}: {
+  children: ReactNode;
+  params: Promise<{ project: string }>;
+}) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
+  const base = `/projects/${project}/chat`;
+  const [all, agents, listWidth] = await Promise.all([listChats(), listAgents(), paneWidth(CHAT_LIST_PANE)]);
+  // Chats opened in this project only; a chat reads one project's repository.
+  const chats = all.ok ? { ok: true as const, value: all.value.filter((c) => c.project === project) } : all;
   const byId = new Map((agents.ok ? agents.value : []).map((a) => [a.id, a]));
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -30,7 +40,7 @@ export default async function ChatLayout({ children }: { children: ReactNode }) 
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-sm font-semibold">Chat</h1>
           <Link
-            href="/chat"
+            href={base}
             aria-label="New chat"
             title="New chat"
             className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
@@ -46,6 +56,7 @@ export default async function ChatLayout({ children }: { children: ReactNode }) 
           <p className="px-4 pb-3 text-sm text-muted-foreground">No chats yet.</p>
         ) : (
           <ChatList
+            base={base}
             chats={chats.value.map((c) => {
               const agent = byId.get(c.agent);
               return {

@@ -77,8 +77,8 @@ export const RPCS = {
   ListSpans: ['SettingsUpdate', 'Snapshot'],
   /** Saved senior-pr-review findings; empty `project`: every project. */
   ListFindings: ['Target', 'Snapshot'],
-  /** MCP servers, tools and skills the factory gives its agents. */
-  GetSystemCatalog: ['Empty', 'Snapshot'],
+  /** MCP servers, tools and skills the factory gives its agents; `project` scopes calls and repo skills. */
+  GetSystemCatalog: ['Target', 'Snapshot'],
   ListPrReviewRecords: ['Target', 'Snapshot'],
   AddPrReviewRecord: ['SettingsUpdate', 'Snapshot'],
   ListOutcomes: ['Target', 'Snapshot'],

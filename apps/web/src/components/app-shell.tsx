@@ -159,8 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     home ||
     pathname === '/board' ||
     /^\/projects\/[^/]+$/.test(pathname) ||
-    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+)$/.test(pathname) ||
-    /^\/chat(\/[^/]+)?$/.test(pathname);
+    /^\/projects\/[^/]+\/(tasks|tasks\/[^/]+|team|reviews\/\d+|chat|chat\/[^/]+)$/.test(pathname);
 
   const [remembered, setRemembered] = useState<string | undefined>();
   useEffect(() => {
@@ -311,18 +310,22 @@ function railItems(pathname: string) {
  */
 const PARKED = [
   { label: 'Dashboard', icon: LayoutDashboard },
-  { label: 'Chat', icon: MessageSquare },
   { label: 'Findings', icon: Bug },
   { label: 'Traffic', icon: Activity },
   { label: 'Tool execution', icon: SquareTerminal },
   { label: 'LLM recording', icon: Radio },
   { label: 'Workspace', icon: FolderOpen },
-  { label: 'LLM', icon: Cpu },
-  { label: 'Agent', icon: Bot },
-  { label: 'MCP', icon: Plug },
-  { label: 'Skill', icon: Sparkles },
-  { label: 'Tools', icon: Wrench },
   { label: 'Components', icon: Blocks },
+] as const;
+
+/** Project pages for the agents' setup: what they talk with, run on, and can reach. */
+const AGENT_PAGES = [
+  { segment: 'chat', label: 'Chat', icon: MessageSquare },
+  { segment: 'llms', label: 'LLMs', icon: Cpu },
+  { segment: 'agents', label: 'Agents', icon: Bot },
+  { segment: 'mcp', label: 'MCP', icon: Plug },
+  { segment: 'skills', label: 'Skills', icon: Sparkles },
+  { segment: 'tools', label: 'Tools', icon: Wrench },
 ] as const;
 
 /** The parked pages, folded under one toggle so the task list keeps its room. */
@@ -614,6 +617,19 @@ function Sidebar({
           >
             <span aria-hidden="true">◷</span> Weekly
           </SidebarLink>
+          <div role="separator" className="my-1 h-px bg-border" />
+          {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {
+            const href = `/projects/${project}/${segment}`;
+            return (
+              <SidebarLink
+                key={segment}
+                href={href}
+                current={pathname === href || pathname.startsWith(`${href}/`)}
+              >
+                <Icon className="size-4 text-muted-foreground" /> {label}
+              </SidebarLink>
+            );
+          })}
           <ParkedPages />
           <div role="separator" className="my-2 h-px bg-border" />
           <Link

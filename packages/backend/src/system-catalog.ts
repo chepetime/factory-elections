@@ -135,8 +135,9 @@ async function skillsIn(dir: string, owner: string): Promise<CatalogSkill[]> {
   return skills.filter((s): s is CatalogSkill => !!s);
 }
 
-export async function systemCatalog(deps: CatalogDeps): Promise<SystemCatalog> {
-  const projects = await deps.projects.list();
+/** The catalog; with `project`, tool calls and repo skills come from that project only. */
+export async function systemCatalog(deps: CatalogDeps, project?: string): Promise<SystemCatalog> {
+  const projects = (await deps.projects.list()).filter((p) => !project || p.name === project);
   const since = new Date(Date.now() - USAGE_DAYS * 86_400_000).toISOString();
   const spans = (
     await Promise.all(projects.map((p) => deps.traces.read(p.name, { since }).catch(() => [])))

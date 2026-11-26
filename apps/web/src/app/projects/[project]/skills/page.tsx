@@ -1,13 +1,26 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+
 import { Empty, PageHeader, Unavailable } from '@/components/system-page';
+import { isProjectName } from '@/lib/factory';
+import { projectTitle } from '@/lib/page-title';
 import { getSystemCatalog } from '@/lib/system';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Skills' };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}): Promise<Metadata> {
+  const { project } = await params;
+  return { title: isProjectName(project) ? await projectTitle(project, 'Skills') : 'Skills' };
+}
 
-/** The skills agents can load: the factory's own, then each project repo's. */
-export default async function SkillsPage() {
-  const catalog = await getSystemCatalog();
+/** The skills agents can load in this project: the factory's own, then the repo's. */
+export default async function SkillsPage({ params }: { params: Promise<{ project: string }> }) {
+  const { project } = await params;
+  if (!isProjectName(project)) notFound();
+  const catalog = await getSystemCatalog(project);
   if (!catalog.ok)
     return (
       <div className="flex flex-col gap-5">
@@ -19,8 +32,8 @@ export default async function SkillsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Skills">
-        Instructions an agent loads for one kind of work. Factory skills ship with the factory; project skills
-        live in the repo, under .claude/skills, .codex/skills or .agents/skills.
+        Instructions an agent loads for one kind of work. Factory skills ship with the factory; this
+        project&apos;s skills live in its repo, under .claude/skills, .codex/skills or .agents/skills.
       </PageHeader>
       {owners.length === 0 && <Empty>No skills found.</Empty>}
       {owners.map((owner) => (

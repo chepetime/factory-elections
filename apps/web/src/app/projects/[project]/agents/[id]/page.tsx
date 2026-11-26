@@ -19,7 +19,7 @@ import { Markdown } from '@/components/markdown';
 import { STATUS } from '@/components/task-status';
 import { modelName } from '@/lib/agent-models';
 import { AGENT_FACTORY_INSTRUCTIONS, agentStats, type AgentRunLine, type AgentStats } from '@/lib/agents';
-import { listProjects } from '@/lib/factory';
+import { isProjectName, listProjects } from '@/lib/factory';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,11 @@ const SECTIONS: Record<'capabilities' | 'settings', { id: string; label: string 
   ],
 };
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string; id: string }>;
+}): Promise<Metadata> {
   const { id } = await params;
   if (!AGENT_ID.test(id)) return { title: 'Agent' };
   const stats = await agentStats(id);
@@ -314,11 +318,12 @@ export default async function AgentPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ project: string; id: string }>;
   searchParams?: Promise<{ tab?: string; section?: string }>;
 }) {
-  const { id } = await params;
-  if (!AGENT_ID.test(id)) notFound();
+  const { project: current, id } = await params;
+  if (!isProjectName(current) || !AGENT_ID.test(id)) notFound();
+  const list = `/projects/${current}/agents`;
   const query = (await searchParams) ?? {};
   const tab: Tab = TABS.some((t) => t.id === query.tab) ? (query.tab as Tab) : 'overview';
   const [found, projects] = await Promise.all([agentStats(id), listProjects()]);
@@ -332,7 +337,7 @@ export default async function AgentPage({
   }
   const stats = found.value;
   const { agent } = stats;
-  const base = `/agents/${agent.id}`;
+  const base = `${list}/${agent.id}`;
   const working = stats.running.length > 0;
   const archived = Boolean(agent.archived_at);
   const section =
@@ -346,7 +351,7 @@ export default async function AgentPage({
   return (
     <div className="flex flex-col gap-6">
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
-        <Link href="/agents" className="text-muted-foreground hover:text-foreground hover:underline">
+        <Link href={list} className="text-muted-foreground hover:text-foreground hover:underline">
           Agents
         </Link>
         <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
@@ -386,7 +391,7 @@ export default async function AgentPage({
           </ul>
         </div>
         <div className="flex items-start gap-2">
-          <ChatWithAgent agent={agent.id} disabled={archived} />
+          <ChatWithAgent agent={agent.id} project={current} disabled={archived} />
           <AssignWork agent={agent} projects={projectOptions} disabled={archived} />
         </div>
       </header>

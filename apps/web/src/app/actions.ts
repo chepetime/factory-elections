@@ -434,7 +434,7 @@ export async function updateIssue(
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
   const updated = await updateIssueRun(project, { key, ...patch });
   revalidatePath(`/projects/${project}/tasks`, 'layout');
-  if (patch.assignee !== undefined) revalidatePath('/agents', 'layout');
+  if (patch.assignee !== undefined) revalidatePath('/projects/[project]/agents', 'layout');
   return updated.ok ? { message: 'Saved.' } : { error: updated.error };
 }
 

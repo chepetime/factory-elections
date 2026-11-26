@@ -444,7 +444,7 @@
                   "responseType": "Snapshot"
                 },
                 "GetSystemCatalog": {
-                  "requestType": "Empty",
+                  "requestType": "Target",
                   "responseType": "Snapshot"
                 },
                 "ListPrReviewRecords": {

@@ -5,8 +5,8 @@ import { backendCall } from '@factory/backend-client';
 import { metricsSummary } from '@factory/core';
 import FindingsPage from '@/app/findings/page';
 import LlmCallsPage from '@/app/llm-calls/page';
-import SkillsPage from '@/app/system/skills/page';
-import ToolsPage from '@/app/system/tools/page';
+import SkillsPage from '@/app/projects/[project]/skills/page';
+import ToolsPage from '@/app/projects/[project]/tools/page';
 import ToolCallsPage from '@/app/tool-calls/page';
 import TrafficPage from '@/app/traffic/page';
 
@@ -29,6 +29,8 @@ const span = (over: Record<string, unknown>) => ({
   ...over,
 });
 
+/** Project pages take the project from the route. */
+const demo = { params: Promise.resolve({ project: 'demo' }) };
 it('lists tool calls with their input, a link to the run trace, and the failed count', async () => {
   rpc.mockResolvedValue(
     reply({
@@ -166,15 +168,15 @@ it('lists factory and built-in tools with usage, and skills by owner', async () 
       ],
     }),
   );
-  const tools = renderToStaticMarkup(await ToolsPage());
+  const tools = renderToStaticMarkup(await ToolsPage(demo));
   expect(tools.indexOf('>comment<')).toBeLessThan(tools.indexOf('>Built-in tools</h2>'));
   expect(tools).toContain('(2 failed)');
-  const skills = renderToStaticMarkup(await SkillsPage());
+  const skills = renderToStaticMarkup(await SkillsPage(demo));
   expect(skills).toMatch(/Factory[\s\S]*senior-pr-review[\s\S]*v4\.0\.3[\s\S]*demo[\s\S]*tdd/);
 });
 
 it('says why a page has no data when the backend fails', async () => {
   rpc.mockRejectedValue(new Error('backend down'));
   expect(renderToStaticMarkup(await ToolCallsPage())).toContain('Tool calls unavailable: backend down');
-  expect(renderToStaticMarkup(await SkillsPage())).toContain('Skills unavailable: backend down');
+  expect(renderToStaticMarkup(await SkillsPage(demo))).toContain('Skills unavailable: backend down');
 });

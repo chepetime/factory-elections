@@ -105,6 +105,40 @@ test('the catalog lists the factory MCP server, factory and built-in tools with 
   );
 });
 
+test("a project-scoped catalog counts only that project's tool calls and lists only its repo skills", async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'factory-catalog-scope-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const repo = (name: string, skill: string) => {
+    const dir = join(base, name);
+    return mkdir(join(dir, '.claude', 'skills', skill), { recursive: true })
+      .then(() => writeFile(join(dir, '.claude', 'skills', skill, 'SKILL.md'), '---\ndescription: x\n---\n'))
+      .then(() => dir);
+  };
+  const deps = {
+    projects: {
+      list: async () => [
+        { name: 'app', repo: await repo('app', 'tdd') },
+        { name: 'web', repo: await repo('web', 'design') },
+      ],
+    },
+    traces: ledger([
+      span('app', 'Bash', 'tool', ago(1)),
+      span('web', 'Bash', 'tool', ago(1)),
+      span('web', 'Bash', 'tool', ago(2), 'failed'),
+    ]),
+    factorySkills: join(base, 'no-factory-skills'),
+  };
+  const scoped = await systemCatalog(deps, 'web');
+  const bash = scoped.tools.find((x) => x.name === 'Bash');
+  assert.deepEqual([bash?.calls, bash?.failed], [2, 1]);
+  assert.deepEqual(
+    scoped.skills.map((s) => [s.owner, s.name]),
+    [['web', 'design']],
+  );
+  const all = await systemCatalog(deps);
+  assert.equal(all.tools.find((x) => x.name === 'Bash')?.calls, 3);
+});
+
 test('skill front matter reads plain and quoted fields, and nothing without a block', () => {
   assert.deepEqual(skillFrontMatter("---\nname: 'x'\ndescription: Does y\n---\n"), {
     name: 'x',

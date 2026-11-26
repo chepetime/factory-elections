@@ -5,7 +5,7 @@ import { Menu } from '@base-ui/react/menu';
 import { MoreHorizontal, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useId, useRef, useState, useTransition, type ReactNode } from 'react';
+import { useRef, useState, useTransition, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { DynamicToolUIPart } from 'ai';
 import { deleteChat, renameChat, startChat } from '@/app/agent-actions';
@@ -36,16 +36,16 @@ type ChatLine = {
   avatar: ReactNode;
 };
 
-export function ChatList({ chats }: { chats: ChatLine[] }) {
+export function ChatList({ chats, base }: { chats: ChatLine[]; base: string }) {
   const pathname = usePathname();
   return (
     <ul className="flex min-h-0 flex-col gap-px overflow-y-auto px-2 pb-3 max-md:max-h-48">
       {chats.map((c) => {
-        const current = pathname === `/chat/${c.id}`;
+        const current = pathname === `${base}/${c.id}`;
         return (
           <li key={c.id}>
             <Link
-              href={`/chat/${c.id}`}
+              href={`${base}/${c.id}`}
               aria-current={current ? 'page' : undefined}
               className={cn(
                 'flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring',
@@ -79,23 +79,22 @@ type AgentOption = { id: string; name: string; avatar: string; description: stri
 
 export function NewChat({
   agents,
-  projects,
+  project,
   initialAgent,
 }: {
   agents: AgentOption[];
-  projects: { name: string; label: string }[];
+  /** The project the chat reads; a chat always opens inside one. */
+  project: string;
   initialAgent?: string;
 }) {
   const [agent, setAgent] = useState(agents.find((a) => a.id === initialAgent)?.id ?? agents[0]?.id);
-  const [project, setProject] = useState('');
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
-  const id = useId();
   if (!agents.length)
     return (
       <div className="m-auto max-w-sm p-6 text-center text-sm text-muted-foreground">
         No agents to chat with.{' '}
-        <Link href="/agents" className="underline">
+        <Link href={`/projects/${project}/agents`} className="underline">
           Create one
         </Link>{' '}
         first.
@@ -106,7 +105,8 @@ export function NewChat({
       <div>
         <h2 className="text-xl font-semibold tracking-tight">New chat</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pick an agent. A chat can read one project&apos;s repository and create tasks; it changes no code.
+          Pick an agent. The chat reads this project&apos;s repository and can create tasks; it changes no
+          code.
         </p>
       </div>
       <fieldset>
@@ -139,22 +139,6 @@ export function NewChat({
           ))}
         </div>
       </fieldset>
-      <label htmlFor={`${id}-project`} className="flex flex-col gap-1.5 text-sm font-medium">
-        Project
-        <select
-          id={`${id}-project`}
-          value={project}
-          onChange={(e) => setProject(e.target.value)}
-          className="h-9 rounded-lg border bg-background px-2.5 text-sm font-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <option value="">No project: the agent reads no code</option>
-          {projects.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -165,7 +149,7 @@ export function NewChat({
         disabled={!agent || pending}
         onClick={() =>
           start(async () => {
-            const result = await startChat(agent!, project || undefined);
+            const result = await startChat(agent!, project);
             if (result?.error) setError(result.error);
           })
         }
@@ -287,10 +271,13 @@ function AgentReply({
 }
 
 export function ChatThread({
+  project,
   initial,
   agent,
   archived,
 }: {
+  /** The project whose pages this chat opens in. */
+  project: string;
   initial: Chat;
   agent: AgentOption;
   archived: boolean;
@@ -352,7 +339,7 @@ export function ChatThread({
             <h2 className="truncate text-sm font-medium">{title}</h2>
           )}
           <p className="truncate text-xs text-muted-foreground">
-            <Link href={`/agents/${agent.id}`} className="hover:underline">
+            <Link href={`/projects/${project}/agents/${agent.id}`} className="hover:underline">
               {agent.name}
             </Link>
             {initial.project ? ` · reads ${initial.project}` : ' · no project'}
@@ -383,7 +370,7 @@ export function ChatThread({
                         tone: 'destructive',
                       })
                     ) {
-                      const result = await deleteChat(initial.id);
+                      const result = await deleteChat(initial.id, project);
                       if (result?.error) setError(result.error);
                     }
                   }}
