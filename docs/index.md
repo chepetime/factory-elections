@@ -9,3 +9,6 @@ This site renders the Markdown files in the repository `docs/` folder. Agents re
 - [Code map](harnes/CODE_MAP.md): find the package that owns a change.
 - [Local backend](local-backend.md): RPC, health, shutdown, and recovery.
 - [Worktrees](worktrees.md): create, run, and remove isolated checkouts.
+
+- [Current architecture](https://github.com/chepetime/factory-elections/blob/main/docs/architecture.md): system boundaries, execution, and storage.
+- [Architecture assessment — 26 November 2026](https://github.com/chepetime/factory-elections/blob/main/docs/architecture-assessments/2026-11-26-ac0a5377.md): findings and direction for commit ac0a5377.
