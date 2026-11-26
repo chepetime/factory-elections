@@ -36,6 +36,7 @@
     "data:test": "node scripts/data.mjs test",
     "e2e": "node --test --test-concurrency=1 \"apps/web/e2e/*.e2e.ts\"",
     "worktree": "node scripts/worktree.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs",
     "ci:plan": "node scripts/ci-plan.mjs",
     "ci:affected": "node scripts/ci-run.mjs",
     "harness:stats": "node scripts/harness-stats.mjs"
