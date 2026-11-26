@@ -5,9 +5,19 @@
 // Affect UI source or assets.
 import { Menu } from '@base-ui/react/menu';
 import {
+  Activity,
   Archive,
   Blocks,
   Bot,
+  Bug,
+  Cpu,
+  FolderOpen,
+  LayoutDashboard,
+  Plug,
+  Radio,
+  Sparkles,
+  SquareTerminal,
+  Wrench,
   Check,
   ChevronsUpDown,
   Copy,
@@ -285,38 +295,80 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
+/** The rail's two groups: the work the factory does, then what it is built from. */
+function railGroups(project: string | undefined, pathname: string) {
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
   const tasksHref = project ? `/projects/${project}/tasks` : '/board';
-  const items = [
-    { label: 'Board', href: '/board', icon: KanbanSquare, active: pathname === '/board' },
-    { label: 'Tasks', href: tasksHref, icon: ListTodo, active: Boolean(project) && pathname === tasksHref },
-    { label: 'Agents', href: '/agents', icon: Bot, active: pathname.startsWith('/agents') },
-    { label: 'Chat', href: '/chat', icon: MessageSquare, active: pathname.startsWith('/chat') },
-    { label: 'Components', href: '/components', icon: Blocks, active: pathname.startsWith('/components') },
+  return [
+    {
+      label: 'Functions',
+      items: [
+        { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, active: under('/dashboard') },
+        { label: 'Chat', href: '/chat', icon: MessageSquare, active: under('/chat') },
+        {
+          label: 'Tasks',
+          href: tasksHref,
+          icon: ListTodo,
+          active: pathname === '/board' || (Boolean(project) && pathname === tasksHref),
+        },
+        { label: 'Findings', href: '/findings', icon: Bug, active: under('/findings') },
+        { label: 'Traffic', href: '/traffic', icon: Activity, active: under('/traffic') },
+        { label: 'Tool execution', href: '/tool-calls', icon: SquareTerminal, active: under('/tool-calls') },
+        { label: 'LLM recording', href: '/llm-calls', icon: Radio, active: under('/llm-calls') },
+        { label: 'Workspace', href: '/projects', icon: FolderOpen, active: pathname === '/projects' },
+      ],
+    },
+    {
+      label: 'System',
+      items: [
+        { label: 'LLM', href: '/user/providers', icon: Cpu, active: under('/user/providers') },
+        { label: 'Agent', href: '/agents', icon: Bot, active: under('/agents') },
+        { label: 'MCP', href: '/system/mcp', icon: Plug, active: under('/system/mcp') },
+        { label: 'Skill', href: '/system/skills', icon: Sparkles, active: under('/system/skills') },
+        { label: 'Tools', href: '/system/tools', icon: Wrench, active: under('/system/tools') },
+        { label: 'Components', href: '/components', icon: Blocks, active: under('/components') },
+      ],
+    },
   ];
+}
+
+function Rail({ project, pathname }: { project: string | undefined; pathname: string }) {
   return (
-    <nav aria-label="Main navigation" className="flex w-14 flex-col items-center gap-1 bg-neutral-950 py-3">
+    <nav
+      aria-label="Main navigation"
+      className="flex w-14 flex-col items-center gap-1 overflow-y-auto bg-neutral-950 py-3 [scrollbar-width:none]"
+    >
       <Link
         href="/"
         aria-label="Software Factory home"
         title="Home"
         aria-current={pathname === '/' ? 'page' : undefined}
-        className="mb-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
+        className="mb-3 shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
       >
         <FactoryMark className="ring-1 ring-white/15 rounded-lg" />
       </Link>
 
-      {items.map(({ label, href, icon: Icon, active }) => (
-        <Link
-          key={label}
-          href={href}
-          aria-label={label}
-          title={label}
-          aria-current={active ? 'page' : undefined}
-          className={cn(railItem, active && railActive)}
+      {railGroups(project, pathname).map((group, g) => (
+        <div
+          key={group.label}
+          role="group"
+          aria-label={group.label}
+          className="flex flex-col items-center gap-1"
         >
-          <Icon className="size-4" />
-        </Link>
+          {g > 0 && <span aria-hidden className="my-2 h-px w-6 bg-white/15" />}
+          {group.items.map(({ label, href, icon: Icon, active }) => (
+            <Link
+              key={label}
+              href={href}
+              aria-label={label}
+              title={label}
+              aria-current={active ? 'page' : undefined}
+              className={cn(railItem, 'shrink-0', active && railActive)}
+            >
+              <Icon className="size-4" />
+            </Link>
+          ))}
+        </div>
       ))}
 
       <Link
@@ -324,7 +376,7 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
         aria-label="Settings"
         title="Settings"
         aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
-        className={cn(railItem, 'mt-auto mb-2', pathname.startsWith('/settings') && railActive)}
+        className={cn(railItem, 'mt-auto mb-2 shrink-0', pathname.startsWith('/settings') && railActive)}
       >
         <Settings className="size-4" />
       </Link>
@@ -332,10 +384,14 @@ function Rail({ project, pathname }: { project: string | undefined; pathname: st
         href="/user"
         title="User settings"
         aria-label="User settings"
-        aria-current={pathname.startsWith('/user') ? 'page' : undefined}
+        aria-current={
+          pathname.startsWith('/user') && !pathname.startsWith('/user/providers') ? 'page' : undefined
+        }
         className={cn(
-          'flex size-8 items-center justify-center rounded-full bg-white/12 text-neutral-300 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 pointer-coarse:size-11',
-          pathname.startsWith('/user') && 'ring-1 ring-orange-400 text-orange-300',
+          'flex size-8 shrink-0 items-center justify-center rounded-full bg-white/12 text-neutral-300 transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 pointer-coarse:size-11',
+          pathname.startsWith('/user') &&
+            !pathname.startsWith('/user/providers') &&
+            'ring-1 ring-orange-400 text-orange-300',
         )}
       >
         <User aria-hidden="true" className="size-4" />

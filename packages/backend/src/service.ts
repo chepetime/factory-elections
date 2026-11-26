@@ -55,6 +55,7 @@ import { TendingService } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
+import { systemCatalog } from './system-catalog.ts';
 import { AgentPool, Dispatcher, Executions, MAX_AGENTS, type Release } from '@factory/dispatcher';
 import { ProjectSettingsService, type SettingsDetector } from './settings.ts';
 import { UserSettingsService } from './user-settings.ts';
@@ -773,6 +774,21 @@ export class BackendService {
   /** Counts across runs for one project, or every project, over `[from, to)` (default: 7 days). */
   metrics(raw: unknown) {
     return this.taskTraces.metrics(raw);
+  }
+  /** The newest spans of one type, e.g. every tool call or model call, for the Functions pages. */
+  spans(raw: unknown) {
+    return this.taskTraces.spans(raw);
+  }
+  /** Saved review findings of one project, or of every project. */
+  async findings(raw: unknown) {
+    const { project } = z.object({ project: z.union([ProjectName, z.literal('')]).optional() }).parse(raw);
+    const projects = project ? [project] : (await this.projects.list()).map((p) => p.name);
+    const rows = (await Promise.all(projects.map((p) => this.reviews.findings({ project: p })))).flat();
+    return rows.sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index);
+  }
+  /** MCP servers, tools and skills the factory gives its agents. */
+  catalog() {
+    return systemCatalog({ projects: this.projects, traces: this.traces });
   }
   private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);

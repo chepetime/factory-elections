@@ -93,6 +93,9 @@ service Factory {
   rpc DeleteChat(Snapshot) returns (Snapshot);
   rpc GetTrace(SettingsUpdate) returns (Snapshot);
   rpc GetMetrics(SettingsUpdate) returns (Snapshot);
+  rpc ListSpans(SettingsUpdate) returns (Snapshot);
+  rpc ListFindings(Target) returns (Snapshot);
+  rpc GetSystemCatalog(Empty) returns (Snapshot);
   rpc ListPrReviewRecords(Target) returns (Snapshot);
   rpc AddPrReviewRecord(SettingsUpdate) returns (Snapshot);
   rpc ListOutcomes(Target) returns (Snapshot);

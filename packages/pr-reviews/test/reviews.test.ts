@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
@@ -437,4 +437,51 @@ test('shutdown lets an in-process turn finish within the drain grace', async (t)
   await reviews.close(5_000);
   const after = await restart().detail({ project: 'app', number: 7 });
   assert.notEqual(after.state, 'interrupted', 'a turn that ended within the grace wrote its exit file');
+});
+
+test('findings lists the saved report findings of every review, newest review first, offline', async (t) => {
+  const { reviews, root } = await fixture(t);
+  const save = async (number: number, at: string, payload: unknown) => {
+    const dir = join(root, 'app', 'reviews', String(number));
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'run.json'),
+      JSON.stringify({
+        number,
+        branch: `b${number}`,
+        url: `https://github.com/o/r/pull/${number}`,
+        title: `PR ${number}`,
+        worktree: '/tmp/none',
+        started_at: at,
+        turns: [{ at, text: 'Review it' }],
+      }),
+    );
+    if (payload) await writeFile(join(dir, 'payload.json'), JSON.stringify(payload));
+  };
+  await save(7, '2026-11-01T00:00:00.000Z', {
+    meta: { decision: 'request-changes' },
+    findings: [
+      { severity: 'must-fix', axis: 'correctness', title: 'Lost update', file: 'a.ts', line_range: '10-12' },
+      { severity: 'should-fix', title: 'Name it better' },
+    ],
+  });
+  await save(9, '2026-11-02T00:00:00.000Z', {
+    meta: {},
+    findings: [{ severity: 'critical', impact: 'Data loss' }],
+  });
+  await save(10, '2026-11-03T00:00:00.000Z', undefined);
+
+  const rows = await reviews.findings({ project: 'app' });
+  assert.deepEqual(
+    rows.map((r) => [r.number, r.severity, r.finding, r.title]),
+    [
+      [9, 'critical', 'Data loss', 'PR 9'],
+      [7, 'must-fix', 'Lost update', 'PR 7'],
+      [7, 'should-fix', 'Name it better', 'PR 7'],
+    ],
+  );
+  assert.deepEqual(
+    [rows[1]!.file, rows[1]!.line_range, rows[1]!.decision],
+    ['a.ts', '10-12', 'request-changes'],
+  );
 });

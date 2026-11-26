@@ -32,7 +32,8 @@ import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, claudeMessageEvents, MCP_TOOL_TI
 export * from './cli.ts';
 export * from './turn.ts';
 
-const TOOLS: Record<ToolAccess, string[]> = {
+/** The built-in Claude tools each tool access level allows. */
+export const CLAUDE_TOOL_ACCESS: Record<ToolAccess, string[]> = {
   none: [],
   'read-only': ['Read', 'Grep', 'Glob'],
   // Agent lets the coder hand parts of a task to subagents. Their tool calls reach canUseTool too
@@ -58,7 +59,7 @@ export function sandboxFor(
   home: string = homedir(),
   extra?: ModelRun['sandbox'],
 ): SandboxSettings | undefined {
-  if (!TOOLS[tools].includes('Bash')) return undefined;
+  if (!CLAUDE_TOOL_ACCESS[tools].includes('Bash')) return undefined;
   return {
     enabled: true,
     failIfUnavailable: true,
@@ -248,7 +249,7 @@ export class ClaudeAgentRunner implements ModelRunner {
     controller: AbortController,
     heard: () => void,
   ): Promise<ModelResult> {
-    const tools = TOOLS[request.tools];
+    const tools = CLAUDE_TOOL_ACCESS[request.tools];
     // Factory and agent MCP tools are allowed by name or server prefix; the step guard still screens them.
     const allowed: string[] = request.mcp
       ? [...tools, CLAUDE_DELEGATE_TOOL, ...(request.mcp.tools ?? []).map((t) => `mcp__factory__${t}`)]

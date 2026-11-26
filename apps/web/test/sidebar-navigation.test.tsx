@@ -55,14 +55,42 @@ it('allows the current task and its agent entry to both be selected', () => {
   expect(currentLinks(html)).toEqual(['/projects/demo/tasks/FE-1', '/projects/demo/tasks/FE-1']);
 });
 
-it.each([
-  ['/', ['/']],
-  ['/board', ['/board']],
-])('marks the logo as home and the Board rail item on %s', (pathname, expected) => {
-  route.pathname = pathname;
+it('marks the logo as home, and the Tasks rail item on the board', () => {
+  route.pathname = '/';
+  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toContain('/');
+  route.pathname = '/board';
   const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
-  expect(currentLinks(html).filter((href) => href === '/' || href === '/board')).toEqual(expected);
+  expect(html).toMatch(/aria-label="Tasks" title="Tasks" aria-current="page"/);
   expect(html).toContain('aria-label="Software Factory home"');
+});
+
+it('groups the rail into Functions and System, and marks the page you are on', () => {
+  route.pathname = '/tool-calls';
+  const html = renderToStaticMarkup(<AppShell>Content</AppShell>);
+  const group = (label: string) => {
+    const start = html.indexOf(`role="group" aria-label="${label}"`);
+    return [...html.slice(start, html.indexOf('</div>', start)).matchAll(/aria-label="([^"]+)" title=/g)].map(
+      (m) => m[1],
+    );
+  };
+  expect(group('Functions')).toEqual([
+    'Dashboard',
+    'Chat',
+    'Tasks',
+    'Findings',
+    'Traffic',
+    'Tool execution',
+    'LLM recording',
+    'Workspace',
+  ]);
+  expect(group('System')).toEqual(['LLM', 'Agent', 'MCP', 'Skill', 'Tools', 'Components']);
+  expect(currentLinks(html)).toEqual(['/tool-calls']);
+  // The providers page is the LLM item, not the user menu.
+  route.pathname = '/user/providers';
+  expect(currentLinks(renderToStaticMarkup(<AppShell>Content</AppShell>))).toContain('/user/providers');
+  expect(renderToStaticMarkup(<AppShell>Content</AppShell>)).not.toMatch(
+    /href="\/user" title="User settings" aria-label="User settings" aria-current/,
+  );
 });
 
 it('shows the project sidebar everywhere but the homepage, and user settings have their own', () => {

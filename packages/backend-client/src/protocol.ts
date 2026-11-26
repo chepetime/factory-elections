@@ -124,6 +124,12 @@ export interface Methods {
   GetTrace: [{ project: string; json: string }, { json: string }];
   /** `json`: `{ from?, to? }` ISO times (default: the last 7 days); empty `project`: every project. */
   GetMetrics: [{ project: string; json: string }, { json: string }];
+  /** `json`: `{ type, days?, limit? }`; empty `project`: every project. Newest spans of one type. */
+  ListSpans: [{ project: string; json: string }, { json: string }];
+  /** Saved senior-pr-review findings; empty `project`: every project. */
+  ListFindings: [Target, { json: string }];
+  /** MCP servers, tools and skills the factory gives its agents. */
+  GetSystemCatalog: [{}, { json: string }];
   /** Everything that waits on the human, across projects: `{ items, dismissed }`. */
   ListPrReviewRecords: [Target, { json: string }];
   AddPrReviewRecord: [{ project: string; json: string }, { json: string }];

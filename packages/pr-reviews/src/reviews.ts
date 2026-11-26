@@ -158,6 +158,24 @@ export interface ReviewStatus {
 export interface ReviewRow extends PullRequestSummary {
   review: ReviewStatus;
 }
+/** One finding of a saved review report, with the PR it belongs to. */
+export interface ReviewFindingRow {
+  project: string;
+  number: number;
+  /** Position in the report, to keep its order. */
+  index: number;
+  title: string;
+  url: string;
+  /** When the review's latest turn started. */
+  at: string;
+  decision?: string;
+  severity?: string;
+  axis?: string;
+  finding: string;
+  file?: string;
+  line_range?: string;
+  fix?: string;
+}
 export interface ReviewDetail extends ReviewStatus {
   number: number;
   branch?: string;
@@ -609,6 +627,42 @@ export class ReviewService {
       }),
     );
     return { me, pulls };
+  }
+
+  /**
+   * Every finding the saved review reports of a project hold, newest review first. Reads only
+   * files on disk: no GitHub call, so the list works offline and for closed PRs.
+   */
+  async findings(raw: unknown): Promise<ReviewFindingRow[]> {
+    const { project } = z.object({ project: ProjectName }).parse(raw);
+    const dir = join(this.root, project, 'reviews');
+    const numbers = (await readdir(dir).catch(() => [] as string[]))
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const rows = await Promise.all(
+      numbers.map(async (number) => {
+        const record = await this.readRun(project, number).catch(() => undefined);
+        const { payload } = await this.readPayload(project, number);
+        if (!record || !payload) return [];
+        const at = record.turns.at(-1)?.at ?? record.started_at;
+        return payload.findings.map((f, index) => ({
+          project,
+          number,
+          index,
+          title: record.title ?? payload.meta.pr_title ?? `PR #${number}`,
+          url: record.url,
+          at,
+          decision: payload.meta.decision ?? undefined,
+          severity: f.severity ?? undefined,
+          axis: f.axis ?? undefined,
+          finding: f.title ?? f.impact ?? 'Untitled finding',
+          file: f.file ?? undefined,
+          line_range: f.line_range ?? undefined,
+          fix: f.fix ?? undefined,
+        }));
+      }),
+    );
+    return rows.flat().sort((a, b) => b.at.localeCompare(a.at) || a.index - b.index);
   }
 
   async detail(raw: unknown): Promise<ReviewDetail> {

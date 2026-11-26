@@ -435,6 +435,18 @@
                   "requestType": "SettingsUpdate",
                   "responseType": "Snapshot"
                 },
+                "ListSpans": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
+                "ListFindings": {
+                  "requestType": "Target",
+                  "responseType": "Snapshot"
+                },
+                "GetSystemCatalog": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
                 "ListPrReviewRecords": {
                   "requestType": "Target",
                   "responseType": "Snapshot"
