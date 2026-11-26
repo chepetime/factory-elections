@@ -502,9 +502,15 @@ test('a review without a report says why: stopped, failed, invalid, or refused b
     { type: 'tool-result' as const, ok: false, text: 'grep: no such file' },
   ];
   assert.match(
-    missingReportReason(refused, ok),
-    /refused permission to save its report; 2 of its tool calls were refused by a permission check/,
+    missingReportReason(refused, { ...ok, permissionMode: 'default' }),
+    /refused permission to save its report; 2 of its tool calls were refused by a permission check\. The review turn ran in default permission mode/,
   );
+  const { permissionModeOf } = await import('../src/index.ts');
+  assert.equal(
+    permissionModeOf(['x', JSON.stringify({ subtype: 'init', permissionMode: 'default' })]),
+    'default',
+  );
+  assert.equal(permissionModeOf(['{}']), undefined);
   assert.match(
     missingReportReason(refused.slice(0, 1), ok),
     /ended without a report; 1 of its tool calls was refused/,

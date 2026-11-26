@@ -282,7 +282,7 @@ const PERMISSION_REFUSAL =
  */
 export function missingReportReason(
   events: readonly AgentEvent[],
-  turn: { exit: string; stopped: boolean; payloadError?: string },
+  turn: { exit: string; stopped: boolean; payloadError?: string; permissionMode?: string | undefined },
 ): string {
   if (turn.stopped) return 'The review was stopped.';
   if (turn.exit !== '0') return 'The review turn failed before it saved a report.';
@@ -293,7 +293,7 @@ export function missingReportReason(
   );
   const report = refused.some((e) => /payload\.json/.test(e.text));
   if (refused.length)
-    return `${report ? 'The agent was refused permission to save its report' : 'The agent ended without a report'}; ${refused.length} of its tool ${refused.length === 1 ? 'calls was' : 'calls were'} refused by a permission check. The review turn did not run with its intended permissions: see Settings, System status.`;
+    return `${report ? 'The agent was refused permission to save its report' : 'The agent ended without a report'}; ${refused.length} of its tool ${refused.length === 1 ? 'calls was' : 'calls were'} refused by a permission check. The review turn ran in ${turn.permissionMode ? `${turn.permissionMode} permission mode` : 'an unknown permission mode'}, not with its intended permissions: see Settings, System status.`;
   return 'The review ended without saving a report.';
 }
 
@@ -301,6 +301,19 @@ export function missingReportReason(
 const REVIEW_MODEL = 'claude-opus-5-5';
 
 /** Built-in tools a Claude turn was offered, from its init line (MCP tools are not pruned). */
+/** The permission mode a Claude turn ran in, from its init line. */
+export function permissionModeOf(lines: readonly string[]): string | undefined {
+  for (const line of lines.slice(0, 40)) {
+    try {
+      const e = JSON.parse(line) as { subtype?: unknown; permissionMode?: unknown };
+      if (e.subtype === 'init' && typeof e.permissionMode === 'string') return e.permissionMode;
+    } catch {
+      // Not JSON.
+    }
+  }
+  return undefined;
+}
+
 function offeredTools(lines: readonly string[]): string[] {
   for (const line of lines.slice(0, 40)) {
     try {
@@ -448,7 +461,8 @@ export class ReviewService {
         continue;
       const lines = await readLines(join(dir, `turn-${k}.jsonl`));
       const events = lines.flatMap((l) => this.deps.agent.parse(l));
-      const offered = offeredTools(await headLines(join(dir, `turn-${k}.jsonl`)));
+      const head = await headLines(join(dir, `turn-${k}.jsonl`));
+      const offered = offeredTools(head);
       await this.traceTurn(project, record, k, events).catch(() => undefined);
       // The first turn's result, for the review loop: the payload when the turn finished with one.
       if (k === 0 && this.onReviewEnded) {
@@ -458,7 +472,12 @@ export class ReviewService {
         const payload = read.payload?.meta.decision?.trim() ? read.payload : undefined;
         const reason = payload
           ? undefined
-          : missingReportReason(events, { exit: exit.trim(), stopped, payloadError: read.error });
+          : missingReportReason(events, {
+              exit: exit.trim(),
+              stopped,
+              payloadError: read.error,
+              permissionMode: permissionModeOf(head),
+            });
         await Promise.resolve(this.onReviewEnded(project, record.number, payload, reason)).catch(
           () => undefined,
         );
