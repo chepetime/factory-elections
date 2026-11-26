@@ -41,7 +41,12 @@ Features add planning above this flow. Their service runs grill, specification, 
 | --- | --- |
 | Core | Domain schemas, stage rules, action blockers, execution outcomes, cleanup records, and provider capabilities. |
 | Driver | Classification, implementation, verification, review, approval gates, and PR publication. |
-| Backend | RPC, accepted work, capacity, command ownership, recovery, evidence, and feature services. |
+| Backend | RPC, command ownership, recovery, and the board, feature, chat and agent services. It composes the packages below. |
+| Backend client | The RPC contract (`factory.proto`) and `backendCall`. The web app and CLI reach the backend only through it. |
+| Dispatcher | The task run queue and the one agent pool: worker permits, agent limits, stop before start, and shutdown. |
+| Evidence | Run event logs, the span ledger, receipts, outcomes, and experiments. |
+| Compose | Driver composition and local environment checks, shared by the CLI and backend. |
+| PR reviews | Review turns, records, and review worktrees, behind ports for delegation and memory. |
 | Adapters | Provider calls, host processes, Git, GitHub, filesystem access, database records, and artifact storage. |
 | Web | Views and commands through the backend. Shared action rules determine available controls. |
 | Definitions | Prompts, step definitions, and model ladders loaded by execution. |
@@ -72,7 +77,8 @@ The runtime operates on one local installation. Repositories, worktrees, and age
 - [Core execution](https://github.com/chepetime/factory-elections/blob/main/packages/core/src/execution.ts)
 - [Driver](https://github.com/chepetime/factory-elections/blob/main/packages/driver/src/workflow.ts)
 - [Backend](https://github.com/chepetime/factory-elections/blob/main/packages/backend/src/service.ts)
-- [Provider composition](https://github.com/chepetime/factory-elections/blob/main/packages/backend/src/compose.ts)
+- [Provider composition](https://github.com/chepetime/factory-elections/blob/main/packages/compose/src/compose.ts)
+- [Dispatcher](https://github.com/chepetime/factory-elections/blob/main/packages/dispatcher/src/dispatcher.ts)
 - [Features](https://github.com/chepetime/factory-elections/blob/main/packages/backend/src/features.ts)
 - [Storage](https://github.com/chepetime/factory-elections/blob/main/packages/adapters-data/src/index.ts)
 
