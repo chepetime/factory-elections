@@ -142,6 +142,9 @@ export async function startBackend(options: ServerOptions) {
       GetUserSettings: async () => ({ json: JSON.stringify(await service.user.get()) }),
       SaveUserSettings: async (request) => ({ json: JSON.stringify(await service.user.save(request)) }),
       GetUserEnvironment: async () => ({ json: JSON.stringify(await service.user.environment()) }),
+      TestProvider: async (request) => ({
+        json: JSON.stringify(await service.user.testProvider(request.provider)),
+      }),
       GetProjectSettings: async (request) => ({
         json: JSON.stringify(await service.settings.get(request.project)),
       }),

@@ -5,6 +5,8 @@ import { changedFiles, planChanges } from './ci-plan.mjs';
 const plan = planChanges(changedFiles(process.argv[2], process.argv[3] || 'HEAD'));
 console.log(`Affected: ${plan.packages.join(', ') || 'documentation only'}`);
 function run(command, args) {
+  // The post-commit runner reads the last `==> ` line of this output as the failed step.
+  console.log(`==> ${[command === process.execPath ? 'node' : command, ...args].join(' ').slice(0, 120)}`);
   const result = spawnSync(command, args, { stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);

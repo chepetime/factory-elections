@@ -10,6 +10,17 @@ hook script in `.claude/settings.json` exists. `pnpm test` and `ci-run.mjs` run 
 also a documentation-only one; run them alone with `node --test tests/repo`. A new file under
 `tests/` is an unknown path to `ci-plan.mjs`, so it selects all workspaces.
 
+## Local git hooks
+
+Work lands directly on local `main` with no PR and no push, so neither workflow runs. Git hooks cover that gap.
+`pnpm run setup` runs `git config core.hooksPath scripts/git-hooks` (safe to rerun; `--no-hooks` skips it). The path is relative, so every worktree uses the hooks of its own checkout and they cannot go stale. The launchers in `scripts/git-hooks/` only call checked-in runners.
+
+- **pre-commit** (`scripts/run-pre-commit.mjs`, blocks, a few seconds): `prettier --check` and `oxlint --deny-warnings` on the staged files only.
+- **post-commit** (`scripts/run-post-commit.mjs`, advisory, branch `main` only): detaches, then runs `node scripts/ci-run.mjs <base> <sha>` in a disposable detached worktree at the commit, after `pnpm install --frozen-lockfile --offline`. The commit tree is checked, never the shared checkout's unstaged edits. It appends `{sha, base, outcome, failedStep, log, ...}` to `$FACTORY_ROOT/logs/main-checks.jsonl`; the output is in `logs/main-check-<sha>.log`. `outcome` is `passed`, `failed` or `error` (the check could not run). The SessionStart hook prints the last result.
+- Several commits in a row: one check runs at a time (a lock in `logs/`); when it ends it checks only the newest main head. The base is the newest passed ancestor, else the first parent (merge commits), else `--all` (root commit). Worktrees older than three hours are swept.
+
+`--no-verify` skips pre-commit only; post-commit still runs. Use it only for commits the factory itself makes (`packages/adapters-git`, `packages/backend/src/tending.ts`); a person or agent that skips pre-commit must run `pnpm format:check && pnpm lint` first. A `failed` line in the session status means main is broken: fix it before starting new work from that head.
+
 PR CI compares the merge base with the checked-out PR merge commit, including changes
 introduced by merging the current base. Workspace manifests and relative source/test imports define dependencies;
 reverse traversal includes all transitive consumers, including test dependencies.

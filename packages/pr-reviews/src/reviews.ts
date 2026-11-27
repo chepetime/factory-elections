@@ -55,7 +55,13 @@ import {
   resetWorktreeHard,
   worktreePaths,
 } from '@factory/adapters-git';
-import { githubLogin, openPullRequestNodes, pullRequestHead } from '@factory/adapters-github';
+import {
+  githubLogin,
+  openPullRequestNodes,
+  pullRequestContext,
+  pullRequestHead,
+  type PullRequestContext,
+} from '@factory/adapters-github';
 import { isAlive, spawnDetached, stopGroup } from '@factory/adapters-process';
 import {
   claudeCli,
@@ -103,6 +109,9 @@ export const REVIEW_DELEGATE_BUDGET_USD = Number(process.env.FACTORY_REVIEW_DELE
 /**
  * GitHub and git writes the agent may not make on its own. Kickoff and re-review turns get this
  * list; a message the user typed does not, so the user can still ask the agent to post.
+ *
+ * A hint, not a boundary: prefix patterns miss `git -C . push`, `env X=1 gh api` and any wrapped
+ * command. The boundary is the OS sandbox every review turn runs in (see `spawnTurn`).
  */
 export const AUTOMATED_TURN_DENY = [
   'Bash(gh pr review:*)',
@@ -124,6 +133,11 @@ export interface ReviewDeps {
     login(): Promise<string>;
     nodes(cwd: string, me: string): Promise<unknown[]>;
     pull(cwd: string, number: number): Promise<{ branch: string; url: string; title?: string }>;
+    /**
+     * The pull request's data (diff, body, threads, checks) for `cwd`'s repository. Review turns run
+     * in a sandbox without network, so the backend reads it before each turn. Absent: nothing is fetched.
+     */
+    context?(cwd: string, number: number): Promise<PullRequestContext>;
   };
   /** The provider that runs review turns. Automated turns need its deny rules. */
   agent: AgentCli;
@@ -133,7 +147,12 @@ export interface ReviewDeps {
 }
 
 export const defaultReviewDeps: ReviewDeps = {
-  github: { login: githubLogin, nodes: openPullRequestNodes, pull: pullRequestHead },
+  github: {
+    login: githubLogin,
+    nodes: openPullRequestNodes,
+    pull: pullRequestHead,
+    context: pullRequestContext,
+  },
   agent: claudeCli,
   skillDir: SKILL_DIR,
   ...(process.env.FACTORY_REVIEW_TRANSPORT === 'cli' ? {} : { claudeTurn: runClaudeTurn }),
@@ -683,7 +702,9 @@ export class ReviewService {
     await mkdir(join(dir, 'work'), { recursive: true });
     const settings = await this.settings(project);
     const skill = stripFrontmatter(await readFile(join(this.deps.skillDir, 'SKILL.md'), 'utf8'));
+    const github = await this.fetchGithub(record.worktree, record.number, join(dir, 'work'));
     const context = reviewContext({
+      github,
       skillDir: this.deps.skillDir,
       payload: join(dir, 'payload.json'),
       workDir: join(dir, 'work'),
@@ -729,6 +750,10 @@ export class ReviewService {
       resume,
       budgetUsd: REVIEW_TURN_BUDGET_USD,
       deny: automated ? AUTOMATED_TURN_DENY : [],
+      // Every review turn reads untrusted text (the diff, the PR body, comments), so its commands
+      // run in an OS sandbox: writes only to the worktree and the work dir, no network, no
+      // credential stores. The deny list above is a hint; this is the boundary.
+      sandbox: { allowWrite: [record.worktree, join(dir, 'work')] },
       ...(grant ? { mcp: grant.endpoint } : {}),
       ...(pruned.length && known.length ? { tools: known.filter((t) => !pruned.includes(t)) } : {}),
     };
@@ -759,6 +784,37 @@ export class ReviewService {
     // The turn is recorded before an in-process turn starts, so status sees it as running.
     await writeJsonAtomic(join(dir, 'run.json'), next);
     if (inProcess) this.runInProcess(key, dir, k, inProcess, { turn, systemPrompt, cwd: record.worktree });
+  }
+
+  /**
+   * Reads the pull request from GitHub into the work dir, so a sandboxed turn needs no network or
+   * token. A failure never stops the turn: what could be fetched is written, and the rest is named
+   * in the review context.
+   */
+  private async fetchGithub(
+    cwd: string,
+    number: number,
+    workDir: string,
+  ): Promise<{ files: string[]; failures: string[] }> {
+    const fetchContext = this.deps.github.context;
+    if (!fetchContext) return { files: [], failures: ['no GitHub client is configured'] };
+    let fetched: PullRequestContext;
+    try {
+      fetched = await fetchContext(cwd, number);
+    } catch (error) {
+      return { files: [], failures: [`GitHub: ${(error as Error).message.split('\n')[0]}`] };
+    }
+    const files: string[] = [];
+    const failures = [...fetched.failures];
+    for (const [name, text] of Object.entries(fetched.files)) {
+      try {
+        await writeFile(join(workDir, name), text);
+        files.push(name);
+      } catch (error) {
+        failures.push(`${name}: ${(error as Error).message}`);
+      }
+    }
+    return { files, failures };
   }
 
   /**
