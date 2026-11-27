@@ -23,6 +23,8 @@ function instruction(output: string): string {
     ].join(' ');
   if (/\[the change weakens tests:/.test(output))
     return 'Fix the code, not the tests. Restore each test, skip or assertion the change removed or weakened. If a test is wrong, comment why and set the status to blocked; a person can allow test changes.';
+  if (/\[the change touches protected paths:/.test(output))
+    return 'Undo every change to the protected paths with a new commit. If the task needs them, comment why and set the status to blocked; a person can allow protected paths.';
   if (/\[verification left uncommitted changes:/.test(output))
     return 'Files changed after your turn ended, while Factory ran the checks. Stop every background process you started (watchers, test runs, child agents). Commit the changes you mean to keep. If a check command writes the files, add them to .gitignore.';
   if (/\[setup failed after the change/.test(output))

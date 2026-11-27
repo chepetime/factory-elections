@@ -35,6 +35,14 @@
                 }
               }
             },
+            "ProviderTest": {
+              "fields": {
+                "provider": {
+                  "type": "string",
+                  "id": 1
+                }
+              }
+            },
             "Submission": {
               "fields": {
                 "project": {
@@ -281,6 +289,10 @@
                 },
                 "GetUserEnvironment": {
                   "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "TestProvider": {
+                  "requestType": "ProviderTest",
                   "responseType": "Snapshot"
                 },
                 "GetProjectSettings": {

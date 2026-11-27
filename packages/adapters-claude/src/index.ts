@@ -28,9 +28,11 @@ import {
   type ToolAccess,
 } from '@factory/core';
 import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, claudeMessageEvents, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
+import { baseSandbox } from './sandbox.ts';
 
 export * from './cli.ts';
 export * from './turn.ts';
+export * from './sandbox.ts';
 
 /** The built-in Claude tools each tool access level allows. */
 export const CLAUDE_TOOL_ACCESS: Record<ToolAccess, string[]> = {
@@ -60,32 +62,20 @@ export function sandboxFor(
   extra?: ModelRun['sandbox'],
 ): SandboxSettings | undefined {
   if (!CLAUDE_TOOL_ACCESS[tools].includes('Bash')) return undefined;
-  return {
-    enabled: true,
-    failIfUnavailable: true,
-    autoAllowBashIfSandboxed: false,
-    allowUnsandboxedCommands: false,
-    network: { allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])] },
-    filesystem: {
-      denyRead: [
-        join(home, '.ssh'),
-        join(home, '.npmrc'),
-        join(home, '.aws'),
-        join(home, '.config', 'gh'),
-        join(home, 'Library', 'Keychains'),
-      ],
-      allowWrite: [
-        join(home, 'Library', 'pnpm'),
-        join(home, 'Library', 'Caches', 'pnpm'),
-        join(home, '.npm'),
-        join(home, '.cache'),
-        // pnpm 12 locks its store under /tmp (not $TMPDIR); without it every install fails with
-        // ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK.
-        ...PNPM_LOCK_DIRS,
-        ...(extra?.allow_write ?? []),
-      ],
-    },
-  };
+  return baseSandbox({
+    home,
+    allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])],
+    allowWrite: [
+      join(home, 'Library', 'pnpm'),
+      join(home, 'Library', 'Caches', 'pnpm'),
+      join(home, '.npm'),
+      join(home, '.cache'),
+      // pnpm 12 locks its store under /tmp (not $TMPDIR); without it every install fails with
+      // ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK.
+      ...PNPM_LOCK_DIRS,
+      ...(extra?.allow_write ?? []),
+    ],
+  });
 }
 
 /** What a call was seen to do before it failed: the evidence a retry decision reads. */

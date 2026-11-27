@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // One-step local setup: install dependencies, put `factory` on PATH, run `factory doctor`.
-// Usage: pnpm run setup [-- --no-install] [-- --no-doctor]
+// Usage: pnpm run setup [-- --no-install] [-- --no-doctor] [-- --no-hooks]
 // FACTORY_BIN_DIR overrides the link directory (default ~/.local/bin).
 import { spawnSync } from 'node:child_process';
-import { lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +35,25 @@ if (!args.has('--no-install')) {
   if (install.error)
     fail('pnpm was not found. Install it with `brew install pnpm` or `npm install -g pnpm`.');
   if (install.status !== 0) fail('pnpm install failed; see the output above.');
+}
+
+if (!args.has('--no-hooks')) {
+  // A relative hooksPath resolves per worktree, so the hooks always match the checkout. Safe to rerun.
+  step('Installing git hooks (core.hooksPath scripts/git-hooks)');
+  const current = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: root, encoding: 'utf8' });
+  const value = current.stdout?.trim();
+  if (value && value !== 'scripts/git-hooks') console.log(`Replacing core.hooksPath ${value}`);
+  const set = spawnSync('git', ['config', 'core.hooksPath', 'scripts/git-hooks'], { cwd: root });
+  if (set.status !== 0) fail('git config core.hooksPath failed; is this a git checkout?');
+  for (const hook of ['pre-commit', 'post-commit'])
+    try {
+      chmodSync(join(root, 'scripts', 'git-hooks', hook), 0o755);
+    } catch {
+      /* a missing launcher is reported by git on first use */
+    }
+  console.log(
+    'Hooks: pre-commit (prettier + oxlint on staged files), post-commit (checks main in the background).',
+  );
 }
 
 step(`Linking ${link} -> ${target}`);

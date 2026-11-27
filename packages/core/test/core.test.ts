@@ -6,8 +6,10 @@ import {
   ModelLadder,
   TaskRecord,
   approvalBlockers,
+  isBuiltInProtectedPath,
   isForbiddenCommand,
   isForbiddenPath,
+  protectedPaths,
   isGeneratedPath,
   openPrBlockers,
   readinessDecision,
@@ -123,6 +125,45 @@ test('an agent run needs verification but no reviewer before approval', () => {
       r.includes('verification'),
     ),
   );
+});
+
+test('built-in protected paths ignore letter case and cannot be removed by a profile', () => {
+  for (const path of [
+    '.github/workflows/ci.yml',
+    '.github/actions/setup/action.yml',
+    '.GitHub/actions/x.yml',
+    '.husky/pre-push',
+    '.githooks/pre-commit',
+    '.claude/settings.json',
+    '.codex/config.toml',
+    '.agents/skills/x.md',
+    'AGENTS.md',
+    'claude.md',
+    'CODEOWNERS',
+    'docs/CODEOWNERS',
+    '.github/codeowners',
+    '.env',
+    '.env.production',
+    '.ENV.local',
+  ])
+    assert.equal(isBuiltInProtectedPath(path), true, path);
+  for (const path of [
+    'README.md',
+    'src/env.ts',
+    'docs/AGENTS.md.txt',
+    'src/.github-notes.md',
+    'CODEOWNERS.md',
+  ])
+    assert.equal(isBuiltInProtectedPath(path), false, path);
+  // A profile without the built-in paths still protects them, and adds its own.
+  assert.deepEqual(protectedPaths(['.github/workflows/ci.yml', 'secrets/k', 'src/a.ts'], ['secrets/']), [
+    '.github/workflows/ci.yml',
+    'secrets/k',
+  ]);
+  // A person's allowance lifts the built-in list only, never the profile's own paths.
+  assert.deepEqual(protectedPaths(['.github/workflows/ci.yml', 'secrets/k'], ['secrets/'], true), [
+    'secrets/k',
+  ]);
 });
 
 test('forbidden paths and commands', () => {

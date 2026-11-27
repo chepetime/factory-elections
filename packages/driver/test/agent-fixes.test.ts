@@ -21,6 +21,10 @@ test('each agent-fixable verification failure gets its own instruction, with the
     )!,
     /background/,
   );
+  assert.match(
+    verificationSteer('[the change touches protected paths: .github/x.yml. Undo those changes]')!,
+    /Undo every change to the protected paths/,
+  );
   assert.match(verificationSteer('✖ one test\n[test exited with status 1]')!, /Fix what fails/);
   for (const steer of [size, verificationSteer('[test exited with status 1]')!]) {
     assert.match(steer, /Do not merge, rebase, pull or reset/);
