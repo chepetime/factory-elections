@@ -100,7 +100,7 @@ export async function followUp(
   let note = input.note;
   if (input.kind === 'conflicts') {
     d.deps.log(`Merging ${base} into ${branch}…`);
-    const merge = await mergeBase(d.deps, path, `origin/${base}`);
+    const merge = await mergeBase(d.deps, path, `origin/${base}`, await d.deps.readProfile(task.project));
     if (merge.clean) {
       // Nothing for an agent: the merge adds only the base's own reviewed commits. When the checks
       // pass, the factory approves and pushes it to the same PR; a failed check stops as usual.
@@ -140,7 +140,7 @@ export async function syncBase(
     return none;
   }
   const before = await git.headSha(path);
-  const merge = await mergeBase(d.deps, path, `origin/${base}`);
+  const merge = await mergeBase(d.deps, path, `origin/${base}`, await d.deps.readProfile(task.project));
   if (!merge.clean) {
     d.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
     return { merged: true, conflicted: merge.conflicted };

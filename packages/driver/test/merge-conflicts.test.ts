@@ -1,4 +1,4 @@
-// Lockfile conflicts are the factory's to resolve: it regenerates the lockfile, outside the sandbox.
+// Lockfile conflicts are the factory's to resolve: it regenerates the lockfile in the check sandbox.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -34,7 +34,16 @@ async function diverged(alsoConflict: boolean) {
   return repo;
 }
 
-const deps = { git, shell: { runShell }, log: () => {} };
+// The check sandbox is macOS only and refuses to run elsewhere (CI is Linux); these tests cover the
+// merge, and one test below checks what the lockfile tool is given.
+const deps = {
+  git,
+  shell: {
+    runShell: (command: string, options: Parameters<typeof runShell>[1]) =>
+      runShell(command, { ...options, sandbox: undefined }),
+  },
+  log: () => {},
+};
 
 test('a lockfile-only conflict is regenerated and the merge committed, with nothing for the agent', async () => {
   const repo = await diverged(false);
@@ -53,4 +62,27 @@ test('with other conflicts, the lockfile is resolved and staged, and only the ot
   assert.deepEqual(merge, { clean: false, conflicted: ['notes.md'], regenerated: ['pnpm-lock.yaml'] });
   assert.match(sh(repo, 'diff', '--name-only', '--cached'), /pnpm-lock\.yaml/);
   assert.doesNotMatch(await readFile(join(repo, 'pnpm-lock.yaml'), 'utf8'), /^<<<<<<</m);
+});
+
+test('the lockfile tool runs in the check sandbox with the check environment, and git runs outside it', async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const repo = await diverged(false);
+  const calls: { command: string; env?: NodeJS.ProcessEnv; sandbox?: { reopen?: readonly string[] } }[] = [];
+  const shell = {
+    runShell: (command: string, options: Parameters<typeof runShell>[1] = {}) => {
+      calls.push({ command, env: options.env, sandbox: options.sandbox });
+      return runShell(command, { ...options, sandbox: undefined });
+    },
+  };
+  await mergeBase({ ...deps, shell }, repo, 'main');
+  const tool = calls.find((c) => c.command.startsWith('pnpm install'));
+  assert.ok(tool, 'the lockfile tool ran');
+  assert.match(tool.command, /--ignore-scripts --ignore-pnpmfile/);
+  assert.deepEqual(tool.sandbox?.reopen, [repo]);
+  assert.equal(tool.env?.FACTORY_TEST_STORAGE_KEY, undefined);
+  for (const call of calls.filter((c) => c !== tool)) {
+    assert.match(call.command, /^git /);
+    assert.equal(call.sandbox, undefined, 'git writes the main repository, outside the sandbox');
+  }
 });
