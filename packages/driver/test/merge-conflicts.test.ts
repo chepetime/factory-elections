@@ -116,3 +116,22 @@ test('when the regenerate command fails, its files go to the agent with the merg
   assert.ok(sh(repo, 'rev-parse', '-q', '--verify', 'MERGE_HEAD').trim(), 'the merge stays open');
   assert.match(await readFile(join(repo, 'gen', 'a.txt'), 'utf8'), /^<<<<<<< /m, 'the agent sees both sides');
 });
+
+test('a regenerate command that also rewrites another tracked file fails, leaving the worktree as merged', async () => {
+  const repo = await divergedGenerated();
+  const logs: string[] = [];
+  const merge = await mergeBase({ ...deps, log: (line: string) => logs.push(line) }, repo, 'main', [
+    { paths: ['gen/**'], command: 'cp src.txt gen/a.txt && cp src.txt gen/b.txt && echo changed >> src.txt' },
+  ]);
+  assert.deepEqual(merge, { clean: false, conflicted: ['gen/a.txt', 'gen/b.txt'], regenerated: [] });
+  assert.ok(
+    logs.some((line) => /src\.txt/.test(line)),
+    logs.join('\n'),
+  );
+  assert.equal(
+    await readFile(join(repo, 'src.txt'), 'utf8'),
+    'ONE\n2\n3\n4\nTHREE\n',
+    'src.txt is as merged',
+  );
+  assert.match(await readFile(join(repo, 'gen', 'a.txt'), 'utf8'), /^<<<<<<< /m, 'the agent sees both sides');
+});

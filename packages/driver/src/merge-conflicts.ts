@@ -60,20 +60,36 @@ export async function mergeBase(
   }
   // Once per rule, after all its files hold the base's copy: the command sees the merged sources.
   for (const [rule, matched] of byRule) {
+    const run = { cwd: dir, captureLimit: 4000 };
     const result = await deps.shell.runShell(
-      `git checkout --theirs -- ${files(matched)} && (${rule.command}) && git add -- ${files(matched)}`,
-      { cwd: dir, captureLimit: 4000, timeoutMs: 10 * 60_000 },
+      `git checkout --theirs -- ${files(matched)} && (${rule.command})`,
+      { ...run, timeoutMs: 10 * 60_000 },
     );
-    if (result.code === 0) regenerated.push(...matched);
-    else {
-      const why = (result.stderr.trim() || result.stdout.trim()).slice(-500);
-      deps.log(
-        `Could not regenerate ${matched.join(', ')} with \`${rule.command}\`; they go to the agent: ${why}`,
-      );
-      // Put the conflict markers back so the agent sees both sides, not the base's copy.
-      await deps.shell.runShell(`git checkout -m -- ${files(matched)}`, { cwd: dir, captureLimit: 4000 });
-      left.push(...matched);
+    let why = result.code === 0 ? '' : (result.stderr.trim() || result.stdout.trim()).slice(-500);
+    if (!why) {
+      // The command may touch only its own files: anything else it rewrote would leave the worktree
+      // dirty, so later syncs skip and verification fails. Such files go back to their merged state.
+      const diff = await deps.shell.runShell('git diff --name-only', run);
+      const extra = diff.stdout.split('\n').filter((file) => file && !merge.conflicted.includes(file));
+      if (extra.length) {
+        await deps.shell.runShell(`git checkout -- ${files(extra)}`, run);
+        why = `the command also changed ${extra.join(', ')}`;
+      }
     }
+    if (!why) {
+      const add = await deps.shell.runShell(`git add -- ${files(matched)}`, run);
+      if (add.code === 0) {
+        regenerated.push(...matched);
+        continue;
+      }
+      why = add.stderr.trim();
+    }
+    deps.log(
+      `Could not regenerate ${matched.join(', ')} with \`${rule.command}\`; they go to the agent: ${why}`,
+    );
+    // Put the conflict markers back so the agent sees both sides, not the base's copy.
+    await deps.shell.runShell(`git checkout -m -- ${files(matched)}`, run);
+    left.push(...matched);
   }
   if (regenerated.length) deps.log(`Regenerated ${regenerated.join(', ')} after merging ${ref}.`);
   if (left.length) return { clean: false, conflicted: left, regenerated };
