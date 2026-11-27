@@ -61,11 +61,31 @@ export async function changeGate(
   return undefined;
 }
 
-/** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
+/** The verify commands, captured from the approved profile before an agent runs. */
+export type VerifyCommands = { test: string; full_check: string };
+
+/** Why the profile's verify commands cannot run, or undefined when both are usable. */
+export function verifyCommandProblem(
+  commands: Partial<Record<keyof VerifyCommands, unknown>>,
+): string | undefined {
+  const bad = (['test', 'full_check'] as const).filter((key) => {
+    const value = commands[key];
+    return typeof value !== 'string' || !value.trim();
+  });
+  return bad.length
+    ? `The profile's verify command${bad.length > 1 ? 's' : ''} (commands.${bad.join(', commands.')}) ${bad.length > 1 ? 'are' : 'is'} missing or empty, so nothing ran. Set ${bad.length > 1 ? 'them' : 'it'} in the approved profile, then run the task again.`
+    : undefined;
+}
+
+/**
+ * Runs the profile's test and full-check commands in the worktree. Does not change the task file.
+ * `captured` pins the commands taken before the agent ran; only the exit codes decide the result.
+ */
 export async function verifyWorktree(
   deps: DriverDeps,
   project: string,
   id: string,
+  captured?: VerifyCommands,
 ): Promise<{
   passed: boolean;
   output: string;
@@ -106,8 +126,8 @@ export async function verifyWorktree(
   };
   const notRunLocally: string[] = [];
   for (const [label, command] of [
-    ['test', profile.commands.test],
-    ['full_check', profile.commands.full_check],
+    ['test', captured?.test ?? profile.commands.test],
+    ['full_check', captured?.full_check ?? profile.commands.full_check],
   ] as const) {
     deps.log(`$ ${command}   # ${label}`);
     commandOutput = '';
