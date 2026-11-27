@@ -54,6 +54,7 @@ import {
   worktreeGuard,
   readPrTemplate,
 } from './support.ts';
+import { runWithResultRetry } from './result-retry.ts';
 import { checkedWorktree } from './worktree.ts';
 import { changeGate, checkProfile, verifyWorktree } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
@@ -884,35 +885,57 @@ export class Driver {
       // The agent's last message: what it says it did, for the PR writer.
       let report = '';
       let saving: Promise<void> = Promise.resolve();
+      let retried: StepAttempt['retried'];
       try {
-        const result = await this.deps.runner.run({
-          ...limits,
-          step: 'agent',
-          sandbox,
-          ...(access.env ? { env: access.env } : {}),
-          ...(passEnv.length ? { passEnv } : {}),
-          model: session.model,
-          effort: session.effort,
-          tools: 'edit',
-          cwd: path,
-          ...(await this.agentExtras(project, session.model, session.systemPrompt)),
-          prompt: session.prompt,
-          guard,
-          maxTurns: 300,
-          persistSession: true,
-          ...(task.agent_session ? { resume: task.agent_session } : {}),
-          ...(grant ? { mcp: grant.endpoint } : {}),
-          // Save the session as soon as it exists: a stopped or crashed call must still resume it,
-          // or the next reply starts an agent that remembers nothing of its own work.
-          onEvent: (event) => {
-            if (event.type !== 'session' || event.id === sessionId) return;
-            sessionId = event.id;
-            saving = saving.then(async () => {
-              const current = await this.deps.tasks.read(project, id);
-              await this.deps.tasks.write({ ...current, agent_session: event.id });
-            });
+        const ran = await runWithResultRetry(
+          this.deps.runner,
+          {
+            ...limits,
+            step: 'agent',
+            sandbox,
+            ...(access.env ? { env: access.env } : {}),
+            ...(passEnv.length ? { passEnv } : {}),
+            model: session.model,
+            effort: session.effort,
+            tools: 'edit',
+            cwd: path,
+            ...(await this.agentExtras(project, session.model, session.systemPrompt)),
+            prompt: session.prompt,
+            guard,
+            maxTurns: 300,
+            persistSession: true,
+            ...(task.agent_session ? { resume: task.agent_session } : {}),
+            ...(grant ? { mcp: grant.endpoint } : {}),
+            // Save the session as soon as it exists: a stopped or crashed call must still resume it,
+            // or the next reply starts an agent that remembers nothing of its own work.
+            onEvent: (event) => {
+              if (event.type !== 'session' || event.id === sessionId) return;
+              sessionId = event.id;
+              saving = saving.then(async () => {
+                const current = await this.deps.tasks.read(project, id);
+                await this.deps.tasks.write({ ...current, agent_session: event.id });
+              });
+            },
           },
-        });
+          {
+            sessionId: () => sessionId,
+            // The retry is on the record before it runs, so a restart cannot grant another.
+            onRetry: async (first, mode) => {
+              await saving.catch(() => undefined);
+              const current = await this.deps.tasks.read(project, id);
+              await this.deps.tasks.write(
+                withEvent(
+                  current,
+                  this.deps.now(),
+                  'retry',
+                  `${session.name}'s turn ended with no result (${first.message}); retrying once${mode === 'resume' ? ' in the same session' : ' from the start'}.`,
+                ),
+              );
+            },
+          },
+        );
+        const result = ran.result;
+        retried = ran.retried;
         costUsd = result.costUsd;
         sessionId = result.sessionId ?? sessionId;
         report = result.text?.trim() ?? '';
@@ -966,6 +989,7 @@ export class Driver {
         outcome,
         cost_usd: costUsd,
         ...(error ? { error } : {}),
+        ...(retried ? { retried } : {}),
       };
       task = withEvent(
         {

@@ -320,3 +320,95 @@ test('an agent session gets a check_change tool that runs the size and test gate
   const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
   assert.equal(done.stage, 'awaiting-approval');
 });
+
+// A model call that ends with no result is retried once (ADR 0107).
+function failure(kind: string, toolCalls = 0, message = 'model run ended without a result') {
+  return Object.assign(new Error(message), {
+    kind,
+    costUsd: null,
+    activity: { assistantMessages: 1, toolCalls },
+  });
+}
+
+test('a stream that ends with no result resumes the saved session once, and the task continues', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 3);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.4, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, 'sess-1');
+  assert.match(ctx.calls[1]!.prompt, /Your last turn was cut off/);
+  const attempt = done.attempts?.at(-1);
+  assert.equal(attempt?.outcome, 'completed');
+  assert.equal(attempt?.retried, 'no-result');
+  assert.ok(
+    done.events?.some((e) => e.kind === 'retry' && /ended with no result/.test(e.message)),
+    'the retry is an event on the task',
+  );
+});
+
+test('a second no-result fails the task and keeps both errors', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 1, 'model run failed: CLI exited with code 1');
+    },
+    async () => {
+      throw failure('no-result', 1);
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /without a result.*CLI exited with code 1/s);
+  const failed = await ctx.store.read('demo', ctx.task.id);
+  assert.equal(failed.stage, 'failed');
+  assert.equal(ctx.calls.length, 2, 'one retry, not more');
+  assert.match(failed.attempts?.at(-1)?.error ?? '', /without a result.*CLI exited with code 1/s);
+});
+
+for (const kind of ['stalled', 'timeout', 'budget', 'aborted', 'usage-limit', 'rate-limited', 'error']) {
+  test(`a ${kind} failure is not retried`, async () => {
+    const ctx = await setup([
+      async (r) => {
+        r.onEvent?.({ type: 'session', id: 'sess-1' });
+        throw failure(kind, 0, `model run stopped: ${kind}`);
+      },
+    ]);
+    await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id));
+    assert.equal(ctx.calls.length, 1);
+    assert.equal((await ctx.store.read('demo', ctx.task.id)).stage, 'failed');
+  });
+}
+
+test('with no session id and a tool call made, a no-result is not retried', async () => {
+  const ctx = await setup([
+    async () => {
+      throw failure('no-result', 1);
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /without a result/);
+  assert.equal(ctx.calls.length, 1, 'a tool may have had a side effect');
+});
+
+test('with no session id and no tool call, a no-result starts the same request again', async () => {
+  const ctx = await setup([
+    async () => {
+      throw failure('no-result', 0);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.2 };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, undefined);
+  assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
+});
