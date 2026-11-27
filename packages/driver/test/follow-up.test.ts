@@ -122,8 +122,20 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
     sh(other, 'push', '-q', 'origin', 'main');
   };
   const read = () => store.read('demo', task.id);
+  const write = (t: TaskRecord) => store.write(t);
   const worktree = (t: TaskRecord) => t.worktree!.path;
-  return { driver, task: pr, turns, calls, github, landOnMain, read, worktree, prs: () => created_prs };
+  return {
+    driver,
+    task: pr,
+    turns,
+    calls,
+    github,
+    landOnMain,
+    read,
+    write,
+    worktree,
+    prs: () => created_prs,
+  };
 }
 
 function write(file: string, text: string): Turn {
@@ -302,4 +314,20 @@ test('the factory merges the base before an agent turn: the agent works on the c
     by: 'you',
   });
   assert.equal(followed.stage, 'awaiting-approval', 'the agent changed code, so a person approves it');
+});
+
+test('checking again runs the factory checks on the current commit with no agent turn, and a pass goes to approval', async () => {
+  const ctx = await opened();
+  const calls = ctx.calls.length;
+  await assert.rejects(
+    ctx.driver.check('demo', ctx.task.id),
+    /Add a follow-up instead/,
+    'not while the PR is open',
+  );
+  // The agent stopped (its budget, say) with its work committed: the checks need no agent.
+  await ctx.write({ ...(await ctx.read()), stage: 'blocked' });
+  const checked = await ctx.driver.check('demo', ctx.task.id);
+  assert.equal(checked.stage, 'awaiting-approval');
+  assert.equal(checked.verification?.passed, true);
+  assert.equal(ctx.calls.length, calls, 'no model call');
 });

@@ -407,6 +407,23 @@ export class Driver {
 
   // ---------- verification ----------
 
+  /**
+   * Runs the factory's checks again on the task's current commit, with no agent turn. A pass puts
+   * it at the approval gate; a failure records the output, as after any run. Agent tasks only: a
+   * pipeline task needs its reviewer step after verification.
+   */
+  async check(project: string, id: string): Promise<TaskRecord> {
+    const task = await this.deps.tasks.read(project, id);
+    const blockers = taskCommandBlockers(task, 'check');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    if (task.workflow !== 'agent')
+      throw new DriverError('Checking again is for agent tasks; revise a pipeline task.');
+    const { path } = await this.checkedWorktree(task);
+    if (!(await this.deps.git.isClean(path)))
+      throw new DriverError('the task worktree has uncommitted changes; commit them first');
+    return this.gateAfterFollowUp(project, id);
+  }
+
   /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
   verify(project: string, id: string) {
     return verifyWorktree(this.deps, project, id);
