@@ -522,12 +522,13 @@ export class BackendService {
     return composeDriver(this.root, log, runner, signal, this.delegation, {
       repositoryFacts: (project) => this.memory.prompt(project),
       contextLimits: async (project) => (await this.settings.get(project)).context_tokens,
-      agentSession: async (task, reply) => {
+      agentSession: async (task, reply, from) => {
         if (!task.agent) throw new Conflict('This run has no agent.');
         const profile = await readProfile(this.root, task.project);
         return buildAgentSession({
           task,
           ...(reply ? { reply } : {}),
+          ...(from ? { from } : {}),
           agent: await this.agents.active(task.agent),
           issues: this.issues,
           profile: {

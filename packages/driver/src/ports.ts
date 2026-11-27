@@ -162,8 +162,11 @@ export interface DriverDeps {
   repositoryFacts?(project: string): Promise<string | undefined>;
   /** The project's context size limits; absent: the default. */
   contextLimits?(project: string): Promise<ContextLimits | undefined>;
-  /** Builds an agent run's session; `reply` is the person's comment that resumes it. Absent: no agent runs. */
-  agentSession?(task: TaskRecord, reply?: string): Promise<AgentSession>;
+  /**
+   * Builds an agent run's session; `reply` is the person's comment that resumes it, or Factory's
+   * own message when `from` is `factory` (a fix turn after failed verification). Absent: no agent runs.
+   */
+  agentSession?(task: TaskRecord, reply?: string, from?: 'factory'): Promise<AgentSession>;
 }
 
 export class DriverError extends Error {}

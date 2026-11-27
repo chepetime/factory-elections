@@ -272,6 +272,11 @@ test('a review follow-up pushes its fix to the same PR once the checks pass, and
     await rm(join(r.cwd!, 'feature.txt'));
     return { text: 'Removed it.', costUsd: 0.1 };
   });
+  // Factory sends the failure back twice; the agent keeps its change, so the task waits for a person.
+  ctx.turns.push(
+    async () => ({ text: 'The reviewer asked for it.', costUsd: 0.1 }),
+    async () => ({ text: 'Still removed.', costUsd: 0.1 }),
+  );
   const failed = await ctx.driver.followUp('demo', ctx.task.id, {
     note: '1. [must-fix] Remove the file',
     kind: 'review',

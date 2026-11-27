@@ -54,7 +54,8 @@ import {
   readPrTemplate,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
-import { checkProfile, verifyWorktree } from './verification.ts';
+import { changeGate, checkProfile, verifyWorktree } from './verification.ts';
+import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
 export { readPrTemplate, worktreeGuard } from './support.ts';
@@ -792,14 +793,21 @@ export class Driver {
    * driver commits and verifies. A reply resumes the same session. There is no reviewer step: the
    * person reviews the change before approving it, and only a person opens the pull request.
    */
-  async agentRun(project: string, id: string, reply?: string): Promise<TaskRecord> {
+  async agentRun(
+    project: string,
+    id: string,
+    reply?: string,
+    /** Fix turns still left in this run; below AGENT_FIX_TURNS, `reply` is Factory's own fix message. */
+    fixTurns = AGENT_FIX_TURNS,
+  ): Promise<TaskRecord> {
     if (!this.deps.agentSession) throw new DriverError('Agent runs are not available here.');
+    const fromFactory = fixTurns < AGENT_FIX_TURNS;
     try {
       await this.preflight(project, id);
       let task = await this.deps.tasks.read(project, id);
       task = task.worktree ? await this.setupWorktree(project, id) : await this.prepareWorktree(project, id);
       const profile = await this.deps.readProfile(project);
-      const { path, branch } = await this.checkedWorktree(task);
+      const { path, branch, compare } = await this.checkedWorktree(task);
       // The factory, not the agent, brings the base in: outside the sandbox, before the turn.
       const synced = await this.syncBase(task);
       if (synced.conflicted.length)
@@ -809,7 +817,7 @@ export class Driver {
           'Resolve every conflict first so both changes keep working, and remove all conflict markers. Then continue:',
           reply ?? 'Continue the task.',
         ].join('\n');
-      const session = await this.deps.agentSession(task, reply);
+      const session = await this.deps.agentSession(task, reply, fromFactory ? 'factory' : undefined);
       const spent = workSpend(task);
       const left = session.budgetUsd - spent;
       if (left <= 0) {
@@ -822,7 +830,11 @@ export class Driver {
         task,
         this.deps.now(),
         'coding',
-        reply ? `${session.name} read your reply` : `${session.name} started`,
+        fromFactory
+          ? `${session.name} works on the verification failure`
+          : reply
+            ? `${session.name} read your reply`
+            : `${session.name} started`,
       );
       await this.deps.tasks.write(task);
 
@@ -846,7 +858,13 @@ export class Driver {
         budgetUsd: Math.min(left, DEFAULT_STEP_LIMITS.budget_usd),
         guard,
         runner: this.deps.runner,
-        tools: session.tools,
+        tools: [
+          ...session.tools,
+          changeCheckTool(async () => {
+            const current = await this.deps.tasks.read(project, id);
+            return changeGate(this.deps, path, compare, current.allow_test_changes === true);
+          }),
+        ],
         ...(limits.signal ? { signal: limits.signal } : {}),
       });
       const passEnv = [...(profile.sandbox?.pass_env ?? []), ...session.passEnv];
@@ -979,7 +997,24 @@ export class Driver {
       await this.deps.tasks.write(task);
       this.deps.log('Verifying…');
       const checked = await this.verifyAndRecord(project, id);
-      if (!checked.verification?.passed) return checked;
+      if (!checked.verification?.passed) {
+        // An agent can fix most failures itself: it gets the failure in the same session.
+        const steer =
+          fixTurns > 0
+            ? verificationSteer(checked.verification?.output_tail ?? '', profile.environment_errors)
+            : undefined;
+        if (!steer) return checked;
+        const turn = AGENT_FIX_TURNS - fixTurns + 1;
+        await this.deps.tasks.write(
+          withEvent(
+            checked,
+            this.deps.now(),
+            'verification',
+            `Verification failed; ${session.name} gets fix turn ${turn} of ${AGENT_FIX_TURNS}.`,
+          ),
+        );
+        return await this.agentRun(project, id, steer, fixTurns - 1);
+      }
       // The PR text is written now, so you read it at the gate; a failure leaves the template fallback.
       const verified = await this.draftPrQuietly(project, id, { agentReport: report });
       const ready = withStage(

@@ -19,6 +19,38 @@ import {
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 
+/** The most non-test lines one change may have. */
+export const CHANGE_LINE_LIMIT = 400;
+
+/**
+ * The gates on the committed change itself, before any check runs: its size and its tests.
+ * Returns why the change is refused, or undefined. The agent's check_change tool runs the same.
+ */
+export async function changeGate(
+  deps: Pick<DriverDeps, 'git'>,
+  path: string,
+  base: string,
+  allowTestChanges: boolean,
+): Promise<string | undefined> {
+  const changes = (await deps.git.diffLineCounts(path, base))
+    .filter((change) => !isTestPath(change.path))
+    .map((change) => ({ path: change.path, lines: (change.added ?? 0) + (change.deleted ?? 0) }));
+  const nonTestLines = changes.reduce((sum, change) => sum + change.lines, 0);
+  if (nonTestLines > CHANGE_LINE_LIMIT) {
+    const largest = changes
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, 8)
+      .map((change) => `${change.path} (${change.lines})`)
+      .join(', ');
+    return `[change has ${nonTestLines} non-test lines; limit is ${CHANGE_LINE_LIMIT}. Largest non-test files: ${largest}. Split the task into smaller deployable changes.]`;
+  }
+  // Passing tests prove nothing if the change made them easier to pass.
+  const weakened = allowTestChanges ? [] : testWeakening(await deps.git.diffSince(path, base));
+  if (weakened.length)
+    return `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`;
+  return undefined;
+}
+
 /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
 export async function verifyWorktree(
   deps: DriverDeps,
@@ -36,25 +68,8 @@ export async function verifyWorktree(
   const profile = await deps.readProfile(project);
   const { path, compare: base } = await checkedWorktree(deps, task);
   const startingHead = await deps.git.headSha(path);
-  const changes = await deps.git.diffLineCounts(path, base);
-  const nonTestLines = changes
-    .filter((change) => !isTestPath(change.path))
-    .reduce((sum, change) => sum + (change.added ?? 0) + (change.deleted ?? 0), 0);
-  if (nonTestLines > 400)
-    return {
-      passed: false,
-      output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
-      headSha: startingHead,
-    };
-  // Passing tests prove nothing if the change made them easier to pass.
-  const weakened =
-    task.allow_test_changes === true ? [] : testWeakening(await deps.git.diffSince(path, base));
-  if (weakened.length)
-    return {
-      passed: false,
-      output: `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`,
-      headSha: startingHead,
-    };
+  const refused = await changeGate(deps, path, base, task.allow_test_changes === true);
+  if (refused) return { passed: false, output: refused, headSha: startingHead };
   const limits = checkLimits(profile);
   let output = '';
   let commandOutput = '';
