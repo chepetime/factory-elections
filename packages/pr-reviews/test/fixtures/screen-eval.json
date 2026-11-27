@@ -1,0 +1,85 @@
+{
+  "note": "Labeled set for the review screen. Each case is a past-PR shape: its changed files and size, what the Haiku screen answered, and the findings the Opus review found. `screen` is a recorded answer; re-record it after changing the prompt or threshold. A case with a must-fix finding must never plan a Sonnet review.",
+  "cases": [
+    {
+      "name": "docs-only typo fix",
+      "files": ["docs/README.md"],
+      "changed": 4,
+      "screen": {
+        "sure": true,
+        "files": [{ "file": "docs/README.md", "score": 0.02, "reason": "Prose only." }]
+      },
+      "opus_findings": [{ "file": "docs/README.md", "severity": "nit" }]
+    },
+    {
+      "name": "rename a helper and its callers",
+      "files": ["src/format.ts", "src/list.ts"],
+      "changed": 18,
+      "screen": {
+        "sure": true,
+        "files": [
+          { "file": "src/format.ts", "score": 0.1, "reason": "Rename." },
+          { "file": "src/list.ts", "score": 0.1, "reason": "Call sites follow the rename." }
+        ]
+      },
+      "opus_findings": []
+    },
+    {
+      "name": "retry loop that swallows the final error",
+      "files": ["src/client.ts", "test/client.test.ts"],
+      "changed": 46,
+      "screen": {
+        "sure": true,
+        "files": [
+          { "file": "src/client.ts", "score": 0.55, "reason": "New retry logic around network calls." },
+          { "file": "test/client.test.ts", "score": 0.1, "reason": "Test only." }
+        ]
+      },
+      "opus_findings": [{ "file": "src/client.ts", "severity": "must-fix" }]
+    },
+    {
+      "name": "must-fix the screen scored low, caught by size",
+      "files": ["src/parse.ts"],
+      "changed": 520,
+      "screen": {
+        "sure": true,
+        "files": [{ "file": "src/parse.ts", "score": 0.2, "reason": "Mostly moved code." }]
+      },
+      "opus_findings": [{ "file": "src/parse.ts", "severity": "must-fix" }]
+    },
+    {
+      "name": "must-fix in a token handler the screen scored low, caught by path",
+      "files": ["src/auth/token.ts"],
+      "changed": 12,
+      "screen": {
+        "sure": true,
+        "files": [{ "file": "src/auth/token.ts", "score": 0.15, "reason": "Small edit." }]
+      },
+      "opus_findings": [{ "file": "src/auth/token.ts", "severity": "must-fix" }]
+    },
+    {
+      "name": "unsure screen on a tricky diff",
+      "files": ["src/queue.ts"],
+      "changed": 30,
+      "screen": { "sure": false, "files": [] },
+      "opus_findings": [{ "file": "src/queue.ts", "severity": "must-fix" }]
+    },
+    {
+      "name": "screen skipped a changed file",
+      "files": ["src/a.ts", "src/b.ts"],
+      "changed": 25,
+      "screen": { "sure": true, "files": [{ "file": "src/a.ts", "score": 0.05, "reason": "Trivial." }] },
+      "opus_findings": [{ "file": "src/b.ts", "severity": "must-fix" }]
+    },
+    {
+      "name": "small config tweak with a should-fix only",
+      "files": ["src/config.ts"],
+      "changed": 9,
+      "screen": {
+        "sure": true,
+        "files": [{ "file": "src/config.ts", "score": 0.12, "reason": "Default value change." }]
+      },
+      "opus_findings": [{ "file": "src/config.ts", "severity": "should-fix" }]
+    }
+  ]
+}
