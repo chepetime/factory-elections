@@ -10,7 +10,14 @@ export const MCP_TOOL_TIMEOUT_MS = 2 * 60 * 60_000;
 export function claudeMcpConfig(mcp: NonNullable<HeadlessTurn['mcp']>): string {
   return JSON.stringify({
     mcpServers: {
-      factory: { type: 'http', url: mcp.url, headers: { Authorization: `Bearer ${mcp.token}` } },
+      factory: {
+        type: 'http',
+        url: mcp.url,
+        headers: { Authorization: `Bearer ${mcp.token}` },
+        // A delegate call is silent until its child ends. Without a per-server timeout, Claude Code
+        // stops waiting after 300s of silence (its MCP idle limit), whatever MCP_TOOL_TIMEOUT says.
+        timeout: MCP_TOOL_TIMEOUT_MS,
+      },
     },
   });
 }

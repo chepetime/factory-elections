@@ -41,3 +41,7 @@ Short, ordered steps for the changes agents make most. Each lists the files in t
 ## Restart the stack
 
 From the primary checkout: `pnpm restart --dry-run`, then `pnpm restart`. See the [dev loop skill](../../.claude/skills/factory-dev-loop/SKILL.md) for the session and service rules.
+
+## Known failure modes of stuck tickets
+
+- **Verification lists source files as uncommitted, and the agent's transcript shows `tool "delegate" sent no response or progress for 300s`:** Claude Code stopped waiting for a silent `delegate` call, the parent turn ended, and the child kept editing while the factory verified. The factory MCP config now sets a per-server `timeout`, and the delegate server stops a child when its call is dropped or its grant is revoked (`packages/agents/src/delegation.ts`). If a branch already has the late edits, check that they are committed, then use **Run the checks again**.
