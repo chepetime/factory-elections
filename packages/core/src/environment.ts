@@ -1,5 +1,6 @@
-// Check output that shows the machine, not the change, is at fault. A stronger model cannot fix
-// an expired login or a stopped database, so such a failure stops the coder ladder.
+// Check output that shows the machine or its setup, not the code, is at fault. A
+// stronger model cannot fix an expired login or a missing tool,
+// so such a failure stops the coder ladder. Test and type failures still climb it.
 
 export interface EnvironmentFailure {
   /** Plain words for the task page, e.g. "a network service is not reachable". */
@@ -9,6 +10,13 @@ export interface EnvironmentFailure {
 }
 
 const TOO_BROAD = /too broad to run on this machine/;
+
+const SETUP: [RegExp, string][] = [
+  [
+    /command not found|ERR_PNPM_(UNSUPPORTED_ENGINE|OUTDATED_LOCKFILE|NO_MATCHING_VERSION)/,
+    'setup is incomplete (a tool or dependency is missing)',
+  ],
+];
 
 const KNOWN: [RegExp, string][] = [
   [/\b(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET)\b|tunnel error/, 'a network service is not reachable'],
@@ -59,6 +67,23 @@ export function environmentFailure(
     ]),
   ];
   for (const [pattern, reason] of rules) {
+    const line = lines.find((text) => pattern.test(text));
+    if (line !== undefined) return { reason, line: line.trim() };
+  }
+  return undefined;
+}
+
+/**
+ * Output a stronger model cannot fix: an environment fault, or an incomplete setup. The coder ladder stops on these; test and type failures climb.
+ */
+export function ladderStopFailure(
+  output: string,
+  patterns: readonly string[] = [],
+): EnvironmentFailure | undefined {
+  const found = environmentFailure(output, patterns);
+  if (found) return found;
+  const lines = output.split('\n');
+  for (const [pattern, reason] of SETUP) {
     const line = lines.find((text) => pattern.test(text));
     if (line !== undefined) return { reason, line: line.trim() };
   }

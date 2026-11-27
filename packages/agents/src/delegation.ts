@@ -12,7 +12,6 @@ import { z } from 'zod';
 import {
   DelegateInput,
   parseModelRef,
-  tokensCostUsd,
   type FactoryTool,
   type McpEndpoint,
   type ModelRun,
@@ -29,7 +28,7 @@ export const MAX_DELEGATION_DEPTH = Number(process.env.FACTORY_DELEGATION_DEPTH 
 export const CHILD_BUDGET_USD = 2;
 const CHILD_TIMEOUT_MS = 30 * 60_000;
 const CHILD_STALL_MS = 10 * 60_000;
-const DEFAULT_MODEL: Record<ProviderId, string> = { claude: 'claude-sonnet-5-5', codex: 'codex' };
+const DEFAULT_MODEL: Record<ProviderId, string> = { claude: 'claude-sonnet-5-5', codex: 'codex:gpt-5-codex' };
 
 const CHILD_SYSTEM_PROMPT = [
   'You are a child task. Another agent started you with the factory delegate tool.',
@@ -324,11 +323,12 @@ export class DelegationServer {
     this.deps.log?.(`  · delegate ${grant.label} → ${provider} (${access}, up to $${budget.toFixed(2)})`);
     try {
       const result = await runner.run(request);
-      // Codex reports tokens, not dollars: they count against the grant at the token price.
-      const cost = (result.costUsd ?? tokensCostUsd(result.usage)) + (child?.spent() ?? 0);
+      // A cost the adapter could not price is unknown, so the grant treats the whole call as spent.
+      const cost = (result.costUsd ?? budget) + (child?.spent() ?? 0);
       grant.spentUsd += cost;
       grant.left -= cost;
-      const spend = result.costUsd === null ? `about $${cost.toFixed(2)} in tokens` : `$${cost.toFixed(2)}`;
+      const spend =
+        result.costUsd === null ? `unknown cost, counted as $${cost.toFixed(2)}` : `$${cost.toFixed(2)}`;
       return { text: `Child task (${provider}, ${spend}) finished:\n\n${result.text}`, isError: false };
     } catch (error) {
       const reported = (error as { costUsd?: unknown }).costUsd;

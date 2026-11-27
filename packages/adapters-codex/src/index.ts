@@ -20,6 +20,7 @@ import {
   type ModelResult,
   type ModelRun,
   type ModelRunner,
+  usageCostUsd,
 } from '@factory/core';
 import {
   CODEX_EFFORT,
@@ -346,7 +347,7 @@ export class CodexRunner implements ModelRunner {
       return {
         text,
         ...(structured !== undefined ? { structured } : {}),
-        costUsd: null,
+        costUsd: usageCostUsd(request.model, result.usage),
         ...(sessionId ? { sessionId } : {}),
         ...(result.usage ? { usage: result.usage } : {}),
       };

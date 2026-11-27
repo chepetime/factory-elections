@@ -1,7 +1,15 @@
 // Pure task rules: readiness, gates and record updates. No I/O; time is passed in.
 import { templateFallback } from './pr-template.ts';
+import { priceFor } from './prices.ts';
 import { receiptClaims, receiptMarkdown } from './receipt.ts';
-import type { ClassifierVerdict, ReadinessDecision, RepoProfile, Stage, TaskRecord } from './schemas.ts';
+import type {
+  ClassifierVerdict,
+  ReadinessDecision,
+  RepoProfile,
+  Stage,
+  StepAttempt,
+  TaskRecord,
+} from './schemas.ts';
 import type { ModelFailure } from './ports.ts';
 
 export function readinessDecision(verdict: ClassifierVerdict): ReadinessDecision {
@@ -276,6 +284,28 @@ export function workSpend(task: TaskRecord): number {
   return (task.attempts ?? [])
     .filter((a) => !since || a.started_at >= since)
     .reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
+}
+
+/** Attempts since the task's latest follow-up whose cost is unknown (`cost_usd` null), never $0. */
+export function unknownCostAttempts(task: TaskRecord): StepAttempt[] {
+  const since = task.follow_ups?.at(-1)?.at;
+  return (task.attempts ?? []).filter((a) => (!since || a.started_at >= since) && a.cost_usd === null);
+}
+
+/** How many of the task's attempts have an unknown cost, for the whole task or only its current work. */
+export function unknownCostCount(task: TaskRecord, scope: 'task' | 'work' = 'task'): number {
+  return scope === 'work'
+    ? unknownCostAttempts(task).length
+    : (task.attempts ?? []).filter((a) => a.cost_usd === null).length;
+}
+
+/**
+ * True when the task's current work has spend the dollar total cannot see: a completed attempt with
+ * unknown cost whose model has no price, so no token cap stood for the dollar limit on it. A failed
+ * call that never produced a result is not counted: it ran no work to price.
+ */
+export function hasUncappedUnknownCost(task: TaskRecord): boolean {
+  return unknownCostAttempts(task).some((a) => a.outcome === 'completed' && priceFor(a.model) === null);
 }
 
 /**

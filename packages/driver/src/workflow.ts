@@ -8,7 +8,7 @@ import {
   ClassifierVerdict,
   DEFAULT_STEP_LIMITS,
   DEFAULT_TASK_LIMITS,
-  environmentFailure,
+  ladderStopFailure,
   approvalBlockers,
   blockingFindings,
   describeIssues,
@@ -18,6 +18,8 @@ import {
   readinessDecision,
   contextLimit,
   contextWarning,
+  hasUncappedUnknownCost,
+  unknownCostCount,
   workSpend,
   withEvent,
   withStage,
@@ -115,9 +117,12 @@ export class Driver {
   async requireBudget(project: string, id: string, step: string): Promise<void> {
     const task = await this.deps.tasks.read(project, id);
     const left = await this.budgetLeft(task);
-    if (left > 0) return;
+    const unknown = hasUncappedUnknownCost(task);
+    if (left > 0 && !unknown) return;
     const spent = workSpend(task).toFixed(2);
-    const message = `Task budget reached ($${spent} spent) before the ${step} step. Raise limits.task_budget_usd in the profile to continue.`;
+    const message = unknown
+      ? `Task budget cannot be checked before the ${step} step: ${unknownCostCount(task, 'work')} model call(s) have an unknown cost and no token cap covers them ($${spent} known spend). Add the model to the price table, or raise limits.task_budget_usd after checking the bill.`
+      : `Task budget reached ($${spent} spent) before the ${step} step. Raise limits.task_budget_usd in the profile to continue.`;
     await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
     throw new DriverError(message);
   }
@@ -771,9 +776,9 @@ export class Driver {
       if (task.verification?.passed) return task;
       feedback = task.verification?.output_tail;
       const profile = await this.deps.readProfile(project);
-      const environment = environmentFailure(feedback ?? '', profile.environment_errors);
+      const environment = ladderStopFailure(feedback ?? '', profile.environment_errors);
       if (environment) {
-        const message = `Verification failed for an environment reason: ${environment.reason}. A stronger model cannot fix this, so the coder ladder stopped. Fix the machine, then run the task again.\n${tail(feedback ?? '', 2000)}`;
+        const message = `Verification failed for an environment reason: ${environment.reason}. A stronger model cannot fix this, so the coder ladder stopped. Fix the cause, then run the task again.\n${tail(feedback ?? '', 2000)}`;
         await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
         throw new DriverError(message.split('\n')[0]!);
       }

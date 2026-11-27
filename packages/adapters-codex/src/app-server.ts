@@ -20,6 +20,7 @@ import {
   type ModelRunner,
   type ProviderCapabilities,
   type Usage,
+  usageCostUsd,
 } from '@factory/core';
 import {
   CODEX_EFFORT,
@@ -719,7 +720,7 @@ export class CodexAppServerRunner implements ModelRunner {
     return {
       text: turn.text,
       ...(structured !== undefined ? { structured } : {}),
-      costUsd: null,
+      costUsd: usageCostUsd(request.model, usage),
       ...(turn.threadId ? { sessionId: turn.threadId } : {}),
       ...(usage ? { usage } : {}),
     };

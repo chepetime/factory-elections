@@ -6,6 +6,8 @@ import {
   protectedPaths,
   taskTitle,
   taskCommandBlockers,
+  hasUncappedUnknownCost,
+  unknownCostCount,
   workSpend,
   withEvent,
   withStage,
@@ -19,7 +21,7 @@ import { readFile } from 'node:fs/promises';
 import { DriverError } from './ports.ts';
 import { MINUTE, errorCost, failureText } from './support.ts';
 import { changeGate, verifyCommandProblem, type VerifyCommands } from './verification.ts';
-import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
+import { AGENT_FIX_TURNS, branchGapSteer, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { noChangeBlocked, backgroundWork, steerPrompt, steersNoChange } from './agent-settle.ts';
 import { openPr } from './publication.ts';
 import { retrySpent, runWithResultRetry } from './result-retry.ts';
@@ -237,9 +239,12 @@ export async function agentRun(
     const session = await d.deps.agentSession(task, reply, fromFactory ? 'factory' : undefined);
     const spent = workSpend(task);
     const left = session.budgetUsd - spent;
-    if (left <= 0) {
+    const unknown = hasUncappedUnknownCost(task);
+    if (left <= 0 || unknown) {
       const work = task.follow_ups?.length ? 'this follow-up' : 'this task';
-      const message = `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
+      const message = unknown
+        ? `${session.name} has ${unknownCostCount(task, 'work')} model call(s) with an unknown cost in ${work} and no token cap covers them, so its budget cannot be checked ($${spent.toFixed(2)} known spend). Add the model to the price table, then reply here to continue.`
+        : `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
       await d.deps.tasks.write(withStage(task, d.deps.now(), 'blocked', message));
       return await d.deps.tasks.read(project, id);
     }
@@ -458,6 +463,20 @@ export async function agentRun(
       return await d.deps.tasks.read(project, id);
     }
     await d.deps.tasks.write(task);
+    // A branch with uncommitted files goes back to the agent before verification spends a run on it.
+    const dirty = fixTurns > 0 && !(await d.deps.git.isClean(path)) ? await d.deps.git.dirtyFiles(path) : [];
+    if (dirty.length) {
+      const turn = AGENT_FIX_TURNS - fixTurns + 1;
+      await d.deps.tasks.write(
+        withEvent(
+          task,
+          d.deps.now(),
+          'verification',
+          `The branch has uncommitted changes; ${session.name} gets fix turn ${turn} of ${AGENT_FIX_TURNS}.`,
+        ),
+      );
+      return await d.agentRun(project, id, branchGapSteer(dirty), fixTurns - 1, captured);
+    }
     d.deps.log('Verifying…');
     const checked = await d.verifyAndRecord(project, id, captured);
     if (!checked.verification?.passed) {

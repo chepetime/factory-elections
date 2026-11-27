@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PROVIDER_CAPABILITIES, ProviderRouter, tokenCapFor, type ModelRun } from '@factory/core';
+import {
+  PROVIDER_CAPABILITIES,
+  ProviderRouter,
+  tokenCapForModel,
+  usageCostUsd,
+  type ModelRun,
+} from '@factory/core';
 import { DelegationServer, MAX_DELEGATION_DEPTH } from '../src/delegation.ts';
 
 async function rpc(url: string, token: string, method: string, params?: unknown) {
@@ -27,7 +33,7 @@ test('delegate runs a child on any provider within the grant: access, budget, sl
     codex: {
       // The app-server transport: it stops a call at a token cap.
       capabilities: { ...PROVIDER_CAPABILITIES.codex, tokenCap: true },
-      run: async (r) => (calls.push(r), { text: 'codex says hi', costUsd: null }),
+      run: async (r) => (calls.push(r), { text: 'codex says hi', costUsd: 0 }),
     },
   });
   const server = new DelegationServer({
@@ -67,7 +73,7 @@ test('delegate runs a child on any provider within the grant: access, budget, sl
   const codex = await call({ provider: 'codex', task: 'Find the config loader' });
   assert.equal(codex.isError, false);
   assert.match(codex.content[0]!.text, /codex says hi/);
-  assert.equal(calls[0]!.model, 'codex');
+  assert.equal(calls[0]!.model, 'codex:gpt-5-codex');
   assert.equal(calls[0]!.tools, 'read-only');
   assert.equal(calls[0]!.guard, undefined);
   assert.equal(calls[0]!.cwd, '/work');
@@ -186,7 +192,8 @@ test('Codex child tokens reduce the parent grant, and a child stopped at its cap
       run: async (r) => {
         calls.push(r);
         if (outcome === 'budget') throw Object.assign(new Error('token limit'), { kind: 'budget' });
-        return { text: 'done', costUsd: null, usage: { inputTokens: 200_000, outputTokens: 50_000 } };
+        const usage = { inputTokens: 200_000, outputTokens: 50_000 };
+        return { text: 'done', costUsd: usageCostUsd(r.model, usage), usage };
       },
     },
   });
@@ -200,7 +207,7 @@ test('Codex child tokens reduce the parent grant, and a child stopped at its cap
 
   const first = await call({ provider: 'codex', task: 'Look', budget_usd: 1 });
   assert.equal(first.isError, false);
-  // 250k tokens at the token price is $0.75: it counts, though Codex reports no dollars.
+  // 200k in and 50k out at the model's price is $0.75, priced from tokens.
   assert.equal(grant.spent(), 0.75);
   assert.match(first.content[0]!.text, /\$0\.75/);
   const second = await call({ provider: 'codex', task: 'Look again', budget_usd: 5 });
@@ -214,5 +221,6 @@ test('Codex child tokens reduce the parent grant, and a child stopped at its cap
   assert.equal(grant.spent(), 2, 'a child stopped at its limit spends that limit');
   assert.match((await call({ provider: 'codex', task: 'More' })).content[0]!.text, /No budget is left/);
   assert.equal(calls.length, 3);
-  assert.equal(tokenCapFor(0.75), 250_000);
+  assert.equal(tokenCapForModel('codex:gpt-5-codex', 0.75), 75_000);
+  assert.equal(tokenCapForModel('codex', 0.75), null, 'an unpriced model has no cap');
 });
