@@ -379,3 +379,56 @@ test(
     await second.close();
   },
 );
+
+test(
+  'Postgres compare-and-set lets only one of two writers with the same generation win',
+  {
+    skip: !enabled,
+  },
+  async (t) => {
+    const { storage, root } = await setup(t);
+    const path = join(root, 'demo', 'tasks', 'x', 'runs', 'r1', 'run.json');
+    await storage.writeDocument(path, { state: 'running', owner_generation: 1 });
+    const results = await Promise.all([
+      storage.writeDocumentIf(path, { state: 'interrupted', owner_generation: 2 }, 1),
+      storage.writeDocumentIf(path, { state: 'completed', owner_generation: 1 }, 1),
+    ]);
+    assert.equal(results.filter((r) => r.written).length, 1);
+    const stored = (await storage.readDocument(path)) as { owner_generation: number };
+    assert.equal(stored.owner_generation, results[0]!.written ? 2 : 1);
+    const lost = results.find((r) => !r.written);
+    assert.deepEqual((lost as { current: unknown }).current, stored);
+    // Absent owner_generation counts as 0.
+    const bare = join(root, 'demo', 'tasks', 'x', 'runs', 'r2', 'run.json');
+    await storage.writeDocument(bare, { state: 'running' });
+    assert.deepEqual(await storage.writeDocumentIf(bare, { state: 'done' }, 0), { written: true });
+    assert.deepEqual(await storage.writeDocumentIf(join(root, 'nothing.json'), {}, 0), {
+      written: false,
+      current: undefined,
+    });
+  },
+);
+
+test('file compare-and-set writes only when the stored generation matches', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-cas-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const storage = new DataStorage(root);
+  const path = join(root, 'run.json');
+  assert.deepEqual(await storage.writeDocumentIf(path, { state: 'running' }, 0), {
+    written: false,
+    current: undefined,
+  });
+  await storage.writeDocument(path, { state: 'running' });
+  assert.deepEqual(await storage.writeDocumentIf(path, { state: 'interrupted', owner_generation: 2 }, 0), {
+    written: true,
+  });
+  const lost = await storage.writeDocumentIf(path, { state: 'completed', owner_generation: 1 }, 1);
+  assert.deepEqual(lost, { written: false, current: { state: 'interrupted', owner_generation: 2 } });
+  assert.deepEqual(await storage.readDocument(path), { state: 'interrupted', owner_generation: 2 });
+  // Concurrent writers with one expected generation: exactly one wins.
+  const race = await Promise.all([
+    storage.writeDocumentIf(path, { owner_generation: 3, who: 'a' }, 2),
+    storage.writeDocumentIf(path, { owner_generation: 3, who: 'b' }, 2),
+  ]);
+  assert.equal(race.filter((r) => r.written).length, 1);
+});

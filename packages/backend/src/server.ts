@@ -25,6 +25,19 @@ export interface ServerOptions {
   reviews?: ReviewDeps;
   detector?: SettingsDetector;
 }
+/**
+ * Increases `<root>/backend-generation` and returns it. Call it only while holding `backend.lock`.
+ * A missing or garbled file counts as 0, so the first start is generation 1. Run records carry the
+ * generation of the backend that owns them; a backend that lost the lock by hand-removal and wakes
+ * later holds an older number and its writes are fenced out (ADR 0005).
+ */
+export async function nextGeneration(root: string): Promise<number> {
+  const path = join(root, 'backend-generation');
+  const text = await readFile(path, 'utf8').catch(() => '');
+  const previous = /^\s*\d+\s*$/.test(text) ? Number(text) : 0;
+  await writeFile(path, `${previous + 1}\n`, { mode: 0o600 });
+  return previous + 1;
+}
 export async function startBackend(options: ServerOptions) {
   const { root } = options;
   await mkdir(root, { recursive: true });
@@ -38,6 +51,7 @@ export async function startBackend(options: ServerOptions) {
       throw error;
     },
   );
+  const generation = await nextGeneration(root);
   const rpc = new Server({
     'grpc.max_receive_message_length': 1024 * 1024,
     'grpc.max_send_message_length': 16 * 1024 * 1024,
@@ -48,6 +62,7 @@ export async function startBackend(options: ServerOptions) {
     options.environment,
     options.reviews,
     options.detector,
+    generation,
   );
   // Ledger scans can be expensive. Share one refresh across callers and cache it briefly.
   let ledgerCache:

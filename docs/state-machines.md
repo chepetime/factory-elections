@@ -56,6 +56,8 @@ After a restart `reconcileTask` (`service-recovery.ts`) reads the task's latest 
 
 Not covered yet: only the latest run of a task is read, so an older run left `running` is never settled; the review, review-loop, feature, ticket and `working`-flag states have no table; nothing reports a record that no owner holds.
 
+Run record ownership: each backend start raises `<root>/backend-generation` under `backend.lock`, and `run.json` carries `owner_generation` (absent = 0). All `run.json` writes compare the stored generation first (`writeRun`; true compare-and-set on Postgres, serialized in-process on files, not atomic against a process that ignores the lock). A writer that lost the fence writes nothing and logs `finalize.fenced` in the run's `events.jsonl`. Recovery writes `interrupted` with the new generation. Fencing the old driver's `task.json` writes is a follow-up (phase 2).
+
 ## Workflow inventory
 
 | Machine / source | States and transitions | Decision / invariant |
