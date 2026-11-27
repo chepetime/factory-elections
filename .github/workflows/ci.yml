@@ -1,6 +1,10 @@
 name: CI
 on:
   pull_request:
+  # PRs merge without being up to date with main, so main itself runs the checks after each merge:
+  # a combination of PRs that breaks main shows up here within minutes.
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
