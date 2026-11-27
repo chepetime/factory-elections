@@ -5,6 +5,8 @@ import {
   isTestPath,
   testWeakening,
   isGeneratedPath,
+  isBuiltInProtectedPath,
+  protectedPaths,
   runtimeVerdict,
   type RuntimeVerdict,
 } from '@factory/core';
@@ -31,6 +33,7 @@ export async function verifyWorktree(
   runtime?: RuntimeVerdict;
   notRunLocally?: string[];
   testIntegrity?: 'checked' | 'allowed';
+  protectedPathsAllowed?: string[];
 }> {
   const task = await deps.tasks.read(project, id);
   const profile = await deps.readProfile(project);
@@ -55,8 +58,23 @@ export async function verifyWorktree(
       output: `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`,
       headSha: startingHead,
     };
+  // Every path to the gate needs a passing verification for its exact head, so this one check
+  // covers the coder's commits, commits an agent made itself, and follow-ups. It reads the whole
+  // branch against its base, including a rename's old path and deletions.
+  const touched = await deps.git.changedPathsSince(path, base);
+  const allowProtected = task.allow_protected_paths === true;
+  const blocked = protectedPaths(touched, profile.confirmed.forbidden_paths, allowProtected);
+  if (blocked.length)
+    return {
+      passed: false,
+      output: `[the change touches protected paths: ${blocked.join(', ')}. Undo those changes; a person can allow protected paths for this task.]`,
+      headSha: startingHead,
+    };
+  const protectedPathsAllowed = allowProtected ? [...new Set(touched)].filter(isBuiltInProtectedPath) : [];
   const limits = checkLimits(profile);
-  let output = '';
+  let output = protectedPathsAllowed.length
+    ? `[a person allowed protected paths for this task; the change touches: ${protectedPathsAllowed.join(', ')}. Review them before approving.]\n`
+    : '';
   let commandOutput = '';
   const onOutput = (chunk: string) => {
     output = tail(output + chunk);
@@ -164,6 +182,7 @@ export async function verifyWorktree(
     output,
     headSha,
     testIntegrity: task.allow_test_changes === true ? 'allowed' : 'checked',
+    ...(protectedPathsAllowed.length ? { protectedPathsAllowed } : {}),
     ...(runtime ? { runtime } : {}),
     ...(notRunLocally.length ? { notRunLocally } : {}),
   };

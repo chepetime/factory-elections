@@ -14,13 +14,13 @@ const engine: EngineHealth = {
   integrations: [],
 };
 const health: NetworkInput['health'] = { status: 'ok', health: engine };
-const installed = { installed: true, version: '2.1.0', models: [] };
+const installed = { installed: true, version: '2.1.0', models: [], checks: [] };
 const environment: NetworkInput['environment'] = {
   ok: true,
   value: {
     git: { project_emails: [] },
     github: {},
-    providers: { claude: installed, codex: installed, pi: { installed: false, models: [] } },
+    providers: { claude: installed, codex: installed, pi: { installed: false, models: [], checks: [] } },
   },
 };
 

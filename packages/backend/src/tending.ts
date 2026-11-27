@@ -31,7 +31,9 @@ import {
   type TendingWaiting,
   conflictFollowUpSeen,
   PrStatus,
+  protectedPaths,
 } from '@factory/core';
+import { NO_HOOKS, changedPathsSince } from '@factory/adapters-git';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
 
@@ -197,7 +199,8 @@ export const ghTending: TendingGitHub = {
 };
 
 async function git(cwd: string, args: string[]) {
-  return run('git', args, { cwd, timeoutMs: 120_000 });
+  // No repository hooks: `merge` and `commit` would run the PR's own hooks on the host.
+  return run('git', [...NO_HOOKS, ...args], { cwd, timeoutMs: 120_000 });
 }
 async function gitOk(cwd: string, args: string[]): Promise<string> {
   const r = await git(cwd, args);
@@ -442,7 +445,7 @@ export class TendingService {
         prompt,
         cwd,
         tools: 'edit',
-        guard: worktreeGuard(cwd, profile),
+        guard: worktreeGuard(cwd, profile, task.allow_protected_paths === true),
         maxTurns: 120,
         maxBudgetUsd: TEND_BUDGET_USD,
         timeoutMs: TEND_TIMEOUT_MS,
@@ -506,6 +509,16 @@ export class TendingService {
         );
         await commitAll(cwd, 'Address review comments');
       }
+      // The guard cannot see what a Bash command writes. A merged base brings the base's own
+      // changes, so only the agent's commits (fix-ci, review) are checked.
+      if (action.kind !== 'merge-base') {
+        const touched = protectedPaths(
+          await changedPathsSince(cwd, before),
+          profile.confirmed.forbidden_paths,
+          task.allow_protected_paths === true,
+        );
+        if (touched.length) throw new Error(`the change touches protected paths: ${touched.join(', ')}`);
+      }
     } catch (error) {
       await git(cwd, ['merge', '--abort']);
       await git(cwd, ['reset', '-q', '--hard', before]);
@@ -549,8 +562,26 @@ export class TendingService {
         await git(cwd, ['reset', '-q', '--hard', before]);
         return done('failed', cost, `the test command failed: ${(test.stdout + test.stderr).slice(-500)}`);
       }
+      // Push the commit that was tested. If HEAD moved during setup or test (a command committed),
+      // the tested SHA is not what is on disk: fail and go back rather than push either.
+      const now = await gitOk(cwd, ['rev-parse', 'HEAD']);
+      if (now !== head) {
+        await git(cwd, ['reset', '-q', '--hard', before]);
+        return done(
+          'failed',
+          cost,
+          `HEAD moved from ${head.slice(0, 12)} to ${now.slice(0, 12)} while the checks ran`,
+        );
+      }
       // A plain push of new commits on top of the PR head: a fast-forward, never a force-push.
-      await gitOk(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`]);
+      await gitOk(cwd, ['push', '-q', 'origin', `${head}:refs/heads/${branch}`]);
+      const remote = (await gitOk(cwd, ['ls-remote', 'origin', `refs/heads/${branch}`])).split(/\s/)[0];
+      if (remote !== head)
+        return done(
+          'failed',
+          cost,
+          `origin ${branch} is ${remote || 'missing'} after the push, not ${head.slice(0, 12)}`,
+        );
     }
     const answered: string[] = [];
     const replyIds: string[] = [];

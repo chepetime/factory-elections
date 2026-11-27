@@ -66,6 +66,7 @@ export interface Messages {
   ReviewStart: { project: string; numbers: number[]; mode: 'review' | 'rereview' };
   ReviewMessage: ReviewTarget & { text: string };
   SettingsUpdate: { project: string; json: string };
+  ProviderTest: { provider: string };
   Command: Command;
   Assignment: { project: string; email: string; team?: string; tags: string[] };
 }
