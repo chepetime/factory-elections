@@ -73,7 +73,7 @@ test('delegate runs a child on any provider within the grant: access, budget, sl
   const codex = await call({ provider: 'codex', task: 'Find the config loader' });
   assert.equal(codex.isError, false);
   assert.match(codex.content[0]!.text, /codex says hi/);
-  assert.equal(calls[0]!.model, 'codex');
+  assert.equal(calls[0]!.model, 'codex:gpt-5-codex');
   assert.equal(calls[0]!.tools, 'read-only');
   assert.equal(calls[0]!.guard, undefined);
   assert.equal(calls[0]!.cwd, '/work');
