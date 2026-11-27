@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
 import { claudeCli, type ClaudeTurnRequest } from '@factory/adapters-claude';
-import { ProjectSettings } from '@factory/core';
+import { ProjectSettings, type ModelRunner } from '@factory/core';
 import {
   AUTOMATED_TURN_DENY,
   ReviewService,
@@ -60,6 +60,7 @@ async function fixture(
   otherAgents = () => 0,
   claudeTurn?: ReviewDeps['claudeTurn'],
   context?: ReviewDeps['github']['context'],
+  screen?: ReviewDeps['screen'],
 ) {
   const base = await mkdtemp(join(tmpdir(), 'factory-reviews-'));
   t.after(() => rm(base, { recursive: true, force: true }));
@@ -104,6 +105,7 @@ async function fixture(
     },
     skillDir: SKILL_DIR,
     ...(claudeTurn ? { claudeTurn } : {}),
+    ...(screen ? { screen } : {}),
   };
   const settings = async () =>
     ProjectSettings.parse({ task_manager: { kind: 'jira', cli: 'acli' }, review_profile: '# App profile' });
@@ -581,4 +583,36 @@ test('a fetch that throws, or no fetch at all, leaves the turn running with the 
   await bare.reviews.start({ project: 'app', numbers: [7], mode: 'review' });
   assert.equal((await settle(bare.reviews, 7)).state, 'completed');
   assert.match(seen[1]!.systemPrompt, /no GitHub client is configured/);
+});
+
+test('the screen picks the model and budget of the review turn, and the run record keeps its plan', async (t) => {
+  const diff =
+    'diff --git a/feature.txt b/feature.txt\n--- a/feature.txt\n+++ b/feature.txt\n@@ -1 +1 @@\n+x\n-y\n';
+  const context = async () => ({ files: { 'pr.diff': diff }, failures: [] });
+  const low: ModelRunner = {
+    run: async () => ({
+      text: '',
+      costUsd: 0.004,
+      structured: { sure: true, files: [{ file: 'feature.txt', score: 0.05, reason: 'Trivial.' }] },
+    }),
+  };
+  const broken: ModelRunner = {
+    run: async () => {
+      throw new Error('screen down');
+    },
+  };
+  for (const [screen, model, depth] of [
+    [low, 'claude-sonnet-5-5', 'sonnet'],
+    [broken, 'claude-opus-5-5', 'opus'],
+  ] as const) {
+    const seen: ClaudeTurnRequest[] = [];
+    const { root, reviews } = await fixture(t, () => 0, sdkTurn(seen), context, screen);
+    await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+    await settle(reviews, 7);
+    assert.equal(seen[0]!.turn.model, model);
+    assert.equal(seen[0]!.turn.budgetUsd, depth === 'sonnet' ? 8 : 25);
+    const run = JSON.parse(await readFile(join(root, 'app', 'reviews', '7', 'run.json'), 'utf8'));
+    assert.equal(run.turns[0].screen.depth, depth);
+    assert.equal(run.turns[0].screen.cost_usd, depth === 'sonnet' ? 0.004 : undefined);
+  }
 });

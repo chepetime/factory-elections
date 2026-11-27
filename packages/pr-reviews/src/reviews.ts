@@ -45,6 +45,7 @@ import {
   type AgentCli,
   type HeadlessTurn,
   type ProjectSettings,
+  Conflict,
 } from '@factory/core';
 import { type ProjectStore, writeJsonAtomic } from '@factory/adapters-fs';
 import {
@@ -69,7 +70,6 @@ import {
   type ClaudeTurnRequest,
   type ClaudeTurnResult,
 } from '@factory/adapters-claude';
-import { Conflict } from '@factory/core';
 import { MAX_AGENTS } from '@factory/dispatcher';
 import type { ReviewDelegation, ReviewGrant, ReviewMemory } from './ports.ts';
 import type { TraceLog } from '@factory/evidence';
@@ -83,6 +83,8 @@ import {
   RunFile,
   reviewWorktree,
 } from './review-files.ts';
+import { defaultScreen, planAttributes, planRecord, planReviewFile } from './review-screen.ts';
+import type { ScreenRunner } from './review-screen.ts';
 import { missingReportReason, offeredTools, permissionModeOf } from './review-turn-log.ts';
 import type { ReviewDetail, ReviewFindingRow, ReviewRow, ReviewStatus } from './review-types.ts';
 
@@ -144,6 +146,7 @@ export interface ReviewDeps {
   skillDir: string;
   /** Runs a Claude turn in-process on the SDK. Absent: Claude turns run as detached CLI processes. */
   claudeTurn?: (request: ClaudeTurnRequest) => Promise<ClaudeTurnResult>;
+  screen?: ScreenRunner;
 }
 
 export const defaultReviewDeps: ReviewDeps = {
@@ -155,6 +158,7 @@ export const defaultReviewDeps: ReviewDeps = {
   },
   agent: claudeCli,
   skillDir: SKILL_DIR,
+  ...(process.env.FACTORY_REVIEW_SCREEN === 'off' ? {} : { screen: defaultScreen() }),
   ...(process.env.FACTORY_REVIEW_TRANSPORT === 'cli' ? {} : { claudeTurn: runClaudeTurn }),
 };
 
@@ -197,11 +201,6 @@ export class ReviewService {
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
   reviewRecords?: PrReviewStore;
-  /**
-   * Called once when a review's first turn ends: with its payload when it finished with a decision,
-   * or undefined when it stopped or failed. The backend's review loop listens here.
-   */
-  /** A first review turn ended: its payload, or why there is none. */
   /**
    * Any review turn ended. `kickoff`: a review or re-review turn (its payload, or why there is
    * none); otherwise a person's message, such as "post the comments", which the agent carried out.
@@ -440,7 +439,7 @@ export class ReviewService {
       type: 'review',
       name: turn.label ?? (k === 0 ? 'review' : 'review reply'),
       step: 'review',
-      model: REVIEW_MODEL,
+      model: turn.screen?.model ?? REVIEW_MODEL,
       provider: this.deps.agent.id,
       gateway: 'direct',
       started_at: turn.at,
@@ -449,7 +448,7 @@ export class ReviewService {
       outcome: turn.stopped ? 'aborted' : result?.ok === false ? 'failed' : 'completed',
       cost_usd: result?.costUsd ?? null,
       ...(result?.usage ? { tokens: spanTokens(result.usage) } : {}),
-      attributes: { turn: k },
+      attributes: { turn: k, ...planAttributes(turn.screen) },
     });
     this.traces.append({ ...scope, parent_span_id: spanId }, ...tools.finish(false));
     await this.traces.flush();
@@ -497,7 +496,6 @@ export class ReviewService {
     record: RunFile | undefined,
     worktree: boolean,
   ): Promise<ReviewStatus> {
-    const key = record && `${project}#${record.number}`;
     if (!record) return { turns: 0, report: false, worktree };
     const number = record.number;
     const { payload } = await this.readPayload(project, number);
@@ -525,7 +523,6 @@ export class ReviewService {
           : 'interrupted';
     else status.state = turn.pid && isAlive(turn.pid) ? 'running' : 'interrupted';
     if (turn.stop_reason) status.stop_reason = turn.stop_reason;
-    void key;
     return status;
   }
   /** Adds what only this process knows: a start being prepared, or why the last one failed. */
@@ -744,11 +741,13 @@ export class ReviewService {
         parent_span_id: spanId,
         pr: { url: record.url, number: record.number },
       });
+    const plan = automated ? await planReviewFile(this.deps.screen, join(dir, 'work', 'pr.diff')) : undefined;
     const turn: AgentTurn = {
+      ...(plan ? { model: plan.model } : {}),
       message: message.text,
       systemPromptFile,
       resume,
-      budgetUsd: REVIEW_TURN_BUDGET_USD,
+      budgetUsd: plan?.budgetUsd ?? REVIEW_TURN_BUDGET_USD,
       deny: automated ? AUTOMATED_TURN_DENY : [],
       // Every review turn reads untrusted text (the diff, the PR body, comments), so its commands
       // run in an OS sandbox: writes only to the worktree and the work dir, no network, no
@@ -778,6 +777,7 @@ export class ReviewService {
           ...(pid ? { pid } : { owner: this.instance }),
           trace_id: traceId,
           span_id: spanId,
+          ...(plan ? { screen: planRecord(plan) } : {}),
         },
       ],
     };

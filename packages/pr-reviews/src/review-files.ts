@@ -22,6 +22,17 @@ export const Turn = z.object({
   /** The turn's span in the trace ledger; its children hang under it. */
   trace_id: z.string().optional(),
   span_id: z.string().optional(),
+  /** The cheap screen's plan for the review: depth, model, why, and what the screen cost. */
+  screen: z
+    .object({
+      depth: z.enum(['sonnet', 'opus']),
+      model: z.string(),
+      reason: z.string(),
+      screened: z.boolean(),
+      max_score: z.number().optional(),
+      cost_usd: z.number().optional(),
+    })
+    .optional(),
 });
 export const RunFile = z.object({
   number: PrNumber,
