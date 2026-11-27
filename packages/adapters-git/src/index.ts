@@ -109,7 +109,8 @@ export async function commitOf(repo: string, ref: string | undefined): Promise<s
 }
 
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
-  await exclusive(repo, () => git(repo, ['worktree', 'add', '-b', branch, path, base]));
+  // No tracking: a branch started from origin/main must not pull main or push to it by default.
+  await exclusive(repo, () => git(repo, ['worktree', 'add', '--no-track', '-b', branch, path, base]));
 }
 
 export async function removeWorktree(repo: string, path: string, branch: string): Promise<void> {

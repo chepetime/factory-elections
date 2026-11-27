@@ -20,6 +20,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 1. Set the task's **Agent** on the task page, or use **Assign work** on the agent's page.
 2. Put the task in **Todo**. The agent starts it when it has a free slot (see Pickup below). You can also move the task to **In progress** to start it now. The run is a factory run with `workflow: agent`. The driver's `agentRun` in `packages/driver/src/workflow.ts` runs it:
    - It prepares the worktree, with no classifier step.
+   - New work starts from `origin/<base>` after a fetch, not the local base: PRs merged on GitHub are in, and unpushed local commits stay out. Push the base first if a task needs a local fix. A stacked ticket starts from its blocker's branch; a repository with no remote starts from the local base.
    - It runs one model session with `tools: edit`, the coder guard (`worktreeGuard`), the OS sandbox and the agent's budget. The session persists, so later turns resume it.
    - It commits what the agent left, then runs the profile's checks (verify).
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
