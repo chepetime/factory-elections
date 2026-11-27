@@ -34,7 +34,7 @@ export async function verifyWorktree(
 }> {
   const task = await deps.tasks.read(project, id);
   const profile = await deps.readProfile(project);
-  const { path, base } = await checkedWorktree(deps, task);
+  const { path, compare: base } = await checkedWorktree(deps, task);
   const startingHead = await deps.git.headSha(path);
   const changes = await deps.git.diffLineCounts(path, base);
   const nonTestLines = changes

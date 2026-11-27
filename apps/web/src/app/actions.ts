@@ -125,6 +125,15 @@ export async function runTask(_prev: ActionState, form: FormData): Promise<Actio
   return started.ok ? { message: 'Started.' } : { error: started.error };
 }
 
+/** The factory's checks again on the current commit, with no agent turn. */
+export async function checkTask(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const t = target(form);
+  if ('error' in t) return t;
+  const started = await startTask({ ...t, action: 'check' });
+  refresh(t.project, t.id);
+  return started.ok ? { message: 'Checking again…' } : { error: started.error };
+}
+
 export async function reviseTask(_prev: ActionState, form: FormData): Promise<ActionState> {
   const t = target(form);
   if ('error' in t) return t;

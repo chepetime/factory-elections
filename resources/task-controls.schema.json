@@ -17,7 +17,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["run", "revise", "approve", "reject", "open-pr", "follow-up"]
+            "enum": ["run", "revise", "approve", "reject", "open-pr", "follow-up", "check"]
           },
           "allowed": { "type": "boolean" },
           "blockers": {

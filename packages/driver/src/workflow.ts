@@ -399,11 +399,30 @@ export class Driver {
     throw new DriverError(message);
   }
 
-  private checkedWorktree(task: TaskRecord): Promise<{ path: string; branch: string; base: string }> {
+  private checkedWorktree(
+    task: TaskRecord,
+  ): Promise<{ path: string; branch: string; base: string; compare: string }> {
     return checkedWorktree(this.deps, task);
   }
 
   // ---------- verification ----------
+
+  /**
+   * Runs the factory's checks again on the task's current commit, with no agent turn. A pass puts
+   * it at the approval gate; a failure records the output, as after any run. Agent tasks only: a
+   * pipeline task needs its reviewer step after verification.
+   */
+  async check(project: string, id: string): Promise<TaskRecord> {
+    const task = await this.deps.tasks.read(project, id);
+    const blockers = taskCommandBlockers(task, 'check');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    if (task.workflow !== 'agent')
+      throw new DriverError('Checking again is for agent tasks; revise a pipeline task.');
+    const { path } = await this.checkedWorktree(task);
+    if (!(await this.deps.git.isClean(path)))
+      throw new DriverError('the task worktree has uncommitted changes; commit them first');
+    return this.gateAfterFollowUp(project, id);
+  }
 
   /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
   verify(project: string, id: string) {
@@ -701,14 +720,49 @@ export class Driver {
       this.deps.log(`Merging ${base} into ${branch}…`);
       const merge = await git.mergeRef(path, `origin/${base}`);
       if (merge.clean) {
-        // Nothing for an agent: the merged commit goes through verification to the gate.
+        // Nothing for an agent: the merge adds only the base's own reviewed commits. When the checks
+        // pass, the factory approves and pushes it to the same PR; a failed check stops as usual.
         this.deps.log('The merge applied without conflicts. Verifying…');
-        return this.gateAfterFollowUp(project, id);
+        const gated = await this.gateAfterFollowUp(project, id);
+        if (gated.stage !== 'awaiting-approval' || !gated.verification?.passed) return gated;
+        await this.approve(project, id, {
+          head: gated.verification.head_sha,
+          note: `Approved by the factory: only origin/${base} was merged in, with no conflicts, and the checks passed.`,
+        });
+        return openPr(this.deps, project, id, {});
       }
       note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
     }
     const done = await this.agentRun(project, id, note);
     return followUpPushesItself(input.kind) ? this.pushReviewFix(project, id, done) : done;
+  }
+
+  /**
+   * Merges `origin/<base>` into the task branch when the branch is behind it: a clean merge is
+   * committed, a conflicted one is left for the agent with its files. Skipped when the worktree has
+   * uncommitted work or a merge in progress, or the git port cannot fetch and merge.
+   */
+  private async syncBase(task: TaskRecord): Promise<{ merged: boolean; conflicted: string[] }> {
+    const { git } = this.deps;
+    const none = { merged: false, conflicted: [] };
+    if (!git.fetchRefs || !git.mergeRef || !task.worktree) return none;
+    const { path, base, branch } = await this.checkedWorktree(task);
+    if (!(await git.isClean(path)) || (await git.mergeInProgress?.(path))) return none;
+    try {
+      await git.fetchRefs(path, [base]);
+    } catch (error) {
+      this.deps.log(`Could not fetch origin/${base}; the branch is not synced: ${(error as Error).message}`);
+      return none;
+    }
+    const before = await git.headSha(path);
+    const merge = await git.mergeRef(path, `origin/${base}`);
+    if (!merge.clean) {
+      this.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
+      return { merged: true, conflicted: merge.conflicted };
+    }
+    const merged = (await git.headSha(path)) !== before;
+    if (merged) this.deps.log(`Merged origin/${base} into ${branch} before the turn.`);
+    return { merged, conflicted: [] };
   }
 
   /**
@@ -746,6 +800,15 @@ export class Driver {
       task = task.worktree ? await this.setupWorktree(project, id) : await this.prepareWorktree(project, id);
       const profile = await this.deps.readProfile(project);
       const { path, branch } = await this.checkedWorktree(task);
+      // The factory, not the agent, brings the base in: outside the sandbox, before the turn.
+      const synced = await this.syncBase(task);
+      if (synced.conflicted.length)
+        reply = [
+          `The factory merged the base branch into this branch before your turn and stopped on conflicts in:`,
+          ...synced.conflicted.map((f) => `- ${f}`),
+          'Resolve every conflict first so both changes keep working, and remove all conflict markers. Then continue:',
+          reply ?? 'Continue the task.',
+        ].join('\n');
       const session = await this.deps.agentSession(task, reply);
       const spent = workSpend(task);
       const left = session.budgetUsd - spent;
@@ -976,7 +1039,7 @@ export class Driver {
 
   async review(project: string, id: string): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, base, compare } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
     if (!task.verification?.passed || task.verification.head_sha !== head)
       throw new DriverError('verification has not passed for the current commit');
@@ -988,7 +1051,7 @@ export class Driver {
     const limits = await this.callLimits(task, step);
     const ladder: ModelLadder = await this.deps.definitions.readLadder(this.deps.steps.reviewer.ladder);
     const rung = ladder.rungs[0]!;
-    let diff = await this.deps.git.diffSince(path, base);
+    let diff = await this.deps.git.diffSince(path, compare);
     if (diff.length > MAX_DIFF_CHARS)
       diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n… diff truncated; read the changed files directly …`;
     task = withStage(task, this.deps.now(), 'reviewing', `Reviewer on ${rung.name}`);
@@ -1102,7 +1165,7 @@ export class Driver {
     const paths = this.deps.steps.prWriter;
     if (!paths) throw new DriverError('no pr-writer step is configured');
     let task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, base, compare } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
     // An agent run has no reviewer step; its verified commit and report are the inputs instead.
     if (task.workflow !== 'agent' && (!task.review || task.review.head_sha !== head))
@@ -1114,7 +1177,7 @@ export class Driver {
     const limits = await this.callLimits(task, step);
     if ((await this.budgetLeft(task)) <= 0) throw new DriverError('the task budget is spent');
     const rung = (await this.deps.definitions.readLadder(paths.ladder)).rungs[0]!;
-    let diff = await this.deps.git.diffSince(path, base);
+    let diff = await this.deps.git.diffSince(path, compare);
     if (diff.length > MAX_PR_DIFF_CHARS)
       diff = `${diff.slice(0, MAX_PR_DIFF_CHARS)}\n… diff truncated; read the changed files directly …`;
     const prompt = task.prompt.trim();
@@ -1167,7 +1230,7 @@ export class Driver {
               ]
             : []),
           `<diff-stat base="${base}">`,
-          await this.deps.git.diffSince(path, base, true),
+          await this.deps.git.diffSince(path, compare, true),
           '</diff-stat>',
           `<diff base="${base}">`,
           diff,
@@ -1287,20 +1350,20 @@ export class Driver {
     id: string,
   ): Promise<{ task: TaskRecord; headSha: string; diffStat: string; blockers: string[] }> {
     const task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, compare } = await this.checkedWorktree(task);
     const headSha = await this.deps.git.headSha(path);
     return {
       task,
       headSha,
-      diffStat: await this.deps.git.diffSince(path, base, true),
+      diffStat: await this.deps.git.diffSince(path, compare, true),
       blockers: approvalBlockers(task, headSha),
     };
   }
 
   async diff(project: string, id: string): Promise<string> {
     const task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
-    return this.deps.git.diffSince(path, base);
+    const { path, compare } = await this.checkedWorktree(task);
+    return this.deps.git.diffSince(path, compare);
   }
 
   async approve(

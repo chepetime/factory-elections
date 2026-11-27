@@ -25,15 +25,15 @@ test('every durable stage has an explicit run/revision/approval policy', () => {
   const expected = {
     queued: ['run', 'reject'],
     classified: ['run', 'reject'],
-    blocked: ['run', 'reject'],
+    blocked: ['run', 'reject', 'check'],
     coding: ['run', 'reject'],
-    'verification-failed': ['run', 'revise', 'reject'],
+    'verification-failed': ['run', 'revise', 'reject', 'check'],
     reviewing: ['run', 'reject'],
     'awaiting-approval': ['revise', 'approve', 'reject'],
     approved: ['revise', 'reject', 'open-pr'],
     rejected: ['revise', 'reject'],
     'pr-opened': [],
-    failed: ['run', 'revise', 'reject'],
+    failed: ['run', 'revise', 'reject', 'check'],
   };
   for (const stage of STAGES) {
     const current = {

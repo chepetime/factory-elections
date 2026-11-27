@@ -45,6 +45,7 @@ vi.mock('@/components/issue-editor', () => ({
 vi.mock('@/app/actions', () => ({
   approveAndOpenPullRequest: vi.fn(),
   approveTask: vi.fn(),
+  checkTask: vi.fn(),
   dismissLog: vi.fn(),
   followUpIssue: vi.fn(),
   confirmCleanup: vi.fn(),
@@ -642,6 +643,8 @@ it('puts what the run needs from you on the ticket, also with the Details tab op
   expect(page).toContain('needs you');
   expect(page).toContain('Which page?');
   expect(page).toContain('Reply in a comment below');
+  // Its work may be done (a spent budget): the factory's checks run again with no agent turn.
+  expect(page).toContain('Run the checks again');
 });
 
 it('puts the actions after the newest activity, and hides the follow-up form while one waits', async () => {
