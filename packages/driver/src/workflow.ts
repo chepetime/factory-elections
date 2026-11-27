@@ -36,7 +36,7 @@ import {
   type TaskRecord,
   type ToolGuard,
 } from '@factory/core';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
 import { setupInputsKey } from './setup.ts';
@@ -56,18 +56,9 @@ import {
 import { checkedWorktree } from './worktree.ts';
 import { checkProfile, verifyWorktree } from './verification.ts';
 import { openPr } from './publication.ts';
+import { runAgentTurns } from './agent-settle.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
 export { readPrTemplate, worktreeGuard } from './support.ts';
-
-/** Changed files that still hold a conflict marker line. */
-async function conflictMarkers(dir: string, files: string[]): Promise<string[]> {
-  const found: string[] = [];
-  for (const file of files) {
-    const text = await readFile(join(dir, file), 'utf8').catch(() => '');
-    if (/^(<{7}|>{7}) /m.test(text) || /^={7}$/m.test(text)) found.push(file);
-  }
-  return found;
-}
 
 export class Driver {
   readonly deps: DriverDeps;
@@ -850,132 +841,47 @@ export class Driver {
         ...(limits.signal ? { signal: limits.signal } : {}),
       });
       const passEnv = [...(profile.sandbox?.pass_env ?? []), ...session.passEnv];
-      const started = this.deps.now();
-      let outcome: StepAttempt['outcome'] = 'completed';
-      let error: string | undefined;
-      let costUsd: number | null = null;
-      let sessionId = task.agent_session;
-      // The agent's last message: what it says it did, for the PR writer.
-      let report = '';
-      let saving: Promise<void> = Promise.resolve();
+      const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
+      const extras = await this.agentExtras(project, session.model, session.systemPrompt);
+      let settled;
       try {
-        const result = await this.deps.runner.run({
-          ...limits,
-          step: 'agent',
-          sandbox,
-          ...(access.env ? { env: access.env } : {}),
-          ...(passEnv.length ? { passEnv } : {}),
-          model: session.model,
-          effort: session.effort,
-          tools: 'edit',
-          cwd: path,
-          ...(await this.agentExtras(project, session.model, session.systemPrompt)),
-          prompt: session.prompt,
-          guard,
-          maxTurns: 300,
-          persistSession: true,
-          ...(task.agent_session ? { resume: task.agent_session } : {}),
-          ...(grant ? { mcp: grant.endpoint } : {}),
-          // Save the session as soon as it exists: a stopped or crashed call must still resume it,
-          // or the next reply starts an agent that remembers nothing of its own work.
-          onEvent: (event) => {
-            if (event.type !== 'session' || event.id === sessionId) return;
-            sessionId = event.id;
-            saving = saving.then(async () => {
-              const current = await this.deps.tasks.read(project, id);
-              await this.deps.tasks.write({ ...current, agent_session: event.id });
-            });
-          },
+        settled = await runAgentTurns(this.deps, {
+          project,
+          id,
+          path,
+          branch,
+          base,
+          task,
+          profile,
+          session,
+          left,
+          childSpent: () => grant?.spent() ?? 0,
+          call: (turn) =>
+            this.deps.runner.run({
+              ...limits,
+              step: 'agent',
+              sandbox,
+              ...(access.env ? { env: access.env } : {}),
+              ...(passEnv.length ? { passEnv } : {}),
+              model: session.model,
+              effort: session.effort,
+              tools: 'edit',
+              cwd: path,
+              ...extras,
+              guard,
+              maxTurns: 300,
+              persistSession: true,
+              ...(grant ? { mcp: grant.endpoint } : {}),
+              ...turn,
+            }),
         });
-        costUsd = result.costUsd;
-        sessionId = result.sessionId ?? sessionId;
-        report = result.text?.trim() ?? '';
-      } catch (e) {
-        outcome = 'failed';
-        error = failureText(e);
-        costUsd = errorCost(e);
       } finally {
         grant?.revoke();
         await access.cleanup();
-        await saving.catch(() => undefined);
       }
-      const childCost = grant?.spent() ?? 0;
-      if (childCost) costUsd = (costUsd ?? 0) + childCost;
-
-      let committed = false;
-      // A conflict follow-up leaves a merge in progress: the commit below completes it.
-      const merging = (await this.deps.git.mergeInProgress?.(path)) ?? false;
-      if (outcome === 'completed') {
-        const changed = await this.deps.git.stageAll(path);
-        const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
-        const marked = merging ? await conflictMarkers(path, changed) : [];
-        if (forbidden.length) {
-          await this.deps.git.unstageAll(path);
-          outcome = 'failed';
-          error = `${session.name} changed forbidden paths: ${forbidden.join(', ')}`;
-        } else if (marked.length) {
-          outcome = 'failed';
-          error = `conflict markers remain in ${marked.join(', ')}`;
-        } else if (changed.length || merging) {
-          await this.deps.git.commit(
-            path,
-            `${taskTitle(task)}\n\nFactory task ${task.id} (${session.name}).`,
-          );
-          committed = true;
-        }
-      }
-
-      task = await this.deps.tasks.read(project, id);
-      const attempt: StepAttempt = {
-        step: 'agent',
-        rung: session.name,
-        model: session.model,
-        effort: session.effort,
-        started_at: started,
-        finished_at: this.deps.now(),
-        outcome,
-        cost_usd: costUsd,
-        ...(error ? { error } : {}),
-      };
-      task = withEvent(
-        {
-          ...task,
-          attempts: [...(task.attempts ?? []), attempt],
-          ...(sessionId ? { agent_session: sessionId } : {}),
-        },
-        this.deps.now(),
-        'attempt',
-        `${session.name} ${outcome === 'failed' ? `stopped: ${error}` : 'finished'}${committed ? ` and Factory committed the rest on ${branch}` : ''}`,
-      );
-      if (outcome === 'failed') {
-        if (merging) await this.deps.git.abortMerge?.(path);
-        await this.deps.tasks.write(
-          withStage(task, this.deps.now(), 'failed', error ?? `${session.name} failed`),
-        );
-        throw new DriverError(error ?? 'agent failed');
-      }
-      const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
-      const asked = session.reported();
-      // A follow-up that changed nothing leaves the PR as it was: the task is done again.
-      if (task.pr && asked !== 'blocked' && (await this.deps.git.headSha(path)) === task.pr.head_sha) {
-        await this.deps.tasks.write(
-          withStage(
-            task,
-            this.deps.now(),
-            'pr-opened',
-            `${session.name} made no changes; the pull request is unchanged.`,
-          ),
-        );
-        return await this.deps.tasks.read(project, id);
-      }
-      if (asked === 'blocked' || (await this.deps.git.commitCountSince(path, base)) === 0) {
-        const message =
-          asked === 'blocked'
-            ? `${session.name} needs you. Reply on the task to continue.`
-            : `${session.name} made no changes. Reply on the task to continue.`;
-        await this.deps.tasks.write(withStage(task, this.deps.now(), 'blocked', message));
-        return await this.deps.tasks.read(project, id);
-      }
+      if (settled.final) return settled.final;
+      task = settled.task;
+      const report = settled.report;
       await this.deps.tasks.write(task);
       this.deps.log('Verifying…');
       const checked = await this.verifyAndRecord(project, id);

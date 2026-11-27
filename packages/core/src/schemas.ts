@@ -162,6 +162,8 @@ export const StepAttempt = z.looseObject({
   outcome: z.enum(['completed', 'failed']),
   cost_usd: z.number().nullable(),
   error: z.string().optional(),
+  /** An agent turn that changed nothing, steered once (or already steered): the next one settles. */
+  no_change_steered: z.boolean().optional(),
 });
 export type StepAttempt = z.infer<typeof StepAttempt>;
 

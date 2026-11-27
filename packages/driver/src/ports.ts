@@ -139,6 +139,8 @@ export interface AgentSession {
   tools: readonly FactoryTool[];
   /** The status the agent set with set_status during the session, read when it ends. */
   reported(): 'in_progress' | 'in_review' | 'blocked' | undefined;
+  /** Whether the agent posted a task comment during the session: `blocked` with one is a real question. */
+  commented?(): boolean;
 }
 
 export interface DriverDeps {

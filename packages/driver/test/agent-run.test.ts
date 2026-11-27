@@ -62,6 +62,7 @@ async function setup(
     },
   };
   let status: 'in_review' | 'blocked' | undefined;
+  let commented = false;
   const replies: (string | undefined)[] = [];
   let tick = 0;
   const deps: DriverDeps = {
@@ -94,6 +95,7 @@ async function setup(
     agentSession: async (_task, reply): Promise<AgentSession> => {
       replies.push(reply);
       status = undefined;
+      commented = false;
       return {
         name: 'Devin',
         model: 'claude-sonnet-5-5',
@@ -104,6 +106,7 @@ async function setup(
         passEnv: [],
         tools: [],
         reported: () => status,
+        commented: () => commented,
       };
     },
   };
@@ -113,7 +116,12 @@ async function setup(
     task,
     calls,
     replies,
-    block: () => (status = 'blocked'),
+    clear: () => (status = undefined),
+    // A question is `blocked` with a comment; `blocked` alone is a bare status.
+    block: (comment = true) => {
+      status = 'blocked';
+      commented = comment;
+    },
   };
 }
 
@@ -250,4 +258,99 @@ test("an agent run drafts its PR from the agent's report, in the template, befor
   );
   assert.match(writer.prompt, /<template source="factory">/);
   assert.doesNotMatch(writer.prompt, /<review>/, 'an agent run has no reviewer');
+});
+
+const progress = (r: ModelRun) => {
+  assert.ok(r.prompt);
+  return { text: 'Tests still run; I commit next.', costUsd: 0.1, sessionId: 'sess-1' };
+};
+
+test('a turn that ends with a progress note gets one steer, and the steered turn reaches verification', async () => {
+  const events: ModelRun['onEvent'][] = [];
+  const ctx = await setup([
+    async (r) => {
+      events.push(r.onEvent);
+      r.onEvent?.({
+        type: 'tool',
+        name: 'Bash',
+        input: { command: 'pnpm test', run_in_background: true },
+      });
+      return progress(r);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Committed.', costUsd: 0.2, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, 'sess-1', 'the steer resumes the same session');
+  assert.match(ctx.calls[1]!.prompt, /^Your turn changed nothing\./);
+  assert.match(ctx.calls[1]!.prompt, /pnpm test/, 'background work is named');
+  assert.ok(ctx.calls[1]!.maxBudgetUsd! < 5 - 0.1 + 1e-9, 'the steer spends what the first turn left');
+  const attempts = done.attempts!;
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0]!.no_change_steered, true);
+  assert.equal(attempts[1]!.no_change_steered, undefined, 'the steered turn changed something');
+});
+
+test("two turns with no change settle blocked, with the agent's last message", async () => {
+  const ctx = await setup([
+    async (r) => progress(r),
+    async () => ({ text: 'Still nothing to commit.', costUsd: 0.1 }),
+  ]);
+  const blocked = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(blocked.stage, 'blocked');
+  assert.equal(ctx.calls.length, 2, 'one steer, no more');
+  const last = blocked.events!.at(-1)!.message;
+  assert.match(last, /made no changes/);
+  assert.match(last, /Still nothing to commit\./);
+});
+
+test('blocked with a comment is a question: it settles at once, with no steer', async () => {
+  const ctx = await setup([
+    async () => {
+      ctx.block();
+      return { text: 'Which file name?', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const blocked = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(blocked.stage, 'blocked');
+  assert.equal(ctx.calls.length, 1);
+  assert.match(blocked.events!.at(-1)!.message, /needs you/);
+});
+
+test('blocked with no comment gets the steer', async () => {
+  const ctx = await setup([
+    async () => {
+      ctx.block(false);
+      return { text: 'Waiting.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+    async (r) => {
+      ctx.clear();
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Done.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(done.stage, 'awaiting-approval');
+});
+
+test('a restart after a steer does not steer again', async () => {
+  const ctx = await setup([
+    async (r) => progress(r),
+    // The steered turn fails mid-way: the run stops, as a crash or restart would.
+    async () => {
+      throw new Error('backend restarted');
+    },
+    async () => ({ text: 'Nothing more to do.', costUsd: 0.1, sessionId: 'sess-1' }),
+  ]);
+  await assert.rejects(ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 }), /backend restarted/);
+  assert.equal((await ctx.store.read('demo', ctx.task.id)).attempts?.[0]?.no_change_steered, true);
+  const again = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(again.stage, 'blocked', 'the next no-change turn settles');
+  assert.equal(ctx.calls.length, 3, 'the third turn is the reply turn, not a second steer');
+  assert.doesNotMatch(ctx.calls[2]!.prompt, /Your turn changed nothing/);
 });
