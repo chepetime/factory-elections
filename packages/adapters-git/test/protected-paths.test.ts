@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { changedPathsSince, commit, mergeRef, push } from '../src/index.ts';
+import { changedPathsSince, commit, headSha, mergeRef, push } from '../src/index.ts';
 
 async function repoWithRemote(t: { after: (fn: () => Promise<void>) => void }) {
   const base = await mkdtemp(join(tmpdir(), 'factory-protected-'));
@@ -56,7 +56,7 @@ test('publication push does not run a pre-push hook from the worktree', async (t
   git('push', '-q', 'origin', 'feature:control');
   assert.equal(existsSync(marker), true);
   await rm(marker);
-  await push(repo, git('rev-parse', 'HEAD'), 'feature');
+  await push(repo, await headSha(repo), 'feature');
   assert.equal(existsSync(marker), false);
 });
 

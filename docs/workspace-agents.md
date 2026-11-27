@@ -23,6 +23,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
    - It runs one model session with `tools: edit`, the coder guard (`worktreeGuard`), the OS sandbox and the agent's budget. The session persists, so later turns resume it.
    - It commits what the agent left, then runs the profile's checks (verify).
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
+   - **Fix turns.** When verification fails for a reason the agent can fix (size limit, weakened tests, late edits, failing checks), the same session gets the failure and an instruction for it, up to two times (`AGENT_FIX_TURNS` in `packages/driver/src/agent-fixes.ts`). An environment fault gets no fix turn. After the last fix turn, the task stays `verification-failed` for you.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
 
 **Pickup.** `AgentPickup` (`packages/agents/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
@@ -42,6 +43,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 - `comment`: posts on the task as the agent.
 - `set_status`: sets the task to `in_progress`, `in_review` or `blocked`. Done and cancelled stay with you.
+- `check_change`: runs Factory's change gates (at most 400 non-test lines, no weakened tests) on the committed change, the same way verification runs them.
 - `delegate`: starts a child task, as for the coder.
 
 ## Follow-ups
