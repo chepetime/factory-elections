@@ -67,11 +67,21 @@ export type ProjectSummary = z.infer<typeof ProjectSummary>;
 export function listProjects(): Promise<Result<ProjectSummary[]>> {
   return readJson('ListProjects', { project: '' }, z.array(ProjectSummary));
 }
+/** AddProject replies with the project and the outcome of drafting its repo profile. */
+const AddProjectReply = Project.extend({
+  profile: z.discriminatedUnion('status', [
+    z.object({ status: z.literal('drafted'), path: z.string() }),
+    z.object({ status: z.literal('exists'), path: z.string() }),
+    z.object({ status: z.literal('failed'), error: z.string() }),
+  ]),
+});
 export async function addProjectRequest(name: string, repo: string): Promise<Result<Project>> {
   try {
-    const checked = Project.safeParse(JSON.parse((await backendCall('AddProject', { name, repo })).json));
+    const checked = AddProjectReply.safeParse(
+      JSON.parse((await backendCall('AddProject', { name, repo })).json),
+    );
     return checked.success
-      ? { ok: true, value: checked.data }
+      ? { ok: true, value: { name: checked.data.name, repo: checked.data.repo } }
       : { ok: false, error: 'The backend returned an invalid record.' };
   } catch (error) {
     return { ok: false, error: backendError(error) };

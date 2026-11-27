@@ -22,12 +22,27 @@ afterEach(() => vi.clearAllMocks());
 
 describe('addProject', () => {
   it('registers through the backend, remembers the project and opens it', async () => {
-    rpc.mockResolvedValue({ json: JSON.stringify({ name: 'demo', repo: '/code/demo' }) });
+    // The backend's reply: the project plus the outcome of drafting its repo profile.
+    rpc.mockResolvedValue({
+      json: JSON.stringify({
+        name: 'demo',
+        repo: '/code/demo',
+        profile: { status: 'drafted', path: '/data/demo/profile.yaml' },
+      }),
+    });
     await expect(addProject({}, form({ name: ' demo ', repo: ' /code/demo ' }))).rejects.toThrow(
       'redirect:/projects/demo/tasks/new',
     );
     expect(rpc).toHaveBeenCalledWith('AddProject', { name: 'demo', repo: '/code/demo' });
     expect(cookieSet).toHaveBeenCalledWith('factory.lastProject', 'demo', expect.any(Object));
+  });
+  it('opens the project when drafting its profile failed', async () => {
+    rpc.mockResolvedValue({
+      json: JSON.stringify({ name: 'demo', repo: '/code/demo', profile: { status: 'failed', error: 'x' } }),
+    });
+    await expect(addProject({}, form({ name: 'demo', repo: '/code/demo' }))).rejects.toThrow(
+      'redirect:/projects/demo/tasks/new',
+    );
   });
   it('rejects invalid input before calling the backend', async () => {
     expect((await addProject({}, form({ name: '../x', repo: '/code/x' }))).error).toMatch(/letters/);
