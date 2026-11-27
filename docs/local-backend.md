@@ -175,7 +175,7 @@ Rules:
 
 ## PR tending
 
-Tending is off by default. Turn it on in the project settings with `"tending": { "enabled": true, "answer_threads": false }`. While it is off, the same pass still watches for conflicts: a PR that conflicts with its base gets a [follow-up](workspace-agents.md#follow-ups) for the task's agent, which waits for your approval before the PR is updated. Every 10 minutes the backend checks each task in `pr-opened` and does one action (`nextTendAction` in `packages/core/src/tending.ts`), in this order:
+Tending is off by default. Turn it on in the project settings with `"tending": { "enabled": true, "answer_threads": false }`. While it is off, the same pass still watches for conflicts: a PR that conflicts with its base gets a [follow-up](workspace-agents.md#follow-ups) for the task's agent, which waits for your approval before the PR is updated. Every 10 minutes the backend reads the PR state of every task that has a PR, at any stage: a merged PR sets the ticket Done, and a closed one Cancelled (`IssueService.prOutcome`). A follow-up out of `pr-opened` whose PR merged or closed goes back to `pr-opened` (`settleEndedPr`). For each task in `pr-opened` with an open PR, it then does one action (`nextTendAction` in `packages/core/src/tending.ts`), in this order:
 
 1. **The PR is merged or closed:** tending ends for that PR.
 2. **The PR conflicts with its base:** tending merges the base in. An agent resolves the conflicts, and the merge is committed.

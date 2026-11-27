@@ -337,3 +337,22 @@ test('checking again runs the factory checks on the current commit with no agent
   assert.equal(checked.verification?.passed, true);
   assert.equal(ctx.calls.length, calls, 'no model call');
 });
+
+test('a follow-up for a PR that merged on GitHub starts no turn and leaves the task as it was', async () => {
+  const ctx = await opened();
+  ctx.github[0]!.state = 'MERGED';
+  const calls = ctx.calls.length;
+  await assert.rejects(
+    ctx.driver.followUp('demo', ctx.task.id, {
+      note: 'Rename the file.',
+      kind: 'custom',
+      agent: 'devin',
+      by: 'you',
+    }),
+    /pull request is merged/,
+  );
+  assert.equal(ctx.calls.length, calls, 'no model call');
+  const after = await ctx.read();
+  assert.equal(after.stage, 'pr-opened');
+  assert.equal(after.follow_ups, undefined, 'no follow-up recorded');
+});
