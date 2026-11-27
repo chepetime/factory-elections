@@ -248,6 +248,27 @@ export class ReviewLoop {
     });
   }
 
+  /**
+   * The loop waits for the agent's fix, but no run of the task is queued or working (a restart cut
+   * it): no `runSettled` will come. Stops the loop and says why; the PR stays a draft. The fix is
+   * not started again on its own: a person sends the follow-up from the ticket.
+   */
+  recoverFixing(task: TaskRecord): Promise<boolean> {
+    return this.serial(task, async () => {
+      const state = await this.state(task);
+      if (!state || state.state !== 'fixing' || state.pr !== prNumber(task)) return false;
+      const current = await this.deps.tasks.read(task.project, task.id);
+      await this.stop(
+        task,
+        state,
+        current.stage === 'pr-opened'
+          ? "The backend stopped before the agent's fix ran. The PR stays a draft; send the follow-up again."
+          : `The backend stopped during the agent's fix, which ended at ${current.stage}. The PR stays a draft.`,
+      );
+      return true;
+    });
+  }
+
   /** A run of the task ended. After a review fix: review again, or finish after the last round. */
   async runSettled(project: string, id: string): Promise<void> {
     const task = await this.deps.tasks.read(project, id).catch(() => undefined);

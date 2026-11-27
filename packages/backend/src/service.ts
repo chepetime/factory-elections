@@ -6,10 +6,8 @@ import {
   ProjectName,
   TaskId,
   executionPhase,
-  runWorking,
   taskActions,
   taskCommandBlockers,
-  withStage,
   newTraceId,
   taskClass,
   inboxItems,
@@ -26,8 +24,6 @@ import {
   recoveryBlocker,
   prBody,
   conflictFollowUpNote,
-  recoveryInboxItems,
-  type RecoveryProblem,
   type RecoveryReport,
 } from '@factory/core';
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
@@ -70,6 +66,7 @@ import { ProfileChecks } from './profile-check.ts';
 import { TaskTraces } from './task-traces.ts';
 import { CommandSchema, RunRecord, TargetSchema, type RunCommand } from './run-record.ts';
 import { performCommand, RunExecutor } from './run-executor.ts';
+import { Recovery } from './recovery.ts';
 
 /**
  * Task runs that may execute at once. Each has its own worktree; the git adapter serializes the
@@ -81,8 +78,9 @@ export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WOR
 export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
 /** How often recovery retries what it could not read. */
 const RECOVERY_RETRY_MS = Number(process.env.FACTORY_RECOVERY_RETRY_MS ?? 30_000);
-const INTERRUPTED =
-  'The backend stopped during this run. Run the task again to continue from the last saved step.';
+/** How often the detector looks for records nothing owns, and how long one may sit unwritten first. */
+const STUCK_CHECK_MS = Number(process.env.FACTORY_STUCK_CHECK_MS ?? 5 * 60_000);
+const STUCK_AFTER_MS = Number(process.env.FACTORY_STUCK_AFTER_MS ?? 60 * 60_000);
 
 export class BackendService {
   readonly storage: DataStorage;
@@ -438,6 +436,23 @@ export class BackendService {
       storage: this.storage,
       log: (line) => process.stderr.write(`${line}\n`),
     });
+    this.recoverer = new Recovery({
+      projects: this.projects,
+      tasks: this.tasks,
+      storage: this.storage,
+      latest: (target) => this.latest(target),
+      dispatcher: this.dispatcher,
+      schedule: (command, record, dir, unlock, reservation) =>
+        this.schedule(command, record, dir, unlock, reservation),
+      reviewLoop: this.reviewLoop,
+      reviews: this.reviews,
+      features: this.features,
+      chats: this.chats,
+      retryMs: RECOVERY_RETRY_MS,
+      checkMs: STUCK_CHECK_MS,
+      stuckAfterMs: STUCK_AFTER_MS,
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
   }
   private inboxPath(): string {
     return join(this.root, 'inbox', 'dismissed.json');
@@ -462,7 +477,7 @@ export class BackendService {
       const tending = await this.tending.waiting(name, tasks).catch(() => []);
       items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
     }
-    items.push(...recoveryInboxItems(this.recovery));
+    items.push(...this.recoverer.inboxItems());
     const open = items.filter((i) => !dismissed[i.id]);
     return {
       items: open.sort((a, b) => a.since.localeCompare(b.since)),
@@ -688,7 +703,7 @@ export class BackendService {
     if (['run', 'revise', 'follow-up'].includes(command.action))
       throw new Error('Use StartRun for long-running work');
     if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
-    const unknown = recoveryBlocker(this.recovery, command.project, command.id);
+    const unknown = recoveryBlocker(this.recoverer.report, command.project, command.id);
     if (unknown) throw new Conflict(unknown);
     return this.tasks.withLock(command.project, command.id, async () => {
       const before = await this.tasks.read(command.project, command.id).catch(() => undefined);
@@ -735,7 +750,7 @@ export class BackendService {
       throw new Error('Only run, revise, follow-up and check can be scheduled');
     if (command.action === 'follow-up' && !command.agent)
       throw new Conflict('Name the agent for the follow-up.');
-    const unknown = recoveryBlocker(this.recovery, command.project, command.id);
+    const unknown = recoveryBlocker(this.recoverer.report, command.project, command.id);
     if (unknown) throw new Conflict(unknown);
     const reservation = this.dispatcher.reserve();
     if (!reservation) throw new Conflict('Backend is stopping or its queue is full');
@@ -1010,7 +1025,7 @@ export class BackendService {
   async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
     // Waiting runs see the shutdown now and stay queued for the next start.
     this.dispatcher.close();
-    clearTimeout(this.recoveryRetry);
+    this.recoverer.stop();
     this.pickup.stop();
     this.profileChecks.stopAll();
     const deadline = setTimeout(() => {
@@ -1024,173 +1039,21 @@ export class BackendService {
     }
   }
 
-  /** What startup recovery could not settle; `pending` until the first recovery ends. */
-  private recovery: RecoveryReport = { state: 'pending', problems: [] };
-  private recoveryRetry?: NodeJS.Timeout;
+  /** Startup recovery, the tables of what happens to each state, and the stuck detector (recovery.ts). */
+  readonly recoverer: Recovery;
   recoveryReport(): RecoveryReport {
-    return this.recovery;
+    return this.recoverer.report;
   }
-
-  /**
-   * After a restart: a run that was running is marked interrupted and its task made resumable; a
-   * run that never started is queued again. Call once, while this service owns the data root. A
-   * project or task it cannot read goes into the recovery report, and it is retried until it
-   * succeeds.
-   */
-  async recover(): Promise<{ requeued: number; interrupted: number; problems: number }> {
-    const counts = { requeued: 0, interrupted: 0, problems: 0 };
-    const problems: RecoveryProblem[] = [];
-    const failed = (project: string, error: unknown, task_id?: string) =>
-      problems.push({
-        project,
-        ...(task_id ? { task_id } : {}),
-        error: error instanceof Error ? error.message : String(error),
-        since: this.problemSince(project, task_id),
-      });
-    let projects: { name: string }[] = [];
-    try {
-      projects = await this.projects.list();
-    } catch (error) {
-      failed('*', error);
-    }
-    for (const project of projects) {
-      let tasks: TaskRecord[];
-      try {
-        tasks = await this.tasks.list(project.name);
-      } catch (error) {
-        failed(project.name, error);
-        continue;
-      }
-      for (const task of tasks) {
-        try {
-          const result = await this.reconcileTask(project.name, task.id);
-          if (result) counts[result]++;
-        } catch (error) {
-          failed(project.name, error, task.id);
-        }
-      }
-    }
-    counts.problems = problems.length;
-    this.finishRecovery(problems);
-    return counts;
+  /** After a restart: settles runs, review loops, tickets and `working` flags nothing owns. Call once. */
+  recover(): Promise<{ requeued: number; interrupted: number; problems: number }> {
+    return this.recoverer.recover();
   }
-
   /** Reconciles only what the last recovery could not read. Safe to call again at any time. */
-  async reconcile(): Promise<RecoveryReport> {
-    if (this.recovery.state !== 'degraded') return this.recovery;
-    const problems: RecoveryProblem[] = [];
-    for (const problem of this.recovery.problems) {
-      try {
-        if (problem.project === '*') {
-          await this.recover();
-          return this.recovery;
-        }
-        const ids = problem.task_id
-          ? [problem.task_id]
-          : (await this.tasks.list(problem.project)).map((t) => t.id);
-        for (const id of ids) {
-          try {
-            await this.reconcileTask(problem.project, id);
-          } catch (error) {
-            problems.push({
-              ...problem,
-              task_id: id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      } catch (error) {
-        problems.push({ ...problem, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-    this.finishRecovery(problems);
-    return this.recovery;
+  reconcile(): Promise<RecoveryReport> {
+    return this.recoverer.reconcile();
   }
-
-  private problemSince(project: string, task_id?: string): string {
-    return (
-      this.recovery.problems.find((p) => p.project === project && p.task_id === task_id)?.since ??
-      new Date().toISOString()
-    );
-  }
-
-  private finishRecovery(problems: RecoveryProblem[]): void {
-    this.recovery = {
-      state: problems.length ? 'degraded' : 'ok',
-      checked_at: new Date().toISOString(),
-      problems,
-    };
-    clearTimeout(this.recoveryRetry);
-    this.recoveryRetry = undefined;
-    if (problems.length && this.dispatcher.accepting) {
-      this.recoveryRetry = setTimeout(() => void this.reconcile().catch(() => undefined), RECOVERY_RETRY_MS);
-      this.recoveryRetry.unref();
-    }
-  }
-
-  /**
-   * Settles one task's latest run if no live owner holds it: queued again, or interrupted. Throws
-   * when the run cannot be read, so the caller reports it. A missing run is not an error.
-   */
-  private async reconcileTask(project: string, id: string): Promise<'requeued' | 'interrupted' | undefined> {
-    const target = { project, id };
-    const latest = await this.latest(target);
-    if (!latest || this.dispatcher.active(latest.record.id)) return undefined;
-    const { record, dir } = latest;
-    if (record.state !== 'queued' && record.state !== 'running') return undefined;
-    await this.tasks.clearDeadLock(project, id);
-    if (record.state === 'queued') {
-      const queued = await this.requeue(record, dir);
-      if (queued === 'scheduled') return 'requeued';
-      if (queued === 'settled') return undefined;
-    }
-    await this.storage.writeDocument(join(dir, 'run.json'), {
-      ...record,
-      state: 'interrupted',
-      outcome: 'interrupted',
-      // Processes of a run that was running at a crash are not known to be gone.
-      ...(record.state === 'running'
-        ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
-        : {}),
-      error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
-      finished_at: new Date().toISOString(),
-    });
-    const current = await this.tasks.read(project, id);
-    if (runWorking(current.stage))
-      await this.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
-    return 'interrupted';
-  }
-
-  /**
-   * Queues a recovered run again. `settled`: under the task lock the run turned out to be owned or
-   * no longer queued, so nothing is done. `refused`: it cannot run again.
-   */
-  private async requeue(record: RunRecord, dir: string): Promise<'scheduled' | 'settled' | 'refused'> {
-    const reservation = this.dispatcher.reserve();
-    if (!reservation) return 'refused';
-    let release: (() => Promise<void>) | undefined;
-    try {
-      release = await this.tasks.acquireLock(record.project, record.task_id);
-      // Read again under the lock: a start in this process may have written and scheduled it.
-      const fresh = await this.latest({ project: record.project, id: record.task_id });
-      if (
-        !fresh ||
-        fresh.record.id !== record.id ||
-        fresh.record.state !== 'queued' ||
-        this.dispatcher.active(record.id)
-      ) {
-        reservation();
-        await release();
-        return 'settled';
-      }
-      const task = await this.tasks.read(record.project, record.task_id);
-      if (taskCommandBlockers(task, record.action).length) throw new Error('blocked');
-      this.schedule(record.command, record, dir, release, reservation);
-      return 'scheduled';
-    } catch {
-      reservation();
-      await release?.();
-      return 'refused';
-    }
+  /** Looks for records nothing owns that no write has touched for an hour; `at` is the clock in ms. */
+  detectStuck(at?: number) {
+    return this.recoverer.detectStuck(at);
   }
 }

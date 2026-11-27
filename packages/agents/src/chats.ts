@@ -225,6 +225,24 @@ export class ChatService {
     return { stopped: this.deps.executions.interrupt(chatKey(id)) };
   }
 
+  /**
+   * Chats whose stored `working` flag nothing holds: a restart cut the reply. `get` already reads
+   * them as idle; this writes it. Returns the chat ids it changed. Nothing is changed when `dry`.
+   */
+  async clearStaleWorking(dry = false): Promise<{ id: string; updated_at: string }[]> {
+    return this.serial(async () => {
+      const found: { id: string; updated_at: string }[] = [];
+      for (const item of (await this.index().catch(() => ({ items: [] }))).items) {
+        if (!item.working || this.replying(item.id)) continue;
+        const chat = await this.read(item.id).catch(() => undefined);
+        if (!chat?.working) continue;
+        found.push({ id: chat.id, updated_at: chat.updated_at });
+        if (!dry) await this.save({ ...chat, working: false });
+      }
+      return found;
+    });
+  }
+
   /** Whether the agent is replying in this chat now. */
   private replying(id: string): boolean {
     return this.deps.executions.observe(chatKey(id)) !== undefined;

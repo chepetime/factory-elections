@@ -145,6 +145,106 @@ This pass closed the last gaps.
 | Stage names — core/web | stage → label | One list, [`STAGE_LABELS`](../packages/core/src/run-attention.ts), for the board cards, the task page and the stage badge. Feature stages read `FEATURE_STAGE_LABELS` in [feature controls](../packages/core/src/feature-controls.ts). The tab glyph and the badge tone are different facts about a stage, each typed by `Stage`. |
 | Cross-project board "Ready" — web | approved, no pull request → ready | The column reads `runNeed`. A test proves that each card in Needs me and Ready is a run that `runAttention` calls needs-you. The column stays: the vision defines it as "what can I finish". |
 
+## Recovery: every non-final state has a rule
+
+[`packages/backend/src/recovery.ts`](../packages/backend/src/recovery.ts) holds one table per record type, with one rule per state. Each table is `satisfies Record<State, RecoveryRule>`, so a state added later does not compile until it has a rule, and `recovery.test.ts` compares each table with its schema. A rule is one of:
+
+- **final**: nothing to do.
+- **idle**: nothing is in flight; a person's command starts it, and no inbox item is needed.
+- **person**: a person acts, and an inbox item says so.
+- **reconciler**: a named step moves it. `recover` marks the ones startup recovery runs; the others have an owner that runs on its own (the review sweeper, the feature ticker).
+
+`BackendService.recover()` runs in this order: each task's latest run and older runs, then the project's feature tickets and `working` flags, then its review loops, then chats. A project or task it cannot read goes into the recovery report and is retried, as before. Features, loops and chats that fail to settle are logged and left to the detector.
+
+### Run (`run.json` state)
+
+| State | Rule | Note |
+| --- | --- | --- |
+| `queued` | reconciler `requeue` | Recovery queues the run again; if it cannot, it marks it interrupted. |
+| `running` | reconciler `interrupt` | Marked interrupted with cleanup uncertain; a task at a working stage goes to `failed`. |
+| `completed` | final | Settled. |
+| `failed` | final | Settled. |
+| `interrupted` | person | The task shows a failed or blocked item; a person runs it again. Uncertain cleanup waits for a confirm. |
+
+A run that is `queued` or `running` but is **not** the task's latest run is settled as `interrupted` (cleanup uncertain if it was running) with the task stage unchanged: a newer run owns the task, so the stage is not this run's to change. Before this, nothing ever settled such a run. It is skipped while anything is queued or active for the task. Runs are listed from the run directories, so a PG/S3 installation has no listing and this step finds nothing there.
+
+### Task stage
+
+| Stage | Rule | Note |
+| --- | --- | --- |
+| `queued` | reconciler `requeue` | The task waits for its run; recovery queues a queued run again. |
+| `classified` | idle | Waits for a person to start the run. |
+| `blocked` | person | Inbox: blocked. |
+| `coding` | reconciler `interrupt` | No live run: recovery moves the task to `failed`. |
+| `verification-failed` | person | Inbox: failed. |
+| `reviewing` | reconciler `interrupt` | No live run: recovery moves the task to `failed`. |
+| `awaiting-approval` | person | Inbox: gate. |
+| `approved` | idle | Waits for a person to open the pull request. |
+| `rejected` | idle | Waits for a person to revise. |
+| `pr-opened` | final | The review loop and PR tending own it from here. |
+| `failed` | person | Inbox: failed. |
+
+### PR review (turn state)
+
+| State | Rule | Note |
+| --- | --- | --- |
+| `preparing` | final | Lives in memory only; a restart drops it. |
+| `running` | reconciler `sweeper` | A turn with no live owner reads as interrupted; the sweeper stops one silent for 30 minutes. |
+| `completed` | final | The findings reach the inbox as a review item. |
+| `failed` | final | Settled. |
+| `stopped` | final | Settled. |
+| `interrupted` | reconciler `resume-loop` | A review that belongs to a review loop starts again, twice at most. Any other waits for a person to start a new one. |
+
+### Review loop (`review-loop.json` state)
+
+| State | Rule | Note |
+| --- | --- | --- |
+| `reviewing` | reconciler `resume-loop` | An interrupted review is started again (`resumed` counts it); after three interruptions the loop stops with a reason. |
+| `fixing` | reconciler `settle-loop` | No queued or live run of the task: the loop stops with a reason (`recoverFixing`), the PR stays a draft, and the inbox gets a "stopped by recovery" item. The fix is not started again on its own: it may have pushed half a change, so a person sends the follow-up. |
+| `ready` | final | The PR left draft. |
+| `stopped` | idle | The reason is in the task activity; a person sends the follow-up again. |
+
+The "stopped by recovery" inbox item lives in memory until the next start; the stopped state and its reason are stored.
+
+### Feature stage and ticket state
+
+| Feature stage | Rule | Note |
+| --- | --- | --- |
+| `grilling` | person | Inbox: question. |
+| `spec` | person | Inbox: approve-spec. |
+| `spec-approved` | idle | Waits for a person to write the board. |
+| `board` | person | Inbox: approve-board. |
+| `implementing` | reconciler `ticker` | The feature ticker starts and follows tickets on its own. |
+| `qa` | person | Inbox: qa. |
+| `done` | final | Settled. |
+| `cancelled` | final | Settled. |
+
+| Ticket state | Rule | Note |
+| --- | --- | --- |
+| `waiting` | reconciler `ticker` | The ticker starts it once its blockers are done. |
+| `waiting-merge` | person | Inbox: merge. |
+| `running` | reconciler `sync-ticket` | Follows its task: `done` at the approval gate or later, `failed` when the task failed, was blocked or rejected (its last event is the error), `running` while the task is active. A ticket whose task is gone, or that never got one, starts over as `waiting` with no task, so the ticker makes a new one. Recovery does this for every feature, not only those at `implementing`. |
+| `done` | final | Settled. |
+| `failed` | person | Inbox: failed. |
+
+### The `working` flag
+
+| Record | Rule | Note |
+| --- | --- | --- |
+| feature | reconciler `clear-working` | No execution holds the key: recovery clears the flag in storage and sets the feature error to "The backend stopped during this step. Run it again." so the inbox shows it. Reads still hide the flag. |
+| chat | reconciler `clear-working` | No execution holds the key: recovery clears the flag in storage. Reads still hide it. |
+
+### The stuck detector
+
+Every 5 minutes (`FACTORY_STUCK_CHECK_MS`, default 300000; the timer is `unref`ed and `drain()` stops it) the backend looks for records whose state says someone works on them while nobody does, and which no write has touched for 60 minutes (`FACTORY_STUCK_AFTER_MS`, default 3600000):
+
+- a latest run that is `queued` or `running` with no dispatcher owner (age: `created_at`);
+- a review loop at `fixing` with nothing queued for the task, or at `reviewing` with no running or preparing review (age: the loop's `updated_at`);
+- a feature `working` flag, or a ticket at `running`, that nothing holds (age: the step's start, or the task's last update);
+- a chat reply nothing holds (age: the chat's `updated_at`).
+
+Each one becomes an inbox item of kind `recovery` with a stable id (`stuck:<kind>:<project>:<id>[:<ticket>]:<state>:<since>`), and the id is written to stderr once. Records in a `person` state are not listed: they already have their own inbox item. A record younger than the threshold is not listed, and one that settles drops out at the next check. `BackendService.detectStuck(at)` runs one check with the clock set by the caller, which is how the tests avoid waiting.
+
 ## Known gaps
 
 None in the state machines this audit covers. This is not a claim about the whole system: the [roadmap status](vision/roadmap.md#status) and the [architecture assessments](architecture-assessments/2026-11-26-ac0a5377.md) list what is still partial or planned.
