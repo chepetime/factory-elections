@@ -58,10 +58,7 @@ export function seatbeltProfile(sandbox: ShellSandbox): string {
 }
 
 /** The command line that runs `command` under `sandbox`. */
-export function sandboxedCommand(
-  command: string,
-  sandbox: ShellSandbox,
-): { file: string; args: string[] } {
+export function sandboxedCommand(command: string, sandbox: ShellSandbox): { file: string; args: string[] } {
   return { file: SANDBOX_EXEC, args: ['-p', seatbeltProfile(sandbox), '/bin/sh', '-c', command] };
 }
 

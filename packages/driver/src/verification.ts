@@ -1,4 +1,5 @@
 // Verification: the profile's checks in the task worktree, and the profile check before any task.
+import { homedir } from 'node:os';
 import {
   checkRun,
   environmentFailure,
@@ -73,7 +74,7 @@ export async function verifyWorktree(
     commandOutput = '';
     const result = await deps.shell.runShell(command, {
       cwd: path,
-      ...checkRun({ sandbox: profile.sandbox, cwd: path }),
+      ...checkRun({ sandbox: profile.sandbox, cwd: path, home: homedir() }),
       captureLimit: 0,
       onOutput,
       timeoutMs: limits.timeoutMs,
@@ -113,6 +114,7 @@ export async function verifyWorktree(
       ...checkRun({
         sandbox: profile.sandbox,
         cwd: path,
+        home: homedir(),
         extraEnv: { PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
       }),
       captureLimit: 0,

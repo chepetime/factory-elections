@@ -4,6 +4,7 @@
 // own branch: never a force-push, never a merge of the PR. A fix is pushed only after the
 // profile's test command passes. After MAX_TEND_FIXES fixes without a green PR, tending stops and
 // the PR goes to the inbox.
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import {
@@ -449,7 +450,7 @@ export class TendingService {
       if (key !== installedKey) {
         const setup = await shell(profile.commands.setup, {
           cwd,
-          ...checkRun({ sandbox: profile.sandbox, cwd }),
+          ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
           timeoutMs: TEST_TIMEOUT_MS,
           stallMs,
           group: true,
@@ -468,7 +469,7 @@ export class TendingService {
     if (head !== before) {
       const test = await shell(profile.commands.test, {
         cwd,
-        ...checkRun({ sandbox: profile.sandbox, cwd }),
+        ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
         timeoutMs: TEST_TIMEOUT_MS,
         stallMs,
         group: true,

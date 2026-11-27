@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
@@ -296,6 +296,7 @@ test('tending runs setup and test with the same environment and sandbox as verif
   const expected = checkRun({
     sandbox: { allowed_domains: ['registry.example.com'], env: { CI: '1' }, pass_env: ['TEND_PASSED'] },
     cwd: f.work,
+    home: homedir(),
   });
   for (const { options } of f.shells) {
     assert.deepEqual(options!.env, expected.env);

@@ -2,8 +2,6 @@
 // coder's Bash sandbox (adapters-claude `sandboxFor`) and the checks the factory itself runs on
 // the coder's worktree (test, full_check, runtime_check, setup; adapters-process `runShell`).
 // A check runs the coder's code, so it gets the coder's rules, not the backend's.
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { checkEnvironment } from './agent-env.ts';
 
 /** Package registries a sandboxed run may reach, so it can update a lockfile. */
@@ -17,21 +15,21 @@ export function pnpmLockDirs(uid: number = process.getuid?.() ?? 0): string[] {
 /** Credential locations a sandboxed run must not read. */
 export function sandboxDenyRead(home: string): string[] {
   return [
-    join(home, '.ssh'),
-    join(home, '.npmrc'),
-    join(home, '.aws'),
-    join(home, '.config', 'gh'),
-    join(home, 'Library', 'Keychains'),
+    `${home}/.ssh`,
+    `${home}/.npmrc`,
+    `${home}/.aws`,
+    `${home}/.config/gh`,
+    `${home}/Library/Keychains`,
   ];
 }
 
 /** Where a sandboxed run may write besides its working directory: package-manager caches. */
 export function sandboxAllowWrite(home: string, extra: readonly string[] = []): string[] {
   return [
-    join(home, 'Library', 'pnpm'),
-    join(home, 'Library', 'Caches', 'pnpm'),
-    join(home, '.npm'),
-    join(home, '.cache'),
+    `${home}/Library/pnpm`,
+    `${home}/Library/Caches/pnpm`,
+    `${home}/.npm`,
+    `${home}/.cache`,
     ...pnpmLockDirs(),
     ...extra,
   ];
@@ -55,12 +53,7 @@ export interface CheckSandbox {
 }
 
 /** The sandbox for a check in `cwd`: the coder's rules, with the worktree writable. */
-export function checkSandbox(
-  home: string,
-  cwd: string,
-  extra?: SandboxExtra,
-  tmpDir?: string,
-): CheckSandbox {
+export function checkSandbox(home: string, cwd: string, extra?: SandboxExtra, tmpDir?: string): CheckSandbox {
   return {
     denyRead: sandboxDenyRead(home),
     allowWrite: [cwd, ...(tmpDir ? [tmpDir] : []), ...sandboxAllowWrite(home, extra?.allow_write ?? [])],
@@ -82,15 +75,17 @@ export interface CheckRun {
  */
 export function checkRun(options: {
   /** A profile's `sandbox` block. */
-  sandbox?: (SandboxExtra & { pass_env?: readonly string[]; env?: Readonly<Record<string, string>> }) | undefined;
+  sandbox?:
+    (SandboxExtra & { pass_env?: readonly string[]; env?: Readonly<Record<string, string>> }) | undefined;
   cwd: string;
   source?: NodeJS.ProcessEnv;
-  home?: string;
+  /** The user's home directory: where the credential folders and caches are. */
+  home: string;
   extraEnv?: Record<string, string>;
 }): CheckRun {
   const source = options.source ?? process.env;
   return {
-    env: { ...checkEnvironment(source, options.sandbox), ...(options.extraEnv ?? {}) },
-    sandbox: checkSandbox(options.home ?? homedir(), options.cwd, options.sandbox, source.TMPDIR),
+    env: { ...checkEnvironment(source, options.sandbox), ...options.extraEnv },
+    sandbox: checkSandbox(options.home, options.cwd, options.sandbox, source.TMPDIR),
   };
 }

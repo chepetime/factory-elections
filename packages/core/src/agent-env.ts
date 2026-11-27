@@ -92,7 +92,7 @@ export function checkEnvironment(
   source: NodeJS.ProcessEnv,
   sandbox?: { pass_env?: readonly string[] | undefined; env?: Readonly<Record<string, string>> | undefined },
 ): Record<string, string> {
-  return { ...agentEnvironment(undefined, source, sandbox?.pass_env ?? []), ...(sandbox?.env ?? {}) };
+  return { ...agentEnvironment(undefined, source, sandbox?.pass_env ?? []), ...sandbox?.env };
 }
 
 /**
