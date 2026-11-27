@@ -20,6 +20,7 @@ import {
   recoveryBlocker,
   prBody,
   conflictFollowUpNote,
+  settleEndedPr,
   BUILT_IN_PROTECTED_PATHS,
   type RecoveryReport,
 } from '@factory/core';
@@ -390,6 +391,14 @@ export class BackendService {
       this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
       prObserved: async (task, pr) => {
+        // A follow-up whose PR merged or closed on GitHub can never be pushed: end the run at
+        // pr-opened again, before the outcome, so the board's status comes from the outcome.
+        if (pr.state !== 'OPEN' && task.stage !== 'pr-opened' && !this.isScheduled(task.project, task.id))
+          await this.tasks.withLock(task.project, task.id, async () => {
+            const current = await this.tasks.read(task.project, task.id);
+            const settled = settleEndedPr(current, pr, new Date().toISOString());
+            if (settled) await this.tasks.write(settled);
+          });
         await this.issues.prOutcome(task.project, task.id, pr);
         // An agent's draft PR that never got a review loop (it opened before the loop existed, or
         // the backend was down): start one. The loop ignores a PR it already has a state for.
