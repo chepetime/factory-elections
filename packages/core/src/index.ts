@@ -21,6 +21,7 @@ export * from './retro.ts';
 export * from './metrics-schema.ts';
 export * from './spend-caps.ts';
 export * from './spend-spikes.ts';
+export * from './waste-mining.ts';
 export * from './inbox.ts';
 export * from './tending.ts';
 export * from './ci-flake.ts';
