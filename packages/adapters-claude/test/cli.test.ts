@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { claudeCli, claudeMessageEvents, parseClaudeLine } from '../src/index.ts';
+import { claudeCli, claudeMessageEvents, MCP_TOOL_TIMEOUT_MS, parseClaudeLine } from '../src/index.ts';
 
 test('Claude stream-json becomes the shared events, marking subagent output', () => {
   const lines = [
@@ -51,12 +51,17 @@ test('a turn that may delegate gets the backend MCP server, with its token in a 
     { systemPrompt: '' },
   );
   const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]!) as {
-    mcpServers: { factory: { type: string; url: string; headers: Record<string, string> } };
+    mcpServers: {
+      factory: { type: string; url: string; headers: Record<string, string>; timeout: number };
+    };
   };
+  // A delegate call is silent until its child ends. Without a per-server timeout, Claude Code
+  // stops waiting after 300s of silence and the child keeps editing after the parent's turn ends.
   assert.deepEqual(config.mcpServers.factory, {
     type: 'http',
     url: 'http://127.0.0.1:9/mcp',
     headers: { Authorization: 'Bearer tok' },
+    timeout: MCP_TOOL_TIMEOUT_MS,
   });
   assert.deepEqual(args.slice(-2), ['--', 'hi']);
 });
