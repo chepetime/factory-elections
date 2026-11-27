@@ -33,7 +33,7 @@ test('delegate runs a child on any provider within the grant: access, budget, sl
     codex: {
       // The app-server transport: it stops a call at a token cap.
       capabilities: { ...PROVIDER_CAPABILITIES.codex, tokenCap: true },
-      run: async (r) => (calls.push(r), { text: 'codex says hi', costUsd: null }),
+      run: async (r) => (calls.push(r), { text: 'codex says hi', costUsd: 0 }),
     },
   });
   const server = new DelegationServer({
