@@ -212,3 +212,45 @@ test('unusual cost baseline expires after 90 days', () => {
     [],
   );
 });
+
+test('waste ranks runs by wasted dollars', () => {
+  let tick = 0;
+  const at = () => {
+    const stamp = new Date(Date.UTC(2026, 10, 16, 12, 0, tick++)).toISOString();
+    return { started_at: stamp, ended_at: stamp };
+  };
+  const trace = (id: string, cost: number | null, builds: number, other: number) => {
+    const t = (name: string, input: string) =>
+      span({ type: 'tool', trace_id: id, name, attributes: { input }, ...at() });
+    return [
+      span({ type: 'run', trace_id: id, ...at(), span_id: `run-${id}`, task_class: 'code/S' }),
+      span({
+        type: 'model',
+        trace_id: id,
+        ...at(),
+        step: 'coder',
+        cost_usd: cost,
+        tokens: { input: 1000, output: 0 },
+      }),
+      ...Array.from({ length: builds }, () => t('Bash', 'pnpm build')),
+      ...Array.from({ length: other }, (_, i) => t('Bash', `node script-${'x'.repeat(i + 1)}.js`)),
+    ];
+  };
+  const spans = [
+    ...trace('half', 1, 4, 0), // 3 of 4 calls wasted: $0.75
+    ...trace('big', 4, 3, 7), // 2 of 10 calls wasted: $0.80
+    ...trace('clean', 9, 0, 3),
+    ...trace('codex', null, 5, 0), // cost unknown: ranked after known dollars
+  ];
+  const m = metricsSummary(spans, '2026-11-16T00:00:00.000Z', '2026-11-17T00:00:00.000Z');
+  assert.deepEqual(
+    m.runs.waste.map((r) => [r.trace_id, r.wasted_usd]),
+    [
+      ['big', 0.8],
+      ['half', 0.75],
+      ['codex', null],
+    ],
+  );
+  assert.equal(m.runs.waste[0]!.category, 'thrash');
+  assert.equal(m.runs.clean_rate, 0.25, 'one run of four has no waste signal');
+});
