@@ -11,6 +11,7 @@ import * as fsAdapter from '@factory/adapters-fs';
 import * as git from '@factory/adapters-git';
 import { runShell } from '@factory/adapters-process';
 import { Driver, type AgentSession, type DriverDeps } from '../src/index.ts';
+import { retrySpent } from '../src/result-retry.ts';
 
 const DEFS = resolve(import.meta.dirname, '..', '..', '..', 'definitions');
 const paths = (n: string) => ({
@@ -120,6 +121,7 @@ async function setup(
   };
   return {
     driver: new Driver(deps),
+    deps,
     store,
     task,
     calls,
@@ -322,11 +324,16 @@ test('an agent session gets a check_change tool that runs the size and test gate
 });
 
 // A model call that ends with no result is retried once (ADR 0107).
-function failure(kind: string, toolCalls = 0, message = 'model run ended without a result') {
+function failure(
+  kind: string,
+  toolCalls = 0,
+  message = 'model run ended without a result',
+  assistantMessages = 1,
+) {
   return Object.assign(new Error(message), {
     kind,
     costUsd: null,
-    activity: { assistantMessages: 1, toolCalls },
+    activity: { assistantMessages, toolCalls },
   });
 }
 
@@ -410,5 +417,114 @@ test('with no session id and no tool call, a no-result starts the same request a
   assert.equal(done.stage, 'awaiting-approval');
   assert.equal(ctx.calls.length, 2);
   assert.equal(ctx.calls[1]!.resume, undefined);
+  assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
+});
+
+test("new work starts from GitHub's base branch: local-only commits stay out, merged PRs are in", async () => {
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 's' };
+    },
+  ]);
+  const repo = ctx.task.repo;
+  const remote = `${repo}-origin.git`;
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+  sh(repo, 'remote', 'add', 'origin', remote);
+  sh(repo, 'push', '-q', 'origin', 'main');
+  // A PR merged on GitHub that the local checkout has not pulled.
+  const other = `${repo}-other`;
+  execFileSync('git', ['clone', '-q', remote, other]);
+  sh(other, 'config', 'user.name', 't');
+  sh(other, 'config', 'user.email', 't@example.com');
+  await writeFile(join(other, 'merged.txt'), 'from GitHub\n');
+  sh(other, 'add', '.');
+  sh(other, 'commit', '-qm', 'merged on GitHub');
+  sh(other, 'push', '-q', 'origin', 'main');
+  // A commit on local main that was never pushed.
+  await writeFile(join(repo, 'local.txt'), 'not pushed\n');
+  sh(repo, 'add', '.');
+  sh(repo, 'commit', '-qm', 'local only');
+
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  const worktree = ctx.calls[0]!.cwd!;
+  assert.equal(existsSync(join(worktree, 'merged.txt')), true, 'the merged PR is in');
+  assert.equal(existsSync(join(worktree, 'local.txt')), false, 'the unpushed commit stays out');
+  assert.match(done.events!.find((e) => e.kind === 'worktree')!.message, /from origin\/main at /);
+  const tracked = (() => {
+    try {
+      return sh(worktree, 'config', '--get', `branch.factory/${ctx.task.id}.merge`).trim();
+    } catch {
+      return undefined; // exit 1: no such key
+    }
+  })();
+  assert.equal(tracked, undefined, 'the task branch does not track main');
+});
+
+test('a second launch after a retried no-result does not retry again, even after a restart', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 2, 'first stream lost');
+    },
+    async () => {
+      throw failure('no-result', 2, 'second stream lost');
+    },
+    async () => {
+      throw failure('no-result', 2, 'third stream lost');
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /second stream lost/);
+  assert.equal(ctx.calls.length, 2);
+  // A new launch: the saved retry is read from the task, so there is no second retry.
+  const again = new Driver(ctx.deps);
+  await assert.rejects(again.agentRun('demo', ctx.task.id), /third stream lost/);
+  assert.equal(ctx.calls.length, 3, 'one more call, no retry');
+  const failed = await ctx.store.read('demo', ctx.task.id);
+  assert.equal(failed.events?.filter((e) => e.kind === 'retry').length, 1);
+});
+
+test('a retry is spent until a turn completes after it', () => {
+  const attempt = (outcome: 'completed' | 'failed', finished_at: string) => ({
+    step: 'agent',
+    rung: 'Devin',
+    model: 'm',
+    effort: 'low' as const,
+    started_at: finished_at,
+    finished_at,
+    outcome,
+    cost_usd: null,
+  });
+  const retry = { at: '2026-11-13T00:00:05.000Z', kind: 'retry', message: 'retrying' };
+  assert.equal(retrySpent({}), false, 'no retry event');
+  assert.equal(retrySpent({ events: [retry] }), true, 'the process stopped mid-retry');
+  assert.equal(
+    retrySpent({ events: [retry], attempts: [attempt('failed', '2026-11-13T00:00:09.000Z')] }),
+    true,
+    'a failed turn leaves it spent',
+  );
+  assert.equal(
+    retrySpent({ events: [retry], attempts: [attempt('completed', '2026-11-13T00:00:09.000Z')] }),
+    false,
+    'a turn that completed after it is progress',
+  );
+});
+
+test('a resumed turn that failed before any activity retries with its own prompt', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 0, 'model run ended without a result', 0);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.2, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.agentRun('demo', ctx.task.id, 'Please also add feature.txt');
+  assert.equal(done.attempts?.at(-1)?.retried, 'no-result');
+  assert.equal(ctx.calls[1]!.resume, 'sess-1');
+  assert.equal(ctx.calls[1]!.prompt, 'Please also add feature.txt', "the person's reply is kept");
   assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
 });

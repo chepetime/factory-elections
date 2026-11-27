@@ -293,3 +293,74 @@ test('a stream error that names a rate limit keeps its own kind', async () => {
   const runner = new ClaudeAgentRunner({ query: (() => limited) as unknown as Query, retryDelaysMs: [] });
   await assert.rejects(runner.run(request), (e: ModelRunError) => e.kind === 'rate-limited');
 });
+
+const toolStart = {
+  type: 'assistant',
+  message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'sleep 9' } }] },
+};
+const toolEnd = {
+  type: 'user',
+  message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] },
+};
+
+/** Yields each message after its own delay, and honours abort. */
+function timed(steps: [number, unknown][]): Query {
+  return ((args: { options: { abortController?: AbortController } }) => {
+    const signal = args.options.abortController!.signal;
+    return (async function* () {
+      for (const [gap, m] of steps) {
+        await new Promise<void>((done, fail) => {
+          const t = setTimeout(done, gap);
+          signal.addEventListener('abort', () => (clearTimeout(t), fail(new Error('aborted'))), {
+            once: true,
+          });
+        });
+        yield m;
+      }
+    })();
+  }) as unknown as Query;
+}
+
+test('a tool call open longer than the stall limit, but within the open-tool limit, completes', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [150, toolEnd],
+      [0, success()],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 400,
+  });
+  assert.equal((await runner.run({ ...request, stallMs: 50 })).text, 'done');
+});
+
+test('a tool call open past the open-tool limit stops as stalled and names the tool', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [5_000, toolEnd],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 120,
+  });
+  await assert.rejects(
+    runner.run({ ...request, stallMs: 50 }),
+    (e: ModelRunError) => e.kind === 'stalled' && /open tool: Bash/.test(e.message),
+  );
+});
+
+test('silence after the tool result closed the call still stalls at the stall limit', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [0, toolEnd],
+      [5_000, success()],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 5_000,
+  });
+  await assert.rejects(
+    runner.run({ ...request, stallMs: 50 }),
+    (e: ModelRunError) => e.kind === 'stalled' && !/open tool/.test(e.message),
+  );
+});

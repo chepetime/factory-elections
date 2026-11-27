@@ -3,6 +3,27 @@
 - Preview impact: `node scripts/ci-plan.mjs origin/main HEAD`.
 - Run affected validation: `node scripts/ci-run.mjs origin/main HEAD`.
 - Validate the selector: `node --test scripts/ci-plan.test.mjs`.
+- Validate the file-size ratchet: `node --test scripts/file-size-ratchet.test.mjs` (`pnpm test` does not run `scripts/*.test.mjs`).
+
+## File-size ratchet
+
+`pnpm check:file-size` (also part of `pnpm lint`) caps production source at 1000 lines per file.
+Tests, stories, e2e, `.d.ts`, `apps/docs/` and vendored `packages/affect-ui/upstream/` are out of scope.
+`file-size-baseline.json` lists the files already over the cap with their line counts. A baseline file
+may only shrink; a file not in the baseline fails once it passes 1000 lines. Deleted files pass.
+
+`node scripts/file-size-ratchet.mjs --update` lowers entries for shrunk files and drops files that
+reach 1000 or fewer. It refuses to run while the check fails, never raises an entry, and on a branch
+changes only the entries of files changed since local `main` (on `main` it considers every entry).
+
+When the check fails, move a cohesive part of the file into its own module. Do not raise the baseline.
+After a rename or move, move the baseline entry to the new path by hand.
+
+Repository rules live in `tests/repo/*.test.ts` (`node:test`, Node built-ins only): relative links in
+`AGENTS.md` and `docs/harnes/*.md` resolve, factory `git commit` calls pass `--no-verify`, and each
+hook script in `.claude/settings.json` exists. `pnpm test` and `ci-run.mjs` run them on every plan,
+also a documentation-only one; run them alone with `node --test tests/repo`. A new file under
+`tests/` is an unknown path to `ci-plan.mjs`, so it selects all workspaces.
 
 ## Local git hooks
 

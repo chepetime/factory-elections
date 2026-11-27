@@ -20,6 +20,7 @@
     "packages/*/test/**/*.ts",
     "apps/cli/src/**/*.ts",
     "apps/cli/test/**/*.ts",
-    "apps/backend/src/**/*.ts"
+    "apps/backend/src/**/*.ts",
+    "tests/**/*.ts"
   ]
 }
