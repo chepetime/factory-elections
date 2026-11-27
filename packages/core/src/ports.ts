@@ -75,7 +75,7 @@ export interface ModelResult {
 /**
  * Why a model call failed, so the caller can decide to wait, resume or stop. `no-result` is a
  * stream that ended without a result, or a CLI that exited unexpectedly: it is transient, and the
- * driver may retry it once (docs/state-machines.md).
+ * driver may retry it once (docs/state-machines/runs.md).
  */
 export type ModelFailure =
   'aborted' | 'timeout' | 'stalled' | 'budget' | 'rate-limited' | 'usage-limit' | 'no-result' | 'error';

@@ -11,8 +11,12 @@ export const REVIEW_SEND_BACK = ['critical', 'must-fix'] as const;
 
 export const ReviewLoopState = z.object({
   pr: z.number().int().positive(),
-  /** `reviewing`: a review runs. `fixing`: the agent fixes its findings. `ready`: marked ready. */
-  state: z.enum(['reviewing', 'fixing', 'ready', 'stopped']),
+  /**
+   * `reviewing`: a review runs. `fixing`: the agent fixes its findings. `awaiting-ci`: the review is
+   * done but checks are not green (or it conflicts), so the PR stays a draft until tending sees it
+   * green. `ready`: marked ready.
+   */
+  state: z.enum(['reviewing', 'fixing', 'awaiting-ci', 'ready', 'stopped']),
   /** Reviews started so far. */
   round: z.number().int().nonnegative(),
   /** Fix follow-ups sent so far, in this cycle. */

@@ -10,7 +10,7 @@ const payload = (...severities: string[]) =>
     findings: severities.map((severity, i) => ({ severity, title: `Finding ${i + 1}` })),
   }) as unknown as ReviewPayload;
 
-function setup(overrides: Partial<TaskRecord> = {}) {
+function setup(overrides: Partial<TaskRecord> = {}, ci?: { reason?: string }) {
   let task = TaskRecord.parse({
     id: '6f2c1a52-9b3e-4d1f-8a7c-2e5b9d0c4f11',
     project: 'demo',
@@ -48,6 +48,12 @@ function setup(overrides: Partial<TaskRecord> = {}) {
       isDraft: async () => draft,
       editBody: async (_c, _n, body) => void calls.push(`body:${body}`),
     },
+    ...(ci
+      ? {
+          readiness: async () =>
+            ci.reason ? { ok: false as const, reason: ci.reason } : { ok: true as const },
+        }
+      : {}),
   });
   return {
     loop,
@@ -94,6 +100,26 @@ test('a draft PR is reviewed, its must-fix findings fixed, reviewed again, then 
   );
   assert.ok(ctx.calls.includes('ready:4'));
   assert.ok(ctx.calls.some((c) => c.startsWith('note:PR #4 is ready for review, with 1 review note')));
+});
+
+test('a clean review with red CI keeps the PR a draft until checks turn green, then marks it ready', async () => {
+  const ci: { reason?: string } = { reason: 'checks are failing: test' };
+  const ctx = setup({}, ci);
+  await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });
+  await ctx.loop.reviewEnded('demo', 4, payload());
+  const waiting = await ctx.state();
+  assert.deepEqual([waiting?.state, waiting?.reason], ['awaiting-ci', 'checks are failing: test']);
+  assert.ok(!ctx.calls.includes('ready:4'));
+  assert.ok(ctx.calls.some((c) => c.startsWith('note:PR #4 stays a draft: checks are failing: test')));
+
+  // Still red on a later tending pass: nothing changes.
+  await ctx.loop.checksChanged(ctx.task());
+  assert.ok(!ctx.calls.includes('ready:4'));
+
+  ci.reason = undefined;
+  await ctx.loop.checksChanged(ctx.task());
+  assert.ok(ctx.calls.includes('ready:4'));
+  assert.equal((await ctx.state())?.state, 'ready');
 });
 
 test('after the last fix round the PR is marked ready without another review', async () => {

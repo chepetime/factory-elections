@@ -228,7 +228,7 @@ export async function requeue(
  * Called when a run is accepted. Refuses it while the task's previous run may have left processes
  * (an uncertain cleanup nobody confirmed). Otherwise says whether that run was interrupted: only
  * then can a dead process have left a stale git lock, and the new run clears the worktree's own
- * (the driver's stale-locks.ts; docs/state-machines.md).
+ * (the driver's stale-locks.ts; docs/state-machines/recovery.md).
  */
 export async function resumeCheck(
   s: BackendService,

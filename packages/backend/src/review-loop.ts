@@ -12,6 +12,7 @@ import {
   reviewNotesSection,
   splitFindings,
   severityCounts,
+  type PrState,
   type ReviewOutcome,
   type ReviewPayload,
   type TaskRecord,
@@ -41,8 +42,26 @@ export interface ReviewLoopDeps {
     isDraft(cwd: string, number: number): Promise<boolean>;
     editBody(cwd: string, number: number, body: string): Promise<void>;
   };
+  /**
+   * Whether the PR may leave draft: checks settled green and it merges cleanly. Absent: always
+   * ready. `reason` says what holds it back (pending, failing, conflict).
+   */
+  readiness?(cwd: string, number: number): Promise<{ ok: true } | { ok: false; reason: string }>;
   now?: () => string;
   log?: (line: string) => void;
+}
+
+/** Whether a PR may leave draft: checks settled green and it merges cleanly. */
+export function prReadiness(pr: PrState): { ok: true } | { ok: false; reason: string } {
+  if (pr.mergeable === 'CONFLICTING') return { ok: false, reason: 'it conflicts with its base' };
+  const failed = pr.checks.filter((c) => c.state === 'fail');
+  if (failed.length)
+    return { ok: false, reason: `checks are failing: ${failed.map((c) => c.name).join(', ')}` };
+  if (pr.checks.some((c) => c.state !== 'pass' && c.state !== 'skipped'))
+    return { ok: false, reason: 'checks are still pending' };
+  return pr.mergeable === 'MERGEABLE'
+    ? { ok: true }
+    : { ok: false, reason: 'GitHub has not settled whether it merges cleanly' };
 }
 
 const prNumber = (task: TaskRecord) => Number(/\/pull\/(\d+)/.exec(task.pr?.url ?? '')?.[1]) || undefined;
@@ -270,6 +289,30 @@ export class ReviewLoop {
     });
   }
 
+  /**
+   * Tending saw the PR: a finished review that waited for CI hands the draft off once checks are
+   * green and it merges cleanly; otherwise the reason is refreshed.
+   */
+  checksChanged(task: TaskRecord): Promise<void> {
+    return this.serial(task, async () => {
+      const state = await this.state(task);
+      const number = prNumber(task);
+      if (!state || state.state !== 'awaiting-ci' || state.pr !== number || !number) return;
+      const current = await this.deps.tasks.read(task.project, task.id);
+      if (!current.worktree || current.stage !== 'pr-opened' || !this.deps.readiness) return;
+      const cwd = current.worktree.path;
+      const ready = await this.deps.readiness(cwd, number);
+      if (!ready.ok) {
+        if (ready.reason !== state.reason)
+          await this.save(task, { ...state, reason: ready.reason, updated_at: this.now() });
+        return;
+      }
+      if (await this.deps.github.isDraft(cwd, number)) await this.deps.github.markReady(cwd, number);
+      await this.save(task, { ...state, state: 'ready', reason: undefined, updated_at: this.now() });
+      await this.deps.note(task.project, task.id, `PR #${number} is ready for review: checks are green.`);
+    });
+  }
+
   private async review(task: TaskRecord, state: ReviewLoopState, number: number): Promise<void> {
     try {
       await this.deps.startReview(task.project, number);
@@ -303,7 +346,25 @@ export class ReviewLoop {
       await this.deps.github.editBody(current.worktree.path, state.pr, withNotes);
       // A PR that people already review (an update after an earlier cycle) only gets new notes.
       wasDraft = await this.deps.github.isDraft(current.worktree.path, state.pr);
-      if (wasDraft) await this.deps.github.markReady(current.worktree.path, state.pr);
+      if (wasDraft) {
+        const ready = (await this.deps.readiness?.(current.worktree.path, state.pr)) ?? { ok: true as const };
+        if (!ready.ok) {
+          // Review is done, CI is not green: stay draft; tending marks it ready once it is.
+          await this.save(task, {
+            ...state,
+            state: 'awaiting-ci',
+            reason: ready.reason,
+            updated_at: this.now(),
+          });
+          await this.deps.note(
+            task.project,
+            task.id,
+            `PR #${state.pr} stays a draft: ${ready.reason}. Tending marks it ready once checks are green.`,
+          );
+          return;
+        }
+        await this.deps.github.markReady(current.worktree.path, state.pr);
+      }
     } catch (error) {
       return this.stop(task, state, `The PR could not be marked ready: ${message(error)}`);
     }
