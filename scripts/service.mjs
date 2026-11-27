@@ -6,7 +6,7 @@
 //   node scripts/service.mjs install    Write ~/Library/LaunchAgents/<label>.plist and load it
 //   node scripts/service.mjs uninstall  Stop the agent (with its drain) and remove the plist
 //   node scripts/service.mjs status     Whether the agent is loaded, and its PID
-//   node scripts/service.mjs restart    Stop with drain, then start again (what pnpm restart uses)
+//   node scripts/service.mjs restart    Stop with drain, then start again (what pnpm run restart uses)
 // Run install from your own terminal: a plist written from an agent session keeps that session's PATH.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';

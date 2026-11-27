@@ -4,7 +4,8 @@
 //   2. sends SIGTERM to this checkout's scripts/web.mjs, so the backend drains and removes its lock;
 //   3. starts `scripts/start.mjs` detached (logs in <data root>/logs/stack.log);
 //   4. waits for the backend RPC and the web app, then prints one status line.
-// Usage: pnpm restart [--force] [--prod] [--from-agent-session] [--dry-run]. --prod builds; the
+// Usage: pnpm run restart [--force] [--prod] [--from-agent-session] [--dry-run] (`run`: pnpm 12 has a
+// built-in `restart` that needs a `stop` script). --prod builds; the
 // default is dev. --dry-run prints what it would stop and why, and changes nothing. It runs only in
 // the primary checkout: a worktree runs its own stack with `pnpm worktree run`.
 import './load-env.ts';

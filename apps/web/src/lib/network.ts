@@ -188,7 +188,7 @@ export function buildNetwork({ health, environment, runs, modelCalls, now }: Net
     detail: hosted ? 'Started this stack' : 'Claude Code hooks and skills',
     status: hosted ? 'limited' : 'ok',
     lines: [
-      'Session hooks, the factory-dev-loop skill and pnpm restart.',
+      'Session hooks, the factory-dev-loop skill and pnpm run restart.',
       hosted
         ? 'The stack was started from a Claude Code session, so agent turns can inherit its permission limits.'
         : 'The stack was not started from a Claude Code session.',

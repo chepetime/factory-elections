@@ -36,8 +36,8 @@ Each step names the command. Do not rebuild these by hand.
 ## 5. Land and restart
 
 - Commit in the worktree, then run `git merge --ff-only agent/<task>` in the primary checkout. Run `pnpm install --frozen-lockfile` there when packages changed.
-- `pnpm restart --dry-run`, then `pnpm restart`, from the primary checkout. It refuses while runs work or wait, drains, starts detached and waits until up. Report a cut run if `--force` was needed.
-- It refuses inside a Claude Code session unless `--from-agent-session`. Agent turns started that way can run with this session's permission limits (PR reviews then fail to save their report). Prefer the launchd service (`node scripts/service.mjs install`, run by the user in a terminal); `pnpm restart` then uses it.
+- `pnpm run restart --dry-run`, then `pnpm run restart`, from the primary checkout. It refuses while runs work or wait, drains, starts detached and waits until up. Report a cut run if `--force` was needed.
+- It refuses inside a Claude Code session unless `--from-agent-session`. Agent turns started that way can run with this session's permission limits (PR reviews then fail to save their report). Prefer the launchd service (`node scripts/service.mjs install`, run by the user in a terminal); `pnpm run restart` then uses it.
 - Remove the worktree: `git clean -fdXq` in it, then `node scripts/worktree.mjs remove agent/<task>`.
 
 ## Debug

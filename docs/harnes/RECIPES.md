@@ -40,7 +40,7 @@ Short, ordered steps for the changes agents make most. Each lists the files in t
 
 ## Restart the stack
 
-From the primary checkout: `pnpm restart --dry-run`, then `pnpm restart`. See the [dev loop skill](../../.claude/skills/factory-dev-loop/SKILL.md) for the session and service rules.
+From the primary checkout: `pnpm run restart --dry-run`, then `pnpm run restart`. See the [dev loop skill](../../.claude/skills/factory-dev-loop/SKILL.md) for the session and service rules.
 
 ## Known failure modes of stuck tickets
 

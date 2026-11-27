@@ -5,8 +5,10 @@
 ## Run
 
 ```sh
-pnpm docs
+pnpm run docs
 ```
+
+Use `pnpm run docs`: pnpm 12's built-in `pnpm docs` opens a package's documentation instead. The site builds with webpack, like `apps/web`, because Turbopack cannot read the `next` package that pnpm links from its shared store outside the repository.
 
 Open http://localhost:3100. Search, a Markdown copy button, and `/llms.txt` work. Edits to `docs/**/*.md` reload in the browser.
 
