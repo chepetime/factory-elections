@@ -55,8 +55,10 @@ test('SDK turn options set what the CLI turn arguments set', () => {
     ),
     turn.deny,
   );
-  assert.deepEqual(options.allowedTools, [CLAUDE_DELEGATE_TOOL]);
+  // The CLI pre-approves the delegate tool because it skips permissions; the SDK leaves it to the
+  // guard, since a bare allowedTools entry would bypass canUseTool.
   assert.equal(flag(args, '--allowedTools'), CLAUDE_DELEGATE_TOOL);
+  assert.equal(options.allowedTools, undefined);
   assert.ok(options.mcpServers && 'factory' in options.mcpServers);
   assert.equal(options.resume, flag(args, '--resume'));
   assert.equal(options.persistSession, true);
@@ -139,6 +141,16 @@ test('the SDK review guard allows tools except what a deny rule names, also insi
   const ask = options.canUseTool!;
   const signal = new AbortController().signal;
   assert.equal((await ask('Write', { file_path: '/p' }, { signal } as never))?.behavior, 'allow');
+  // The delegate tool goes through the guard too: allowed by default, refused when a rule names it.
+  assert.equal((await ask(CLAUDE_DELEGATE_TOOL, {}, { signal } as never))?.behavior, 'allow');
+  const noDelegate = claudeTurnOptions(
+    { turn: { ...turn, deny: [...turn.deny, CLAUDE_DELEGATE_TOOL] }, systemPrompt: 'S', cwd: '/w', env: {} },
+    new AbortController(),
+  );
+  assert.equal(
+    (await noDelegate.canUseTool!(CLAUDE_DELEGATE_TOOL, {}, { signal } as never))?.behavior,
+    'deny',
+  );
   if (turn.deny.length) {
     const rule = /^Bash\((.*?)(:\*)?\)$/.exec(turn.deny[0]!)?.[1];
     if (rule)
