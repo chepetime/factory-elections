@@ -264,3 +264,103 @@ test('a call gets the agent allowlist plus its extra environment, never other ho
   for (const k of ['FACTORY_DATABASE_URL', 'AWS_SECRET_ACCESS_KEY', 'OPENAI_API_KEY'])
     assert.equal(env[k], undefined, `${k} must not reach the agent`);
 });
+
+/** A stream that fails on its first read, as a crashed CLI does. */
+function failing(message: string): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => Promise.reject(new Error(message)),
+    }),
+  };
+}
+
+test('a stream that ends with no result, and a stream error with no other cause, are no-result', async () => {
+  const ended = new ClaudeAgentRunner({ query: fake([]) });
+  await assert.rejects(
+    ended.run(request),
+    (e: ModelRunError) => e.kind === 'no-result' && /ended without a result/.test(e.message),
+  );
+  const crashed = failing('Claude Code process exited with code 1');
+  const crash = new ClaudeAgentRunner({ query: (() => crashed) as unknown as Query });
+  await assert.rejects(
+    crash.run(request),
+    (e: ModelRunError) => e.kind === 'no-result' && /model run failed: .*exited with code 1/.test(e.message),
+  );
+});
+
+test('a stream error that names a rate limit keeps its own kind', async () => {
+  const limited = failing('429 too many requests');
+  const runner = new ClaudeAgentRunner({ query: (() => limited) as unknown as Query, retryDelaysMs: [] });
+  await assert.rejects(runner.run(request), (e: ModelRunError) => e.kind === 'rate-limited');
+});
+
+const toolStart = {
+  type: 'assistant',
+  message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'sleep 9' } }] },
+};
+const toolEnd = {
+  type: 'user',
+  message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] },
+};
+
+/** Yields each message after its own delay, and honours abort. */
+function timed(steps: [number, unknown][]): Query {
+  return ((args: { options: { abortController?: AbortController } }) => {
+    const signal = args.options.abortController!.signal;
+    return (async function* () {
+      for (const [gap, m] of steps) {
+        await new Promise<void>((done, fail) => {
+          const t = setTimeout(done, gap);
+          signal.addEventListener('abort', () => (clearTimeout(t), fail(new Error('aborted'))), {
+            once: true,
+          });
+        });
+        yield m;
+      }
+    })();
+  }) as unknown as Query;
+}
+
+test('a tool call open longer than the stall limit, but within the open-tool limit, completes', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [150, toolEnd],
+      [0, success()],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 400,
+  });
+  assert.equal((await runner.run({ ...request, stallMs: 50 })).text, 'done');
+});
+
+test('a tool call open past the open-tool limit stops as stalled and names the tool', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [5_000, toolEnd],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 120,
+  });
+  await assert.rejects(
+    runner.run({ ...request, stallMs: 50 }),
+    (e: ModelRunError) => e.kind === 'stalled' && /open tool: Bash/.test(e.message),
+  );
+});
+
+test('silence after the tool result closed the call still stalls at the stall limit', async () => {
+  const runner = new ClaudeAgentRunner({
+    query: timed([
+      [0, toolStart],
+      [0, toolEnd],
+      [5_000, success()],
+    ]),
+    stallCheckMs: 10,
+    openToolStallMs: 5_000,
+  });
+  await assert.rejects(
+    runner.run({ ...request, stallMs: 50 }),
+    (e: ModelRunError) => e.kind === 'stalled' && !/open tool/.test(e.message),
+  );
+});

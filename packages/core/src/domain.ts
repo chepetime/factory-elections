@@ -71,6 +71,58 @@ export function isForbiddenPath(path: string, patterns: readonly string[]): bool
   });
 }
 
+/**
+ * Paths no task may change, whatever the profile says: CI definitions and the actions they call
+ * (which run with repository secrets), git hooks the factory or a person would run, agent
+ * instructions and settings, ownership rules and env files. A profile can add paths, never remove
+ * these. A person can allow them for one task with `allow_protected_paths`.
+ *
+ * Entries ending in "/" are directory prefixes. Entries starting with "**\/" match in any folder.
+ * Entries ending in "*" match a name prefix. Matching ignores letter case.
+ */
+export const BUILT_IN_PROTECTED_PATHS: readonly string[] = [
+  '.github/',
+  '.husky/',
+  '.githooks/',
+  '.claude/',
+  '.codex/',
+  '.agents/',
+  'AGENTS.md',
+  'CLAUDE.md',
+  '**/CODEOWNERS',
+  '.env',
+  '.env.*',
+];
+
+/** Whether a path is built-in protected. Case-insensitive; also true when a parent folder is. */
+export function isBuiltInProtectedPath(path: string): boolean {
+  const lower = path.replace(/^\.\//, '').toLowerCase();
+  return BUILT_IN_PROTECTED_PATHS.some((entry) => {
+    const pattern = entry.toLowerCase();
+    if (pattern.startsWith('**/')) {
+      const name = pattern.slice(3);
+      return lower === name || lower.endsWith(`/${name}`);
+    }
+    return isForbiddenPath(lower, [pattern]);
+  });
+}
+
+/**
+ * The paths among `paths` that are protected: built-in (any letter case) or listed in the profile's
+ * `forbidden_paths`. Pass every path a change touches, including a rename's old path.
+ * `allowBuiltIn` (a task's `allow_protected_paths`) lifts the built-in list only; the profile's own
+ * paths stay forbidden.
+ */
+export function protectedPaths(
+  paths: readonly string[],
+  profilePatterns: readonly string[],
+  allowBuiltIn = false,
+): string[] {
+  return [...new Set(paths)].filter(
+    (path) => (!allowBuiltIn && isBuiltInProtectedPath(path)) || isForbiddenPath(path, profilePatterns),
+  );
+}
+
 /** Directories whose contents are build output, caches or tool reports, wherever they appear. */
 export const GENERATED_DIRS = [
   'node_modules',

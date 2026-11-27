@@ -164,6 +164,8 @@ export const StepAttempt = z.looseObject({
   error: z.string().optional(),
   /** An agent turn that changed nothing, steered once (or already steered): the next one settles. */
   no_change_steered: z.boolean().optional(),
+  /** Set when the call ended with no result and the driver ran it once more (ADR 0107). */
+  retried: z.literal('no-result').optional(),
 });
 export type StepAttempt = z.infer<typeof StepAttempt>;
 
@@ -210,6 +212,8 @@ export const TaskRecord = z.looseObject({
       not_run_locally: z.array(NonEmpty).optional(),
       /** Whether the test-weakening check ran (`checked`) or a person allowed test changes. */
       test_integrity: z.enum(['checked', 'allowed']).optional(),
+      /** Built-in protected paths the change touches, which a person allowed for this task. */
+      protected_paths_allowed: z.array(NonEmpty).optional(),
     })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
@@ -241,6 +245,8 @@ export const TaskRecord = z.looseObject({
     .optional(),
   /** A person allowed this task to delete, skip or loosen tests (see test-integrity.ts). */
   allow_test_changes: z.boolean().optional(),
+  /** A person allowed this task to change built-in protected paths (see BUILT_IN_PROTECTED_PATHS). */
+  allow_protected_paths: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
   /**
    * A PR publication that started and is not recorded yet: saved before each external write
@@ -284,6 +290,12 @@ export const RepoProfile = z.looseObject({
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   /** Repository-relative files or directories whose generated output must not be committed. */
   generated_paths: z.array(NonEmpty).optional(),
+  /**
+   * Committed files a command generates. When merging the base conflicts on a file matching a
+   * rule's `paths` (globs, repository-relative), the factory takes the base's copy and runs the
+   * rule's `command` once from the worktree root, outside the sandbox, instead of asking the agent.
+   */
+  regenerate: z.array(z.looseObject({ paths: z.array(NonEmpty).min(1), command: NonEmpty })).optional(),
   /**
    * Cheap checks run before any model call or setup, e.g. an expired cloud login. A failure stops
    * the run and shows `fix`, the command a person runs to repair it.
@@ -366,7 +378,12 @@ export const StepLimits = z.looseObject({
     .positive()
     .max(24 * 60)
     .optional(),
-  /** The call is stopped after this long with no message from the model. */
+  /**
+   * The call is stopped after this long with no message from the model. While a tool call is open
+   * (a long test run, a delegated child task) the model sends nothing, so the limit is 4 times
+   * longer, capped by the wall-clock limit; the stop reason names the open tool. Real activity,
+   * not elapsed time, is the rule (ADR 0061): a hung tool still stops.
+   */
   stall_minutes: z
     .number()
     .positive()

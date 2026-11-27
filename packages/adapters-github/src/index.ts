@@ -169,3 +169,80 @@ export async function pullRequestIsDraft(cwd: string, number: number): Promise<b
     throw new GitHubError(`gh pr view failed: ${(result.stderr || result.stdout).trim()}`);
   return result.stdout.trim() === 'true';
 }
+
+/** What the backend read from GitHub for one pull request: files to hand to a sandboxed review turn. */
+export interface PullRequestContext {
+  /** File name -> content, for each part that was fetched. */
+  files: Record<string, string>;
+  /** One line per part that could not be fetched: the file it would have been, and why. */
+  failures: string[];
+}
+
+const PR_FIELDS = [
+  'number,title,body,url,state,isDraft,mergedAt,closedAt,author,baseRefName,headRefName,headRefOid',
+  'additions,deletions,changedFiles,files,labels,reviewDecision,commits,comments,reviews',
+].join(',');
+
+const REVIEW_THREADS = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved isOutdated path line startLine
+          comments(first: 50) { nodes { author { login } body createdAt url } }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * The pull request's data as files: `pr.json` (title, body, state, commits, comments and reviews),
+ * `pr.diff`, `threads.json` (review threads) and `checks.txt` (CI status). Each part is fetched on
+ * its own, so one failure leaves the others; failures are listed, never thrown. A review turn runs
+ * in a sandbox with no network or GitHub token, so the backend reads GitHub for it.
+ */
+export async function pullRequestContext(cwd: string, number: number): Promise<PullRequestContext> {
+  const n = String(number);
+  const parts: [string, () => Promise<string>][] = [
+    ['pr.json', () => gh(cwd, ['pr', 'view', n, '--json', PR_FIELDS], 'gh pr view')],
+    ['pr.diff', () => gh(cwd, ['pr', 'diff', n], 'gh pr diff')],
+    [
+      'threads.json',
+      () =>
+        gh(
+          cwd,
+          [
+            'api',
+            'graphql',
+            '-F',
+            'owner={owner}',
+            '-F',
+            'name={repo}',
+            '-F',
+            `number=${n}`,
+            '-f',
+            `query=${REVIEW_THREADS}`,
+          ],
+          'gh api graphql',
+        ),
+    ],
+    // `gh pr checks` exits non-zero while checks fail or are pending, and still prints the table.
+    [
+      'checks.txt',
+      async () => {
+        const result = await run('gh', ['pr', 'checks', n], { cwd, timeoutMs: 60_000 });
+        if (result.stdout.trim()) return result.stdout;
+        throw new GitHubError(`gh pr checks failed: ${(result.stderr || 'no output').trim()}`);
+      },
+    ],
+  ];
+  const settled = await Promise.allSettled(parts.map(([, fetch]) => fetch()));
+  const context: PullRequestContext = { files: {}, failures: [] };
+  settled.forEach((outcome, i) => {
+    const name = parts[i]![0];
+    if (outcome.status === 'fulfilled') context.files[name] = outcome.value;
+    else context.failures.push(`${name}: ${(outcome.reason as Error).message.split('\n')[0]}`);
+  });
+  return context;
+}

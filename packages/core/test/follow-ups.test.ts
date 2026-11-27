@@ -5,6 +5,7 @@ import {
   approvalBlockers,
   conflictFollowUpSeen,
   followUpAgent,
+  settleEndedPr,
   taskCommandBlockers,
 } from '../src/index.ts';
 
@@ -53,4 +54,22 @@ test('the follow-up agent is the run agent, then the assignee; the watcher adds 
   };
   assert.equal(conflictFollowUpSeen(seen, 'h1'), true);
   assert.equal(conflictFollowUpSeen(seen, 'h2'), false);
+});
+
+test('a follow-up whose PR merged or closed on GitHub is settled back to pr-opened; a working run is not', () => {
+  const now = '2026-11-26T12:00:00.000Z';
+  const gate = { ...base, stage: 'awaiting-approval' as const };
+  const merged = settleEndedPr(gate, { number: 1, state: 'MERGED' }, now);
+  assert.equal(merged?.stage, 'pr-opened');
+  assert.equal(merged?.events?.at(-1)?.message, 'PR #1 was merged on GitHub; the follow-up is moot.');
+  const closed = settleEndedPr({ ...base, stage: 'blocked' }, { number: 1, state: 'CLOSED' }, now);
+  assert.equal(closed?.events?.at(-1)?.message, 'PR #1 was closed on GitHub; the follow-up is moot.');
+  assert.equal(
+    settleEndedPr(gate, { number: 1, state: 'OPEN' }, now),
+    undefined,
+    'open: the follow-up goes on',
+  );
+  assert.equal(settleEndedPr(base, { number: 1, state: 'MERGED' }, now), undefined, 'already pr-opened');
+  assert.equal(settleEndedPr({ ...base, stage: 'coding' }, { number: 1, state: 'MERGED' }, now), undefined);
+  assert.equal(settleEndedPr({ ...base, stage: 'rejected' }, { number: 1, state: 'MERGED' }, now), undefined);
 });

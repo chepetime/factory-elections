@@ -1,11 +1,16 @@
 // Verification: the profile's checks in the task worktree, and the profile check before any task.
+import { homedir } from 'node:os';
 import {
+  checkRun,
   environmentFailure,
   tooBroadForLocalCheck,
   isTestPath,
   testWeakening,
   isGeneratedPath,
+  isBuiltInProtectedPath,
+  protectedPaths,
   runtimeVerdict,
+  type RepoProfile,
   type RuntimeVerdict,
 } from '@factory/core';
 import { DriverError, type DriverDeps } from './ports.ts';
@@ -19,6 +24,43 @@ import {
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 
+/** The most non-test lines one change may have. */
+export const CHANGE_LINE_LIMIT = 400;
+
+/** `cwd`, environment and OS sandbox for a profile command that runs the coder's code in `cwd`. */
+export function checkOptions(profile: Pick<RepoProfile, 'sandbox'>, cwd: string) {
+  return { cwd, ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }) };
+}
+
+/**
+ * The gates on the committed change itself, before any check runs: its size and its tests.
+ * Returns why the change is refused, or undefined. The agent's check_change tool runs the same.
+ */
+export async function changeGate(
+  deps: Pick<DriverDeps, 'git'>,
+  path: string,
+  base: string,
+  allowTestChanges: boolean,
+): Promise<string | undefined> {
+  const changes = (await deps.git.diffLineCounts(path, base))
+    .filter((change) => !isTestPath(change.path))
+    .map((change) => ({ path: change.path, lines: (change.added ?? 0) + (change.deleted ?? 0) }));
+  const nonTestLines = changes.reduce((sum, change) => sum + change.lines, 0);
+  if (nonTestLines > CHANGE_LINE_LIMIT) {
+    const largest = changes
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, 8)
+      .map((change) => `${change.path} (${change.lines})`)
+      .join(', ');
+    return `[change has ${nonTestLines} non-test lines; limit is ${CHANGE_LINE_LIMIT}. Largest non-test files: ${largest}. Split the task into smaller deployable changes.]`;
+  }
+  // Passing tests prove nothing if the change made them easier to pass.
+  const weakened = allowTestChanges ? [] : testWeakening(await deps.git.diffSince(path, base));
+  if (weakened.length)
+    return `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`;
+  return undefined;
+}
+
 /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
 export async function verifyWorktree(
   deps: DriverDeps,
@@ -31,32 +73,31 @@ export async function verifyWorktree(
   runtime?: RuntimeVerdict;
   notRunLocally?: string[];
   testIntegrity?: 'checked' | 'allowed';
+  protectedPathsAllowed?: string[];
 }> {
   const task = await deps.tasks.read(project, id);
   const profile = await deps.readProfile(project);
   const { path, compare: base } = await checkedWorktree(deps, task);
   const startingHead = await deps.git.headSha(path);
-  const changes = await deps.git.diffLineCounts(path, base);
-  const nonTestLines = changes
-    .filter((change) => !isTestPath(change.path))
-    .reduce((sum, change) => sum + (change.added ?? 0) + (change.deleted ?? 0), 0);
-  if (nonTestLines > 400)
+  const refused = await changeGate(deps, path, base, task.allow_test_changes === true);
+  if (refused) return { passed: false, output: refused, headSha: startingHead };
+  // Every path to the gate needs a passing verification for its exact head, so this one check
+  // covers the coder's commits, commits an agent made itself, and follow-ups. It reads the whole
+  // branch against its base, including a rename's old path and deletions.
+  const touched = await deps.git.changedPathsSince(path, base);
+  const allowProtected = task.allow_protected_paths === true;
+  const blocked = protectedPaths(touched, profile.confirmed.forbidden_paths, allowProtected);
+  if (blocked.length)
     return {
       passed: false,
-      output: `[change has ${nonTestLines} non-test lines; limit is 400. Split the task into smaller deployable changes.]`,
+      output: `[the change touches protected paths: ${blocked.join(', ')}. Undo those changes; a person can allow protected paths for this task.]`,
       headSha: startingHead,
     };
-  // Passing tests prove nothing if the change made them easier to pass.
-  const weakened =
-    task.allow_test_changes === true ? [] : testWeakening(await deps.git.diffSince(path, base));
-  if (weakened.length)
-    return {
-      passed: false,
-      output: `[the change weakens tests: ${weakened.join('; ')}. Keep the tests and fix the code. A person can allow test changes for this task.]`,
-      headSha: startingHead,
-    };
+  const protectedPathsAllowed = allowProtected ? [...new Set(touched)].filter(isBuiltInProtectedPath) : [];
   const limits = checkLimits(profile);
-  let output = '';
+  let output = protectedPathsAllowed.length
+    ? `[a person allowed protected paths for this task; the change touches: ${protectedPathsAllowed.join(', ')}. Review them before approving.]\n`
+    : '';
   let commandOutput = '';
   const onOutput = (chunk: string) => {
     output = tail(output + chunk);
@@ -71,7 +112,7 @@ export async function verifyWorktree(
     deps.log(`$ ${command}   # ${label}`);
     commandOutput = '';
     const result = await deps.shell.runShell(command, {
-      cwd: path,
+      ...checkOptions(profile, path),
       captureLimit: 0,
       onOutput,
       timeoutMs: limits.timeoutMs,
@@ -106,8 +147,14 @@ export async function verifyWorktree(
     let checkOutput = '';
     const result = await deps.shell.runShell(command, {
       cwd: path,
-      // Its own port, so parallel tasks' dev servers do not collide; no usage telemetry.
-      env: { ...process.env, PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
+      // Its own port, so parallel tasks' dev servers do not collide; no usage telemetry. The
+      // sandbox allows the loopback, so the dev server and the browser it drives can talk.
+      ...checkRun({
+        sandbox: profile.sandbox,
+        cwd: path,
+        home: homedir(),
+        extraEnv: { PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
+      }),
       captureLimit: 0,
       onOutput: (chunk) => {
         checkOutput = tail(checkOutput + chunk);
@@ -164,6 +211,7 @@ export async function verifyWorktree(
     output,
     headSha,
     testIntegrity: task.allow_test_changes === true ? 'allowed' : 'checked',
+    ...(protectedPathsAllowed.length ? { protectedPathsAllowed } : {}),
     ...(runtime ? { runtime } : {}),
     ...(notRunLocally.length ? { notRunLocally } : {}),
   };

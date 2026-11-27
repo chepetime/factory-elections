@@ -3,6 +3,8 @@
 // what it would otherwise check by hand (is it running, which commit, from where, what is busy).
 // Read-only and bounded: every probe has a short timeout, and a down stack is a normal answer.
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,6 +49,21 @@ else {
     for (const i of issues) if (i.run?.owned || i.run?.waiting) busy.push(`${p.name}/${i.key}`);
   }
   lines.push(busy.length ? `Busy runs: ${busy.join(', ')} (do not restart over them)` : 'Busy runs: none');
+}
+// Last background check of a commit on main (written by scripts/run-post-commit.mjs).
+try {
+  const file = `${process.env.FACTORY_ROOT ?? `${homedir()}/.local/share/factory`}/logs/main-checks.jsonl`;
+  const last = JSON.parse(readFileSync(file, 'utf8').trim().split('\n').at(-1));
+  const stale =
+    last.sha === sh('git', ['rev-parse', 'refs/heads/main']) ? '' : ' (not the current main head)';
+  lines.push(
+    `Last main check: ${last.outcome} at ${last.sha.slice(0, 7)} ${last.finishedAt ?? ''}` +
+      (last.failedStep ? `, failed step: ${last.failedStep}` : '') +
+      (last.outcome === 'passed' ? '' : `, log ${last.log}`) +
+      stale,
+  );
+} catch {
+  lines.push('Last main check: none recorded (the post-commit hook writes logs/main-checks.jsonl).');
 }
 lines.push(
   `Tools: pnpm restart [--dry-run] · pnpm shot <path> · pnpm factory paths|issue show|review diagnose|spans · see docs/harnes/RECIPES.md`,
