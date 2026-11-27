@@ -145,3 +145,13 @@ export async function readPrTemplate(dir: string): Promise<PrTemplate> {
   }
   return { source: 'factory', text: FACTORY_PR_TEMPLATE };
 }
+
+export function parseJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(trimmed);
+  try {
+    return JSON.parse(fenced ? fenced[1]! : trimmed);
+  } catch {
+    return undefined;
+  }
+}
