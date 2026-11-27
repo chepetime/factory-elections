@@ -1,7 +1,14 @@
 'use client';
 // The sidebar's work lists: open board tasks, then their agents (runs) grouped by what they need.
 import { Bot, LoaderCircle } from 'lucide-react';
-import { runAttention, runNeed, type IssueStatus, type RunAttention, type Stage } from '@factory/core';
+import {
+  ATTENTION_LABELS,
+  runAttention,
+  runNeed,
+  type IssueStatus,
+  type RunAttention,
+  type Stage,
+} from '@factory/core';
 import { STATUS } from '@/components/task-status';
 import { cn } from '@factory/ui/lib/utils';
 import { SidebarLink } from '@/components/sidebar-link';
@@ -27,12 +34,22 @@ export interface IssueSummary {
 // The groups come from the shared rule; a rejected run ("closed") is not listed.
 type Group = Exclude<RunAttention, 'closed'>;
 const group = (i: IssueSummary): RunAttention => runAttention(i.run!.stage, i.run!.owned, i.run!.waiting);
+// Red only for something that went wrong; a review request is routine.
 const GROUPS: { id: Group; label: string; tone: string }[] = [
-  { id: 'needs-you', label: 'Needs you', tone: 'text-destructive' },
-  { id: 'working', label: 'Working', tone: 'text-amber-700 dark:text-amber-400' },
+  { id: 'problem', label: ATTENTION_LABELS.problem, tone: 'text-destructive' },
+  { id: 'reply', label: ATTENTION_LABELS.reply, tone: 'text-amber-700 dark:text-amber-400' },
+  { id: 'review', label: ATTENTION_LABELS.review, tone: 'text-blue-700 dark:text-blue-400' },
+  { id: 'working', label: 'Working', tone: 'text-emerald-700 dark:text-emerald-400' },
   { id: 'waiting', label: 'Idle', tone: 'text-muted-foreground' },
-  { id: 'done', label: 'Done', tone: 'text-blue-700 dark:text-blue-400' },
+  { id: 'done', label: 'Done', tone: 'text-violet-700 dark:text-violet-400' },
 ];
+/** A problem says what went wrong; a review says when the next move is the pull request. */
+function reason(id: Group, i: IssueSummary): string | undefined {
+  const need = runNeed(i.run!.stage, i.run!.owned, i.run!.waiting);
+  if (id === 'problem') return need;
+  if (id === 'review' && need === 'open PR') return need;
+  return undefined;
+}
 const OPEN: IssueStatus[] = ['in_progress', 'in_review', 'blocked', 'todo', 'backlog'];
 /** Done agents older than this leave the list; the board keeps them. */
 const DONE_DAYS = 7;
@@ -95,7 +112,9 @@ export function SidebarWork({
         ) : (
           <ul className="flex flex-col gap-px">
             {open.map((i) => {
-              const { icon: Icon, tone, label } = STATUS[i.status];
+              const { icon: Icon, label } = STATUS[i.status];
+              // A failed run also leaves its task Blocked: red here, like its Problem group below.
+              const tone = i.run && group(i) === 'problem' ? 'text-destructive' : STATUS[i.status].tone;
               return (
                 <li key={i.key} className="group/row relative">
                   <SidebarLink
@@ -161,11 +180,9 @@ export function SidebarWork({
                             aria-label="Working"
                           />
                         )}
-                        {/* The group already says it needs you; only a reason other than "blocked" adds anything. */}
-                        {section.id === 'needs-you' && i.run!.stage !== 'blocked' && (
-                          <span className="shrink-0 text-xs text-foreground/75">
-                            {runNeed(i.run!.stage, i.run!.owned, i.run!.waiting)}
-                          </span>
+                        {/* The heading names the state; a row adds its reason only when the heading does not say it. */}
+                        {reason(section.id, i) && (
+                          <span className="shrink-0 text-xs text-foreground/75">{reason(section.id, i)}</span>
                         )}
                         {i.run!.waiting && (
                           <span className="shrink-0 text-xs text-foreground/75">waiting</span>

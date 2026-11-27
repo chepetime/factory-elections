@@ -20,7 +20,8 @@ it('counts runs by who moves next, with live ownership when the board reports it
     run('unknown', 'coding'),
   ];
   const stats = projectStats(runs, [task('live', true), task('stopped', false), task('new', false)]);
-  // A live revision of a failed run works; an interrupted run needs you; a queued run waits.
-  expect([stats.running, stats.needsYou]).toEqual([2, 2]);
+  // A live revision of a failed run works; an interrupted run is a problem; a queued run waits.
+  expect(stats.running).toBe(2);
+  expect(stats.attention).toEqual({ problem: 1, reply: 0, review: 1 });
   expect(overview(runs).needsYou.map((t) => t.id)).toContain('approved');
 });

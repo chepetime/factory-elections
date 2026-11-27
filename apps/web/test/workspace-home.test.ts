@@ -29,7 +29,7 @@ it('counts open tasks, runs by state, PRs and this month spend', () => {
   expect(stats).toEqual({
     openTasks: 1,
     running: 1,
-    needsYou: 1,
+    attention: { problem: 0, reply: 0, review: 1 },
     pullRequests: 1,
     spendThisMonth: 1.5,
     lastActivity: '2026-11-24T00:00:00Z',

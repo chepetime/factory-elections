@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runAttention, STAGES, type TaskRecord } from '@factory/core';
+import { needsPerson, runAttention, STAGES, type TaskRecord } from '@factory/core';
 import { age, buildBoard, mayRun, type BoardPull, type BoardTask, type Column } from '@/lib/board';
 import type { InboxItem } from '@/lib/inbox';
 
@@ -152,7 +152,7 @@ describe('buildBoard', () => {
     const stages = STAGES.map((stage) => task({ stage }));
     const { columns } = buildBoard({ tasks: stages.map((t) => ({ task: t })), inbox: [] });
     for (const card of [...columns['needs-me'], ...columns.ready])
-      expect(runAttention(card.stage), card.stage).toBe('needs-you');
+      expect(needsPerson(runAttention(card.stage)), card.stage).toBe(true);
     expect(columns.ready.map((c) => c.stage)).toEqual(['approved']);
   });
 

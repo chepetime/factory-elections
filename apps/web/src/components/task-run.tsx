@@ -7,6 +7,7 @@ import {
   executionBusy,
   runWorking,
   taskActions,
+  type PersonAttention,
   type TaskRecord,
   stageLabel,
 } from '@factory/core';
@@ -211,30 +212,18 @@ const SHOW_ON_HOVER = {
 const FINDING_ORDER = ['blocking', 'major', 'minor', 'nit'] as const;
 
 /** The end of a successful run: what changed, what was checked, what the reviewer found. */
-/** A card on the ticket for something only you can do now. */
-function NeedsYou({
-  title,
-  tone = 'action',
-  children,
-}: {
-  title: string;
-  tone?: 'action' | 'danger';
-  children: ReactNode;
-}) {
+/** A card on the ticket for something only you can do now, in the tone of its attention state. */
+const ATTENTION_TONE: Record<PersonAttention, { box: string; heading: string }> = {
+  review: { box: 'border-blue-500/40 bg-blue-500/5', heading: 'text-blue-800 dark:text-blue-300' },
+  reply: { box: 'border-amber-500/40 bg-amber-500/5', heading: 'text-amber-800 dark:text-amber-300' },
+  problem: { box: 'border-destructive/40 bg-destructive/5', heading: 'text-destructive' },
+};
+
+function NeedsYou({ title, kind, children }: { title: string; kind: PersonAttention; children: ReactNode }) {
+  const tone = ATTENTION_TONE[kind];
   return (
-    <section
-      aria-label={title}
-      className={cn(
-        'rounded-xl border p-4 text-sm',
-        tone === 'danger' ? 'border-destructive/40 bg-destructive/5' : 'border-amber-500/40 bg-amber-500/5',
-      )}
-    >
-      <h2
-        className={cn(
-          'mb-2 flex items-center gap-2 font-semibold',
-          tone === 'danger' ? 'text-destructive' : 'text-amber-800 dark:text-amber-300',
-        )}
-      >
+    <section aria-label={title} className={cn('rounded-xl border p-4 text-sm', tone.box)}>
+      <h2 className={cn('mb-2 flex items-center gap-2 font-semibold', tone.heading)}>
         <CircleAlert className="size-4" aria-hidden />
         {title}
       </h2>
@@ -796,7 +785,7 @@ export async function renderRun(
         />
       </div>
     ) : allowed('open-pr') ? (
-      <NeedsYou title="Approved: open the pull request">
+      <NeedsYou title="Approved: open the pull request" kind="review">
         <ActionForm
           action={openPullRequest}
           hidden={hidden}
@@ -818,7 +807,7 @@ export async function renderRun(
         </ActionForm>
       </NeedsYou>
     ) : task.stage === 'approved' ? (
-      <NeedsYou title="Approved, but the pull request cannot open yet" tone="danger">
+      <NeedsYou title="Approved, but the pull request cannot open yet" kind="problem">
         <p className="text-sm">
           {actions
             .find((a) => a.action === 'open-pr')
@@ -828,8 +817,10 @@ export async function renderRun(
       </NeedsYou>
     ) : ['blocked', 'failed', 'verification-failed'].includes(task.stage) ? (
       <NeedsYou
-        title={task.stage === 'blocked' ? `${who} needs you` : `${who} stopped: ${stageLabel(task.stage)}`}
-        tone={task.stage === 'blocked' ? 'action' : 'danger'}
+        title={
+          task.stage === 'blocked' ? `${who} needs a reply` : `${who} stopped: ${stageLabel(task.stage)}`
+        }
+        kind={task.stage === 'blocked' ? 'reply' : 'problem'}
       >
         {waitingMessage && <p className="text-sm whitespace-pre-wrap">{waitingMessage}</p>}
         {task.workflow === 'agent' && actions.find((a) => a.action === 'check')?.allowed && (
@@ -868,7 +859,7 @@ export async function renderRun(
         </p>
       </NeedsYou>
     ) : run.cleanup?.status === 'uncertain' && !run.cleanup.confirmed_at ? (
-      <NeedsYou title="Confirm that nothing from the last run still runs" tone="danger">
+      <NeedsYou title="Confirm that nothing from the last run still runs" kind="problem">
         <ActionForm
           action={confirmCleanup}
           hidden={hidden}

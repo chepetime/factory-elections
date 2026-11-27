@@ -1,5 +1,5 @@
 // Numbers for the home board, computed from a project's task records.
-import { runAttention, type TaskRecord } from '@factory/core';
+import { needsPerson, runAttention, type TaskRecord } from '@factory/core';
 
 export const ACTIVITY_WEEKS = 12;
 
@@ -77,7 +77,7 @@ export function overview(tasks: TaskRecord[], now = new Date()): Overview {
     activity,
     activityTotal: activity.reduce((sum, d) => sum + d.count, 0),
     recent: newest,
-    needsYou: newest.filter((t) => runAttention(t.stage) === 'needs-you'),
+    needsYou: newest.filter((t) => needsPerson(runAttention(t.stage))),
     month: [
       { label: 'Runs started', value: String(cur.created), delta: signed(cur.created - last.created) },
       { label: 'Pull requests opened', value: String(cur.prs), delta: signed(cur.prs - last.prs) },

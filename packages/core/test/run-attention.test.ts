@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  ATTENTION_LABELS,
   FEATURE_STAGE_LABELS,
   FeatureStage,
+  PERSON_ATTENTION,
   STAGES,
+  needsPerson,
   runAttention,
   runNeed,
   stageLabel,
@@ -13,22 +16,22 @@ test('every stage has one answer for who moves next', () => {
   assert.deepEqual(Object.fromEntries(STAGES.map((stage) => [stage, runAttention(stage)])), {
     queued: 'waiting',
     classified: 'waiting',
-    blocked: 'needs-you',
+    blocked: 'reply',
     coding: 'working',
-    'verification-failed': 'needs-you',
+    'verification-failed': 'problem',
     reviewing: 'working',
-    'awaiting-approval': 'needs-you',
-    approved: 'needs-you',
+    'awaiting-approval': 'review',
+    approved: 'review',
     rejected: 'closed',
     'pr-opened': 'done',
-    failed: 'needs-you',
+    failed: 'problem',
   });
 });
 
 test('live ownership wins over the stage', () => {
   assert.equal(runAttention('failed', true), 'working', 'a revision of a failed run works');
   assert.equal(runAttention('queued', true), 'working');
-  assert.equal(runAttention('coding', false), 'needs-you', 'an interrupted run does not spin');
+  assert.equal(runAttention('coding', false), 'problem', 'an interrupted run does not spin');
   assert.equal(runNeed('coding', false), 'interrupted');
   assert.equal(runAttention('queued', false), 'waiting');
   assert.equal(runAttention('pr-opened', true), 'done');
@@ -36,6 +39,15 @@ test('live ownership wins over the stage', () => {
   assert.equal(runAttention('blocked', true, true), 'waiting', 'a queued turn waits for its agent');
   assert.equal(runNeed('blocked', false, true), undefined);
   assert.equal(runNeed('coding'), undefined);
+});
+
+test('a person state is a review, a reply or a problem, and only those count as a person move', () => {
+  assert.deepEqual(
+    PERSON_ATTENTION.map((a) => ATTENTION_LABELS[a]),
+    ['Problem', 'Needs a reply', 'To review'],
+  );
+  for (const stage of STAGES)
+    assert.equal(needsPerson(runAttention(stage)), runNeed(stage) !== undefined, stage);
 });
 
 test('every stage and every feature stage has a label for a person', () => {

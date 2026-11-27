@@ -1,5 +1,11 @@
 // Numbers for one project card on the app homepage, from its runs and board tasks.
-import { runAttention, type Issue, type IssueStatus, type TaskRecord } from '@factory/core';
+import {
+  runAttention,
+  type Issue,
+  type PersonAttention,
+  type IssueStatus,
+  type TaskRecord,
+} from '@factory/core';
 
 const CLOSED: IssueStatus[] = ['done', 'cancelled'];
 
@@ -8,8 +14,8 @@ export interface ProjectStats {
   openTasks: number;
   /** Runs the factory is working on. */
   running: number;
-  /** Runs where a person has the next move: review, open the pull request, a blocker or a failure. */
-  needsYou: number;
+  /** Runs where a person has the next move, by kind: a review, a reply, or a problem. */
+  attention: Record<PersonAttention, number>;
   /** Runs that opened a pull request, all time. */
   pullRequests: number;
   /** Model spend of runs that finished this calendar month. */
@@ -44,7 +50,11 @@ export function projectStats(
   return {
     openTasks: tasks.filter((t) => !t.archived_at && !CLOSED.includes(t.status)).length,
     running: attention.filter((a) => a === 'working').length,
-    needsYou: attention.filter((a) => a === 'needs-you').length,
+    attention: {
+      problem: attention.filter((a) => a === 'problem').length,
+      reply: attention.filter((a) => a === 'reply').length,
+      review: attention.filter((a) => a === 'review').length,
+    },
     pullRequests: runs.filter((r) => r.pr).length,
     spendThisMonth: runs
       .flatMap((r) => r.attempts ?? [])

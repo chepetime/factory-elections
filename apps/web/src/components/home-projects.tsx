@@ -134,16 +134,24 @@ export function ProjectCards({ cards }: { cards: HomeCard[] }) {
 function CardContent({ card }: { card: HomeCard }) {
   const { stats } = card;
   const warn = '#fdba74';
+  const { problem, reply, review } = stats.attention;
+  const yours = problem + reply + review;
+  // Most urgent first: "1 problem · 2 to review". Orange only when something went wrong.
+  const parts = [
+    problem && `${problem} problem${problem === 1 ? '' : 's'}`,
+    reply && `${reply} need${reply === 1 ? 's' : ''} a reply`,
+    review && `${review} to review`,
+  ].filter(Boolean);
   const state =
-    stats.needsYou > 0
-      ? { label: `${stats.needsYou} need${stats.needsYou === 1 ? 's' : ''} you`, dot: '#f97316' }
+    yours > 0
+      ? { label: parts.join(' · '), dot: problem ? '#f97316' : reply ? '#eab308' : '#60a5fa' }
       : stats.running > 0
         ? { label: `${stats.running} running`, dot: '#22c55e' }
         : { label: 'Idle', dot: '#71717a' };
   const numbers = [
     { label: 'Open tasks', value: stats.openTasks },
     { label: 'Running', value: stats.running },
-    { label: 'Needs you', value: stats.needsYou, alert: stats.needsYou > 0 },
+    { label: 'Your move', value: yours, alert: problem > 0 },
     { label: 'PRs', value: stats.pullRequests },
   ];
   return (

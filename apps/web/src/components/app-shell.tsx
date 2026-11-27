@@ -112,14 +112,30 @@ async function getJson<T>(url: string): Promise<T> {
 
 function useProjects(pathname: string): Load<ProjectSummary[]> {
   const [state, setState] = useState<Load<ProjectSummary[]>>({ kind: 'loading' });
-  // Refetch on navigation so a newly added project shows up.
+  // Refetch on navigation so a newly added project shows up, and when the tab is shown again.
+  // A fresh tab sends this beside the page's own reads, so a failure retries with backoff (1 s,
+  // 2 s, 4 s… up to 30 s) instead of showing "Projects unavailable" until the next click.
   useEffect(() => {
     let live = true;
-    getJson<ProjectSummary[]>('/api/projects')
-      .then((value) => live && setState({ kind: 'loaded', value }))
-      .catch(() => live && setState({ kind: 'failed' }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (attempt: number) => {
+      clearTimeout(timer);
+      getJson<ProjectSummary[]>('/api/projects')
+        .then((value) => live && setState({ kind: 'loaded', value }))
+        .catch(() => {
+          if (!live) return;
+          // Keep a list already shown; only an empty sidebar says the projects are unavailable.
+          setState((s) => (s.kind === 'loaded' ? s : { kind: attempt >= 2 ? 'failed' : 'loading' }));
+          timer = setTimeout(() => load(attempt + 1), Math.min(30_000, 1000 * 2 ** attempt));
+        });
+    };
+    load(0);
+    const onShow = () => document.visibilityState === 'visible' && load(0);
+    document.addEventListener('visibilitychange', onShow);
     return () => {
       live = false;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onShow);
     };
   }, [pathname]);
   return state;

@@ -7,15 +7,16 @@ import { Button } from '@factory/ui/components/button';
 import type { InboxItem } from '@/lib/inbox';
 import { cn } from '@factory/ui/lib/utils';
 
-// Kinds come from packages/core/src/inbox.ts. The dot marks how urgent the item is.
+// Kinds come from packages/core/src/inbox.ts. The dot uses the run attention tones: red for a
+// problem, amber for a reply someone waits on, blue for a review or decision, green to finish.
 const KIND: Record<string, { label: string; dot: string }> = {
   failed: { label: 'Failed', dot: 'bg-destructive' },
-  blocked: { label: 'Blocked', dot: 'bg-destructive' },
-  gate: { label: 'Needs approval', dot: 'bg-amber-500' },
+  blocked: { label: 'Needs a reply', dot: 'bg-amber-500' },
+  gate: { label: 'Needs approval', dot: 'bg-blue-500' },
   question: { label: 'Question', dot: 'bg-amber-500' },
-  'approve-spec': { label: 'Approve spec', dot: 'bg-amber-500' },
-  'approve-board': { label: 'Approve board', dot: 'bg-amber-500' },
-  qa: { label: 'QA', dot: 'bg-amber-500' },
+  'approve-spec': { label: 'Approve spec', dot: 'bg-blue-500' },
+  'approve-board': { label: 'Approve board', dot: 'bg-blue-500' },
+  qa: { label: 'QA', dot: 'bg-blue-500' },
   merge: { label: 'Ready to merge', dot: 'bg-emerald-500' },
   review: { label: 'PR review', dot: 'bg-blue-500' },
   tending: { label: 'PR tending', dot: 'bg-blue-500' },

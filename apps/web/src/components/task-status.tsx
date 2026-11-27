@@ -18,7 +18,8 @@ export const STATUS: Record<IssueStatus, { label: string; icon: LucideIcon; tone
   in_progress: { label: 'In progress', icon: CircleDot, tone: 'text-amber-600 dark:text-amber-400' },
   in_review: { label: 'In review', icon: Eye, tone: 'text-blue-600 dark:text-blue-400' },
   done: { label: 'Done', icon: CircleCheck, tone: 'text-emerald-600 dark:text-emerald-400' },
-  blocked: { label: 'Blocked', icon: Ban, tone: 'text-destructive' },
+  // Blocked waits for a person's reply (the run's `reply` state), not an error: amber, not red.
+  blocked: { label: 'Blocked', icon: Ban, tone: 'text-amber-700 dark:text-amber-400' },
   cancelled: { label: 'Cancelled', icon: CircleX, tone: 'text-muted-foreground' },
 };
 

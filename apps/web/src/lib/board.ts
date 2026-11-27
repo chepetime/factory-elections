@@ -12,9 +12,9 @@
 //   3. Archived  — rejected; failed with no open inbox item (dismissed); or its PR is no longer
 //                  open (merged or closed) when the open-PR list is known. Not on the board.
 //   4. Ready     — approved without a PR yet (next step: open it), or the PR is approved and not a
-//                  draft (next step: merge it). Ready is the "finish it" part of what needs you:
-//                  the core rule (`runAttention`) calls an approved run "needs you", and the
-//                  sidebar and home count it there.
+//                  draft (next step: merge it). Ready is the "finish it" part of a review:
+//                  the core rule (`runAttention`) calls an approved run `review` (To review), and
+//                  the sidebar and home count it there.
 //   5. In review — the stage is `awaiting-approval` (the gate is the review, so its inbox item does
 //                  not move the task to Needs me), or a PR is open and waits on people or checks.
 //   6. Working   — the rest (queued, classified, coding, reviewing) with no live run: the workflow
