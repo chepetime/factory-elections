@@ -1,9 +1,15 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Menu } from '@base-ui/react/menu';
-import { ChevronRight, Folder, Paperclip, Plus } from 'lucide-react';
+import { Folder, Paperclip, Plus } from 'lucide-react';
 import { Button } from '@factory/ui/components/button';
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@factory/ui/components/dropdown-menu';
 import { ComposerMenu, composerMenuRow } from '@/components/composer-menu';
 
 export type ChatAddAction = {
@@ -27,8 +33,8 @@ export function ChatComposerAddMenu({
   disabled?: boolean;
 }) {
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger
         render={
           <Button
             type="button"
@@ -41,16 +47,16 @@ export function ChatComposerAddMenu({
         disabled={disabled || (!onAttach && !folderItems && actions.length === 0)}
       >
         <Plus aria-hidden="true" />
-      </Menu.Trigger>
+      </DropdownMenuTrigger>
       <ComposerMenu label="Add" align="start">
         {onAttach && (
-          <Menu.Item className={composerMenuRow} onClick={onAttach}>
+          <DropdownMenuItem className={composerMenuRow} onClick={onAttach}>
             <Paperclip aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             <span>Files and folders</span>
-          </Menu.Item>
+          </DropdownMenuItem>
         )}
         {actions.map((action) => (
-          <Menu.Item
+          <DropdownMenuItem
             key={action.id}
             className={composerMenuRow}
             disabled={action.disabled}
@@ -70,21 +76,20 @@ export function ChatComposerAddMenu({
                 <span className="block text-xs text-muted-foreground">{action.description}</span>
               )}
             </span>
-          </Menu.Item>
+          </DropdownMenuItem>
         ))}
         {folderItems && (
-          <Menu.SubmenuRoot>
-            <Menu.SubmenuTrigger className={composerMenuRow}>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className={composerMenuRow}>
               <Folder aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">Work in a folder</span>
-              <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-            </Menu.SubmenuTrigger>
+            </DropdownMenuSubTrigger>
             <ComposerMenu label="Work in a folder" align="start" side="right">
               {folderItems}
             </ComposerMenu>
-          </Menu.SubmenuRoot>
+          </DropdownMenuSub>
         )}
       </ComposerMenu>
-    </Menu.Root>
+    </DropdownMenu>
   );
 }

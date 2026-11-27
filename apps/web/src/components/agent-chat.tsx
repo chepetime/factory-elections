@@ -1,7 +1,6 @@
 'use client';
 // Chats with workspace agents: the chat list, the new-chat picker, and one conversation that polls
 // while the agent replies.
-import { Menu } from '@base-ui/react/menu';
 import { MoreHorizontal, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -24,6 +23,12 @@ import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { ChatScroll } from '@/components/task-chat';
 import { Button } from '@factory/ui/components/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@factory/ui/components/dropdown-menu';
 import { cn } from '@factory/ui/lib/utils';
 
 type ChatLine = {
@@ -345,42 +350,33 @@ export function ChatThread({
             {initial.project ? ` · reads ${initial.project}` : ' · no project'}
           </p>
         </div>
-        <Menu.Root>
-          <Menu.Trigger render={<Button variant="ghost" size="icon-sm" aria-label="Chat options" />}>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Chat options" />}>
             <MoreHorizontal aria-hidden />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner align="end" sideOffset={6} className="z-50">
-              <Menu.Popup className="min-w-40 rounded-xl border bg-popover p-1 text-sm shadow-lg outline-none">
-                <Menu.Item
-                  className="flex cursor-default items-center rounded-md px-2.5 py-1.5 outline-none data-highlighted:bg-muted"
-                  onClick={() => setRenaming(true)}
-                >
-                  Rename
-                </Menu.Item>
-                <Menu.Item
-                  disabled={working}
-                  className="flex cursor-default items-center rounded-md px-2.5 py-1.5 text-destructive outline-none data-disabled:opacity-50 data-highlighted:bg-muted"
-                  onClick={async () => {
-                    if (
-                      await confirm({
-                        title: 'Delete this chat?',
-                        body: 'It leaves your chat list. Tasks it created stay on the board.',
-                        confirm: 'Delete',
-                        tone: 'destructive',
-                      })
-                    ) {
-                      const result = await deleteChat(initial.id, project);
-                      if (result?.error) setError(result.error);
-                    }
-                  }}
-                >
-                  Delete
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setRenaming(true)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={working}
+              variant="destructive"
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: 'Delete this chat?',
+                    body: 'It leaves your chat list. Tasks it created stay on the board.',
+                    confirm: 'Delete',
+                    tone: 'destructive',
+                  })
+                ) {
+                  const result = await deleteChat(initial.id, project);
+                  if (result?.error) setError(result.error);
+                }
+              }}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <ChatScroll>

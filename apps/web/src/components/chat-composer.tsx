@@ -1,7 +1,6 @@
 'use client';
 
 import { useId, useRef, useState, type ReactNode } from 'react';
-import { Menu } from '@base-ui/react/menu';
 import { AnimatePresence, LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
 import {
   ArrowUp,
@@ -16,6 +15,14 @@ import {
   X,
 } from 'lucide-react';
 import { ComposerMenu, composerMenuRow as menuRow } from '@/components/composer-menu';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@factory/ui/components/dropdown-menu';
 import { ChatComposerAddMenu, type ChatAddAction } from '@/components/chat-composer-add-menu';
 import { ApprovalModePicker, type ApprovalMode } from '@/components/approval-mode-picker';
 import { useUserPreferences } from '@/components/user-preferences';
@@ -282,8 +289,8 @@ export function ChatComposer({
             />
             <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
               {models.length > 0 && (
-                <Menu.Root modal={false}>
-                  <Menu.Trigger
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger
                     render={
                       <Button variant="ghost" type="button" className="min-h-11 min-w-0 shrink gap-2 px-2" />
                     }
@@ -301,9 +308,9 @@ export function ChatComposer({
                     )}
                     <span className="min-w-0 truncate text-sm">{chosenModel?.name ?? 'No model'}</span>
                     <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
-                  </Menu.Trigger>
+                  </DropdownMenuTrigger>
                   <ComposerMenu label="Choose a model" align="end" showHeading={false}>
-                    <Menu.RadioGroup
+                    <DropdownMenuRadioGroup
                       value={chosenModel?.id}
                       onValueChange={(next: string) => {
                         const picked = models.find((entry) => entry.id === next);
@@ -314,12 +321,12 @@ export function ChatComposer({
                       }}
                     >
                       {models.map((entry) => (
-                        <Menu.RadioItem
+                        <DropdownMenuRadioItem
                           key={entry.id}
                           value={entry.id}
                           closeOnClick
                           disabled={entry.disabled}
-                          className={menuRow}
+                          className={cn(menuRow, 'pr-10')}
                         >
                           <span aria-hidden="true" className="shrink-0 text-muted-foreground [&>svg]:size-4">
                             {entry.icon ?? <Bot className="size-4" />}
@@ -332,14 +339,11 @@ export function ChatComposer({
                               </span>
                             )}
                           </span>
-                          <Menu.RadioItemIndicator>
-                            <Check aria-hidden="true" className="size-4" />
-                          </Menu.RadioItemIndicator>
-                        </Menu.RadioItem>
+                        </DropdownMenuRadioItem>
                       ))}
-                    </Menu.RadioGroup>
+                    </DropdownMenuRadioGroup>
                   </ComposerMenu>
-                </Menu.Root>
+                </DropdownMenu>
               )}
               <Button
                 type="button"
@@ -375,8 +379,8 @@ export function ChatComposer({
         {(folders.length > 0 || apps.length > 0) && (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-1 px-2 py-1">
             {folders.length > 0 && (
-              <Menu.Root modal={false}>
-                <Menu.Trigger
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger
                   render={
                     <Button
                       type="button"
@@ -390,15 +394,15 @@ export function ChatComposer({
                   <Folder aria-hidden="true" className="size-4 shrink-0 text-blue-500" />
                   <span className="truncate text-xs">{chosenFolder ?? 'Work in a folder'}</span>
                   <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
-                </Menu.Trigger>
+                </DropdownMenuTrigger>
                 <ComposerMenu label="Work in a folder" align="start">
                   <FolderOptions folders={folders} selected={chosenFolder} onSelect={chooseFolder} />
                 </ComposerMenu>
-              </Menu.Root>
+              </DropdownMenu>
             )}
             {apps.length > 0 && (
-              <Menu.Root modal={false}>
-                <Menu.Trigger
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger
                   render={
                     <Button
                       type="button"
@@ -423,10 +427,10 @@ export function ChatComposer({
                       </span>
                     ))}
                   </span>
-                </Menu.Trigger>
+                </DropdownMenuTrigger>
                 <ComposerMenu label="Apps" align="end">
                   {apps.map((app) => (
-                    <Menu.CheckboxItem
+                    <DropdownMenuCheckboxItem
                       key={app.id}
                       checked={connected.includes(app.id)}
                       onCheckedChange={(checked) => {
@@ -437,19 +441,16 @@ export function ChatComposer({
                         onAppsChange?.(next);
                         setAnnouncement(`${app.name} ${checked ? 'selected' : 'removed'}.`);
                       }}
-                      className={menuRow}
+                      className={cn(menuRow, 'pr-10')}
                     >
                       <span aria-hidden="true" className="shrink-0 [&>svg]:size-4">
                         {app.logo ?? <Bot className="size-4" />}
                       </span>
                       <span className="flex-1">{app.name}</span>
-                      <Menu.CheckboxItemIndicator>
-                        <Check aria-hidden="true" className="size-4" />
-                      </Menu.CheckboxItemIndicator>
-                    </Menu.CheckboxItem>
+                    </DropdownMenuCheckboxItem>
                   ))}
                 </ComposerMenu>
-              </Menu.Root>
+              </DropdownMenu>
             )}
           </div>
         )}
@@ -472,18 +473,22 @@ function FolderOptions({
 }) {
   return (
     <>
-      <Menu.Item className={menuRow} onClick={() => onSelect(null)}>
+      <DropdownMenuItem className={menuRow} onClick={() => onSelect(null)}>
         <span className="flex-1">No folder</span>
         {!selected && <Check aria-hidden="true" className="size-4" />}
-      </Menu.Item>
+      </DropdownMenuItem>
       {folders.map((path) => (
-        <Menu.Item key={path} className={menuRow} onClick={() => onSelect(path === selected ? null : path)}>
+        <DropdownMenuItem
+          key={path}
+          className={menuRow}
+          onClick={() => onSelect(path === selected ? null : path)}
+        >
           <Folder aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate" title={path}>
             {path}
           </span>
           {selected === path && <Check aria-hidden="true" className="size-4" />}
-        </Menu.Item>
+        </DropdownMenuItem>
       ))}
     </>
   );

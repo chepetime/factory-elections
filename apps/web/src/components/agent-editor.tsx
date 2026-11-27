@@ -1,7 +1,6 @@
 'use client';
 // Editable parts of an agent's page: the header actions, instructions, skills, general settings
 // and environment names. Each form saves on its own button and says when it is saved.
-import { Dialog } from '@base-ui/react/dialog';
 import { Archive, ArchiveRestore, MessageSquare, Plus, Save, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState, useTransition, type ReactNode } from 'react';
@@ -9,6 +8,14 @@ import { archiveAgent, startChat, updateAgent, type AgentActionState } from '@/a
 import { updateIssue } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
 import { Button } from '@factory/ui/components/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@factory/ui/components/dialog';
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
 import { AGENT_MODELS, EFFORTS } from '@/lib/agent-models';
@@ -127,82 +134,74 @@ export function AssignWork({
     };
   }, [open, project]);
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger render={<Button disabled={disabled || projects.length === 0} />}>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button disabled={disabled || projects.length === 0} />}>
         <Plus aria-hidden /> Assign work
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 motion-safe:transition-opacity data-starting-style:opacity-0 data-ending-style:opacity-0" />
-        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 flex max-h-[min(36rem,calc(100dvh-2rem))] w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border bg-background p-5 shadow-2xl outline-none">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <Dialog.Title className="text-base font-semibold">Assign work to {agent.name}</Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-                Pick a Backlog or Todo task. {agent.name} starts a Todo task by itself when it has a free
-                slot; a Backlog task waits until you move it to Todo.
-              </Dialog.Description>
-            </div>
-            <Dialog.Close render={<Button variant="ghost" size="icon-sm" aria-label="Close" />}>
-              <X aria-hidden />
-            </Dialog.Close>
-          </div>
-          <label htmlFor={`${id}-project`} className="mt-4 flex flex-col gap-1.5 text-sm">
-            Project
-            <select
-              id={`${id}-project`}
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-              className={select}
-            >
-              {projects.map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-            {tasks === 'loading' ? (
-              <p className="py-4 text-sm text-muted-foreground">Loading tasks…</p>
-            ) : tasks === 'error' ? (
-              <p role="alert" className="py-4 text-sm text-destructive">
-                Tasks unavailable. Try again.
-              </p>
-            ) : tasks.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">No Backlog or Todo tasks in this project.</p>
-            ) : (
-              <ul className="flex flex-col">
-                {tasks.map((t) => (
-                  <li key={t.key}>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() =>
-                        start(async () => {
-                          const result = await updateIssue(project, t.key, { assignee: agent.id });
-                          if (result.error) return setError(result.error);
-                          setOpen(false);
-                          router.refresh();
-                        })
-                      }
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.key}</span>
-                      <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          {error && (
-            <p role="alert" className="mt-2 text-sm text-destructive">
-              {error}
+      </DialogTrigger>
+      <DialogContent className="flex max-h-[min(36rem,calc(100dvh-2rem))] w-[min(32rem,calc(100vw-2rem))] flex-col gap-0">
+        <DialogHeader className="pr-8">
+          <DialogTitle>Assign work to {agent.name}</DialogTitle>
+          <DialogDescription>
+            Pick a Backlog or Todo task. {agent.name} starts a Todo task by itself when it has a free slot; a
+            Backlog task waits until you move it to Todo.
+          </DialogDescription>
+        </DialogHeader>
+        <label htmlFor={`${id}-project`} className="mt-4 flex flex-col gap-1.5 text-sm">
+          Project
+          <select
+            id={`${id}-project`}
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            className={select}
+          >
+            {projects.map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+          {tasks === 'loading' ? (
+            <p className="py-4 text-sm text-muted-foreground">Loading tasks…</p>
+          ) : tasks === 'error' ? (
+            <p role="alert" className="py-4 text-sm text-destructive">
+              Tasks unavailable. Try again.
             </p>
+          ) : tasks.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">No Backlog or Todo tasks in this project.</p>
+          ) : (
+            <ul className="flex flex-col">
+              {tasks.map((t) => (
+                <li key={t.key}>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      start(async () => {
+                        const result = await updateIssue(project, t.key, { assignee: agent.id });
+                        if (result.error) return setError(result.error);
+                        setOpen(false);
+                        router.refresh();
+                      })
+                    }
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.key}</span>
+                    <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+        {error && (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

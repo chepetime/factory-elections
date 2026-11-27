@@ -1,7 +1,6 @@
 'use client';
 // The project's task board: one column per status. Dragging a card, or its "Move to" menu, asks the
 // backend to apply the drop (see dropAction in packages/core/src/issues.ts).
-import { Menu } from '@base-ui/react/menu';
 import { Archive, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -9,6 +8,13 @@ import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
 import { archiveIssue, createIssue, moveIssue, refreshReviews } from '@/app/actions';
 import { Button } from '@factory/ui/components/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@factory/ui/components/dropdown-menu';
 import {
   dropAction,
   ISSUE_STATUSES,
@@ -478,64 +484,60 @@ export function MoveMenu({
   onArchive?: () => void;
 }) {
   return (
-    <Menu.Root>
-      <Menu.Trigger
+    <DropdownMenu>
+      <DropdownMenuTrigger
         aria-label={`Move ${issue.key}`}
         className="relative z-10 ml-auto inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 data-popup-open:bg-muted pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-has-[a:focus-visible]:opacity-100 pointer-fine:focus-visible:opacity-100 pointer-fine:data-popup-open:opacity-100"
       >
         <MoreHorizontal className="size-4" aria-hidden />
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner align="end" sideOffset={4} className="z-50">
-          <Menu.Popup className="w-52 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 data-starting-style:opacity-0 data-ending-style:opacity-0">
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">Move to</p>
-            {ISSUE_STATUSES.filter((s) => s !== issue.status).map((status) => {
-              const { label, icon: Icon, tone } = COLUMNS[status];
-              const verdict = dropAction(issue.status, status, issue.run);
-              const refused = verdict.kind === 'refused';
-              return (
-                <Menu.Item
-                  key={status}
-                  disabled={refused}
-                  onClick={() => onMove(status)}
-                  title={refused ? verdict.reason : undefined}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-disabled:cursor-not-allowed data-disabled:opacity-50 data-highlighted:bg-muted"
-                >
-                  <Icon className={cn('size-4', tone)} aria-hidden />
-                  {label}
-                  {verdict.kind === 'start-run' && (
-                    <span className="ml-auto text-xs text-muted-foreground">Starts a run</span>
-                  )}
-                  {verdict.kind === 'run' && (
-                    <span className="ml-auto text-xs text-muted-foreground">Runs again</span>
-                  )}
-                  {verdict.kind === 'reject' && (
-                    <span className="ml-auto text-xs text-muted-foreground">Stops the run</span>
-                  )}
-                </Menu.Item>
-              );
-            })}
-            {onArchive && (
-              <>
-                <Menu.Separator className="my-1 h-px bg-border" />
-                <Menu.Item
-                  disabled={!!issue.run && runHeld(issue.run.stage, issue.run.owned)}
-                  title={
-                    issue.run && runHeld(issue.run.stage, issue.run.owned)
-                      ? 'Wait for the run to stop, or cancel it.'
-                      : undefined
-                  }
-                  onClick={onArchive}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-disabled:cursor-not-allowed data-disabled:opacity-50 data-highlighted:bg-muted"
-                >
-                  <Archive className="size-4 text-muted-foreground" aria-hidden />
-                  Archive
-                </Menu.Item>
-              </>
-            )}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={4} className="w-52">
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">Move to</p>
+        {ISSUE_STATUSES.filter((s) => s !== issue.status).map((status) => {
+          const { label, icon: Icon, tone } = COLUMNS[status];
+          const verdict = dropAction(issue.status, status, issue.run);
+          const refused = verdict.kind === 'refused';
+          return (
+            <DropdownMenuItem
+              key={status}
+              disabled={refused}
+              onClick={() => onMove(status)}
+              title={refused ? verdict.reason : undefined}
+              className="cursor-pointer rounded-lg px-2 data-disabled:cursor-not-allowed"
+            >
+              <Icon className={cn('size-4', tone)} aria-hidden />
+              {label}
+              {verdict.kind === 'start-run' && (
+                <span className="ml-auto text-xs text-muted-foreground">Starts a run</span>
+              )}
+              {verdict.kind === 'run' && (
+                <span className="ml-auto text-xs text-muted-foreground">Runs again</span>
+              )}
+              {verdict.kind === 'reject' && (
+                <span className="ml-auto text-xs text-muted-foreground">Stops the run</span>
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+        {onArchive && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!!issue.run && runHeld(issue.run.stage, issue.run.owned)}
+              title={
+                issue.run && runHeld(issue.run.stage, issue.run.owned)
+                  ? 'Wait for the run to stop, or cancel it.'
+                  : undefined
+              }
+              onClick={onArchive}
+              className="cursor-pointer rounded-lg px-2 data-disabled:cursor-not-allowed"
+            >
+              <Archive className="size-4 text-muted-foreground" aria-hidden />
+              Archive
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -3,7 +3,6 @@
 // project options, and a raised main container. Layout inspired by Affect UI's "AI Chat / Double
 // Sidebar" screen (https://www.affectui.com/screens/agent-chat-rail); original implementation, no
 // Affect UI source or assets.
-import { Menu } from '@base-ui/react/menu';
 import {
   Activity,
   Archive,
@@ -49,6 +48,13 @@ import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { UserSidebar } from '@/components/user-sidebar';
 import { cn } from '@factory/ui/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@factory/ui/components/dropdown-menu';
 
 interface ProjectSummary {
   name: string;
@@ -63,10 +69,8 @@ const SIDEBAR_WIDTH = 'factory.sidebarWidth';
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 440;
 
-const menuPopup =
-  'z-50 w-72 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 data-starting-style:opacity-0 data-ending-style:opacity-0';
-const menuItem =
-  'flex min-h-9 pointer-coarse:min-h-11 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50';
+const menuPopup = 'w-72 max-w-[calc(100vw-2rem)]';
+const menuItem = 'min-h-9 pointer-coarse:min-h-11 gap-2.5 rounded-lg';
 // The icon rail is dark in both themes; its items use light-on-dark tones of their own.
 const railItem =
   'flex size-9 pointer-coarse:size-11 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-neutral-400';
@@ -481,8 +485,8 @@ function Sidebar({
       className="relative m-2 flex min-h-0 flex-col rounded-xl bg-muted/70 max-[899px]:m-0 max-[899px]:rounded-none max-[899px]:!w-72"
     >
       <div className="flex items-center gap-1 p-2">
-        <Menu.Root>
-          <Menu.Trigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
             disabled={projects.kind !== 'loaded'}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-foreground/5"
           >
@@ -502,88 +506,80 @@ function Sidebar({
               )}
             </span>
             <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner align="start" sideOffset={6} className="z-50">
-              <Menu.Popup className={menuPopup}>
-                <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Projects</div>
-                {projects.kind === 'loaded' &&
-                  projects.value.map((p) => (
-                    <Menu.Item key={p.name} className={menuItem} onClick={() => onPick(p.name)}>
-                      <FolderGit2 className="size-4 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">
-                          {p.icon ? `${p.icon} ` : ''}
-                          {p.display_name || p.name}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground">{p.repo}</span>
-                      </span>
-                      {p.name === project && <Check className="size-4" />}
-                    </Menu.Item>
-                  ))}
-                <Menu.Separator className="my-1 h-px bg-border" />
-                <Menu.Item className={menuItem} render={<Link href="/projects" />}>
-                  <Plus className="size-4" /> Add project
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className={menuPopup}>
+            <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Projects</div>
+            {projects.kind === 'loaded' &&
+              projects.value.map((p) => (
+                <DropdownMenuItem key={p.name} className={menuItem} onClick={() => onPick(p.name)}>
+                  <FolderGit2 className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      {p.icon ? `${p.icon} ` : ''}
+                      {p.display_name || p.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">{p.repo}</span>
+                  </span>
+                  {p.name === project && <Check className="size-4" />}
+                </DropdownMenuItem>
+              ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className={menuItem} render={<Link href="/projects" />}>
+              <Plus className="size-4" /> Add project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        <Menu.Root>
-          <Menu.Trigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
             aria-label="Project options"
             disabled={!current}
             className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 data-popup-open:bg-foreground/5"
           >
             <MoreHorizontal className="size-4" />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner align="end" sideOffset={6} className="z-50">
-              <Menu.Popup className={menuPopup}>
-                {current && (
-                  <>
-                    <Menu.Item
-                      className={menuItem}
-                      render={<Link href={`/projects/${current.name}/tasks/new`} />}
-                    >
-                      <Plus className="size-4" /> New task
-                    </Menu.Item>
-                    <Menu.Item
-                      className={menuItem}
-                      render={<Link href={`/projects/${current.name}/settings`} />}
-                    >
-                      <SlidersHorizontal className="size-4" /> Project settings
-                    </Menu.Item>
-                    <Menu.Item className={menuItem} onClick={onRefresh}>
-                      <RefreshCw className="size-4" /> Refresh tasks
-                    </Menu.Item>
-                    <Menu.Item
-                      className={menuItem}
-                      closeOnClick={false}
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(current.repo).then(() => {
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1500);
-                        });
-                      }}
-                    >
-                      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                      {copied ? 'Copied' : 'Copy repository path'}
-                    </Menu.Item>
-                    <Menu.Separator className="my-1 h-px bg-border" />
-                    <div
-                      className="truncate px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
-                      title={current.repo}
-                    >
-                      {current.repo}
-                    </div>
-                  </>
-                )}
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={menuPopup}>
+            {current && (
+              <>
+                <DropdownMenuItem
+                  className={menuItem}
+                  render={<Link href={`/projects/${current.name}/tasks/new`} />}
+                >
+                  <Plus className="size-4" /> New task
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className={menuItem}
+                  render={<Link href={`/projects/${current.name}/settings`} />}
+                >
+                  <SlidersHorizontal className="size-4" /> Project settings
+                </DropdownMenuItem>
+                <DropdownMenuItem className={menuItem} onClick={onRefresh}>
+                  <RefreshCw className="size-4" /> Refresh tasks
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className={menuItem}
+                  closeOnClick={false}
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(current.repo).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    });
+                  }}
+                >
+                  {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  {copied ? 'Copied' : 'Copy repository path'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <div
+                  className="truncate px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
+                  title={current.repo}
+                >
+                  {current.repo}
+                </div>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <button
           type="button"

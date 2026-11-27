@@ -2,7 +2,6 @@
 // Project settings: display name and icon, the task manager the factory uses to read and create
 // tickets, PR tending, and the PR review profile. "Fill from repository" asks an agent to explore the
 // repo and propose values; nothing is saved until you save.
-import { Tabs } from '@base-ui/react/tabs';
 import {
   FolderSearch,
   GitPullRequest,
@@ -19,6 +18,7 @@ import { useEffect, useId, useState, useTransition, type ReactNode } from 'react
 import { detectProjectSettings, saveProjectSettings } from '@/app/actions';
 import { SettingsDialogTitle, useSettingsDialog } from '@/components/settings-dialog';
 import { Button } from '@factory/ui/components/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@factory/ui/components/tabs';
 import { Input } from '@factory/ui/components/input';
 import { Label } from '@factory/ui/components/label';
 import { Textarea } from '@factory/ui/components/textarea';
@@ -107,11 +107,11 @@ function Pane({
   children: ReactNode;
 }) {
   return (
-    <Tabs.Panel value={value} className="px-5 py-6 outline-none sm:px-8">
+    <TabsContent value={value} className="flex-none px-5 py-6 text-base sm:px-8">
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
       <div className="mt-5">{children}</div>
-    </Tabs.Panel>
+    </TabsContent>
   );
 }
 
@@ -229,11 +229,11 @@ export function ProjectSettingsForm({
   const Title = dialog ? SettingsDialogTitle : 'h1';
 
   return (
-    <Tabs.Root
+    <Tabs
       orientation="vertical"
       value={section}
       onValueChange={(value) => setSection(value as SectionId)}
-      className="flex h-full min-h-0 flex-col"
+      className="flex h-full min-h-0 flex-col gap-0"
     >
       <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-5">
         <div className="min-w-0 flex-1">
@@ -264,24 +264,23 @@ export function ProjectSettingsForm({
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-        <Tabs.List
+        <TabsList
+          variant="nav"
           aria-label="Settings sections"
-          className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-52 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-b-0 sm:p-3"
+          className="shrink-0 overflow-x-auto border-b p-2 sm:w-52 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-b-0 sm:p-3"
         >
           {SECTIONS.map(({ id, label, icon: Icon, group }) => (
-            <Tabs.Tab
+            <TabsTrigger
               key={id}
               value={id}
-              className={cn(
-                'flex h-11 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-3 text-left text-sm whitespace-nowrap text-muted-foreground outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-muted data-active:bg-muted data-active:font-medium data-active:text-foreground sm:h-9 sm:px-2.5',
-                group && 'sm:mt-4',
-              )}
+              variant="nav"
+              className={cn('h-11 px-3 sm:h-9 sm:px-2.5', group && 'sm:mt-4')}
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               {label}
-            </Tabs.Tab>
+            </TabsTrigger>
           ))}
-        </Tabs.List>
+        </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {proposal && (
@@ -552,6 +551,6 @@ export function ProjectSettingsForm({
           {saving ? 'Saving…' : 'Save settings'}
         </Button>
       </footer>
-    </Tabs.Root>
+    </Tabs>
   );
 }

@@ -2,7 +2,6 @@
 // Team screen: the repository's contributors as an editable table, filterable by team and tag,
 // optionally grouped by team. Layout inspired by Affect UI's CRM screen
 // (https://www.affectui.com/screens/crm); original implementation, no Affect UI source or assets.
-import { Popover } from '@base-ui/react/popover';
 import { Check, Plus, Search, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from 'react';
 import { updateTeamMembers } from '@/app/team-actions';
@@ -10,6 +9,7 @@ import { MemberBulkEditor } from '@/components/member-bulk-editor';
 import type { MemberUpdate } from '@/lib/team';
 import { assignMember } from '@/app/actions';
 import { Button } from '@factory/ui/components/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@factory/ui/components/popover';
 import { Input } from '@factory/ui/components/input';
 import { teamEdits } from '@/lib/team-edits';
 import type { TeamMember } from '@/lib/team';
@@ -47,8 +47,8 @@ function date(iso: string): string {
   });
 }
 
-const popup =
-  'z-50 w-64 rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg outline-none motion-safe:transition-opacity motion-safe:duration-100 data-starting-style:opacity-0 data-ending-style:opacity-0';
+// The shadcn popover lays out a column with gaps; these lists set their own spacing.
+const popup = 'block w-64 p-2';
 const option =
   'flex w-full items-center gap-2 rounded-md px-2 py-1.5 pointer-coarse:py-3 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none';
 
@@ -502,8 +502,8 @@ function TeamPicker({
   const typed = text.trim();
   const matches = teams.filter((t) => t.toLowerCase().includes(typed.toLowerCase()));
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
         aria-label={`Team for ${member.name}`}
         className={cn(
           "relative inline-flex max-w-40 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs pointer-coarse:after:absolute pointer-coarse:after:-inset-3 pointer-coarse:after:content-[''] transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
@@ -518,53 +518,49 @@ function TeamPicker({
         ) : (
           'Assign'
         )}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner sideOffset={6} align="start" className="z-50">
-          <Popover.Popup className={popup}>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (typed) pick(typed);
-              }}
+      </PopoverTrigger>
+      <PopoverContent align="start" className={popup}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (typed) pick(typed);
+          }}
+        >
+          <Input
+            autoFocus
+            value={text}
+            maxLength={40}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Find or create a team"
+            aria-label="Team name"
+            className="h-8"
+          />
+        </form>
+        <div className="mt-1 flex max-h-56 flex-col overflow-y-auto">
+          {matches.map((t) => (
+            <button key={t} type="button" className={option} onClick={() => pick(t)}>
+              <span className={cn('size-2 rounded-full', color(t))} aria-hidden />
+              <span className="flex-1 truncate">{t}</span>
+              {t === member.team && <Check className="size-3.5" aria-hidden />}
+            </button>
+          ))}
+          {typed && !teams.some((t) => t.toLowerCase() === typed.toLowerCase()) && (
+            <button type="button" className={option} onClick={() => pick(typed)}>
+              <Plus className="size-3.5" aria-hidden /> Create “{typed}”
+            </button>
+          )}
+          {member.team && (
+            <button
+              type="button"
+              className={cn(option, 'text-muted-foreground')}
+              onClick={() => pick(undefined)}
             >
-              <Input
-                autoFocus
-                value={text}
-                maxLength={40}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Find or create a team"
-                aria-label="Team name"
-                className="h-8"
-              />
-            </form>
-            <div className="mt-1 flex max-h-56 flex-col overflow-y-auto">
-              {matches.map((t) => (
-                <button key={t} type="button" className={option} onClick={() => pick(t)}>
-                  <span className={cn('size-2 rounded-full', color(t))} aria-hidden />
-                  <span className="flex-1 truncate">{t}</span>
-                  {t === member.team && <Check className="size-3.5" aria-hidden />}
-                </button>
-              ))}
-              {typed && !teams.some((t) => t.toLowerCase() === typed.toLowerCase()) && (
-                <button type="button" className={option} onClick={() => pick(typed)}>
-                  <Plus className="size-3.5" aria-hidden /> Create “{typed}”
-                </button>
-              )}
-              {member.team && (
-                <button
-                  type="button"
-                  className={cn(option, 'text-muted-foreground')}
-                  onClick={() => pick(undefined)}
-                >
-                  <X className="size-3.5" aria-hidden /> Remove from {member.team}
-                </button>
-              )}
-            </div>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+              <X className="size-3.5" aria-hidden /> Remove from {member.team}
+            </button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -606,45 +602,41 @@ function TagEditor({
           </button>
         </span>
       ))}
-      <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
           aria-label={`Add a tag to ${member.name}`}
           className="relative inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
           <Plus className="size-3.5" aria-hidden />
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Positioner sideOffset={6} align="start" className="z-50">
-            <Popover.Popup className={popup}>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  add(typed);
-                }}
-              >
-                <Input
-                  autoFocus
-                  value={text}
-                  maxLength={30}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="Add a tag, press Enter"
-                  aria-label="Tag"
-                  className="h-8"
-                />
-              </form>
-              {suggestions.length > 0 && (
-                <div className="mt-1 flex max-h-48 flex-col overflow-y-auto">
-                  {suggestions.map((t) => (
-                    <button key={t} type="button" className={option} onClick={() => add(t)}>
-                      #{t}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </Popover.Popup>
-          </Popover.Positioner>
-        </Popover.Portal>
-      </Popover.Root>
+        </PopoverTrigger>
+        <PopoverContent align="start" className={popup}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              add(typed);
+            }}
+          >
+            <Input
+              autoFocus
+              value={text}
+              maxLength={30}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Add a tag, press Enter"
+              aria-label="Tag"
+              className="h-8"
+            />
+          </form>
+          {suggestions.length > 0 && (
+            <div className="mt-1 flex max-h-48 flex-col overflow-y-auto">
+              {suggestions.map((t) => (
+                <button key={t} type="button" className={option} onClick={() => add(t)}>
+                  #{t}
+                </button>
+              ))}
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
