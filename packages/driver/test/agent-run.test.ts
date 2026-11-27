@@ -706,3 +706,30 @@ test('a missing verify command blocks the run at start with a clear reason, befo
   assert.match(done.events!.at(-1)!.message, /verify command \(commands\.test\) is missing or empty/);
   assert.equal(ctx.calls.length, 0);
 });
+
+test('uncommitted files after the commit go back to the agent as a fix turn before verification', async () => {
+  let dirty = false;
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      dirty = true;
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+    async () => {
+      dirty = false;
+      return { text: 'Committed.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const real = ctx.deps.git;
+  ctx.deps.git = {
+    ...real,
+    isClean: async (dir) => (dirty ? false : real.isClean(dir)),
+    dirtyFiles: async (dir) => (dirty ? ['a.ts'] : real.dirtyFiles(dir)),
+  };
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.senders[1], 'factory');
+  assert.match(ctx.replies[1]!, /uncommitted changes: a\.ts/);
+  assert.ok(done.events!.some((e) => /uncommitted changes; Devin gets fix turn 1 of 2/.test(e.message)));
+});

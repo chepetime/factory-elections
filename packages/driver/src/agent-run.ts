@@ -19,7 +19,7 @@ import { readFile } from 'node:fs/promises';
 import { DriverError } from './ports.ts';
 import { MINUTE, errorCost, failureText } from './support.ts';
 import { changeGate, verifyCommandProblem, type VerifyCommands } from './verification.ts';
-import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
+import { AGENT_FIX_TURNS, branchGapSteer, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { noChangeBlocked, backgroundWork, steerPrompt, steersNoChange } from './agent-settle.ts';
 import { openPr } from './publication.ts';
 import { retrySpent, runWithResultRetry } from './result-retry.ts';
@@ -458,6 +458,20 @@ export async function agentRun(
       return await d.deps.tasks.read(project, id);
     }
     await d.deps.tasks.write(task);
+    // A branch with uncommitted files goes back to the agent before verification spends a run on it.
+    const dirty = fixTurns > 0 && !(await d.deps.git.isClean(path)) ? await d.deps.git.dirtyFiles(path) : [];
+    if (dirty.length) {
+      const turn = AGENT_FIX_TURNS - fixTurns + 1;
+      await d.deps.tasks.write(
+        withEvent(
+          task,
+          d.deps.now(),
+          'verification',
+          `The branch has uncommitted changes; ${session.name} gets fix turn ${turn} of ${AGENT_FIX_TURNS}.`,
+        ),
+      );
+      return await d.agentRun(project, id, branchGapSteer(dirty), fixTurns - 1, captured);
+    }
     d.deps.log('Verifying…');
     const checked = await d.verifyAndRecord(project, id, captured);
     if (!checked.verification?.passed) {
