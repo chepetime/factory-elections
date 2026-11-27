@@ -37,6 +37,7 @@ import {
   type FlakeVerdict,
   PrStatus,
   protectedPaths,
+  ticketSpend,
 } from '@factory/core';
 import { NO_HOOKS, changedPathsSince } from '@factory/adapters-git';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
@@ -364,10 +365,15 @@ export class TendingService {
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
       const reasons: Record<string, string> = {};
       const verdicts = await this.triage(pr, record, settings, cwd, reasons);
+      const cap =
+        task.ticket_budget_usd ??
+        (await this.deps.profile(task.project)).limits?.ticket_budget_usd ??
+        DEFAULT_TASK_LIMITS.ticket_budget_usd;
       const action = nextTendAction(pr, record, {
         answerThreads: settings.tending.answer_threads,
         verdicts,
         reasons,
+        ticketCapReached: ticketSpend(task, record).total >= cap,
       });
       record = { ...record, checked_at: now, last: action.kind };
       switch (action.kind) {

@@ -173,6 +173,8 @@ export function nextTendAction(
   options: {
     answerThreads: boolean;
     verdicts?: Readonly<Record<string, FlakeVerdict>>;
+    /** The ticket's total spend has reached its cap: no new agent work starts. */
+    ticketCapReached?: boolean;
     /** Why a check is `no-fix`, by check name; used in the stop reason. */
     reasons?: Readonly<Record<string, string>>;
     /** The same checks on the base branch tip, by name. A check missing here has no base result. */
@@ -182,9 +184,12 @@ export function nextTendAction(
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
   const agentWork = (action: TendAction): TendAction =>
-    record.fixes_since_green >= MAX_TEND_FIXES
-      ? { kind: 'stop', reason: `${MAX_TEND_FIXES} fixes did not make the PR green` }
-      : action;
+    // A wait, not a stop: raising the cap lets the next tick carry on.
+    options.ticketCapReached
+      ? { kind: 'wait', reason: 'ticket budget reached: raise the ticket cap to continue' }
+      : record.fixes_since_green >= MAX_TEND_FIXES
+        ? { kind: 'stop', reason: `${MAX_TEND_FIXES} fixes did not make the PR green` }
+        : action;
   if (pr.mergeable === 'CONFLICTING') return agentWork({ kind: 'merge-base' });
   const threads = options.answerThreads ? threadsWaiting(pr, record) : [];
   if (threads.length) return agentWork({ kind: 'answer-threads', threads });

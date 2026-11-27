@@ -217,6 +217,8 @@ export const TaskRecord = z.looseObject({
     })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
+  /** Raises (or lowers) the ticket cap for this task only; absent means the profile's `ticket_budget_usd`. */
+  ticket_budget_usd: z.number().positive().max(10000).optional(),
   pr_draft: PrDraft.extend({ head_sha: NonEmpty, at: Iso }).optional(),
   approval: z
     .looseObject({
@@ -355,6 +357,8 @@ export const RepoProfile = z.looseObject({
   limits: z
     .looseObject({
       task_budget_usd: z.number().positive().max(1000).optional(),
+      /** Cap on everything one ticket spends: runs, reviews, tending, chat. */
+      ticket_budget_usd: z.number().positive().max(10000).optional(),
       check_timeout_minutes: z
         .number()
         .positive()
@@ -404,6 +408,7 @@ export const DEFAULT_STEP_LIMITS = {
 /** Used when a repository profile does not set its own limits. */
 export const DEFAULT_TASK_LIMITS = {
   task_budget_usd: 15,
+  ticket_budget_usd: 50,
   check_timeout_minutes: 30,
   check_stall_minutes: 10,
 } as const;
