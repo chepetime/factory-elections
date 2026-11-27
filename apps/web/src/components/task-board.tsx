@@ -7,6 +7,7 @@ import { AgentAvatar } from '@/components/agent-avatar';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
 import { archiveIssue, createIssue, moveIssue, refreshReviews } from '@/app/actions';
+import { issuesChanged } from '@/lib/issues-changed';
 import { Button } from '@factory/ui/components/button';
 import {
   DropdownMenu,
@@ -257,7 +258,8 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       moving.current.delete(issue.key);
       if (result.error) notify('error', `${issue.key}: ${result.error}`);
       else notify('status', result.message ?? '');
-      router.refresh();
+      // The action revalidates this board and returns it fresh; the sidebar reloads on the event.
+      if (!result.error) issuesChanged();
     });
   };
 
@@ -266,7 +268,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       const result = await archiveIssue(project, issue.key, true);
       if (result.error) notify('error', `${issue.key}: ${result.error}`);
       else notify('status', `${result.message} Restore it from Archived in the sidebar.`);
-      router.refresh();
+      if (!result.error) issuesChanged();
     });
 
   /** Reads every PR's state now instead of at the next tending pass (merged PRs go to Done). */

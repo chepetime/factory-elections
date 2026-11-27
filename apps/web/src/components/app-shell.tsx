@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
+import { ISSUES_CHANGED } from '@/lib/issues-changed';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
@@ -155,12 +156,18 @@ function useIssues(project: string | undefined, pathname: string) {
     };
     // Refetch on navigation, so a new task shows up after it is created.
   }, [project, pathname, tick]);
-  // Agents change state on their own; poll while the tab is visible.
+  // Agents change state on their own; poll while the tab is visible. A change made on this page
+  // (issuesChanged) reloads at once.
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
     }, 10_000);
-    return () => clearInterval(timer);
+    const now = () => setTick((t) => t + 1);
+    window.addEventListener(ISSUES_CHANGED, now);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(ISSUES_CHANGED, now);
+    };
   }, []);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   return { state, refresh };

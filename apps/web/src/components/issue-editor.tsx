@@ -2,7 +2,8 @@
 // Editable parts of a board task's page: title, description, priority, status and comments.
 import { ArchiveRestore, ArrowUp, LoaderCircle, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useActionState, useEffect, useId, useOptimistic, useRef, useState, useTransition } from 'react';
+import { issuesChanged } from '@/lib/issues-changed';
 import type { IssuePriority, IssueStatus, Stage } from '@factory/core';
 import { archiveIssue, commentIssue, moveIssue, updateIssue, type ActionState } from '@/app/actions';
 import { Markdown } from '@/components/markdown';
@@ -15,7 +16,6 @@ import { MentionTextarea, type MentionAgent } from '@/components/mention-textare
 import { cn } from '@factory/ui/lib/utils';
 
 export function useSave(project: string, key: string) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
   const save = (
@@ -30,11 +30,12 @@ export function useSave(project: string, key: string) {
     done?: () => void,
   ) =>
     start(async () => {
+      // The action revalidates the task's pages and returns them fresh: no second refresh.
       const result = await updateIssue(project, key, patch);
       setError(result.error);
       if (!result.error) {
         done?.();
-        router.refresh();
+        issuesChanged();
       }
     });
   return { pending, error, save };
@@ -348,22 +349,24 @@ export function IssueAssigneeField({
   id: string;
   className?: string;
 }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
   const [error, setError] = useState<string>();
+  // Shows the new agent at once; the server's answer replaces it (or puts the old one back).
+  const [shown, setShown] = useOptimistic(assignee ?? '');
   return (
     <>
       <select
         id={id}
-        value={assignee ?? ''}
-        disabled={pending}
-        onChange={(e) =>
+        value={shown}
+        onChange={(e) => {
+          const next = e.target.value;
           start(async () => {
-            const result = await updateIssue(project, issueKey, { assignee: e.target.value || null });
+            setShown(next);
+            const result = await updateIssue(project, issueKey, { assignee: next || null });
             setError(result.error);
-            router.refresh();
-          })
-        }
+            if (!result.error) issuesChanged();
+          });
+        }}
         className={cn(
           '-mx-1.5 h-7 w-full cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
           className,
@@ -399,24 +402,27 @@ export function IssueStatusField({
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
   const [confirm, confirmDialog] = useConfirm();
+  // The new status shows at once; a refused move falls back to the stored one.
+  const [status, setStatus] = useOptimistic(issue.status);
   const move = async (to: IssueStatus) => {
     const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') return setNotice({ kind: 'error', text: action.reason });
     if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     start(async () => {
+      setStatus(to);
       const result = await moveIssue(project, issue.key, to);
       setNotice(
         result.error ? { kind: 'error', text: result.error } : { kind: 'status', text: result.message ?? '' },
       );
-      router.refresh();
+      if (!result.error) issuesChanged();
     });
   };
   return (
     <div>
       {confirmDialog}
       <div className={cn('group flex items-center gap-1', pending && 'opacity-60')}>
-        <StatusLabel status={issue.status} className="text-sm" />
+        <StatusLabel status={status} className="text-sm" />
         <MoveMenu
           issue={{ ...issue, description: '', updated_at: '' }}
           onMove={move}
@@ -428,7 +434,7 @@ export function IssueStatusField({
                   ? { kind: 'error', text: result.error }
                   : { kind: 'status', text: result.message ?? '' },
               );
-              router.refresh();
+              if (!result.error) issuesChanged();
             })
           }
         />
@@ -580,7 +586,6 @@ export function IssueReplyBox({
 }
 
 export function IssueArchivedBanner({ project, issueKey }: { project: string; issueKey: string }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
   return (
@@ -597,7 +602,7 @@ export function IssueArchivedBanner({ project, issueKey }: { project: string; is
           start(async () => {
             const result = await archiveIssue(project, issueKey, false);
             setError(result.error);
-            router.refresh();
+            if (!result.error) issuesChanged();
           })
         }
       >
