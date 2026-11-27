@@ -15,6 +15,9 @@ import {
   applyProposal,
   digestSession,
   Fact,
+  factSource,
+  type FactSource,
+  type MemorySnapshot,
   FACT_PROPOSAL_SCHEMA,
   FACT_REVIEW_PROMPT,
   FactProposal,
@@ -41,14 +44,6 @@ const SECRET =
   /(sk-[a-z0-9-]{10,}|ghp_[a-z0-9]{20,}|github_pat_|AKIA[0-9A-Z]{16}|xox[bap]-|-----BEGIN|(password|secret|token|api[_-]?key)\s*[=:]\s*\S{6,})/i;
 
 const State = z.object({ pending: z.number().int().nonnegative(), reviewed_at: z.string().optional() });
-
-export interface MemorySnapshot {
-  facts: Fact[];
-  pruned_tools: string[];
-  sessions: number;
-  pending: number;
-  review_cost_usd: number;
-}
 
 export class MemoryService {
   private readonly root: string;
@@ -250,14 +245,25 @@ export class MemoryService {
       .split('\n')
       .filter(Boolean)
       .reduce((sum, line) => sum + (Number((JSON.parse(line) as { cost_usd?: unknown }).cost_usd) || 0), 0);
-    return { facts, pruned_tools: pruned, sessions: digests.length, pending: state.pending, review_cost_usd };
+    const cited = new Set(facts.flatMap((f) => f.sessions));
+    const sources: Record<string, FactSource> = {};
+    for (const d of digests) if (cited.has(d.id)) sources[d.id] = factSource(d);
+    return {
+      facts,
+      sources,
+      pruned_tools: pruned,
+      sessions: digests.length,
+      pending: state.pending,
+      review_cost_usd,
+    };
   }
 
   /**
-   * Wraps a runner so each tool-using call is recorded as a session of `project`. Calls without
+   * Wraps a runner so each tool-using call is recorded as a session of `project` (of `task`, when
+   * a board task's run makes it). Calls without
    * tools (classifier, PR writer) teach nothing about the repository and are not recorded.
    */
-  recording(project: string, run: string, base: ModelRunner): ModelRunner {
+  recording(project: string, run: string, base: ModelRunner, task?: string): ModelRunner {
     let n = 0;
     return {
       run: async (request) => {
@@ -267,7 +273,13 @@ export class MemoryService {
         const at = new Date().toISOString();
         const finish = (ok: boolean, text: string) => {
           const digest = digestSession(
-            { id, at, kind: request.step ?? 'call', provider: parseModelRef(request.model).provider },
+            {
+              id,
+              at,
+              kind: request.step ?? 'call',
+              provider: parseModelRef(request.model).provider,
+              ...(task ? { task } : {}),
+            },
             [...events, { type: 'result', ok, text }],
           );
           void this.record(project, digest).catch(() => undefined);

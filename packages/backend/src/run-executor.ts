@@ -187,7 +187,12 @@ export class RunExecutor {
         async (span) => {
           const base = this.deps.runner(log);
           const ledger = trace ? this.deps.traces.runner(base, () => trace.scope) : base;
-          const traced = this.deps.memory.recording(command.project, record.id, sink.runner(ledger, span));
+          const traced = this.deps.memory.recording(
+            command.project,
+            record.id,
+            sink.runner(ledger, span),
+            command.id,
+          );
           // Read once per run: a change in user settings applies from the next run.
           const user = await this.deps.user.get();
           const checked: ModelRunner = {

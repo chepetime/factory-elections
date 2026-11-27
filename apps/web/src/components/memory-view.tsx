@@ -1,0 +1,229 @@
+// The memory page body: facts by status with the sessions that show them, pruned tools and review cost.
+// Presentational; the page and the stories pass the data and the two actions.
+import Link from 'next/link';
+import { CONFIRMATIONS, REVIEW_EVERY, type Fact, type FactSource, type MemorySnapshot } from '@factory/core';
+import { LocalTime } from '@/components/local-time';
+import { RemoveFact, RestoreToolsButton } from '@/components/memory-buttons';
+import { Empty, PageHeader, Stat, Stats, Unavailable, usd } from '@/components/system-page';
+
+type ActionResult = Promise<{ error?: string }>;
+
+function Sources({
+  project,
+  fact,
+  sources,
+}: {
+  project: string;
+  fact: Fact;
+  sources: MemorySnapshot['sources'];
+}) {
+  return (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-muted-foreground">
+        Why: {fact.sessions.length} {fact.sessions.length === 1 ? 'session' : 'sessions'}
+      </summary>
+      <ul className="mt-2 flex flex-col gap-2">
+        {fact.sessions.map((id) => (
+          <li key={id} className="rounded-lg border bg-muted/30 p-2">
+            <SourceItem project={project} id={id} source={sources[id]} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function SourceItem({ project, id, source }: { project: string; id: string; source?: FactSource }) {
+  if (!source) return <p className="text-muted-foreground">{id} is no longer recorded.</p>;
+  return (
+    <>
+      <p className="flex flex-wrap items-center gap-x-2">
+        <span className="font-mono">{id}</span>
+        {source.task && (
+          <Link className="underline underline-offset-2" href={`/projects/${project}/tasks/${source.task}`}>
+            Task {source.task}
+          </Link>
+        )}
+        <span className="text-muted-foreground">
+          {source.kind}, {source.ok ? 'finished' : 'failed'} ·{' '}
+          <LocalTime iso={source.at} format="date-time" />
+        </span>
+      </p>
+      {source.commands.length > 0 && (
+        <ul aria-label="Commands" className="mt-1 font-mono text-muted-foreground">
+          {source.commands.map((c, i) => (
+            <li key={i}>$ {c}</li>
+          ))}
+        </ul>
+      )}
+      {source.failures.map((f, i) => (
+        <p key={i} className="mt-1 text-destructive">
+          <span className="font-mono">
+            {f.tool} {f.input}
+          </span>
+          : {f.error}
+        </p>
+      ))}
+    </>
+  );
+}
+
+function FactRow({
+  project,
+  fact,
+  sources,
+  forget,
+}: {
+  project: string;
+  fact: Fact;
+  sources: MemorySnapshot['sources'];
+  forget: (project: string, id: string) => ActionResult;
+}) {
+  return (
+    <li className="rounded-xl border bg-card p-3 shadow-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm">{fact.text}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {fact.kind} ·{' '}
+            {fact.status === 'candidate' && `${fact.sessions.length} of ${CONFIRMATIONS} confirmations · `}
+            added <LocalTime iso={fact.created_at} format="date-time" />, updated{' '}
+            <LocalTime iso={fact.updated_at} format="date-time" />
+            {fact.dropped_reason && ` · ${fact.dropped_reason}`}
+          </p>
+        </div>
+        {fact.status !== 'dropped' && (
+          <RemoveFact project={project} id={fact.id} text={fact.text} forget={forget} />
+        )}
+      </div>
+      <Sources project={project} fact={fact} sources={sources} />
+    </li>
+  );
+}
+
+function Group({
+  title,
+  note,
+  facts,
+  ...rest
+}: {
+  title: string;
+  note: string;
+  facts: Fact[];
+  project: string;
+  sources: MemorySnapshot['sources'];
+  forget: (project: string, id: string) => ActionResult;
+}) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-2">
+      <h2 className="text-sm font-medium">
+        {title} <span className="font-normal text-muted-foreground">({facts.length})</span>
+      </h2>
+      <p className="text-xs text-muted-foreground">{note}</p>
+      {facts.length === 0 ? (
+        <Empty>None.</Empty>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {facts.map((f) => (
+            <FactRow key={f.id} fact={f} {...rest} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export function MemoryView({
+  project,
+  snapshot,
+  error,
+  showRemoved,
+  forget,
+  restore,
+}: {
+  project: string;
+  snapshot?: MemorySnapshot;
+  error?: string;
+  showRemoved: boolean;
+  forget: (project: string, id: string) => ActionResult;
+  restore: (project: string) => ActionResult;
+}) {
+  const base = `/projects/${project}/memory`;
+  const removed = snapshot?.facts.filter((f) => f.status === 'dropped') ?? [];
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader title="Memory">
+        Repository facts that earlier sessions kept rediscovering. A fact reaches agents only after{' '}
+        {CONFIRMATIONS} sessions confirm it. Removing one stops agents being told; the fact stays here so a
+        review does not propose it again.
+      </PageHeader>
+      {!snapshot ? (
+        <Unavailable what="Memory" error={error ?? 'unknown error'} />
+      ) : (
+        <>
+          <Stats>
+            <Stat label="Sessions recorded" value={snapshot.sessions} />
+            <Stat
+              label="Next fact review"
+              value={`${Math.max(0, REVIEW_EVERY - snapshot.pending)} sessions`}
+              note={`every ${REVIEW_EVERY} sessions`}
+            />
+            <Stat label="Review cost" value={usd(snapshot.review_cost_usd)} />
+            <Stat label="Removed facts" value={removed.length} />
+          </Stats>
+          <Group
+            title="Active"
+            note="Told to every agent in this project."
+            facts={snapshot.facts.filter((f) => f.status === 'active')}
+            project={project}
+            sources={snapshot.sources}
+            forget={forget}
+          />
+          <Group
+            title="Candidates"
+            note={`Proposed by a review; told to agents once ${CONFIRMATIONS} sessions confirm them.`}
+            facts={snapshot.facts.filter((f) => f.status === 'candidate')}
+            project={project}
+            sources={snapshot.sources}
+            forget={forget}
+          />
+          <p className="text-sm">
+            {showRemoved ? (
+              <Link className="underline underline-offset-2" href={base}>
+                Hide removed facts
+              </Link>
+            ) : (
+              <Link className="underline underline-offset-2" href={`${base}?show=removed`}>
+                Show removed facts ({removed.length})
+              </Link>
+            )}
+          </p>
+          {showRemoved && (
+            <Group
+              title="Removed"
+              note="Not told to agents, and never proposed again with the same text."
+              facts={removed}
+              project={project}
+              sources={snapshot.sources}
+              forget={forget}
+            />
+          )}
+          <section aria-label="Pruned tools" className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium">Pruned tools</h2>
+            {snapshot.pruned_tools.length === 0 ? (
+              <Empty>Review turns get every built-in tool.</Empty>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Review turns have not used these in a while, so they leave them out:{' '}
+                  <span className="font-mono">{snapshot.pruned_tools.join(', ')}</span>
+                </p>
+                <RestoreToolsButton project={project} restore={restore} />
+              </>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}

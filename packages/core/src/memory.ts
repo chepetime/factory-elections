@@ -50,8 +50,52 @@ export const SessionDigest = z.object({
   failures: z.array(z.object({ tool: z.string(), input: z.string(), error: z.string() })),
   tools: z.array(z.string()),
   result: z.string(),
+  /** The board task whose run made the session; absent for features and older digests. */
+  task: z.string().optional(),
 });
 export type SessionDigest = z.infer<typeof SessionDigest>;
+
+/** Digest lines the memory page shows for each session that confirms a fact. */
+export const SOURCE_COMMANDS = 5;
+export const SOURCE_FAILURES = 3;
+/** One cited session as the memory page shows it: commands and failures only, clipped. */
+export const FactSource = z.object({
+  id: z.string(),
+  at: z.string(),
+  kind: z.string(),
+  ok: z.boolean(),
+  task: z.string().optional(),
+  commands: z.array(z.string()),
+  failures: z.array(z.object({ tool: z.string(), input: z.string(), error: z.string() })),
+});
+export type FactSource = z.infer<typeof FactSource>;
+
+/** What GetMemory returns: facts, the sessions they cite, pruned tools and the review cost. */
+export const MemorySnapshot = z.object({
+  facts: z.array(Fact),
+  /** Digests of the sessions that facts cite, by session id. A pruned session is absent. */
+  sources: z.record(z.string(), FactSource),
+  pruned_tools: z.array(z.string()),
+  sessions: z.number(),
+  pending: z.number(),
+  review_cost_usd: z.number(),
+});
+export type MemorySnapshot = z.infer<typeof MemorySnapshot>;
+
+/** The part of a digest worth showing next to a fact: its last commands and failures, clipped. */
+export function factSource(d: SessionDigest): FactSource {
+  return {
+    id: d.id,
+    at: d.at,
+    kind: d.kind,
+    ok: d.ok,
+    ...(d.task ? { task: d.task } : {}),
+    commands: d.commands.slice(-SOURCE_COMMANDS).map((c) => clip(c, 160)),
+    failures: d.failures
+      .slice(-SOURCE_FAILURES)
+      .map((f) => ({ tool: f.tool, input: clip(f.input, 160), error: clip(f.error, 240) })),
+  };
+}
 
 const clip = (text: string, max: number) => {
   const line = text.replace(/\s+/g, ' ').trim();
@@ -65,7 +109,7 @@ function toolInput(input: Record<string, unknown>): string {
 
 /** The digest of one session's events. Keeps what a reviewer needs to spot repeated facts. */
 export function digestSession(
-  meta: Pick<SessionDigest, 'id' | 'at' | 'kind' | 'provider'>,
+  meta: Pick<SessionDigest, 'id' | 'at' | 'kind' | 'provider' | 'task'>,
   events: readonly AgentEvent[],
 ): SessionDigest {
   const commands: string[] = [];

@@ -125,13 +125,13 @@ it('keeps the project switcher fixed and scrolls everything below it as one colu
     expect(aside.indexOf(text)).toBeGreaterThan(scroller);
 });
 
-it('folds Weekly, Features, LLMs and Tools under More pages, open only on one of them', () => {
+it('folds Weekly, Features, LLMs, Tools and Memory under More pages, open only on one of them', () => {
   route.pathname = '/projects/demo/tasks';
   const board = renderToStaticMarkup(<AppShell>Content</AppShell>);
   const more = (html: string) => html.slice(html.indexOf('<details'), html.indexOf('</details>'));
-  for (const page of ['weekly', 'features', 'llms', 'tools'])
+  for (const page of ['weekly', 'features', 'llms', 'tools', 'memory'])
     expect(more(board)).toContain(`href="/projects/demo/${page}"`);
-  // The main list keeps the rest; the four are links, not parked items.
+  // The main list keeps the rest; the five are links, not parked items.
   expect(more(board)).not.toContain('href="/projects/demo/chat"');
   expect(more(board)).not.toMatch(/aria-disabled="true"[^>]*>[^<]*<svg[^>]*>.*Weekly/);
   expect(board).toMatch(/<details[^>]*class="group\/more"[^>]*>/);
