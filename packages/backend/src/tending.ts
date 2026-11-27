@@ -685,11 +685,16 @@ export class TendingService {
     }
     const answered: string[] = [];
     const replyIds: string[] = [];
+    // Resolution comes from GitHub state, never from the agent's claim (`reply.changed`): the PR head
+    // on origin is a new commit pushed by this run (checked by ls-remote above), and for a thread on a
+    // file, that commit touched the file.
+    const pushedPaths = head !== before ? (await changedPathsSince(cwd, before)).map(String) : undefined;
     for (const reply of replies) {
       const thread = (action as { threads?: PrThread[] }).threads!.find((t) => t.id === reply.thread_id)!;
       const id = await this.github.reply(cwd, thread.id, `${reply.reply}\n\n${REPLY_MARKER}`);
       if (id) replyIds.push(id);
-      if (reply.changed && head !== before) await this.github.resolve(cwd, thread.id);
+      if (pushedPaths && (!thread.path || pushedPaths.includes(thread.path)))
+        await this.github.resolve(cwd, thread.id);
       answered.push(answeredKey(thread));
     }
     const result = done(head !== before ? 'pushed' : 'no-change', cost);
