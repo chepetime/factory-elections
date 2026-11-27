@@ -287,6 +287,12 @@ export const RepoProfile = z.looseObject({
   /** Repository-relative files or directories whose generated output must not be committed. */
   generated_paths: z.array(NonEmpty).optional(),
   /**
+   * Committed files a command generates. When merging the base conflicts on a file matching a
+   * rule's `paths` (globs, repository-relative), the factory takes the base's copy and runs the
+   * rule's `command` once from the worktree root, outside the sandbox, instead of asking the agent.
+   */
+  regenerate: z.array(z.looseObject({ paths: z.array(NonEmpty).min(1), command: NonEmpty })).optional(),
+  /**
    * Cheap checks run before any model call or setup, e.g. an expired cloud login. A failure stops
    * the run and shows `fix`, the command a person runs to repair it.
    */
