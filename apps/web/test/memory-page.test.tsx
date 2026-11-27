@@ -22,19 +22,8 @@ const fact = (over: Record<string, unknown>) => ({
   updated_at: '2026-11-25T10:00:00.000Z',
   ...over,
 });
-const source = (id: string, over: Record<string, unknown> = {}) => ({
-  id,
-  at: '2026-11-24T09:00:00.000Z',
-  kind: 'coder',
-  ok: false,
-  task: 'FE-9',
-  commands: ['pnpm test'],
-  failures: [{ tool: 'Bash', input: 'pnpm test', error: 'Cannot find module dist/index.js' }],
-  ...over,
-});
 const snapshot = (facts: unknown[], over: Record<string, unknown> = {}) => ({
   facts,
-  sources: { 'run1:coder:1': source('run1:coder:1') },
   pruned_tools: [],
   sessions: 9,
   pending: 1,
@@ -74,11 +63,6 @@ it('the memory page lists active and candidate facts with confirmations', async 
   expect(html).toMatch(/aria-label="Candidates".*Use pnpm, not npm\..*2 of 3 confirmations/s);
   expect(html).not.toContain('Old fact.');
   expect(html).toContain('Show removed facts (1)');
-  // The sessions behind a fact: its task, the command and the failure; a pruned session is said to be gone.
-  expect(html).toContain('href="/projects/demo/tasks/FE-9"');
-  expect(html).toContain('$ pnpm test');
-  expect(html).toContain('Cannot find module dist/index.js');
-  expect(html).toContain('run2:coder:1 is no longer recorded.');
   expect(html).toContain('CronCreate');
   expect(html).toContain('Restore tools');
   expect(html).toContain('$0.01');

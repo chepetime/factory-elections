@@ -2,7 +2,18 @@
 // review turns no longer get. Reads and removals go through the GetMemory, ForgetFact and RestoreTools RPCs.
 import 'server-only';
 import { backendCall } from '@factory/backend-client';
-import { MemorySnapshot } from '@factory/core';
+import { Fact } from '@factory/core';
+import { z } from 'zod';
+
+/** What GetMemory returns (MemorySnapshot in packages/agents/src/memory.ts). */
+export const MemorySnapshot = z.object({
+  facts: z.array(Fact),
+  pruned_tools: z.array(z.string()),
+  sessions: z.number(),
+  pending: z.number(),
+  review_cost_usd: z.number(),
+});
+export type MemorySnapshot = z.infer<typeof MemorySnapshot>;
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 async function attempt<T>(run: () => Promise<T>): Promise<Result<T>> {

@@ -441,7 +441,6 @@ export class BackendService {
             ...(task.pr ? { pr: { url: task.pr.url } } : {}),
             ...(taskClass(task.verdict) ? { task_class: taskClass(task.verdict) } : {}),
           })),
-          task.id,
         ),
       slot: () => this.pool.tryAcquire(),
       storage: this.storage,
