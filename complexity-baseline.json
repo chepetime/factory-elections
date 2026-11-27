@@ -5,7 +5,7 @@
 
   "apps/web/src/app/actions.ts": 16,
 
-  "apps/web/src/app/dashboard/page.tsx": 17,
+  "apps/web/src/app/dashboard/page.tsx": 18,
 
   "apps/web/src/app/projects/[project]/agents/[id]/page.tsx": 24,
 
@@ -123,7 +123,7 @@
 
   "packages/core/src/test-integrity.ts": 20,
 
-  "packages/driver/src/agent-run.ts": 75,
+  "packages/driver/src/agent-run.ts": 80,
 
   "packages/driver/src/merge-conflicts.ts": 22,
 
