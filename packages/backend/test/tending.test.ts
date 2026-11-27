@@ -629,6 +629,58 @@ test("each pass reports every open-PR task's PR state, and skips conflict watch 
   assert.deepEqual(seen, ['5:MERGED:true'], 'a merged PR is reported and not read again for conflicts');
 });
 
+test('a removed worktree reads the PR from the project repo instead', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'tending-repo-'));
+  const worktree = await mkdtemp(join(tmpdir(), 'tending-wt-'));
+  t.after(() => rm(repo, { recursive: true, force: true }));
+  const task = {
+    id: 't1',
+    project: 'app',
+    repo,
+    prompt: 'x',
+    stage: 'pr-opened',
+    worktree: { path: worktree, branch: 'b', base_branch: 'main' },
+    pr: { url: 'https://github.com/o/r/pull/6', branch: 'b', head_sha: 'h', at: 'x' },
+  } as TaskRecord;
+  const dirs: string[] = [];
+  const tending = new TendingService({
+    projects: { list: async () => [{ name: 'app' }] },
+    tasks: { list: async () => [task], taskPath: () => join(repo, 'task.json') },
+    settings: async () => ProjectSettings.parse({}),
+    profile: async () => ({}) as RepoProfile,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    slot: async () => () => {},
+    storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+    github: {
+      permission: async () => ({}),
+      pr: async (cwd) => {
+        dirs.push(cwd);
+        return {
+          number: 6,
+          url: task.pr!.url,
+          state: 'OPEN',
+          head_sha: 'h',
+          base: 'main',
+          mergeable: 'MERGEABLE',
+          checks: [],
+          threads: [],
+        };
+      },
+      status: async (cwd, number) => (dirs.push(cwd), { number, state: 'OPEN', draft: false }),
+      rerunFailed: async () => {},
+      failedLog: async () => '',
+      reply: async () => {},
+      resolve: async () => {},
+    },
+    conflictFollowUp: async () => {},
+  });
+  await tending.observe(task);
+  await rm(worktree, { recursive: true });
+  await tending.observe(task);
+  await tending.watchConflict(task);
+  assert.deepEqual(dirs, [worktree, repo, repo], 'the worktree while it exists, then the repo');
+});
+
 test('a PR that merged while its follow-up waits at the gate is still reported, without a conflict watch', async () => {
   const pr = {
     url: 'https://github.com/o/r/pull/18',

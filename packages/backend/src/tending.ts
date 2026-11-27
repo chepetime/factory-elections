@@ -209,6 +209,21 @@ export const ghTending: TendingGitHub = {
 const allPassed = (pr: PrState) =>
   pr.checks.length > 0 && pr.checks.every((c) => c.state === 'pass' || c.state === 'skipped');
 
+/**
+ * Where to run a read-only `gh` call for the task's PR: its worktree, or the project repo (same
+ * origin) once the worktree is gone. A missing cwd makes the spawn fail as `spawn gh ENOENT`.
+ */
+async function ghDirectory(task: TaskRecord): Promise<string> {
+  const path = task.worktree?.path;
+  return path &&
+    (await stat(path).then(
+      (info) => info.isDirectory(),
+      () => false,
+    ))
+    ? path
+    : task.repo;
+}
+
 async function git(cwd: string, args: string[]) {
   // No repository hooks: `merge` and `commit` would run the PR's own hooks on the host.
   return run('git', [...NO_HOOKS, ...args], { cwd, timeoutMs: 120_000 });
@@ -297,7 +312,7 @@ export class TendingService {
   async observe(task: TaskRecord): Promise<boolean> {
     const number = Number(/\/pull\/(\d+)/.exec(task.pr?.url ?? '')?.[1]);
     if (!Number.isFinite(number)) return true;
-    const pr = await this.github.status(task.worktree?.path ?? task.repo, number);
+    const pr = await this.github.status(await ghDirectory(task), number);
     await this.deps.prObserved?.(task, pr);
     return pr.state === 'OPEN';
   }
@@ -307,7 +322,7 @@ export class TendingService {
     if (task.stage !== 'pr-opened' || !task.pr || !task.worktree || !this.deps.conflictFollowUp) return false;
     const number = Number(/\/pull\/(\d+)/.exec(task.pr.url)?.[1]);
     if (!Number.isFinite(number)) return false;
-    const pr = await this.github.pr(task.worktree.path, number);
+    const pr = await this.github.pr(await ghDirectory(task), number);
     if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING' || conflictFollowUpSeen(task, pr.head_sha))
       return false;
     await this.deps.conflictFollowUp(task, { head_sha: pr.head_sha, base: pr.base });
