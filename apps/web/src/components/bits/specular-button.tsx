@@ -503,7 +503,7 @@ export function SpecularButton({
 
   return href ? (
     <Link
-      ref={(node) => {
+      ref={(node: HTMLAnchorElement | null) => {
         buttonRef.current = node;
       }}
       href={href}
