@@ -209,6 +209,23 @@ test('a fix whose test command fails is not pushed, and three failed fixes stop 
   assert.equal((await f.tending.waiting('app', [f.task])).length, 0);
 });
 
+test('a no-change fix-ci stops tending: the next tick on the same head starts no agent run', async (t) => {
+  const f = await fixture(t);
+  f.setPr({ checks: [{ name: 'unit', state: 'fail' }] });
+  let runs = 0;
+  f.setAgent(async () => {
+    runs++;
+    return { text: 'nothing to fix: flaky infra', costUsd: 0.5 };
+  });
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'fix-ci');
+  assert.equal(runs, 1);
+  assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'no-change');
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'stop');
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'wait');
+  assert.equal(runs, 1, 'no second agent run on the same head');
+  assert.match((await f.tending.waiting('app', [f.task]))[0]!.reason, /fix-ci changed nothing/);
+});
+
 test('tending pushes the tested commit, and fails when HEAD moved while the test command ran', async (t) => {
   // The test command commits: HEAD is no longer the commit that was tested.
   const f = await fixture(
