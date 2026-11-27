@@ -6,7 +6,7 @@ import {
   parseModelRef,
   PROVIDER_CAPABILITIES,
   ProviderRouter,
-  tokenCapFor,
+  tokenCapForModel,
   type ModelRun,
 } from '../src/index.ts';
 
@@ -71,8 +71,15 @@ test('the router refuses a Codex call with a dollar limit and no token cap', asy
   const appServer = new ProviderRouter({
     codex: { run, capabilities: { ...PROVIDER_CAPABILITIES.codex, tokenCap: true } },
   });
-  await appServer.run(limited);
-  assert.equal(seen[0]!.maxTokens, tokenCapFor(0.5));
+  const priced = call({ model: 'codex:gpt-5-codex', step: 'coder', maxBudgetUsd: 0.5 });
+  await appServer.run(priced);
+  assert.equal(seen[0]!.maxTokens, tokenCapForModel('codex:gpt-5-codex', 0.5));
+  assert.equal(seen[0]!.maxTokens, 50_000, 'at the dearest rate, $10 per million tokens');
+  assert.match(
+    appServer.refusal(limited)!,
+    /no entry in the price table/,
+    'an unpriced model gets no guessed cap',
+  );
   await appServer.run(call({ model: 'codex', maxBudgetUsd: 0.5, maxTokens: 123 }));
   assert.equal(seen[1]!.maxTokens, 123, 'an explicit token cap wins');
 });

@@ -3,6 +3,7 @@
 // running it with weaker controls.
 import { z } from 'zod';
 import type { ModelResult, ModelRun, ModelRunner } from './ports.ts';
+import { tokenCapForModel } from './prices.ts';
 
 export const ProviderId = z.enum(['claude', 'codex']);
 export type ProviderId = z.infer<typeof ProviderId>;
@@ -33,7 +34,7 @@ export interface ProviderCapabilities {
   osSandbox: boolean;
   /** Stops a call at a dollar limit. */
   budget: boolean;
-  /** Stops a call at a token limit while it runs (a dollar limit becomes one: see `tokenCapFor`). */
+  /** Stops a call at a token limit while it runs (a dollar limit becomes one: see `tokenCapForModel`). */
   tokenCap: boolean;
   /** Reports what a call cost in dollars. */
   costReport: boolean;
@@ -307,6 +308,14 @@ export class ProviderRouter implements ModelRunner {
         : request.maxBudgetUsd !== undefined && !have.budget && !have.tokenCap;
     if (unbounded)
       return `${provider} cannot stop at a ${request.maxTokens !== undefined ? 'token' : 'dollar'} limit, and this call has one that nothing else would enforce`;
+    if (
+      !have.budget &&
+      have.tokenCap &&
+      request.maxBudgetUsd !== undefined &&
+      request.maxTokens === undefined &&
+      tokenCapForModel(request.model, request.maxBudgetUsd) === null
+    )
+      return `${request.model} has no entry in the price table, so its dollar limit cannot become a token cap`;
     return missingCapabilities(provider, callNeeds(request), have);
   }
   async run(request: ModelRun): Promise<ModelResult> {
@@ -318,27 +327,10 @@ export class ProviderRouter implements ModelRunner {
     // A provider that counts tokens, not dollars, gets the dollar limit as a token cap.
     const bound =
       !have.budget && have.tokenCap && request.maxBudgetUsd !== undefined && request.maxTokens === undefined
-        ? { ...request, maxTokens: tokenCapFor(request.maxBudgetUsd) }
+        ? { ...request, maxTokens: tokenCapForModel(request.model, request.maxBudgetUsd) ?? undefined }
         : request;
     return runner.run(bound);
   }
-}
-
-/**
- * Dollars per million tokens used to turn a dollar limit into a token cap. It is one rough, high
- * blended rate (input and output, cache reads included), so the cap stops a call near the limit
- * rather than far past it. The provider bills the call, not this number.
- */
-export const USD_PER_MILLION_TOKENS = 3;
-
-/** What a provider's token usage counts as against a dollar budget: the inverse of `tokenCapFor`. */
-export function tokensCostUsd(usage: Usage | undefined): number {
-  return usage ? ((usage.inputTokens + usage.outputTokens) / 1_000_000) * USD_PER_MILLION_TOKENS : 0;
-}
-
-/** The token cap that stands for a dollar limit on a provider that reports tokens only. */
-export function tokenCapFor(usd: number): number {
-  return Math.max(1, Math.floor((usd / USD_PER_MILLION_TOKENS) * 1_000_000));
 }
 
 /** Where the "dumb zone" starts for current models: quality falls as context grows past it. */

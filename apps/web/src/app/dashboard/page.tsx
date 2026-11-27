@@ -33,7 +33,11 @@ export default async function DashboardPage() {
         <Stat
           label="Spend, 7 days"
           value={t ? usd(t.total.cost_usd) : '—'}
-          note={t ? `${formatTokens(t.total.tokens.input + t.total.tokens.output)} tokens` : 'unavailable'}
+          note={
+            t
+              ? `${formatTokens(t.total.tokens.input + t.total.tokens.output)} tokens${t.total.unknown_cost_spans ? `, ${t.total.unknown_cost_spans} calls with unknown cost` : ''}`
+              : 'unavailable'
+          }
         />
         <Stat
           label="Urgent findings"

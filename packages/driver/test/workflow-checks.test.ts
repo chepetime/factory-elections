@@ -282,6 +282,24 @@ test('the ladder stops when the task budget is spent, and says how to continue',
   assert.match(stored.events!.at(-1)!.message, /limits\.task_budget_usd/);
 });
 
+test('a call with unknown cost does not count as $0: the next budgeted step refuses to start', async () => {
+  const unpriced: Script = async (r) => (
+    await writeFile(join(r.cwd!, 'other.txt'), 'x\n'),
+    { text: 'ok', costUsd: null }
+  );
+  const { driver, store, task, runner } = await setup({
+    classifier: [ready],
+    coder: [unpriced, unpriced, unpriced],
+  });
+  withLimits(driver, { task_budget_usd: 100 });
+  await assert.rejects(
+    driver.run('demo', task.id, { maxAttempts: 3 }),
+    /Task budget cannot be checked .* unknown cost/,
+  );
+  assert.equal(runner.calls.filter((c) => c.tools === 'edit').length, 1);
+  assert.equal((await store.read('demo', task.id)).stage, 'failed');
+});
+
 test('the coder may delegate: it gets a grant for its worktree, and child costs join its attempt', async () => {
   const grants: { label: string; cwd: string; access: string; budgetUsd: number; guard?: unknown }[] = [];
   let revoked = 0;

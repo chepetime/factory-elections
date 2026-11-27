@@ -6,6 +6,8 @@ import {
   protectedPaths,
   taskTitle,
   taskCommandBlockers,
+  hasUncappedUnknownCost,
+  unknownCostCount,
   workSpend,
   withEvent,
   withStage,
@@ -237,9 +239,12 @@ export async function agentRun(
     const session = await d.deps.agentSession(task, reply, fromFactory ? 'factory' : undefined);
     const spent = workSpend(task);
     const left = session.budgetUsd - spent;
-    if (left <= 0) {
+    const unknown = hasUncappedUnknownCost(task);
+    if (left <= 0 || unknown) {
       const work = task.follow_ups?.length ? 'this follow-up' : 'this task';
-      const message = `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
+      const message = unknown
+        ? `${session.name} has ${unknownCostCount(task, 'work')} model call(s) with an unknown cost in ${work} and no token cap covers them, so its budget cannot be checked ($${spent.toFixed(2)} known spend). Add the model to the price table, then reply here to continue.`
+        : `${session.name} spent the budget for ${work} ($${spent.toFixed(2)} of $${session.budgetUsd.toFixed(2)}). Raise ${session.name}'s budget per task in the agent's settings, then reply here to continue.`;
       await d.deps.tasks.write(withStage(task, d.deps.now(), 'blocked', message));
       return await d.deps.tasks.read(project, id);
     }
