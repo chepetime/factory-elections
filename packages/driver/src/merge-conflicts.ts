@@ -1,14 +1,16 @@
 // Merging the base into a task branch. A tool resolves some conflicts better than an agent: a
 // lockfile is regenerated from the merged package files, and a file the repository generates (its
-// profile's `regenerate` rules) is rebuilt by its command, outside the sandbox, so the agent gets only
-// the conflicts that need judgment.
+// profile's `regenerate` rules) is rebuilt by its command, so the agent gets only the conflicts that
+// need judgment. Git runs outside the sandbox (it writes the main repository's .git); the lockfile
+// tool and the rule commands read the coder's files, so they run in the check sandbox.
 import { dirname, join, matchesGlob } from 'node:path';
 import type { RepoProfile } from '@factory/core';
 import type { DriverDeps } from './ports.ts';
+import { checkOptions } from './verification.ts';
 
 /** Lockfiles by file name, with the command that rewrites one from its package files. */
 const LOCKFILES: Record<string, string> = {
-  'pnpm-lock.yaml': 'pnpm install --lockfile-only --ignore-scripts',
+  'pnpm-lock.yaml': 'pnpm install --lockfile-only --ignore-scripts --ignore-pnpmfile',
   'package-lock.json': 'npm install --package-lock-only --ignore-scripts',
 };
 
@@ -20,7 +22,7 @@ const NO_HOOKS = 'git -c core.hooksPath=/dev/null -c user.useConfigOnly=false';
 const files = (list: string[]) => list.map(quote).join(' ');
 
 /**
- * Merges `ref` into the branch in `dir`. Conflicted lockfiles and files matching a `rules` glob are
+ * Merges `ref` into the branch in `dir`. Conflicted lockfiles and files matching a profile's `regenerate` glob are
  * taken from `ref` and regenerated; when they were the only conflicts, the merge is committed.
  * `regenerated` names the files the factory rewrote; a file whose command failed stays in
  * `conflicted` for the agent, with its conflict markers back.
@@ -29,8 +31,18 @@ export async function mergeBase(
   deps: Pick<DriverDeps, 'git' | 'shell' | 'log'>,
   dir: string,
   ref: string,
-  rules: readonly RegenerateRule[] = [],
+  profile: Pick<RepoProfile, 'sandbox' | 'regenerate'> = {},
 ): Promise<{ clean: boolean; conflicted: string[]; regenerated: string[] }> {
+  const rules = profile.regenerate ?? [];
+  const git = (args: string) => deps.shell.runShell(`${NO_HOOKS} ${args}`, { cwd: dir, captureLimit: 4000 });
+  /** Runs a command that reads the coder's files, in the check sandbox; `cwd` defaults to `dir`. */
+  const sandboxed = (command: string, cwd = dir) =>
+    deps.shell.runShell(command, {
+      ...checkOptions(profile, dir),
+      cwd,
+      captureLimit: 4000,
+      timeoutMs: 10 * 60_000,
+    });
   const merge = await deps.git.mergeRef!(dir, ref);
   if (merge.clean) return { ...merge, regenerated: [] };
   const regenerated: string[] = [];
@@ -48,10 +60,9 @@ export async function mergeBase(
       continue;
     }
     // In a merge, "theirs" is `ref`: start from the base's lockfile, then add the branch's changes.
-    const result = await deps.shell.runShell(
-      `git checkout --theirs -- ${quote(file)} && (cd ${quote(dirname(join(dir, file)))} && ${command}) && git add -- ${quote(file)}`,
-      { cwd: dir, captureLimit: 4000, timeoutMs: 10 * 60_000 },
-    );
+    let result = await git(`checkout --theirs -- ${quote(file)}`);
+    if (result.code === 0) result = await sandboxed(command, dirname(join(dir, file)));
+    if (result.code === 0) result = await git(`add -- ${quote(file)}`);
     if (result.code === 0) regenerated.push(file);
     else {
       deps.log(`Could not regenerate ${file}; it goes to the agent: ${result.stderr.trim().slice(-500)}`);
@@ -61,10 +72,8 @@ export async function mergeBase(
   // Once per rule, after all its files hold the base's copy: the command sees the merged sources.
   for (const [rule, matched] of byRule) {
     const run = { cwd: dir, captureLimit: 4000 };
-    const result = await deps.shell.runShell(
-      `git checkout --theirs -- ${files(matched)} && (${rule.command})`,
-      { ...run, timeoutMs: 10 * 60_000 },
-    );
+    let result = await git(`checkout --theirs -- ${files(matched)}`);
+    if (result.code === 0) result = await sandboxed(rule.command);
     let why = result.code === 0 ? '' : (result.stderr.trim() || result.stdout.trim()).slice(-500);
     if (!why) {
       // The command may touch only its own files: anything else it rewrote would leave the worktree

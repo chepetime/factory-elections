@@ -12,15 +12,26 @@ export function pnpmLockDirs(uid: number = process.getuid?.() ?? 0): string[] {
   return ['/private/tmp', '/tmp'].map((dir) => `${dir}/pnpm-store-operation-locks-${uid}`);
 }
 
-/** Credential locations a sandboxed run must not read. */
-export function sandboxDenyRead(home: string): string[] {
+/**
+ * Credential locations a sandboxed run must not read: the user's own, and the files in the factory
+ * data roots that let a command act as the backend (its token, the storage and receipt keys).
+ */
+export function sandboxDenyRead(home: string, source: NodeJS.ProcessEnv = process.env): string[] {
   return [
     `${home}/.ssh`,
     `${home}/.npmrc`,
     `${home}/.aws`,
     `${home}/.config/gh`,
     `${home}/Library/Keychains`,
+    ...factorySecretFiles(home, source),
   ];
+}
+
+/** The credential files in each factory data root. */
+export function factorySecretFiles(home: string, source: NodeJS.ProcessEnv = process.env): string[] {
+  return factoryDataRoots(home, source).flatMap((root) =>
+    ['backend-token', 'storage.json', 'receipt-key'].map((file) => `${root}/${file}`),
+  );
 }
 
 /** Where a sandboxed run may write besides its working directory: package-manager caches. */
@@ -78,7 +89,7 @@ export function checkSandbox(
   source: NodeJS.ProcessEnv = process.env,
 ): CheckSandbox {
   return {
-    denyRead: sandboxDenyRead(home),
+    denyRead: sandboxDenyRead(home, source),
     hideRoots: factoryDataRoots(home, source),
     reopen: [cwd],
     allowWrite: [cwd, ...(tmpDir ? [tmpDir] : []), ...sandboxAllowWrite(home, extra?.allow_write ?? [])],

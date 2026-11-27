@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import type { HeadlessTurn } from '@factory/core';
+import { factorySecretFiles, type HeadlessTurn } from '@factory/core';
 import { claudeCli, claudeTurnOptions, runClaudeTurn, CLAUDE_DELEGATE_TOOL } from '../src/index.ts';
 
 const turn: HeadlessTurn = {
@@ -168,6 +168,7 @@ test('a review turn runs in an OS sandbox: no credential stores, writes only to 
     join(home, '.aws'),
     join(home, '.config', 'gh'),
     join(home, 'Library', 'Keychains'),
+    ...factorySecretFiles(home),
   ]);
   assert.deepEqual(sandbox.filesystem?.allowWrite, reviewTurn.sandbox!.allowWrite);
   assert.deepEqual(sandbox.network?.allowedDomains, [], 'no network unless the turn names domains');
