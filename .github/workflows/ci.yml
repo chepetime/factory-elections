@@ -8,10 +8,28 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  checks:
-    name: checks
+  # Each part runs on its own runner; `checks` below is the one result branch protection requires.
+  validate:
+    name: ${{ matrix.part }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      matrix:
+        include:
+          # Tool caches skip only unchanged inputs (prettier by content, tsc by file hash). Tests are never cached.
+          - part: node
+            cache: node_modules/.cache/factory-ci
+            cache-key: ci-node
+          - part: web-check
+            cache: apps/web/tsconfig.tsbuildinfo
+            cache-key: ci-web-check
+          # Same key family as the delivery build, so a PR starts from the newest main compiler cache.
+          - part: web-build
+            cache: apps/web/.next/cache
+            cache-key: next
+    env:
+      BASE: ${{ github.event.pull_request.base.sha || '--all' }}
+      PART: ${{ matrix.part }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,24 +39,50 @@ jobs:
           node-version-file: .node-version
       - name: Select affected workspaces
         id: plan
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || '--all' }}
         run: node scripts/ci-plan.mjs "$BASE" HEAD
+      - name: Decide what this part runs
+        id: part
+        env:
+          CODE: ${{ steps.plan.outputs.code }}
+          WEB: ${{ steps.plan.outputs.web }}
+        # The node part always runs the repository rules (Node built-ins only); it installs for code changes.
+        run: |
+          if [ "$PART" = node ]; then run=true; install=$CODE; else run=$WEB; install=$WEB; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "install=$install" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v4
-        if: steps.plan.outputs.code == 'true'
+        if: steps.part.outputs.install == 'true'
       - uses: actions/setup-node@v4
-        if: steps.plan.outputs.code == 'true'
+        if: steps.part.outputs.install == 'true'
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-        if: steps.plan.outputs.code == 'true'
+        if: steps.part.outputs.install == 'true'
+      - uses: actions/cache@v4
+        if: steps.part.outputs.install == 'true'
+        with:
+          path: ${{ matrix.cache }}
+          key: ${{ matrix.cache-key }}-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: ${{ matrix.cache-key }}-${{ runner.os }}-node26-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Validate affected code
-        if: steps.plan.outputs.code == 'true'
+        if: steps.part.outputs.run == 'true'
+        run: node scripts/ci-run.mjs "$BASE" HEAD --part="$PART"
+      - name: Nothing to check
+        if: steps.part.outputs.run != 'true'
+        run: echo "No inputs for the $PART part changed; skipped."
+  checks:
+    name: checks
+    needs: validate
+    # always(): a failed or cancelled part must fail this check, never skip it.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: All parts passed
         env:
-          BASE: ${{ github.event.pull_request.base.sha || '--all' }}
-        run: node scripts/ci-run.mjs "$BASE" HEAD
-      - name: Documentation-only result
-        if: steps.plan.outputs.code == 'false'
-        run: echo 'No application inputs changed; tests skipped.'
+          RESULT: ${{ needs.validate.result }}
+        run: |
+          echo "validate: $RESULT"
+          test "$RESULT" = success
