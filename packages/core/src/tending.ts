@@ -173,6 +173,14 @@ export function nextTendAction(
     const rerunnable = failed.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
     const fixable = failed.filter((c) => !rerunnable.includes(c));
     if (!fixable.length) return { kind: 'rerun', checks: rerunnable };
+    // The same fix on the same head that changed nothing never runs twice: only a new head, which
+    // a person or a push brings, can change the outcome. Tending stops and the PR goes to the inbox.
+    const idle = record.fixes.findLast((f) => f.kind === 'fix-ci' && f.sha === pr.head_sha);
+    if (idle?.outcome === 'no-change')
+      return {
+        kind: 'stop',
+        reason: `fix-ci changed nothing on ${pr.head_sha.slice(0, 12)} (${fixable.map((c) => c.name).join(', ')})${idle.note ? `: ${idle.note}` : ''}`,
+      };
     return agentWork({ kind: 'fix-ci', checks: fixable });
   }
   if (pr.mergeable === 'UNKNOWN') return { kind: 'wait', reason: 'GitHub is still computing mergeability' };
