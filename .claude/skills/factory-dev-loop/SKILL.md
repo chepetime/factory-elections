@@ -26,6 +26,8 @@ Each step names the command. Do not rebuild these by hand.
 - Then `pnpm check` once. `pnpm lint` includes `scripts/unused-files.mjs`: delete a file nobody imports.
 - `pnpm lint` also runs the file-size ratchet (`pnpm check:file-size`): production files stay at or under 1000 lines, and files listed in `file-size-baseline.json` may only shrink. When it fails, move a cohesive part of the file into its own module. Never raise the baseline; after a rename, move its entry by hand.
 
+- Git hooks (`pnpm run setup` sets `core.hooksPath scripts/git-hooks`): pre-commit runs Prettier and oxlint on staged files and blocks. Do not use `--no-verify`; only the factory's own commits do. After a commit lands on `main`, post-commit checks it in a detached worktree and appends to `$FACTORY_ROOT/logs/main-checks.jsonl`; the SessionStart hook prints the last result. See `docs/agents/ci.md`.
+
 ## 4. See it
 
 - Against the main stack: `pnpm shot <path> [--selector '#panel-…']`. It prints the PNG path and any alert text.

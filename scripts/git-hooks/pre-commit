@@ -1,0 +1,4 @@
+#!/bin/sh
+# Thin launcher: the logic lives in the checked-in runner, so the hook changes with the checkout.
+dir=$(cd "$(dirname "$0")" && pwd)
+exec node "$dir/../run-pre-commit.mjs" "$@"

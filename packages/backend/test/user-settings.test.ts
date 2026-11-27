@@ -33,6 +33,8 @@ test('the environment reads git, gh and each CLI, and marks a missing CLI', asyn
     'claude --version': { code: 0, stdout: '2.1.331 (Claude Code)\n', stderr: '' },
     'codex --version': { code: 127, stdout: '', stderr: 'spawn codex ENOENT' },
     'pi --version': { code: 0, stdout: '1.6.0\n', stderr: '' },
+    'claude auth status': { code: 0, stdout: '{"loggedIn":true}\n', stderr: '' },
+    'codex login status': { code: 127, stdout: '', stderr: 'spawn codex ENOENT' },
     'git -C /work config --local user.email': { code: 0, stdout: 'ada@work.example\n', stderr: '' },
     'git -C /home config --local user.email': { code: 1, stdout: '', stderr: '' },
     'pi --list-models': {
@@ -79,4 +81,151 @@ test('a single email saved before the list becomes the first of the emails', asy
   await user.save({ json: JSON.stringify({ identity: { email: 'ada@example.com' } }) });
   assert.deepEqual((await user.get()).identity.emails, ['ada@example.com']);
   await assert.rejects(user.save({ json: JSON.stringify({ identity: { emails: ['not-an-email'] } }) }));
+});
+
+type Answer = { code: number; stdout: string; stderr: string; stopped?: 'timeout' };
+const ok = (stdout = ''): Answer => ({ code: 0, stdout, stderr: '' });
+const missing: Answer = { code: 127, stdout: '', stderr: 'spawn ENOENT' };
+const PI_TABLE =
+  'provider  model  context\nanthropic  claude-haiku-5-5  200K\nopenai-codex  gpt-6-sol  400K\n';
+
+/** A service whose CLIs answer from `answers`; every command it ran lands in `calls`. */
+function harness(
+  answers: Record<string, Answer>,
+  options: { env?: NodeJS.ProcessEnv; codexModel?: string } = {},
+) {
+  const calls: string[] = [];
+  const dir = join(tmpdir(), 'factory-user-checks');
+  const user = new UserSettingsService(dir, storageFor(dir), {
+    exec: async (command, args) => {
+      const key = [command, ...args].join(' ');
+      calls.push(key);
+      return answers[key] ?? ok();
+    },
+    env: options.env ?? {},
+    readCodexConfig: async () => (options.codexModel ? `model = "${options.codexModel}"\n` : undefined),
+  });
+  return { user, calls };
+}
+const check = (
+  env: Awaited<ReturnType<UserSettingsService['environment']>>,
+  p: 'claude' | 'codex' | 'pi',
+  n: string,
+) => env.providers[p].checks.find((c) => c.name === n)!;
+
+test('signed in passes when each CLI reports a login, without calling a model', async () => {
+  const { user, calls } = harness({
+    'claude --version': ok('2.1.331 (Claude Code)'),
+    'claude auth status': ok('{"loggedIn":true}'),
+    'codex --version': ok('codex-cli 0.9.0'),
+    'codex login status': { code: 0, stdout: '', stderr: 'Logged in using ChatGPT\n' },
+    'pi --version': ok('1.6.0'),
+    'pi --list-models': ok(PI_TABLE),
+  });
+  const env = await user.environment();
+  for (const p of ['claude', 'codex', 'pi'] as const) {
+    assert.equal(check(env, p, 'installed').ok, true);
+    assert.equal(check(env, p, 'signed_in').ok, true);
+    assert.match(check(env, p, 'signed_in').checked_at, /^\d{4}-\d\d-\d\dT/);
+  }
+  assert.equal(check(env, 'codex', 'signed_in').detail, 'Logged in using ChatGPT');
+  assert.equal(check(env, 'pi', 'signed_in').detail, '2 models available');
+  // Nothing that prompts a model ran: no -p, no `codex exec`.
+  assert.deepEqual(
+    calls.filter((c) => / -p /.test(c) || c.startsWith('codex exec')),
+    [],
+  );
+});
+
+test('signed in fails with the CLI text and a login fix', async () => {
+  const { user } = harness({
+    'claude --version': ok('2.1.331'),
+    'claude auth status': { code: 1, stdout: '', stderr: 'Not logged in. Run claude auth login.' },
+    'codex --version': ok('0.9.0'),
+    'codex login status': { code: 1, stdout: '', stderr: 'Not logged in' },
+    'pi --version': ok('1.6.0'),
+    'pi --list-models': ok('provider model\n'),
+  });
+  const env = await user.environment();
+  assert.equal(check(env, 'claude', 'signed_in').ok, false);
+  assert.equal(check(env, 'claude', 'signed_in').error, 'Not logged in. Run claude auth login.');
+  assert.equal(check(env, 'claude', 'signed_in').fix, 'claude auth login');
+  assert.equal(check(env, 'codex', 'signed_in').error, 'Not logged in');
+  assert.equal(check(env, 'codex', 'signed_in').fix, 'codex login');
+  assert.equal(check(env, 'pi', 'signed_in').ok, false);
+  assert.match(check(env, 'pi', 'signed_in').fix!, /API key/);
+});
+
+test('ANTHROPIC_API_KEY counts as Claude signed in and skips auth status', async () => {
+  const { user, calls } = harness(
+    { 'claude --version': ok('2.1.331'), 'claude auth status': { code: 1, stdout: '', stderr: 'no' } },
+    { env: { ANTHROPIC_API_KEY: 'sk-test' } },
+  );
+  const env = await user.environment();
+  assert.equal(check(env, 'claude', 'signed_in').ok, true);
+  assert.equal(check(env, 'claude', 'signed_in').detail, 'ANTHROPIC_API_KEY is set');
+  assert.ok(!calls.includes('claude auth status'));
+});
+
+test('a CLI that is not installed fails both free checks with the install fix', async () => {
+  const { user } = harness({
+    'claude --version': missing,
+    'claude auth status': missing,
+    'codex --version': missing,
+    'codex login status': missing,
+    'pi --version': missing,
+    'pi --list-models': missing,
+  });
+  const env = await user.environment();
+  assert.equal(check(env, 'claude', 'installed').ok, false);
+  assert.equal(check(env, 'claude', 'installed').fix, 'npm i -g @anthropic-ai/claude-code');
+  assert.equal(check(env, 'claude', 'installed').error, 'spawn ENOENT');
+  assert.equal(check(env, 'claude', 'signed_in').ok, false);
+  assert.equal(check(env, 'claude', 'signed_in').fix, 'npm i -g @anthropic-ai/claude-code');
+  assert.equal(check(env, 'codex', 'installed').fix, 'npm i -g @openai/codex');
+  assert.equal(check(env, 'pi', 'signed_in').ok, false);
+});
+
+test('the responds test runs one one-word call on the cheapest model of each provider', async () => {
+  const { user, calls } = harness(
+    {
+      'claude -p Reply with one word: ok --model claude-haiku-5-5': ok('ok\n'),
+      'codex exec --skip-git-repo-check -m gpt-6-mini Reply with one word: ok': ok('ok\n'),
+      'pi --list-models': ok(PI_TABLE),
+      'pi -p Reply with one word: ok --model anthropic/claude-haiku-5-5': ok('Ok'),
+    },
+    { codexModel: 'gpt-6-mini' },
+  );
+  for (const p of ['claude', 'codex', 'pi']) {
+    const result = await user.testProvider(p);
+    assert.equal(result.name, 'responds');
+    assert.equal(result.ok, true, p);
+    assert.match(result.cost_note!, /fraction of a cent/);
+  }
+  assert.equal(calls.filter((c) => / -p /.test(c) || c.startsWith('codex exec')).length, 3);
+  await assert.rejects(user.testProvider('gemini'));
+});
+
+test('a failed responds test returns the error text unchanged, with a fix', async () => {
+  const text = 'API Error: 401 {"type":"authentication_error"}\n  at line 2';
+  const { user } = harness({
+    'claude -p Reply with one word: ok --model claude-haiku-5-5': { code: 1, stdout: '', stderr: text },
+    'codex exec --skip-git-repo-check Reply with one word: ok': missing,
+    'pi --list-models': ok(PI_TABLE),
+    'pi -p Reply with one word: ok --model anthropic/claude-haiku-5-5': {
+      code: 1,
+      stdout: '',
+      stderr: '',
+      stopped: 'timeout',
+    },
+  });
+  const claude = await user.testProvider('claude');
+  assert.equal(claude.ok, false);
+  assert.equal(claude.error, text);
+  assert.equal(claude.fix, 'claude auth login');
+  const codex = await user.testProvider('codex');
+  assert.equal(codex.fix, 'npm i -g @openai/codex');
+  const pi = await user.testProvider('pi');
+  assert.equal(pi.ok, false);
+  assert.match(pi.error!, /No answer within 60 seconds/);
 });
