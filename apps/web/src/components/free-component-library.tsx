@@ -9,10 +9,10 @@ import { DecisionInbox as ClassicDecisionInbox } from '@factory/affect-ui/compon
 import { SegmentedControl as CleanSegmentedControl } from '@factory/affect-ui/components/segmented-control-clean';
 import { SegmentedControl as ClassicSegmentedControl } from '@factory/affect-ui/components/segmented-control';
 import inventory from '../../../../resources/affect-ui-free-components.json';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { Badge } from '@factory/ui/components/badge';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { cn } from '@factory/ui/lib/utils';
 
 type LibraryItem = (typeof inventory.items)[number];
 type LibraryStyle = 'clean' | 'classic';

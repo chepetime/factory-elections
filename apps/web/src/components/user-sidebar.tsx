@@ -13,7 +13,7 @@ import {
 import { usePathname } from 'next/navigation';
 import { SidebarLink } from '@/components/sidebar-link';
 import { useUserPreferences } from '@/components/user-preferences';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export const USER_VIEWS = [
   { group: 'My account', href: '/user', label: 'Profile', icon: UserRound },

@@ -23,8 +23,8 @@ import { useConfirm } from '@/components/confirm-dialog';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { ChatScroll } from '@/components/task-chat';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { cn } from '@factory/ui/lib/utils';
 
 type ChatLine = {
   id: string;

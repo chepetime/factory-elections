@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { InboxNotifier } from '@/components/inbox-notifier';
-import { Toaster } from '@/components/ui/toast';
+import { Toaster } from '@factory/ui/components/toast';
 import { UserPreferencesProvider } from '@/components/user-preferences';
 import { DEFAULT_PREFERENCES } from '@/lib/user-preferences';
 import { userSettings } from '@/lib/user-settings';

@@ -1,7 +1,7 @@
 'use client';
 // A form bound to a server action, showing pending state and the action's result or error.
 import { useActionState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { ActionState } from '@/app/actions';
 
 export function ActionForm({

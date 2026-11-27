@@ -8,7 +8,7 @@ import { AgentAvatar } from '@/components/agent-avatar';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
 import { archiveIssue, createIssue, moveIssue, refreshReviews } from '@/app/actions';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import {
   dropAction,
   ISSUE_STATUSES,
@@ -24,8 +24,8 @@ import {
 } from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
 import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
-import { toast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { toast } from '@factory/ui/components/toast';
+import { cn } from '@factory/ui/lib/utils';
 
 export type BoardIssue = {
   key: string;

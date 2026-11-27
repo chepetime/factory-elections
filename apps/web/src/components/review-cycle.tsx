@@ -10,7 +10,7 @@ import {
   ReviewDecisionButtons,
   StartReviewButton,
 } from '@/components/review-cycle-actions';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const TONE: Record<string, string> = {
   approve: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',

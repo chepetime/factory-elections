@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { ThoughtLine } from '@/components/bits/thought-line';
 import { LiveOutput } from '@/components/live-output';
 import { livePollOutcome, runStatus, type LivePoll, type RunActivity } from '@/lib/task-chat';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 interface LiveState {
   logTail?: string;

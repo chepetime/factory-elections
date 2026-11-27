@@ -8,8 +8,8 @@ import { archiveIssue, deleteIssue } from '@/app/actions';
 import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
 import { LocalTime } from '@/components/local-time';
 import { StatusLabel } from '@/components/task-status';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { cn } from '@factory/ui/lib/utils';
 
 export type ArchivedTask = {
   key: string;

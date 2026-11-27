@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@factory/ui/components/badge';
 import { stageLabel, type Stage } from '@factory/core';
 
 const TONE: Record<Stage, 'default' | 'secondary' | 'destructive' | 'outline'> = {

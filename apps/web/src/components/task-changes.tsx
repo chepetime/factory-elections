@@ -3,7 +3,7 @@
 import { ChevronRight } from 'lucide-react';
 import { DiffCodeBlock } from '@/components/diff-code-block';
 import { diffFiles, type DiffFile } from '@/lib/diff-files';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const STATUS: Record<DiffFile['status'], { label: string; tone: string }> = {
   added: { label: 'Added', tone: 'text-emerald-700 dark:text-emerald-400' },

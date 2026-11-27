@@ -1,7 +1,7 @@
 'use client';
 // The memory page's buttons: each runs a server action and shows the backend's error; Remove asks first.
 import { useState, useTransition } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import { useConfirm } from '@/components/confirm-dialog';
 
 function useAction(run: () => Promise<{ error?: string }>) {

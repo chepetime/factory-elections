@@ -2,8 +2,8 @@
 import { startTransition, useActionState, useState, type FormEvent } from 'react';
 import { featureGateAction, type ActionState } from '@/app/actions';
 import { useConfirm, type ConfirmRequest } from '@/components/confirm-dialog';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Textarea } from '@factory/ui/components/textarea';
 
 /** The feature commands the page can send; the backend lists which ones a feature accepts now. */
 export type FeatureGateAction =

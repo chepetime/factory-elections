@@ -21,9 +21,9 @@ import { createReviewTicket, removeReview, startReviews, stopReview } from '@/ap
 import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
 import { LatticeLoader } from '@/components/bits/lattice-loader';
 import { Markdown } from '@/components/markdown';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { ReviewList, ReviewRow } from '@/lib/reviews';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type Mode = 'review' | 'rereview';
 type Notice = { kind: 'error' | 'status'; text: string } | undefined;

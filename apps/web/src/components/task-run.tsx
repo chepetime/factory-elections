@@ -29,15 +29,15 @@ import { LiveRun } from '@/components/live-run';
 import { Markdown } from '@/components/markdown';
 import { OutputBlock } from '@/components/output-block';
 import { TaskChatComposer } from '@/components/task-chat';
-import { buttonVariants } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { buttonVariants } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { listAgents } from '@/lib/agents';
 import { RunWatch } from '@/components/run-watch';
 import { backgroundRun, readDiff, readTaskControls, type Gate } from '@/lib/factory';
 import { pageVersion, taskPhase } from '@/lib/live-run';
 import { lastStepId, stageTimeline, taskConversation, type AgentStep, type ChatEntry } from '@/lib/task-chat';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const SEVERITY: Record<string, string> = {
   blocking: 'text-destructive font-semibold',

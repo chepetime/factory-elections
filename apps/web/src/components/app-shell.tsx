@@ -48,7 +48,7 @@ import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { UserSidebar } from '@/components/user-sidebar';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 interface ProjectSummary {
   name: string;

@@ -11,9 +11,9 @@ import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { ReviewReport } from '@/components/review-report';
 import { ChatScroll } from '@/components/task-chat';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { ReviewChatEntry, ReviewDetail } from '@/lib/reviews';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 function UserBubble({ entry }: { entry: Extract<ReviewChatEntry, { role: 'user' }> }) {
   return (

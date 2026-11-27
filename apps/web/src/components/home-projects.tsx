@@ -11,7 +11,7 @@ import { ReflectiveCard } from '@/components/backdrops/reflective-card';
 import { HomeBackground } from '@/components/home-background';
 import { LocalTime } from '@/components/local-time';
 import type { ProjectStats } from '@/lib/workspace-home';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 /** One project's card data, read on the server. */
 export interface HomeCard {

@@ -5,8 +5,8 @@
 // a known agent, so it reads as a chip while you type.
 import { Fragment, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from 'react';
 import { insertMention, mentionAt } from '@factory/core';
-import { Textarea, textareaBase } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { Textarea, textareaBase } from '@factory/ui/components/textarea';
+import { cn } from '@factory/ui/lib/utils';
 
 export interface MentionAgent {
   id: string;

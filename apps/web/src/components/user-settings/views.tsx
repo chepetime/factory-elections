@@ -3,9 +3,9 @@
 // rules. Each control saves its section as soon as it changes; text saves when the field loses focus.
 import { Plus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Textarea } from '@factory/ui/components/textarea';
 import { NOTIFY_KINDS } from '@factory/core';
 import type { UserEnvironment, UserSettings } from '@/lib/user-settings';
 import {

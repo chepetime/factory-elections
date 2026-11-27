@@ -20,7 +20,7 @@ import { STATUS } from '@/components/task-status';
 import { modelName } from '@/lib/agent-models';
 import { AGENT_FACTORY_INSTRUCTIONS, agentStats, type AgentRunLine, type AgentStats } from '@/lib/agents';
 import { isProjectName, listProjects } from '@/lib/factory';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export const dynamic = 'force-dynamic';
 

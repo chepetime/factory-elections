@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { Braces, Check, FlaskConical, Play, RotateCcw, ShieldCheck, X, Zap } from 'lucide-react';
 import { AgentFindings, type Finding, type FindingAgent } from '@/components/agent-findings';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Badge } from '@factory/ui/components/badge';
+import { Button } from '@factory/ui/components/button';
+import { Card } from '@factory/ui/components/card';
 
 const AGENTS: FindingAgent[] = [
   {

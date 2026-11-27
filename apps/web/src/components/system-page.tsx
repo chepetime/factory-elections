@@ -1,7 +1,7 @@
 // Shared parts of the Functions and System pages: a header, number tiles, a table frame, and the
 // empty and error states. Server components; no state.
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export function PageHeader({
   title,

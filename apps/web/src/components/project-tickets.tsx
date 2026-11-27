@@ -3,7 +3,7 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { TicketList } from '@/lib/tickets';
 
 export function ProjectTickets({

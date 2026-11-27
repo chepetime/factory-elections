@@ -37,7 +37,7 @@ import { TaskChanges } from '@/components/task-changes';
 import { paneWidth } from '@/lib/pane-width';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { clip, projectLabel } from '@/lib/page-title';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 import { Feed, feedItems, type Authors } from '@/components/task-feed';
 import { AccessList } from '@/components/task-access';
 import { prLabel, RunRow, totalCost } from '@/components/task-runs';

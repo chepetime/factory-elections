@@ -9,7 +9,7 @@ import {
   CHAT_DEMO_FOLDERS,
 } from '@/components/demos/chat-composer-fixtures';
 import { ChatComposer, type ChatAttachment, type ChatMessageDetails } from '@/components/chat-composer';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 
 const TRANSCRIPT = 'Summarize the latest findings and suggest the next step.';
 

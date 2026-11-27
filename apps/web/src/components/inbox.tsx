@@ -3,9 +3,9 @@ import Link from 'next/link';
 import { useActionState } from 'react';
 import { dismissInboxItem, type ActionState } from '@/app/actions';
 import { LocalTime } from '@/components/local-time';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { InboxItem } from '@/lib/inbox';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 // Kinds come from packages/core/src/inbox.ts. The dot marks how urgent the item is.
 const KIND: Record<string, { label: string; dot: string }> = {

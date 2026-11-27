@@ -9,7 +9,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { IssueStatus } from '@factory/core';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 /** Board columns and task statuses: one icon and color each, shared by the board and the task page. */
 export const STATUS: Record<IssueStatus, { label: string; icon: LucideIcon; tone: string }> = {

@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { ChevronRight, Folder, Paperclip, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import { ComposerMenu, composerMenuRow } from '@/components/composer-menu';
 
 export type ChatAddAction = {

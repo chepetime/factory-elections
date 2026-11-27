@@ -12,10 +12,10 @@ import {
   ScanSearch,
   X,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { Badge } from '@factory/ui/components/badge';
+import { Button } from '@factory/ui/components/button';
+import { Card } from '@factory/ui/components/card';
+import { cn } from '@factory/ui/lib/utils';
 
 export type FindingAgent = {
   id: string;

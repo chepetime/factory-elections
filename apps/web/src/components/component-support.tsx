@@ -1,6 +1,6 @@
 import { ArrowUpRight } from 'lucide-react';
 import support from '../../../../resources/frontend-component-support.json';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@factory/ui/components/badge';
 
 export function ComponentSupport() {
   const implemented = support.items.filter((item) => item.status === 'implemented').length;

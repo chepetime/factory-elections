@@ -5,10 +5,10 @@ import { GitMerge, MessageSquarePlus } from 'lucide-react';
 import { useActionState, useId, useState } from 'react';
 import { conflictFollowUpNote } from '@factory/core';
 import { followUpIssue, type ActionState } from '@/app/actions';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { Label } from '@factory/ui/components/label';
+import { Textarea } from '@factory/ui/components/textarea';
+import { cn } from '@factory/ui/lib/utils';
 
 export function FollowUpForm({
   project,

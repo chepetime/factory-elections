@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { stageLabel, statusFromStage, type TaskRecord } from '@factory/core';
 import { STATUS } from '@/components/task-status';
 import { money } from '@/components/task-run';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export function prLabel(url: string): string {
   const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);

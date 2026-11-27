@@ -4,7 +4,7 @@
 import { Check, Copy } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ReviewPayload } from '@/lib/reviews';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type Finding = ReviewPayload['findings'][number];
 

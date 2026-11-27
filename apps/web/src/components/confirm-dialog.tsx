@@ -3,7 +3,7 @@
 // `dialog`, then `if (await confirm({...}))`. Escape, the backdrop and Cancel all answer no.
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 
 export type ConfirmRequest = {
   title: string;

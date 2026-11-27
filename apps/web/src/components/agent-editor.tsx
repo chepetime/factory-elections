@@ -8,11 +8,11 @@ import { useEffect, useId, useState, useTransition, type ReactNode } from 'react
 import { archiveAgent, startChat, updateAgent, type AgentActionState } from '@/app/agent-actions';
 import { updateIssue } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Textarea } from '@factory/ui/components/textarea';
 import { AGENT_MODELS, EFFORTS } from '@/lib/agent-models';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const select =
   'h-9 rounded-lg border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';

@@ -5,9 +5,9 @@ import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
 import { createAgent } from '@/app/agent-actions';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Textarea } from '@factory/ui/components/textarea';
 import { AGENT_MODELS } from '@/lib/agent-models';
 
 const field = 'flex flex-col gap-1.5 text-sm';

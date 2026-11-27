@@ -333,6 +333,9 @@ importers:
       '@factory/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@factory/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       ai:
         specifier: 7.0.182
         version: 7.0.182(zod@4.6.7)
@@ -708,6 +711,46 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  packages/ui:
+    dependencies:
+      '@base-ui/react':
+        specifier: ^1.9.0
+        version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      cn:
+        specifier: ^0.5.2
+        version: 0.5.2
+      lucide-react:
+        specifier: ^1.72.0
+        version: 1.72.0(@types/react@19.3.0)(react@19.3.1)
+      shadcn:
+        specifier: ^4.23.0
+        version: 4.23.0
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
+    devDependencies:
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+      tailwindcss:
+        specifier: 4.3.5
+        version: 4.3.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 

@@ -18,13 +18,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState, useTransition, type ReactNode } from 'react';
 import { detectProjectSettings, saveProjectSettings } from '@/app/actions';
 import { SettingsDialogTitle, useSettingsDialog } from '@/components/settings-dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Label } from '@factory/ui/components/label';
+import { Textarea } from '@factory/ui/components/textarea';
 import { defaultPrefix, issueKey, projectAccent } from '@factory/core';
 import type { ProjectSettings, SettingsProposal } from '@/lib/settings';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type TaskManager = ProjectSettings['task_manager'];
 const KINDS: { value: TaskManager['kind']; label: string }[] = [

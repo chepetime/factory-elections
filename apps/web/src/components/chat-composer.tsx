@@ -19,9 +19,9 @@ import { ComposerMenu, composerMenuRow as menuRow } from '@/components/composer-
 import { ChatComposerAddMenu, type ChatAddAction } from '@/components/chat-composer-add-menu';
 import { ApprovalModePicker, type ApprovalMode } from '@/components/approval-mode-picker';
 import { useUserPreferences } from '@/components/user-preferences';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { Textarea } from '@factory/ui/components/textarea';
+import { cn } from '@factory/ui/lib/utils';
 
 export type ChatModel = {
   id: string;

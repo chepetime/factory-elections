@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const SIZE = { sm: 'size-5 text-xs', md: 'size-8 text-base', lg: 'size-16 text-3xl' } as const;
 

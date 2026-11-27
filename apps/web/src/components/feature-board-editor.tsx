@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import type { Ticket } from '@factory/core';
 import { FeatureGate } from '@/components/feature-gate';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Textarea } from '@factory/ui/components/textarea';
 
 type Draft = Pick<Ticket, 'id' | 'title' | 'description' | 'size'> & {
   /** One acceptance check per line. */

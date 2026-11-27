@@ -9,10 +9,10 @@ import { Markdown } from '@/components/markdown';
 import { useConfirm } from '@/components/confirm-dialog';
 import { decideDrop, followUpHref, MoveMenu } from '@/components/task-board';
 import { StatusLabel } from '@/components/task-status';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Textarea } from '@factory/ui/components/textarea';
 import { MentionTextarea, type MentionAgent } from '@/components/mention-textarea';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export function useSave(project: string, key: string) {
   const router = useRouter();

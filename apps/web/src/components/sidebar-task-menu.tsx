@@ -8,9 +8,9 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { archiveIssue, deleteIssue, updateIssue } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { cn } from '@factory/ui/lib/utils';
 
 const item =
   'flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted';

@@ -3,7 +3,7 @@
 import { useReducer } from 'react';
 import { Check, RotateCcw } from 'lucide-react';
 import { AgentCheckpoints, type Checkpoint } from '@/components/agent-checkpoints';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 
 const INITIAL: Checkpoint[] = [
   { id: 'brief', title: 'Read the task and repository guidelines', at: 8_000, cost: 0.02 },

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useId, useRef, useState, useTransition, type ReactNode } from 'react';
 import { updateUserSettings } from '@/app/actions';
 import type { UserSettings } from '@/lib/user-settings';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type Section = 'identity' | 'preferences' | 'tasks' | 'chat' | 'notifications' | 'providers' | 'rules';
 export type SaveStatus =

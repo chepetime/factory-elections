@@ -8,7 +8,7 @@ import { OutputBlock } from '@/components/output-block';
 import { ProfileCheckButton } from '@/components/profile-check-button';
 import type { ProfileCheckState } from '@/lib/profile-check';
 import { shortDuration } from '@/lib/task-chat';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const OUTCOME = {
   passed: { label: 'Passed', icon: CircleCheck, className: 'text-green-700 dark:text-green-400' },

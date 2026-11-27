@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { ReviewOutcome } from '@factory/core';
 import { LocalTime } from '@/components/local-time';
 import { DecisionChip } from '@/components/review-cycle';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const SEVERITY_ORDER = ['critical', 'must-fix', 'blocking', 'major', 'should-fix', 'minor', 'nit', 'note'];
 const SEVERITY_TONE: Record<string, string> = {

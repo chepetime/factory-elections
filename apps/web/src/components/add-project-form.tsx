@@ -2,9 +2,9 @@
 // Registers a local repository as a project. The name follows the folder name until you edit it.
 import { useActionState, useId, useState } from 'react';
 import { addProject, type ActionState } from '@/app/actions';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Label } from '@factory/ui/components/label';
 
 /** A valid project name from the last path segment, e.g. `/code/My App` → `My-App`. */
 export function suggestName(repo: string): string {

@@ -14,7 +14,7 @@ import type {
   NodeKind,
   NodeStatus,
 } from '@/lib/network';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const POLL_MS = 5000;
 /** The drawing's own coordinates; the box keeps this aspect, so the curves meet the cards. */

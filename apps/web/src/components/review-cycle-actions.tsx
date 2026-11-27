@@ -4,7 +4,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { decideReview, moveIssue, restartSelfReview } from '@/app/actions';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 
 function useAct() {
   const router = useRouter();

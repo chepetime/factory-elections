@@ -2,8 +2,8 @@
 
 import { Menu } from '@base-ui/react/menu';
 import { Check, CircleCheck, Hand, ShieldAlert } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Button } from '@factory/ui/components/button';
+import { cn } from '@factory/ui/lib/utils';
 
 export type ApprovalMode = 'request' | 'auto' | 'full';
 

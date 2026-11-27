@@ -4,9 +4,9 @@
 import { CircleCheck, CircleX, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import { summarize, type CheckGroup, type CheckStatus, type StatusReport } from '@/lib/status-checks';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const GROUPS: { group: CheckGroup; hint: string }[] = [
   { group: 'Environment', hint: 'Tools the factory runs on this machine' },

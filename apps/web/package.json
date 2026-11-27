@@ -37,6 +37,7 @@
     "@factory/affect-ui": "workspace:*",
     "@factory/backend-client": "workspace:*",
     "@factory/core": "workspace:*",
+    "@factory/ui": "workspace:*",
     "ai": "7.0.182",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",

@@ -6,9 +6,9 @@ import { useState, useTransition } from 'react';
 import { approveProfile, draftProfile, type ActionState } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
 import { LatticeLoader } from '@/components/bits/lattice-loader';
-import { Button } from '@/components/ui/button';
+import { Button } from '@factory/ui/components/button';
 import type { ProfileStatus } from '@/lib/settings';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export type ProfileState = ProfileStatus;
 type Summary = Extract<ProfileStatus, { state: 'draft' }>['summary'];

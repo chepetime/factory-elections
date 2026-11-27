@@ -1,7 +1,7 @@
 // What the agent of a task may reach: one row per service and its access level.
 import { Check, Minus, X } from 'lucide-react';
 import { type ServiceAccess } from '@factory/core';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const ACCESS_LOOK = {
   full: { icon: Check, tone: 'text-emerald-600 dark:text-emerald-400', label: 'Full access' },

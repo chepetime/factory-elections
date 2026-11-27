@@ -334,6 +334,22 @@
       }
     },
     {
+      "files": ["packages/ui/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:*", "@factory/**", "!@factory/ui", "!@factory/ui/**"],
+                "message": "packages/ui is presentation only: no workspace packages and no Node APIs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["apps/web/src/**"],
       "rules": {
         "no-restricted-imports": [
@@ -348,7 +364,9 @@
                   "!@factory/backend-client",
                   "!@factory/backend-client/**",
                   "!@factory/affect-ui",
-                  "!@factory/affect-ui/**"
+                  "!@factory/affect-ui/**",
+                  "!@factory/ui",
+                  "!@factory/ui/**"
                 ],
                 "message": "ADR 0006: apps/web talks to the backend only through @factory/backend-client"
               }

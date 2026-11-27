@@ -3,7 +3,7 @@
 import { ArrowDown } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { stripAnsi } from '@/lib/task-chat';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export function LiveOutput({ output, className }: { output: string; className?: string }) {
   const ref = useRef<HTMLPreElement>(null);

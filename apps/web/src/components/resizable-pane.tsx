@@ -3,7 +3,7 @@
 // so the next page load starts at it). Arrow keys resize by 16px; a double click resets it.
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { paneCookie, type PaneSpec } from '@/lib/pane-spec';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 /** Below the breakpoint the pane takes its natural width and cannot be resized. */
 const AT = {

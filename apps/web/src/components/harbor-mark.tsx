@@ -1,6 +1,6 @@
 // The Harbor Lighthouse logo: the favicon (src/app/icon.svg) as an inline component.
 import { useId } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export function HarborMark({ className }: { className?: string }) {
   // Unique gradient ids, so two marks on one page do not share or clash.

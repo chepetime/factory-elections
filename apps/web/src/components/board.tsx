@@ -12,7 +12,7 @@ import {
   type Column,
   type LiveTone,
 } from '@/lib/board';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const DOT: Record<Column, string> = {
   working: 'bg-blue-500',

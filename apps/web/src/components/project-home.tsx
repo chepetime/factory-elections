@@ -10,7 +10,7 @@ import type { IssueStatus, TaskRecord } from '@factory/core';
 import { TaskChatComposer } from '@/components/task-chat';
 import { ACTIVITY_WEEKS, overview } from '@/lib/overview';
 import { STATUS } from '@/components/task-status';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type HomeIssue = { key: string; title: string; status: IssueStatus; updated_at: string };
 

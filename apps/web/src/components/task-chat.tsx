@@ -15,11 +15,11 @@ import {
 import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
 import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
 import { HoldButton } from '@/components/bits/hold-button';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
+import { Textarea } from '@factory/ui/components/textarea';
 import { useUserPreferences } from '@/components/user-preferences';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export type TaskType = 'ticket' | 'work' | 'review' | 'general';
 

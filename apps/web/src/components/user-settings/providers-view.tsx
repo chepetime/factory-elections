@@ -3,13 +3,13 @@
 import { CircleCheck, CircleX, Plus, X } from 'lucide-react';
 import { useId, useMemo, useState, useTransition } from 'react';
 import { testProvider } from '@/app/actions';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
 import { LocalTime } from '@/components/local-time';
 import { PROVIDER_NAMES, USER_PROVIDERS, type UserProvider } from '@factory/core';
 import type { ProviderCheck, UserEnvironment, UserSettings } from '@/lib/user-settings';
 import { SettingsPage, Switch, useSection } from '@/components/user-settings/settings-ui';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type Model = UserEnvironment['providers']['claude']['models'][number];
 

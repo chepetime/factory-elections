@@ -9,11 +9,11 @@ import { updateTeamMembers } from '@/app/team-actions';
 import { MemberBulkEditor } from '@/components/member-bulk-editor';
 import type { MemberUpdate } from '@/lib/team';
 import { assignMember } from '@/app/actions';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@factory/ui/components/button';
+import { Input } from '@factory/ui/components/input';
 import { teamEdits } from '@/lib/team-edits';
 import type { TeamMember } from '@/lib/team';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const NO_TEAM = '\u0000none';
 const PALETTE = [

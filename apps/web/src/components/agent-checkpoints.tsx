@@ -3,9 +3,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
 import { Check, ChevronsUpDown, History, LoaderCircle, RotateCcw, X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { Badge } from '@factory/ui/components/badge';
+import { Card } from '@factory/ui/components/card';
+import { cn } from '@factory/ui/lib/utils';
 
 export type Checkpoint = {
   id: string;

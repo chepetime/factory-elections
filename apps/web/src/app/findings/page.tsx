@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { LocalTime } from '@/components/local-time';
 import { Empty, PageHeader, Unavailable } from '@/components/system-page';
 import { listFindings, type FindingRow } from '@/lib/system';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Findings' };

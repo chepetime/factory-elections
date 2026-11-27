@@ -9,7 +9,7 @@ import { ReviewOutcomeCard } from '@/components/review-outcome';
 import { STATUS } from '@/components/task-status';
 import { type IssueView } from '@/lib/issues';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export type IssueEvent = IssueView['events'][number];
 type IssueComment = IssueView['comments'][number];

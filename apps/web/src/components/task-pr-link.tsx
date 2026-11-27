@@ -2,7 +2,7 @@
 // the PR merges, so a done ticket keeps the way to its change.
 import { GitMerge, GitPullRequest, GitPullRequestClosed } from 'lucide-react';
 import { prLabel } from '@/components/task-runs';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const LOOK = {
   OPEN: { icon: GitPullRequest, label: 'Open', tone: 'text-emerald-700 dark:text-emerald-400' },

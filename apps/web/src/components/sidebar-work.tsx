@@ -3,7 +3,7 @@
 import { Bot, LoaderCircle } from 'lucide-react';
 import { runAttention, runNeed, type IssueStatus, type RunAttention, type Stage } from '@factory/core';
 import { STATUS } from '@/components/task-status';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 import { SidebarLink } from '@/components/sidebar-link';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { SidebarTaskMenu } from '@/components/sidebar-task-menu';

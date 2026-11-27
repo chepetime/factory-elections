@@ -4,7 +4,7 @@
 // root layout. `type` is success, info, warning, error or loading, and picks the icon.
 import { Toast } from '@base-ui/react/toast';
 import { CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '../lib/utils';
 
 /** The app's toast manager: add, close, update and promise. */
 export const toast = Toast.createToastManager();

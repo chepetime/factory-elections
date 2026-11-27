@@ -5,7 +5,7 @@
 // shader is unchanged. Addition: `href` renders a Next.js link with the same look.
 import Link from 'next/link';
 import { useEffect, useRef, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 import styles from './specular-button.module.css';
 
 const PAD = 24;

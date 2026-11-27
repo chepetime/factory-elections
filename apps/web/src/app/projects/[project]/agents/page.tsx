@@ -7,7 +7,7 @@ import { NewAgentButton } from '@/components/new-agent-dialog';
 import { modelName } from '@/lib/agent-models';
 import { agentStats, listAgents } from '@/lib/agents';
 import { isProjectName } from '@/lib/factory';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Agents' };

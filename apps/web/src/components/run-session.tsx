@@ -8,7 +8,7 @@ import { AgentAvatar } from '@/components/agent-avatar';
 import { CallChip, iconForTool } from '@/components/bits/call-chip';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 type Entry =
   | { at: string; kind: 'run'; text: string }

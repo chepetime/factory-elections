@@ -17,7 +17,7 @@ import {
 import { LocalTime } from '@/components/local-time';
 import { modelName } from '@/lib/agent-models';
 import type { ModelTotal, ModelUse, TimelineEntry, TimelineKind } from '@/lib/ticket-timeline';
-import { cn } from '@/lib/utils';
+import { cn } from '@factory/ui/lib/utils';
 
 const ICON: Record<TimelineKind, LucideIcon> = {
   created: Plus,
