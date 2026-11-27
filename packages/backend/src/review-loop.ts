@@ -12,6 +12,7 @@ import {
   reviewNotesSection,
   splitFindings,
   severityCounts,
+  type PrState,
   type ReviewOutcome,
   type ReviewPayload,
   type TaskRecord,
@@ -48,6 +49,19 @@ export interface ReviewLoopDeps {
   readiness?(cwd: string, number: number): Promise<{ ok: true } | { ok: false; reason: string }>;
   now?: () => string;
   log?: (line: string) => void;
+}
+
+/** Whether a PR may leave draft: checks settled green and it merges cleanly. */
+export function prReadiness(pr: PrState): { ok: true } | { ok: false; reason: string } {
+  if (pr.mergeable === 'CONFLICTING') return { ok: false, reason: 'it conflicts with its base' };
+  const failed = pr.checks.filter((c) => c.state === 'fail');
+  if (failed.length)
+    return { ok: false, reason: `checks are failing: ${failed.map((c) => c.name).join(', ')}` };
+  if (pr.checks.some((c) => c.state !== 'pass' && c.state !== 'skipped'))
+    return { ok: false, reason: 'checks are still pending' };
+  return pr.mergeable === 'MERGEABLE'
+    ? { ok: true }
+    : { ok: false, reason: 'GitHub has not settled whether it merges cleanly' };
 }
 
 const prNumber = (task: TaskRecord) => Number(/\/pull\/(\d+)/.exec(task.pr?.url ?? '')?.[1]) || undefined;
