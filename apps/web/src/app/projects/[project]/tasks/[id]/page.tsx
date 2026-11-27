@@ -22,7 +22,8 @@ import {
 } from '@/components/issue-editor';
 import { StageBadge } from '@/components/stage-badge';
 import { StatusLabel } from '@/components/task-status';
-import { Fact, Facts, renderRun, Section } from '@/components/task-run';
+import { renderRun } from '@/components/task-run';
+import { Fact, Facts, Section } from '@/components/task-panel';
 import { isProjectName, isTaskId, readDiff, showTask } from '@/lib/factory';
 import { getIssue } from '@/lib/issues';
 import { userSettings } from '@/lib/user-settings';
@@ -99,7 +100,9 @@ export default async function TaskPage({
   if (issue.key !== id) redirect(`/projects/${project}/tasks/${issue.key}`);
 
   const runId = query.run && issue.runs.includes(query.run) ? query.run : issue.run?.id;
-  const roster = await listAgents();
+  // Reads start together, in two rounds: the agents and your settings, then everything that
+  // needs them. The read helpers are cached per render, so renderRun and the layout share them.
+  const [roster, savedPane] = await Promise.all([listAgents(), userSettings()]);
   const mentionable = roster.ok
     ? roster.value.filter((a) => !a.archived_at).map((a) => ({ id: a.id, name: a.name, avatar: a.avatar }))
     : [];
@@ -117,21 +120,6 @@ export default async function TaskPage({
   ) : (
     comment
   );
-  const run = runId
-    ? await renderRun(project, runId, {
-        startFailed: query.start === 'failed',
-        fallback: reply,
-        runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
-      })
-    : undefined;
-  // Why the shown run waits for a person; a queued turn on the latest run makes it stale.
-  const reason =
-    run?.ok && !(issue.run?.waiting && runId === issue.run.id) ? stageReason(run.value.task) : undefined;
-  const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
-  const feed = feedItems(issue);
-  const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
-  const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
-  const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
   // The right panel shows the run when there is one; Timeline is the ticket's history, Changes the
   // run's diff, and Details holds access, PRs, the execution log and dates.
   type Panel = 'run' | 'status' | 'timeline' | 'changes' | 'details';
@@ -146,34 +134,48 @@ export default async function TaskPage({
         : 'run';
   // The sidebar follows the saved setting (on when it cannot be read). A `?panel=` link opens it for
   // that view without changing the setting; the toggle in the header saves the choice.
-  const savedPane = await userSettings();
   const paneSaved = savedPane.ok ? savedPane.value.tasks.details_pane : true;
   const showPane =
     paneSaved || ['run', 'status', 'timeline', 'changes', 'details'].includes(query.panel ?? '');
-  const panelHref = (p: Panel) =>
-    `/projects/${project}/tasks/${issue.key}?panel=${p}${query.run ? `&run=${query.run}` : ''}`;
-  const session = showPane && runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
-  const changes = showPane && runId && panel === 'changes' ? await readDiff(project, runId) : undefined;
-  const [agentList, detailsWidth, ...loaded] = await Promise.all([
-    Promise.resolve(roster),
-    showPane ? paneWidth(TASK_DETAILS_PANE) : Promise.resolve(0),
+  // A review ticket's latest report (finding counts).
+  const reviewRound = issue.review?.rounds.at(-1);
+  const [run, session, changes, detailsWidth, reviewDetailed, ...older] = await Promise.all([
+    runId
+      ? renderRun(project, runId, {
+          startFailed: query.start === 'failed',
+          fallback: reply,
+          runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
+        })
+      : undefined,
+    showPane && runId && panel === 'run' ? readRunSession(project, runId) : undefined,
+    showPane && runId && panel === 'changes' ? readDiff(project, runId) : undefined,
+    showPane ? paneWidth(TASK_DETAILS_PANE) : 0,
+    issue.review && reviewRound?.decision && !reviewRound.posted
+      ? reviewDetail(project, issue.review.number)
+      : undefined,
+    // The other runs' records; the shown run's record comes with renderRun.
     ...issue.runs.map((rid) =>
-      rid === runId && run?.ok
-        ? Promise.resolve(run.value.task)
-        : showTask(project, rid).then((r) => (r.ok ? r.value : undefined)),
+      rid === runId ? undefined : showTask(project, rid).then((r) => (r.ok ? r.value : undefined)),
     ),
   ]);
-  const records = loaded as (TaskRecord | undefined)[];
-  const agents = agentList.ok ? agentList.value : [];
+  // Why the shown run waits for a person; a queued turn on the latest run makes it stale.
+  const reason =
+    run?.ok && !(issue.run?.waiting && runId === issue.run.id) ? stageReason(run.value.task) : undefined;
+  const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
+  const feed = feedItems(issue);
+  const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
+  const after = runStart === undefined ? [] : feed.filter((h) => h.at >= runStart);
+  const runIndex = runId ? issue.runs.indexOf(runId) + 1 : 0;
+  const panelHref = (p: Panel) =>
+    `/projects/${project}/tasks/${issue.key}?panel=${p}${query.run ? `&run=${query.run}` : ''}`;
+  const records = issue.runs.map((rid, i) =>
+    rid === runId && run?.ok ? run.value.task : (older[i] as TaskRecord | undefined),
+  );
+  const agents = roster.ok ? roster.value : [];
   const authors: Authors = Object.fromEntries(agents.map((a) => [a.id, { name: a.name, avatar: a.avatar }]));
   // The latest run decides who works the task; with no run yet, the assigned agent would.
   const runRecord = run?.ok ? run.value.task : undefined;
-  // A review ticket's latest report (finding counts), and an agent PR's self-review loop.
-  const reviewRound = issue.review?.rounds.at(-1);
-  const reviewDetailed =
-    issue.review && reviewRound?.decision && !reviewRound.posted
-      ? await reviewDetail(project, issue.review.number)
-      : undefined;
+  // An agent PR's self-review loop: it needs the run record, so it waits for renderRun.
   const reviewReport =
     reviewDetailed?.ok && reviewDetailed.value.payload
       ? {

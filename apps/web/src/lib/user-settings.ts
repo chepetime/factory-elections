@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { backendCall } from '@factory/backend-client';
 import { ProviderCheck, UserEnvironment, UserSettings } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
+import { cache } from 'react';
 export type { ProviderCheck, UserEnvironment, UserSettings };
 
 async function attempt<T>(call: () => Promise<T>): Promise<Result<T>> {
@@ -18,7 +19,7 @@ async function attempt<T>(call: () => Promise<T>): Promise<Result<T>> {
   }
 }
 
-export function userSettings(): Promise<Result<UserSettings>> {
+function userSettingsUncached(): Promise<Result<UserSettings>> {
   return attempt(async () => UserSettings.parse(JSON.parse((await backendCall('GetUserSettings', {})).json)));
 }
 export function saveUserSettingsRun(settings: unknown): Promise<Result<UserSettings>> {
@@ -39,3 +40,7 @@ export function userEnvironment(): Promise<Result<UserEnvironment>> {
     UserEnvironment.parse(JSON.parse((await backendCall('GetUserEnvironment', {})).json)),
   );
 }
+
+// One read per server render: the page, its layouts and generateMetadata share the result.
+// Outside a render (server actions, route handlers) `cache` calls straight through.
+export const userSettings = cache(userSettingsUncached);

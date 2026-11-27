@@ -13,6 +13,7 @@ import {
   ExecutionPhase,
   executionPhase,
 } from '@factory/core';
+import { cache } from 'react';
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -64,7 +65,7 @@ export const ProjectSummary = Project.extend({
   accent: z.string().optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
-export function listProjects(): Promise<Result<ProjectSummary[]>> {
+function listProjectsUncached(): Promise<Result<ProjectSummary[]>> {
   return readJson('ListProjects', { project: '' }, z.array(ProjectSummary));
 }
 /** AddProject replies with the project and the outcome of drafting its repo profile. */
@@ -90,10 +91,10 @@ export async function addProjectRequest(name: string, repo: string): Promise<Res
 export function listTasks(project: string): Promise<Result<TaskRecord[]>> {
   return readJson('ListTasks', { project }, z.array(TaskRecord));
 }
-export function showTask(project: string, id: string): Promise<Result<TaskRecord>> {
+function showTaskUncached(project: string, id: string): Promise<Result<TaskRecord>> {
   return readJson('GetTask', { project, id }, TaskRecord);
 }
-export function readTaskControls(project: string, id: string): Promise<Result<TaskControls>> {
+function readTaskControlsUncached(project: string, id: string): Promise<Result<TaskControls>> {
   return readJson('GetTaskControls', { project, id }, TaskControls);
 }
 export const Gate = z.object({
@@ -171,7 +172,7 @@ const Background = z.object({
     .optional(),
 });
 export type BackgroundRun = z.infer<typeof Background>;
-export async function backgroundRun(project: string, id: string): Promise<BackgroundRun> {
+async function backgroundRunUncached(project: string, id: string): Promise<BackgroundRun> {
   try {
     const run = Background.parse(JSON.parse((await backendCall('GetBackground', { project, id })).json));
     run.phase ??= executionPhase(run.state, run.running);
@@ -214,3 +215,10 @@ export async function tendPullRequestsNow(project: string): Promise<Result<void>
 export async function clearBackgroundLog(project: string, id: string): Promise<void> {
   await backendCall('ClearLog', { project, id });
 }
+
+// One read per server render: the page, its layouts and generateMetadata share the result.
+// Outside a render (server actions, route handlers) `cache` calls straight through.
+export const listProjects = cache(listProjectsUncached);
+export const showTask = cache(showTaskUncached);
+export const readTaskControls = cache(readTaskControlsUncached);
+export const backgroundRun = cache(backgroundRunUncached);

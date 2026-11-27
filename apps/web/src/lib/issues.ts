@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { backendCall } from '@factory/backend-client';
 import { Issue, IssueStatus, QueueWait, Stage } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
+import { cache } from 'react';
 
 export const IssueView = Issue.extend({
   key: z.string(),
@@ -52,13 +53,13 @@ async function call(method: Method, project: string, body: object): Promise<unkn
   return JSON.parse((await backendCall(method, { project, json: JSON.stringify(body) })).json);
 }
 
-export function listIssues(project: string): Promise<Result<IssueList>> {
+function listIssuesUncached(project: string): Promise<Result<IssueList>> {
   return attempt(async () =>
     IssueList.parse(JSON.parse((await backendCall('ListIssues', { project })).json)),
   );
 }
 /** `key` is a task key (CE-12) or the id of one of its runs. */
-export function getIssue(project: string, key: string): Promise<Result<IssueView>> {
+function getIssueUncached(project: string, key: string): Promise<Result<IssueView>> {
   return attempt(async () => IssueView.parse(await call('GetIssue', project, { key })));
 }
 export function createIssueRun(project: string, input: object): Promise<Result<IssueView>> {
@@ -135,3 +136,8 @@ export async function withTaskKeys<T extends { project: string; task_id?: string
     return owner ? { ...item, task_key: owner.key, title: owner.title } : item;
   });
 }
+
+// One read per server render: the page, its layouts and generateMetadata share the result.
+// Outside a render (server actions, route handlers) `cache` calls straight through.
+export const listIssues = cache(listIssuesUncached);
+export const getIssue = cache(getIssueUncached);

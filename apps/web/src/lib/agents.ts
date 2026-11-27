@@ -12,6 +12,7 @@ import {
   Stage,
 } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
+import { cache } from 'react';
 
 export { AGENT_CHAT_INSTRUCTIONS, AGENT_FACTORY_INSTRUCTIONS };
 export type { AgentProfile };
@@ -87,7 +88,7 @@ async function call(method: Method, body: object): Promise<unknown> {
   return JSON.parse((await backendCall(method, { json: JSON.stringify(body) })).json);
 }
 
-export function listAgents(): Promise<Result<AgentProfile[]>> {
+function listAgentsUncached(): Promise<Result<AgentProfile[]>> {
   return attempt(async () =>
     z.array(AgentProfile).parse(JSON.parse((await backendCall('ListAgents', {})).json)),
   );
@@ -105,10 +106,10 @@ export function archiveAgentRun(id: string, archived: boolean): Promise<Result<A
   return attempt(async () => AgentProfile.parse(await call('ArchiveAgent', { id, archived })));
 }
 
-export function listChats(agent?: string): Promise<Result<ChatSummary[]>> {
+function listChatsUncached(agent?: string): Promise<Result<ChatSummary[]>> {
   return attempt(async () => z.array(ChatSummary).parse(await call('ListChats', agent ? { agent } : {})));
 }
-export function getChat(id: string): Promise<Result<ChatView>> {
+function getChatUncached(id: string): Promise<Result<ChatView>> {
   return attempt(async () => ChatView.parse(await call('GetChat', { id })));
 }
 export function startChatRun(agent: string, project?: string): Promise<Result<ChatView>> {
@@ -128,3 +129,9 @@ export function renameChatRun(id: string, title: string): Promise<Result<unknown
 export function deleteChatRun(id: string): Promise<Result<unknown>> {
   return attempt(() => call('DeleteChat', { id }));
 }
+
+// One read per server render: the page, its layouts and generateMetadata share the result.
+// Outside a render (server actions, route handlers) `cache` calls straight through.
+export const listAgents = cache(listAgentsUncached);
+export const listChats = cache(listChatsUncached);
+export const getChat = cache(getChatUncached);
