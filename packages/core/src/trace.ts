@@ -31,6 +31,12 @@ export const SpanType = z.enum([
   'gate',
   /** A task's PR opened: links the task's traces to the PR. */
   'pr',
+  /** Start latency phases (measurement only): time queued, creating the worktree, setup, verify checks. */
+  'queue',
+  'worktree',
+  /** Dependency install; `attributes.setup_key` is `hit` (skipped) or `miss` (ran). */
+  'setup',
+  'verify',
 ]);
 export type SpanType = z.infer<typeof SpanType>;
 

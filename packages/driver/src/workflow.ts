@@ -32,6 +32,7 @@ import {
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
+import { emitPhase } from './phases.ts';
 import { setupInputsKey } from './setup.ts';
 import {
   tail,
@@ -278,9 +279,12 @@ export class Driver {
       throw new DriverError(`worktree path already exists: ${path}`);
     if (await git.branchExists(repo, branch)) throw new DriverError(`branch already exists: ${branch}`);
     const start = await this.startPoint(repo, base, Boolean(task.stack_on));
+    const worktreeStart = Date.now();
     try {
       await git.addWorktree(repo, path, branch, start);
+      emitPhase(this.deps, { project, id }, 'worktree', worktreeStart, 'completed');
     } catch (error) {
+      emitPhase(this.deps, { project, id }, 'worktree', worktreeStart, 'failed');
       await git.removeWorktree(repo, path, branch).catch(() => undefined);
       throw new DriverError((error as Error).message);
     }
@@ -350,7 +354,11 @@ export class Driver {
     const command = profile.commands.setup;
     if (!command || !task.worktree) return undefined;
     const key = await setupInputsKey(task.worktree.path, profile.setup_inputs);
-    if (task.worktree.setup_at && task.worktree.setup_key === key) return undefined;
+    if (task.worktree.setup_at && task.worktree.setup_key === key) {
+      emitPhase(this.deps, { project, id }, 'setup', Date.now(), 'completed', { setup_key: 'hit' });
+      return undefined;
+    }
+    const setupStart = Date.now();
     const limits = checkLimits(profile);
     let output = '';
     this.deps.log(`$ ${command}   # setup`);
@@ -366,6 +374,9 @@ export class Driver {
       signal: this.deps.signal,
       group: true,
     });
+    const setupOutcome =
+      result.stopped === 'aborted' ? 'aborted' : result.stopped || result.code !== 0 ? 'failed' : 'completed';
+    emitPhase(this.deps, { project, id }, 'setup', setupStart, setupOutcome, { setup_key: 'miss' });
     if (result.stopped === 'aborted')
       throw new DriverError('setup was stopped because the run was cancelled');
     if (result.stopped || result.code !== 0) {
@@ -455,6 +466,18 @@ export class Driver {
     return verifyWorktree(this.deps, project, id);
   }
 
+  private async timedVerify(project: string, id: string): ReturnType<Driver['verify']> {
+    const started = Date.now();
+    try {
+      const result = await this.verify(project, id);
+      emitPhase(this.deps, { project, id }, 'verify', started, result.passed ? 'completed' : 'failed');
+      return result;
+    } catch (error) {
+      emitPhase(this.deps, { project, id }, 'verify', started, 'failed');
+      throw error;
+    }
+  }
+
   // Not private: the step files (agent-run, pr-draft, review-step) call it too.
   async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
     // The coder may have changed a lockfile: install again, and send a failure back as feedback.
@@ -467,7 +490,7 @@ export class Driver {
             (await this.checkedWorktree(await this.deps.tasks.read(project, id))).path,
           ),
         }
-      : await this.verify(project, id);
+      : await this.timedVerify(project, id);
     const task = await this.deps.tasks.read(project, id);
     const now = this.deps.now();
     const verification = {

@@ -166,7 +166,20 @@ export interface AgentSession {
   commented?(): boolean;
 }
 
+/** One timed phase of a run (worktree, setup, verify): measurement only. */
+export interface PhaseSpan {
+  type: 'worktree' | 'setup' | 'verify';
+  name: string;
+  started_at: string;
+  ended_at: string;
+  duration_ms: number;
+  outcome: 'completed' | 'failed' | 'aborted';
+  attributes?: Record<string, string | number | boolean>;
+}
+
 export interface DriverDeps {
+  /** Receives a span when a run phase ends. Absent: phases are not recorded. */
+  phase?(task: { project: string; id: string }, span: PhaseSpan): void;
   tasks: TaskStorePort;
   readProfile(project: string): Promise<RepoProfile>;
   git: GitPort;
