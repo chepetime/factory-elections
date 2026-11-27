@@ -7,6 +7,7 @@ import { useId, useRef, useState, useTransition, type ReactNode } from 'react';
 import { updateUserSettings } from '@/app/actions';
 import type { UserSettings } from '@/lib/user-settings';
 import { cn } from '@factory/ui/lib/utils';
+import { Switch as UiSwitch } from '@factory/ui/components/switch';
 
 type Section = 'identity' | 'preferences' | 'tasks' | 'chat' | 'notifications' | 'providers' | 'rules';
 export type SaveStatus =
@@ -152,27 +153,14 @@ export function Switch({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <UiSwitch
       id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
+      checked={checked}
+      onCheckedChange={(next) => onChange(next)}
       aria-describedby={describedBy}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative ml-auto flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none pointer-coarse:my-2.5',
-        checked ? 'bg-foreground' : 'bg-foreground/15',
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          'size-5 rounded-full bg-background shadow-sm transition-transform motion-reduce:transition-none',
-          checked && 'translate-x-4',
-        )}
-      />
-    </button>
+      className="ml-auto pointer-coarse:my-2.5"
+    />
   );
 }
 

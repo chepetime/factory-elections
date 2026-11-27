@@ -16,6 +16,8 @@ import { useActionState, useEffect, useRef, useState, type ReactNode } from 'rea
 import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
 import { HoldButton } from '@/components/bits/hold-button';
 import { Button } from '@factory/ui/components/button';
+import { Toggle } from '@factory/ui/components/toggle';
+import { ToggleGroup, ToggleGroupItem } from '@factory/ui/components/toggle-group';
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
 import { useUserPreferences } from '@/components/user-preferences';
@@ -202,31 +204,29 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
       )}
 
       {isNew && (
-        <div role="radiogroup" aria-label="Task type" className="flex flex-wrap gap-1.5">
+        <ToggleGroup
+          aria-label="Task type"
+          value={[type]}
+          // One type is always chosen: pressing the current one again keeps it.
+          onValueChange={(next) => next[0] && setType(next[0] as typeof type)}
+          spacing={1.5}
+          className="flex-wrap"
+        >
           {ORDER.map((t) => {
             const { label, icon: Icon } = PRESETS[t];
             return (
-              <Button
+              <ToggleGroupItem
                 key={t}
-                type="button"
-                role="radio"
-                aria-checked={t === type}
-                variant="ghost"
+                value={t}
                 size="sm"
-                className={cn(
-                  'rounded-full pointer-coarse:h-11 pointer-coarse:px-4',
-                  t === type
-                    ? 'bg-primary/10 text-primary ring-1 ring-primary/25 hover:bg-primary/15 hover:text-primary'
-                    : 'text-muted-foreground',
-                )}
-                onClick={() => setType(t)}
+                className="rounded-full text-muted-foreground pointer-coarse:h-11 pointer-coarse:px-4 data-pressed:bg-primary/10 data-pressed:text-primary data-pressed:ring-1 data-pressed:ring-primary/25 data-pressed:hover:bg-primary/15"
               >
                 <Icon aria-hidden />
                 {label}
-              </Button>
+              </ToggleGroupItem>
             );
           })}
-        </div>
+        </ToggleGroup>
       )}
 
       {isNew && type === 'work' && defaults.jira_key_field && (
@@ -270,23 +270,20 @@ function Composer(props: Exclude<ComposerProps, { mode: 'locked' | 'running' }>)
         />
         <div className="flex items-center gap-2 px-2 pb-2">
           {isNew && (
-            <Button
-              type="button"
-              variant="ghost"
+            <Toggle
               size="sm"
-              role="switch"
-              aria-checked={start}
-              onClick={() => setStart((s) => !s)}
+              pressed={start}
+              onPressedChange={setStart}
               title={
                 start
                   ? 'Adds the task to Todo: its agent, or the one Mika picks, starts it'
                   : 'Adds the task to Backlog; move it to Todo when it is ready'
               }
-              className={cn('rounded-full', !start && 'text-muted-foreground')}
+              className="rounded-full text-muted-foreground data-pressed:bg-transparent data-pressed:text-foreground"
             >
               <Play aria-hidden />
               {start ? 'Start' : 'Backlog'}
-            </Button>
+            </Toggle>
           )}
           <span className="hidden text-xs text-muted-foreground sm:inline">↵ to send · ⇧↵ new line</span>
           <div className="ml-auto flex items-center gap-2">

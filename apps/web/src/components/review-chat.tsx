@@ -12,6 +12,7 @@ import { Markdown } from '@/components/markdown';
 import { ReviewReport } from '@/components/review-report';
 import { ChatScroll } from '@/components/task-chat';
 import { Button } from '@factory/ui/components/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@factory/ui/components/tabs';
 import type { ReviewChatEntry, ReviewDetail } from '@/lib/reviews';
 import { cn } from '@factory/ui/lib/utils';
 
@@ -133,7 +134,11 @@ export function ReviewChat({
   const lastAgent = detail.conversation.findLastIndex((e) => e.role === 'agent');
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setTab(next as 'chat' | 'report')}
+      className="h-full min-h-0 gap-0"
+    >
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5">
         <Link
           href={`/projects/${project}/reviews`}
@@ -156,26 +161,16 @@ export function ReviewChat({
             </p>
           )}
         </div>
-        <div role="tablist" aria-label="Review views" className="flex rounded-lg border p-0.5">
+        <TabsList aria-label="Review views">
           {(['chat', 'report'] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              type="button"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={cn(
-                'h-7 rounded-md px-3 text-[0.8rem] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-ring',
-                tab === t ? 'bg-foreground/5 font-medium' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
+            <TabsTrigger key={t} value={t} className="px-3 text-[0.8rem] capitalize">
               {t}
               {t === 'report' && detail.decision && (
-                <span className="ml-1.5 text-muted-foreground">· {detail.decision}</span>
+                <span className="text-muted-foreground">· {detail.decision}</span>
               )}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
         {running ? (
           <Button
             size="sm"
@@ -216,84 +211,81 @@ export function ReviewChat({
         )}
       </header>
 
-      {tab === 'report' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {detail.payload ? (
-            <ReviewReport payload={detail.payload} />
-          ) : (
-            <p className="mx-auto max-w-3xl px-6 py-10 text-sm text-muted-foreground">
-              {detail.payload_error ??
-                (running
-                  ? 'The report appears when the agent saves it.'
-                  : 'No report was saved for this review.')}
+      <TabsContent value="report" className="min-h-0 overflow-y-auto text-base">
+        {detail.payload ? (
+          <ReviewReport payload={detail.payload} />
+        ) : (
+          <p className="mx-auto max-w-3xl px-6 py-10 text-sm text-muted-foreground">
+            {detail.payload_error ??
+              (running
+                ? 'The report appears when the agent saves it.'
+                : 'No report was saved for this review.')}
+          </p>
+        )}
+      </TabsContent>
+      <TabsContent value="chat" className="flex min-h-0 flex-col text-base">
+        <ChatScroll>
+          {detail.conversation.length === 0 && !preparing && !detail.error && (
+            <p className="text-sm text-muted-foreground">
+              No review yet. Start one from the PR reviews list.
             </p>
           )}
-        </div>
-      ) : (
-        <>
-          <ChatScroll>
-            {detail.conversation.length === 0 && !preparing && !detail.error && (
-              <p className="text-sm text-muted-foreground">
-                No review yet. Start one from the PR reviews list.
-              </p>
-            )}
-            {detail.conversation.map((entry, i) =>
-              entry.role === 'user' ? (
-                <UserBubble key={entry.id} entry={entry} />
-              ) : (
-                <AgentTurn key={entry.id} entry={entry} live={running && i === lastAgent} />
-              ),
-            )}
-            {(running || preparing) && (
-              <ThoughtLine
-                // A new clock when preparing hands over to the agent.
-                key={preparing ? 'preparing' : 'running'}
-                label={preparing ? 'Fetching the PR and preparing its worktree…' : 'The agent is working…'}
-                collapsible={false}
-                fontSize={14}
-                className="text-muted-foreground"
-              />
-            )}
-            {detail.error && !preparing && (
-              <p className="text-sm text-destructive" role="alert">
-                The last start failed: {detail.error}
-              </p>
-            )}
-            {detail.stop_reason === 'stalled' && (
-              <p className="text-sm text-muted-foreground" role="status">
-                The backend stopped this turn: the agent wrote no output for too long. Send a message or
-                re-review to continue.
-              </p>
-            )}
-            {detail.state === 'failed' || detail.state === 'interrupted' ? (
-              <p className="text-sm text-destructive" role="alert">
-                {detail.state === 'failed'
-                  ? `The agent exited with code ${detail.exit_code}.`
-                  : 'The agent stopped unexpectedly.'}
-              </p>
-            ) : null}
-          </ChatScroll>
-          <div className="shrink-0 px-4 pb-4">
-            <div className="mx-auto max-w-3xl">
-              <ChatComposer
-                placeholder={
-                  running
-                    ? 'Wait for the agent to finish, or stop it…'
-                    : detail.can_reply
-                      ? 'Ask a follow-up, or ask the agent to act (post the comments, re-check a finding)…'
-                      : 'This chat cannot continue; start a new review.'
-                }
-                disabled={!detail.can_reply || running}
-                sending={pending}
-                error={error}
-                onSend={(message) =>
-                  act(() => sendReviewMessage(project, detail.number, message), detail.turns + 1)
-                }
-              />
-            </div>
+          {detail.conversation.map((entry, i) =>
+            entry.role === 'user' ? (
+              <UserBubble key={entry.id} entry={entry} />
+            ) : (
+              <AgentTurn key={entry.id} entry={entry} live={running && i === lastAgent} />
+            ),
+          )}
+          {(running || preparing) && (
+            <ThoughtLine
+              // A new clock when preparing hands over to the agent.
+              key={preparing ? 'preparing' : 'running'}
+              label={preparing ? 'Fetching the PR and preparing its worktree…' : 'The agent is working…'}
+              collapsible={false}
+              fontSize={14}
+              className="text-muted-foreground"
+            />
+          )}
+          {detail.error && !preparing && (
+            <p className="text-sm text-destructive" role="alert">
+              The last start failed: {detail.error}
+            </p>
+          )}
+          {detail.stop_reason === 'stalled' && (
+            <p className="text-sm text-muted-foreground" role="status">
+              The backend stopped this turn: the agent wrote no output for too long. Send a message or
+              re-review to continue.
+            </p>
+          )}
+          {detail.state === 'failed' || detail.state === 'interrupted' ? (
+            <p className="text-sm text-destructive" role="alert">
+              {detail.state === 'failed'
+                ? `The agent exited with code ${detail.exit_code}.`
+                : 'The agent stopped unexpectedly.'}
+            </p>
+          ) : null}
+        </ChatScroll>
+        <div className="shrink-0 px-4 pb-4">
+          <div className="mx-auto max-w-3xl">
+            <ChatComposer
+              placeholder={
+                running
+                  ? 'Wait for the agent to finish, or stop it…'
+                  : detail.can_reply
+                    ? 'Ask a follow-up, or ask the agent to act (post the comments, re-check a finding)…'
+                    : 'This chat cannot continue; start a new review.'
+              }
+              disabled={!detail.can_reply || running}
+              sending={pending}
+              error={error}
+              onSend={(message) =>
+                act(() => sendReviewMessage(project, detail.number, message), detail.turns + 1)
+              }
+            />
           </div>
-        </>
-      )}
-    </div>
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
