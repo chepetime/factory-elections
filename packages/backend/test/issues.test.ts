@@ -766,3 +766,76 @@ test('a run that waits for a person says why: the message of its latest event fo
   assert.equal(reasons.get('awaiting-approval'), undefined);
   assert.equal(reasons.get('coding'), undefined);
 });
+
+/** A service on two projects whose task store counts its reads, and whose board writes can be held. */
+async function counted(t: TestContext, tasks: TaskRecord[]) {
+  const root = await mkdtemp(join(tmpdir(), 'factory-issues-reads-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const held = storageFor(root);
+  const reads = { list: 0, read: [] as string[] };
+  let hold: Promise<void> | undefined;
+  const write = held.writeDocument.bind(held);
+  held.writeDocument = async (path: string, data: unknown) => {
+    if (hold && path.includes('change-elections')) await hold;
+    return write(path, data);
+  };
+  const service = new IssueService({
+    root,
+    storage: held,
+    tasks: {
+      list: async (project: string) => {
+        reads.list++;
+        return tasks.filter((task) => task.project === project);
+      },
+      read: async (project: string, id: string) => {
+        reads.read.push(id);
+        const task = tasks.find((x) => x.project === project && x.id === id);
+        if (!task) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        return task;
+      },
+    },
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
+    }),
+    submit: async () => '',
+    run: async () => undefined,
+    reject: async () => undefined,
+    deleteRun: async () => undefined,
+  } as ConstructorParameters<typeof IssueService>[0]);
+  return { service, reads, holdWrites: (until: Promise<void>) => (hold = until) };
+}
+
+test('reading one task reads only its latest run, not every run of the project', async (t) => {
+  const first = run('First', '2026-11-20T10:00:00.000Z', 'awaiting-approval');
+  const second = run('Second', '2026-11-21T10:00:00.000Z', 'failed');
+  const { service, reads } = await counted(t, [first, second]);
+  const { items } = await service.list('change-elections'); // wraps both runs in issues
+  const lists = reads.list;
+  const view = await service.get({ project: 'change-elections', key: items[1]!.key });
+  assert.equal(view.run?.stage, 'failed');
+  assert.equal(reads.list, lists, 'no full list for one task');
+  assert.deepEqual(reads.read, [second.id]);
+  // A run no issue holds yet still resolves: the read falls back to linking it.
+  const third = run('Third', '2026-11-22T10:00:00.000Z', 'queued');
+  const late = await counted(t, [third]);
+  assert.equal((await late.service.get({ project: 'change-elections', key: third.id })).run?.id, third.id);
+});
+
+test('reads take no lock, and a write in one project does not hold another project', async (t) => {
+  const other = TaskRecord.parse({ ...run('Other', '2026-11-20T10:00:00.000Z'), project: 'other-project' });
+  const { service, holdWrites } = await counted(t, [run('Mine', '2026-11-20T10:00:00.000Z'), other]);
+  await service.list('change-elections');
+  await service.list('other-project');
+  let open!: () => void;
+  holdWrites(new Promise<void>((resolve) => (open = resolve)));
+  const writing = service.create({ project: 'change-elections', title: 'Held write' });
+  const settled = await Promise.race([
+    Promise.all([service.list('change-elections'), service.list('other-project')]).then(() => 'read'),
+    new Promise((resolve) => setTimeout(() => resolve('blocked'), 1000)),
+  ]);
+  assert.equal(settled, 'read', 'reads answer while a write holds its project');
+  open();
+  await writing;
+  assert.ok((await service.list('change-elections')).items.some((i) => i.title === 'Held write'));
+});

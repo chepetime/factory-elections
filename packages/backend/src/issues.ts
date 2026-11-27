@@ -43,7 +43,11 @@ import { Conflict } from '@factory/core';
 export type IssueDeps = {
   root: string;
   storage: DataStorage;
-  tasks: { list(project: string): Promise<TaskRecord[]> };
+  tasks: {
+    list(project: string): Promise<TaskRecord[]>;
+    /** One run's record; without it a single read lists them all. */
+    read?(project: string, id: string): Promise<TaskRecord>;
+  };
   /** Whether a run of this task is accepted, running or finalizing in this backend. */
   owned?: (project: string, id: string) => boolean;
   settings: (project: string) => Promise<ProjectSettings>;
@@ -152,7 +156,8 @@ export function issuePrompt(issue: Pick<Issue, 'title' | 'description'>): string
 }
 
 export class IssueService {
-  private readonly lock = Effect.runSync(Semaphore.make(1));
+  /** One lock per project: a write in one project never delays reads or writes in another. */
+  private readonly locks = new Map<string, Semaphore.Semaphore>();
   private readonly deps: IssueDeps;
   constructor(deps: IssueDeps) {
     this.deps = deps;
@@ -164,10 +169,15 @@ export class IssueService {
   private path(project: string): string {
     return join(this.deps.root, ProjectName.parse(project), 'issues.json');
   }
-  /** Runs `work` alone, and rethrows its own error (a Conflict stays a Conflict for the RPC layer). */
-  private async serial<T>(work: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `work` alone in its project, and rethrows its own error (a Conflict stays a Conflict for
+   * the RPC layer). Reads do not take it: board writes are atomic, so a read sees a whole board.
+   */
+  private async serial<T>(project: string, work: () => Promise<T>): Promise<T> {
+    let lock = this.locks.get(project);
+    if (!lock) this.locks.set(project, (lock = Effect.runSync(Semaphore.make(1))));
     const exit = await Effect.runPromiseExit(
-      this.lock.withPermits(1)(Effect.tryPromise({ try: work, catch: (error) => error })),
+      lock.withPermits(1)(Effect.tryPromise({ try: work, catch: (error) => error })),
     );
     if (Exit.isSuccess(exit)) return exit.value;
     throw Cause.squash(exit.cause);
@@ -191,10 +201,7 @@ export class IssueService {
   private async sync(project: string): Promise<{ board: IssueBoard; runs: Map<string, TaskRecord> }> {
     const [board, tasks] = await Promise.all([this.read(project), this.deps.tasks.list(project)]);
     const runs = new Map(tasks.map((t) => [t.id, t]));
-    const linked = new Set([...board.items.flatMap((i) => i.runs), ...board.deleted_runs]);
-    const unlinked = tasks
-      .filter((t) => !linked.has(t.id))
-      .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id.localeCompare(b.id));
+    const unlinked = this.unlinked(board, tasks);
     if (!unlinked.length) return { board, runs };
     let next = board.next;
     const now = this.now();
@@ -217,6 +224,14 @@ export class IssueService {
     const synced = { ...board, next, items: [...board.items, ...wrapped] };
     await this.write(project, synced);
     return { board: synced, runs };
+  }
+
+  /** Runs no issue holds yet (and not deleted), oldest first: `sync` wraps them in new issues. */
+  private unlinked(board: IssueBoard, tasks: TaskRecord[]): TaskRecord[] {
+    const linked = new Set([...board.items.flatMap((i) => i.runs), ...board.deleted_runs]);
+    return tasks
+      .filter((t) => !linked.has(t.id))
+      .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id.localeCompare(b.id));
   }
 
   /** A turn is queued for the run: it will use the run's worktree once its agent is free. */
@@ -253,12 +268,17 @@ export class IssueService {
     };
   }
 
-  /** Finds an issue by key (any prefix) or by the id of one of its runs. */
-  private find(board: IssueBoard, key: string): Issue {
+  /** The issue with this key (any prefix) or holding this run id, if the board has it. */
+  private lookup(board: IssueBoard, key: string): Issue | undefined {
     const number = issueNumber(key);
-    const issue = TaskId.safeParse(key).success
+    return TaskId.safeParse(key).success
       ? board.items.find((i) => i.runs.includes(key))
       : board.items.find((i) => i.number === number);
+  }
+
+  /** Finds an issue by key (any prefix) or by the id of one of its runs. */
+  private find(board: IssueBoard, key: string): Issue {
+    const issue = this.lookup(board, key);
     if (!issue) throw Object.assign(new Error(`Task not found: ${key}`), { code: 'ENOENT' });
     return issue;
   }
@@ -277,7 +297,7 @@ export class IssueService {
     key: string,
     edit: (issue: Issue, at: string, board: IssueBoard) => Issue,
   ): Promise<IssueView> {
-    return this.serial(async () => {
+    return this.serial(project, async () => {
       const { board, runs } = await this.sync(project);
       const current = this.find(board, key);
       const at = this.now();
@@ -292,24 +312,42 @@ export class IssueService {
 
   async list(rawProject: unknown): Promise<IssueList> {
     const project = ProjectName.parse(rawProject);
-    return this.serial(async () => {
-      const { board, runs } = await this.sync(project);
-      const prefix = await this.prefix(project);
-      return { prefix, items: board.items.map((i) => this.view(prefix, i, runs)) };
-    });
+    // Without the lock, unless a new run needs wrapping: then `sync` writes, under the lock.
+    const [board, tasks, prefix] = await Promise.all([
+      this.read(project),
+      this.deps.tasks.list(project),
+      this.prefix(project),
+    ]);
+    if (this.unlinked(board, tasks).length)
+      return this.serial(project, async () => {
+        const synced = await this.sync(project);
+        return { prefix, items: synced.board.items.map((i) => this.view(prefix, i, synced.runs)) };
+      });
+    const runs = new Map(tasks.map((t) => [t.id, t]));
+    return { prefix, items: board.items.map((i) => this.view(prefix, i, runs)) };
   }
 
   async get(raw: unknown): Promise<IssueView> {
     const { project, key } = z.object({ project: ProjectName, key: Key }).parse(raw);
-    return this.serial(async () => {
-      const { board, runs } = await this.sync(project);
-      return this.view(await this.prefix(project), this.find(board, key), runs);
+    // One issue needs only its latest run, not every run of the project.
+    const [board, prefix] = await Promise.all([this.read(project), this.prefix(project)]);
+    const issue = this.lookup(board, key);
+    const tasks = this.deps.tasks;
+    if (issue && tasks.read) {
+      const latest = issue.runs.at(-1);
+      const task = latest ? await tasks.read(project, latest).catch(() => undefined) : undefined;
+      return this.view(prefix, issue, new Map(task ? [[task.id, task]] : []));
+    }
+    // Not on the board yet (a run no issue holds), or no single-run read: sync under the lock.
+    return this.serial(project, async () => {
+      const { board: synced, runs } = await this.sync(project);
+      return this.view(prefix, this.find(synced, key), runs);
     });
   }
 
   async create(raw: unknown, extra: { review?: Issue['review'] } = {}): Promise<IssueView> {
     const input = CreateInput.parse(raw);
-    const created = await this.serial(async () => {
+    const created = await this.serial(input.project, async () => {
       const { board, runs } = await this.sync(input.project);
       const at = this.now();
       const issue = Issue.parse({
@@ -644,7 +682,7 @@ export class IssueService {
   async move(raw: unknown): Promise<{ action: DropAction['kind']; issue: IssueView }> {
     const { project, key, to } = MoveInput.parse(raw);
     // Decide and link under the lock; the slow commands (a run, a reject) run outside it.
-    const plan = await this.serial(async () => {
+    const plan = await this.serial(project, async () => {
       const { board, runs } = await this.sync(project);
       const issue = this.find(board, key);
       const prefix = await this.prefix(project);
@@ -760,7 +798,7 @@ export class IssueService {
     const { project, key, archived } = z
       .object({ project: ProjectName, key: Key, archived: z.boolean() })
       .parse(raw);
-    return this.serial(async () => {
+    return this.serial(project, async () => {
       const { board, runs } = await this.sync(project);
       const issue = this.find(board, key);
       const latest = issue.runs.at(-1);
@@ -791,7 +829,7 @@ export class IssueService {
    */
   async delete(raw: unknown): Promise<{ key: string; failed: { run: string; error: string }[] }> {
     const { project, key } = z.object({ project: ProjectName, key: Key }).parse(raw);
-    const removed = await this.serial(async () => {
+    const removed = await this.serial(project, async () => {
       const { board, runs } = await this.sync(project);
       const issue = this.find(board, key);
       if (!issue.archived_at) throw new Conflict('Archive the task before you delete it.');
