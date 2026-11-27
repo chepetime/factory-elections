@@ -15,7 +15,8 @@ import {
   approvalBlockers,
   blockingFindings,
   describeIssues,
-  isForbiddenPath,
+  BUILT_IN_PROTECTED_PATHS,
+  protectedPaths,
   taskTitle,
   taskCommandBlockers,
   readinessDecision,
@@ -452,6 +453,9 @@ export class Driver {
       ...(result.runtime ? { runtime: result.runtime } : {}),
       ...(result.notRunLocally ? { not_run_locally: result.notRunLocally } : {}),
       ...(result.testIntegrity ? { test_integrity: result.testIntegrity } : {}),
+      ...(result.protectedPathsAllowed?.length
+        ? { protected_paths_allowed: result.protectedPathsAllowed }
+        : {}),
     };
     const updated = result.passed
       ? withEvent(
@@ -469,8 +473,8 @@ export class Driver {
 
   // ---------- coding ----------
 
-  private coderGuard(worktree: string, profile: RepoProfile): ToolGuard {
-    return worktreeGuard(worktree, profile);
+  private coderGuard(worktree: string, profile: RepoProfile, task: TaskRecord): ToolGuard {
+    return worktreeGuard(worktree, profile, task.allow_protected_paths === true);
   }
 
   /**
@@ -566,7 +570,7 @@ export class Driver {
             `Then \`${profile.commands.runtime_check}\` starts the app and drives it in a browser: the change must load with no console errors and no failed requests.`,
           ]
         : []),
-      `Do not commit, push, switch branches or edit these paths: ${profile.confirmed.forbidden_paths.join(', ') || '(none)'}.`,
+      `Do not commit, push, switch branches or edit these paths: ${[...new Set([...BUILT_IN_PROTECTED_PATHS, ...profile.confirmed.forbidden_paths])].join(', ')}.`,
     ].join('\n');
 
     const started = this.deps.now();
@@ -574,7 +578,7 @@ export class Driver {
     let error: string | undefined;
     let costUsd: number | null = null;
     let finalText = '';
-    const guard = this.coderGuard(path, profile);
+    const guard = this.coderGuard(path, profile, task);
     // Children share a pool as large as the step's own budget; their cost is added to the attempt.
     const sandbox = {
       allowed_domains: profile.sandbox?.allowed_domains,
@@ -624,7 +628,11 @@ export class Driver {
     let commitMessage: string | undefined;
     if (outcome === 'completed') {
       const changed = await this.deps.git.stageAll(path);
-      const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+      const forbidden = protectedPaths(
+        changed,
+        profile.confirmed.forbidden_paths,
+        task.allow_protected_paths === true,
+      );
       if (forbidden.length) {
         await this.deps.git.unstageAll(path);
         outcome = 'failed';
@@ -842,7 +850,7 @@ export class Driver {
         allowed_domains: profile.sandbox?.allowed_domains,
         allow_write: profile.sandbox?.allow_write,
       };
-      const guard = this.coderGuard(path, profile);
+      const guard = this.coderGuard(path, profile, task);
       const access = await this.coderAccess(project, id, task.repo, profile);
       const limits = {
         signal: this.deps.signal,
@@ -925,7 +933,11 @@ export class Driver {
       const merging = (await this.deps.git.mergeInProgress?.(path)) ?? false;
       if (outcome === 'completed') {
         const changed = await this.deps.git.stageAll(path);
-        const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+        const forbidden = protectedPaths(
+          changed,
+          profile.confirmed.forbidden_paths,
+          task.allow_protected_paths === true,
+        );
         const marked = merging ? await conflictMarkers(path, changed) : [];
         if (forbidden.length) {
           await this.deps.git.unstageAll(path);
@@ -1116,7 +1128,7 @@ export class Driver {
           '</diff>',
           'Respond only with the JSON review.',
         ].join('\n'),
-        guard: this.coderGuard(path, await this.deps.readProfile(project)),
+        guard: this.coderGuard(path, await this.deps.readProfile(project), task),
         outputSchema: REVIEW_OUTPUT_SCHEMA as unknown as Record<string, unknown>,
         maxTurns: 60,
       });
@@ -1272,7 +1284,7 @@ export class Driver {
           '</diff>',
           'Respond only with the JSON object.',
         ].join('\n'),
-        guard: this.coderGuard(path, await this.deps.readProfile(project)),
+        guard: this.coderGuard(path, await this.deps.readProfile(project), task),
         outputSchema: PR_DRAFT_SCHEMA as unknown as Record<string, unknown>,
         maxTurns: 30,
       });
