@@ -168,6 +168,25 @@ export function modelRefused(settings: UserSettings, ref: string): string | unde
   return undefined;
 }
 
+/** The model a call runs: its own reference, else the user's default for the provider that would run it. */
+export function effectiveModel(settings: UserSettings, ref: string | undefined): string {
+  if (ref) return ref;
+  return settings.providers.claude.default_model ?? '';
+}
+
+/**
+ * The one check every model call passes: the reference to run (the default model when `ref` is
+ * empty) or the reason it is refused. Wording tells the person where to turn it back on.
+ */
+export function checkModel(
+  settings: UserSettings,
+  ref: string | undefined,
+): { model: string; refused?: string } {
+  const model = effectiveModel(settings, ref);
+  const why = modelRefused(settings, model);
+  return why ? { model, refused: `${why}. Turn it on at /user, or pick another model.` } : { model };
+}
+
 /** The system prompt with what the person wrote about themselves and their rules, when there is any. */
 export function withUserRules(systemPrompt: string, settings: UserSettings): string {
   const about = settings.identity.about?.trim();

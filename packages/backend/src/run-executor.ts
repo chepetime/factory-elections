@@ -6,7 +6,7 @@ import {
   Conflict,
   errorCleanup,
   failureOutcome,
-  modelRefused,
+  checkModel,
   parseModelRef,
   runWorking,
   taskClass,
@@ -232,10 +232,11 @@ export class RunExecutor {
           const checked: ModelRunner = {
             async run(original) {
               if (logFailure) throw logFailure;
-              const refused = modelRefused(user, original.model);
-              if (refused) throw new Conflict(`${refused}. Turn it on at /user, or pick another model.`);
+              const { model, refused } = checkModel(user, original.model);
+              if (refused) throw new Conflict(refused);
               const request = {
                 ...original,
+                model,
                 systemPrompt: withUserRules(original.systemPrompt, user),
                 onEvent: (event: AgentEvent) => {
                   session.event(event, original.step);

@@ -204,6 +204,19 @@ test('a review is a chat: kickoff in a worktree with the skill injected, then fo
   );
 });
 
+test('a review is refused when its model is turned off in the user settings', async (t) => {
+  const { reviews } = await fixture(t);
+  const asked: string[] = [];
+  reviews.modelRefusal = async (model) => {
+    asked.push(model);
+    return `${model} is turned off in your user settings. Turn it on at /user, or pick another model.`;
+  };
+  const [result] = await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  assert.equal(result?.ok, false);
+  assert.match(result?.error ?? '', /turned off in your user settings/);
+  assert.deepEqual(asked, ['claude-opus-5-5']);
+});
+
 test('a running review blocks duplicates, replies and removal, and can be stopped', async (t) => {
   const { reviews } = await fixture(t);
   process.env.AGENT_SLEEP = '1';
