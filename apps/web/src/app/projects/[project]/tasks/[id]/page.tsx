@@ -14,6 +14,7 @@ import { FollowUpForm } from '@/components/follow-up-form';
 import { LocalTime } from '@/components/local-time';
 import {
   IssueArchivedBanner,
+  IssueBlockedByField,
   IssueCommentBox,
   IssueDescription,
   IssueTitle,
@@ -602,6 +603,9 @@ export default async function TaskPage({
 
             <Section title="Details">
               <Facts>
+                <Fact label="Blocked by">
+                  <IssueBlockedByField project={project} issueKey={issue.key} blockedBy={issue.blocked_by} />
+                </Fact>
                 <Fact label="Created">
                   <LocalTime iso={issue.created_at} format="date-time" />
                 </Fact>

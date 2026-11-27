@@ -33,3 +33,29 @@ test("every task session states Factory's gates before the agent starts", async 
   assert.match(systemPrompt, /delegate/);
   assert.match(systemPrompt, /background/);
 });
+
+test('the task text says which tickets it builds on: merged, or stacked on the open PR branch', async () => {
+  const blocked = { ...issue, key: 'FE-22', blocked_by: ['FE-21'] } as unknown as IssueView;
+  const board = { ...issues, get: async () => blocked };
+  const fresh = { id: 'run-22', project: 'demo' } as unknown as TaskRecord;
+  const merged = await buildAgentSession({ task: fresh, agent, issues: board, profile });
+  assert.match(merged.prompt, /This ticket builds on FE-21 \(merged\)\./);
+  const stacked = await buildAgentSession({
+    task: { ...fresh, stack_on: 'factory/run-21' },
+    agent,
+    issues: board,
+    profile,
+  });
+  assert.match(
+    stacked.prompt,
+    /This ticket builds on FE-21 \(stacked on its open PR branch factory\/run-21\)\./,
+  );
+  const none = { ...issue, blocked_by: [] } as unknown as IssueView;
+  const alone = await buildAgentSession({
+    task: fresh,
+    agent,
+    issues: { ...issues, get: async () => none },
+    profile,
+  });
+  assert.doesNotMatch(alone.prompt, /builds on/);
+});

@@ -45,6 +45,14 @@ While a task has a run, its column follows the run's stage, unless a person set 
 
 The board asks before any drop that starts, reruns or cancels a run. No drop can skip the approval gate. Every card has a "Move to" menu for keyboard and touch use.
 
+## Blocked by
+
+A task can wait for other tasks of the same project: set **Blocked by** on the task page's Details panel (comma-separated keys, such as `FE-21`), or `blocked_by` through `UpdateIssue`. The backend refuses keys of another project, unknown keys, a task that blocks itself, and cycles, with the same messages as a feature board (`blockedByProblems` in core).
+
+- A Todo card with open blockers shows "Waits for FE-21". Agent pickup does not start it.
+- A drop on In progress is refused with the open blockers' keys, unless the task has exactly one blocker and that blocker's latest run has an open PR. Then the new run starts from the blocker's branch (`stack_on`), and the driver opens its PR after the blocker's branch is pushed.
+- With several blockers, the task waits until all of them are Done. `blockerGate` in `packages/core/src/issues.ts` decides.
+
 ## Archive and delete
 
 - **Archive** (card menu or the task's status menu) takes a task off the board and the sidebar. Its runs stay. A task whose run is coding or reviewing cannot be archived. The sidebar's Archived link, above Project settings, lists archived tasks with Restore and Delete.

@@ -600,13 +600,14 @@ export class BackendService {
     );
   }
   async submit(raw: unknown): Promise<string> {
-    const { project, prompt, jiraKey, agent } = z
+    const { project, prompt, jiraKey, agent, stackOn } = z
       .object({
         project: ProjectName,
         prompt: z.string().trim().min(1).max(100_000),
         jiraKey: z.string().trim().max(100).optional(),
         /** A workspace agent: the run is one session by that agent instead of the pipeline. */
         agent: z.string().min(1).optional(),
+        stackOn: z.string().min(1).optional(), // a blocking ticket's branch with an open PR
       })
       .parse(raw);
     if (!this.dispatcher.accepting) throw new Conflict('Backend is shutting down');
@@ -618,7 +619,8 @@ export class BackendService {
     }
     const registered = await this.projects.read(project);
     const task = await this.tasks.create(project, registered.repo, prompt, new Date().toISOString(), jiraKey);
-    if (agent) await this.tasks.write({ ...task, workflow: 'agent', agent });
+    const run = agent ? { workflow: 'agent' as const, agent } : {};
+    if (agent || stackOn) await this.tasks.write({ ...task, ...run, stack_on: stackOn });
     return task.id;
   }
   private command(raw: Command) {

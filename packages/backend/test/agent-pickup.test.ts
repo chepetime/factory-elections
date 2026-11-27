@@ -321,3 +321,51 @@ test('starting a task removes its retry entry', async (t) => {
   assert.deepEqual(await instance.tick(), ['DEM-1']);
   assert.deepEqual((await state.load())!.retry, {});
 });
+
+test('pickup does not start a ticket whose blocker is not Done (FE-22 waits for FE-21)', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-pickup-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agents = new AgentService({ root, storage: storageFor(root), seed: true });
+  const tasks: TaskRecord[] = [];
+  const running = new Set<string>();
+  const issues = new IssueService({
+    root,
+    storage: storageFor(root),
+    tasks: { list: async () => tasks },
+    settings: async () => ({
+      task_manager: { kind: 'none' },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
+    }),
+    submit: async ({ prompt, agent }) => {
+      const run = TaskRecord.parse({
+        id: randomUUID(),
+        project: 'demo',
+        repo: '/r',
+        prompt,
+        stage: 'queued',
+        ...(agent ? { workflow: 'agent', agent } : {}),
+      });
+      tasks.push(run);
+      return run.id;
+    },
+    run: async (_p, id) => void running.add(id),
+    reject: async () => undefined,
+    deleteRun: async () => undefined,
+    agentName: async (id) => (await agents.active(id)).name,
+  });
+  const pickup = new AgentPickup({
+    agents: () => agents.list(),
+    projects: async () => [{ name: 'demo' }],
+    issues,
+    tasks: async () => tasks,
+    scheduled: (_p, id) => running.has(id),
+    accepting: () => true,
+  });
+  await issues.create({ project: 'demo', title: 'FE-21 code', status: 'backlog' });
+  await issues.create({ project: 'demo', title: 'FE-22 needs it', status: 'todo', priority: 'urgent' });
+  await issues.update({ project: 'demo', key: 'DEM-2', assignee: 'devin', blocked_by: ['DEM-1'] });
+  assert.deepEqual(await pickup.tick(), [], 'the blocker is not Done');
+  assert.deepEqual((await issues.get({ project: 'demo', key: 'DEM-2' })).runs, []);
+  await issues.move({ project: 'demo', key: 'DEM-1', to: 'done' });
+  assert.deepEqual(await pickup.tick(), ['DEM-2']);
+});

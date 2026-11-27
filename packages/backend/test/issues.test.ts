@@ -42,13 +42,11 @@ async function setup(
       tending: { enabled: false, answer_threads: false, trusted_logins: [] },
       ...settings,
     }),
-    submit: async ({ prompt, jiraKey }) => {
-      const created = run(
-        prompt,
-        new Date(clock).toISOString(),
-        'queued',
-        jiraKey ? { jira_key: jiraKey } : {},
-      );
+    submit: async ({ prompt, jiraKey, stackOn }) => {
+      const created = run(prompt, new Date(clock).toISOString(), 'queued', {
+        ...(jiraKey ? { jira_key: jiraKey } : {}),
+        ...(stackOn ? { stack_on: stackOn } : {}),
+      });
       tasks.push(created);
       calls.push(`submit:${prompt}`);
       return created.id;
@@ -683,4 +681,56 @@ test('a follow-up asking to merge main or resolve conflicts runs as a conflicts 
     body: '@devin Merge main into this branch and run the tests',
   });
   assert.ok(calls.includes(`followUp:${opened.id}:conflicts:devin:you:`), calls.join('\n'));
+});
+
+test('blockers: set through update, refused when unknown, self or a cycle', async (t) => {
+  const { service } = await setup(t);
+  const project = 'change-elections';
+  for (const title of ['FE-21 code', 'FE-22 needs it', 'Other'])
+    await service.create({ project, title, status: 'todo' });
+  const set = await service.update({ project, key: 'CE-2', blocked_by: ['ce-1', 'CE-1'] });
+  assert.deepEqual(set.blocked_by, ['CE-1']);
+  assert.equal(set.events.at(-1)!.message, 'Set blocked by to CE-1');
+  await assert.rejects(
+    service.update({ project, key: 'CE-1', blocked_by: ['CE-2'] }),
+    (e: unknown) => e instanceof Conflict && /blocking cycle: CE-1 → CE-2 → CE-1/.test((e as Error).message),
+  );
+  await assert.rejects(service.update({ project, key: 'CE-3', blocked_by: ['CE-3'] }), /CE-3 blocks itself/);
+  await assert.rejects(service.update({ project, key: 'CE-3', blocked_by: ['CE-9'] }), /unknown ticket CE-9/);
+  await assert.rejects(
+    service.update({ project, key: 'CE-3', blocked_by: ['XY-1'] }),
+    /XY-1 is not a task of this project/,
+  );
+  const cleared = await service.update({ project, key: 'CE-2', blocked_by: [] });
+  assert.deepEqual(cleared.blocked_by, []);
+});
+
+test('a ticket waits for its blocker, then stacks on the blocker branch once its PR is open', async (t) => {
+  const { service, tasks } = await setup(t);
+  const project = 'change-elections';
+  await service.create({ project, title: 'FE-21 code', status: 'todo' });
+  await service.create({ project, title: 'FE-22 needs it', status: 'todo' });
+  await service.update({ project, key: 'CE-2', blocked_by: ['CE-1'] });
+  await assert.rejects(
+    service.move({ project, key: 'CE-2', to: 'in_progress' }),
+    (e: unknown) => e instanceof Conflict && /Waits for CE-1/.test((e as Error).message),
+  );
+  const blocker = await service.move({ project, key: 'CE-1', to: 'in_progress' });
+  const record = tasks.find((x) => x.id === blocker.issue.run!.id)!;
+  tasks[tasks.indexOf(record)] = {
+    ...record,
+    stage: 'pr-opened',
+    pr: {
+      url: 'https://github.com/o/r/pull/21',
+      branch: `factory/${record.id}`,
+      head_sha: 'abc',
+      at: record.created_at!,
+    },
+    worktree: { path: '/w', branch: `factory/${record.id}`, base_branch: 'main' },
+  } as TaskRecord;
+  const started = await service.move({ project, key: 'CE-2', to: 'in_progress' });
+  assert.equal(started.action, 'start-run');
+  const stacked = tasks.find((x) => x.id === started.issue.run!.id)!;
+  assert.equal(stacked.stack_on, `factory/${record.id}`);
+  assert.match(started.issue.events.at(-1)!.message, /stacked on CE-1/);
 });

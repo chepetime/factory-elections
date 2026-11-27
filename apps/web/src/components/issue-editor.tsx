@@ -25,6 +25,7 @@ export function useSave(project: string, key: string) {
       priority?: string;
       start_date?: string | null;
       due_date?: string | null;
+      blocked_by?: string[];
     },
     done?: () => void,
   ) =>
@@ -284,6 +285,43 @@ export function IssueDateField({
           !value && 'text-muted-foreground',
           overdue && 'text-destructive',
         )}
+      />
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Tickets this one waits for, as comma-separated keys. Saved when the field loses focus. */
+export function IssueBlockedByField({
+  project,
+  issueKey,
+  blockedBy,
+}: {
+  project: string;
+  issueKey: string;
+  blockedBy: string[];
+}) {
+  const { pending, error, save } = useSave(project, issueKey);
+  const current = blockedBy.join(', ');
+  return (
+    <>
+      <input
+        aria-label="Blocked by"
+        defaultValue={current}
+        placeholder="None"
+        disabled={pending}
+        onBlur={(e) => {
+          const keys = e.target.value
+            .split(',')
+            .map((k) => k.trim())
+            .filter(Boolean);
+          if (keys.join(', ') !== current) save({ blocked_by: keys });
+        }}
+        className="-mx-1.5 h-7 w-full rounded-md border-0 bg-transparent px-1.5 font-mono text-xs outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
       />
       {error && (
         <p role="alert" className="text-xs text-destructive">

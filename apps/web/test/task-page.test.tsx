@@ -32,6 +32,9 @@ vi.mock('@/components/issue-editor', () => ({
   IssuePriorityField: () => <span>priority</span>,
   IssueStatusField: () => <span>status</span>,
   IssueAssigneeField: () => <span>assignee</span>,
+  IssueBlockedByField: ({ blockedBy }: { blockedBy?: string[] }) => (
+    <span>blocked-by:{blockedBy?.join(',')}</span>
+  ),
   IssueDateField: ({ field, value, overdue }: { field: string; value?: string; overdue?: boolean }) => (
     <span>
       {field}:{value ?? 'unset'}
@@ -84,6 +87,7 @@ function issue(run?: { id: string; stage: TaskRecord['stage']; waiting?: boolean
     status_at: '2026-01-01T00:00:00.000Z',
     priority: 'none' as const,
     runs: run ? [run.id] : [],
+    blocked_by: [] as string[],
     comments: [],
     events: [],
     created_at: '2026-01-01T00:00:00.000Z',
@@ -181,6 +185,7 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
   });
   const page = await html(undefined, 'details');
   expect(page).toContain('Model attempts');
+  expect(page).toMatch(/Blocked by[\s\S]*blocked-by:/);
   expect(page).toMatch(/>sonnet · /);
   expect(page).toContain('codex');
   expect(page).toContain('failed: timeout');

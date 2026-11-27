@@ -479,6 +479,7 @@ export async function updateIssue(
     assignee?: string | null;
     start_date?: string | null;
     due_date?: string | null;
+    blocked_by?: string[];
   },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };

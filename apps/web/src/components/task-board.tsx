@@ -45,6 +45,8 @@ export type BoardIssue = {
   };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
+  /** Blockers that are not Done yet (see openBlockers in core). */
+  waits_for?: string[];
 };
 
 /**
@@ -406,6 +408,11 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                     {preview(issue) && (
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{preview(issue)}</p>
                     )}
+                    {issue.status === 'todo' && issue.waits_for?.length ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Waits for {issue.waits_for.join(', ')}
+                      </p>
+                    ) : null}
                     <div className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
                       {issue.run ? (
                         <span className="inline-flex items-center gap-1">
