@@ -1,5 +1,7 @@
 // Verification: the profile's checks in the task worktree, and the profile check before any task.
+import { homedir } from 'node:os';
 import {
+  checkRun,
   environmentFailure,
   tooBroadForLocalCheck,
   isTestPath,
@@ -8,6 +10,7 @@ import {
   isBuiltInProtectedPath,
   protectedPaths,
   runtimeVerdict,
+  type RepoProfile,
   type RuntimeVerdict,
 } from '@factory/core';
 import { DriverError, type DriverDeps } from './ports.ts';
@@ -23,6 +26,11 @@ import { checkedWorktree } from './worktree.ts';
 
 /** The most non-test lines one change may have. */
 export const CHANGE_LINE_LIMIT = 400;
+
+/** `cwd`, environment and OS sandbox for a profile command that runs the coder's code in `cwd`. */
+export function checkOptions(profile: Pick<RepoProfile, 'sandbox'>, cwd: string) {
+  return { cwd, ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }) };
+}
 
 /**
  * The gates on the committed change itself, before any check runs: its size and its tests.
@@ -104,7 +112,7 @@ export async function verifyWorktree(
     deps.log(`$ ${command}   # ${label}`);
     commandOutput = '';
     const result = await deps.shell.runShell(command, {
-      cwd: path,
+      ...checkOptions(profile, path),
       captureLimit: 0,
       onOutput,
       timeoutMs: limits.timeoutMs,
@@ -139,8 +147,14 @@ export async function verifyWorktree(
     let checkOutput = '';
     const result = await deps.shell.runShell(command, {
       cwd: path,
-      // Its own port, so parallel tasks' dev servers do not collide; no usage telemetry.
-      env: { ...process.env, PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
+      // Its own port, so parallel tasks' dev servers do not collide; no usage telemetry. The
+      // sandbox allows the loopback, so the dev server and the browser it drives can talk.
+      ...checkRun({
+        sandbox: profile.sandbox,
+        cwd: path,
+        home: homedir(),
+        extraEnv: { PORT: String(await freePort()), DO_NOT_TRACK: '1', RETICLE_FEEDBACK: '0' },
+      }),
       captureLimit: 0,
       onOutput: (chunk) => {
         checkOutput = tail(checkOutput + chunk);
