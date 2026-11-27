@@ -558,7 +558,7 @@ test('with tending off, a conflicting PR gets one conflict follow-up per head, a
   const tending = new TendingService({
     projects: { list: async () => [{ name: 'app' }] },
     tasks: { list: async () => [task], taskPath: () => '/r/task.json' },
-    settings: async () => ProjectSettings.parse({}),
+    settings: async () => ProjectSettings.parse({ tending: { enabled: false } }),
     profile: async () => ({}) as RepoProfile,
     runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
     slot: async () => () => {},
@@ -742,4 +742,55 @@ test('an old reruns record still loads', async (t) => {
   f.setPr({ checks: [{ name: 'unit', state: 'fail', run_id: '42' }] });
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'fix-ci');
   assert.deepEqual(f.calls, []);
+});
+
+test('a profile with no tending block tends an agent PR, and enabled: false does not', async () => {
+  const task = {
+    id: 't1',
+    project: 'app',
+    repo: '/r',
+    prompt: 'x',
+    stage: 'pr-opened',
+    workflow: 'agent',
+    agent: 'devin',
+    worktree: { path: process.cwd(), branch: 'factory/t1', base_branch: 'main' },
+    pr: { url: 'https://github.com/o/r/pull/6', branch: 'factory/t1', head_sha: 'h1', at: 'x' },
+  } as unknown as TaskRecord;
+  async function readsPr(profile: Record<string, unknown>): Promise<boolean> {
+    let read = false;
+    const tending = new TendingService({
+      projects: { list: async () => [{ name: 'app' }] },
+      tasks: { list: async () => [task], taskPath: () => '/r/task.json' },
+      settings: async () => ProjectSettings.parse(profile),
+      profile: async () => ({}) as RepoProfile,
+      runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+      slot: async () => () => {},
+      storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+      github: {
+        permission: async () => ({}),
+        pr: async () => {
+          read = true;
+          return {
+            number: 6,
+            url: task.pr!.url,
+            state: 'OPEN',
+            head_sha: 'h1',
+            base: 'main',
+            mergeable: 'MERGEABLE',
+            checks: [],
+            threads: [],
+          };
+        },
+        status: async (_cwd, number) => ({ number, state: 'OPEN', draft: false }),
+        rerunFailed: async () => {},
+        failedLog: async () => '',
+        reply: async () => {},
+        resolve: async () => {},
+      },
+    });
+    await tending.tick();
+    return read;
+  }
+  assert.equal(await readsPr({}), true, 'tended by default');
+  assert.equal(await readsPr({ tending: { enabled: false } }), false, 'an explicit opt-out is respected');
 });
