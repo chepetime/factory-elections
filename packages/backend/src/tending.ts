@@ -68,8 +68,9 @@ export interface TendingDeps {
   };
   github?: TendingGitHub;
   /**
-   * Every pass reads each open-PR task's PR once and reports it: the board moves a merged task to
-   * Done, and an agent's draft PR without a review loop gets one.
+   * Every pass reads the PR of each task that has one, at any stage, and reports it: the board moves
+   * a merged task to Done, a follow-up whose PR ended is settled, and an agent's draft PR without a
+   * review loop gets one.
    */
   prObserved?(task: TaskRecord, pr: PrStatus): Promise<unknown>;
   /**
@@ -257,11 +258,18 @@ export class TendingService {
       const settings = await this.deps.settings(name).catch(() => undefined);
       if (!settings) continue;
       for (const task of await this.deps.tasks.list(name)) {
-        if (task.stage !== 'pr-opened' || !task.pr) continue;
+        if (!task.pr) continue;
         const log = (what: string) => (error: unknown) =>
           this.deps.log?.(
             `${what} ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
+        // A follow-up moves the run out of pr-opened, and the person may merge the PR meanwhile:
+        // read its state at every stage, so a merged PR still sets the task Done and settles the
+        // follow-up. Only an open PR at pr-opened gets the conflict watch and tending.
+        if (task.stage !== 'pr-opened') {
+          await this.observe(task).catch(log('pr watch'));
+          continue;
+        }
         // A merged or closed PR needs no conflict watch and no tending.
         const open = await this.observe(task).catch((error: unknown) => (log('pr watch')(error), true));
         if (!open) continue;

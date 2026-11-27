@@ -582,3 +582,50 @@ test("each pass reports every open-PR task's PR state, and skips conflict watch 
   await tending.tick();
   assert.deepEqual(seen, ['5:MERGED:true'], 'a merged PR is reported and not read again for conflicts');
 });
+
+test('a PR that merged while its follow-up waits at the gate is still reported, without a conflict watch', async () => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/18',
+    branch: 'b',
+    head_sha: 'h',
+    at: '2026-11-26T00:00:00.000Z',
+  };
+  const at = (id: string, stage: string) =>
+    ({
+      id,
+      project: 'app',
+      repo: '/r',
+      prompt: 'x',
+      stage,
+      worktree: { path: '/w', branch: 'b', base_branch: 'main' },
+      pr,
+    }) as unknown as TaskRecord;
+  const tasks = [at('gate', 'awaiting-approval'), at('stopped', 'blocked'), at('none', 'queued')];
+  delete (tasks[2] as { pr?: unknown }).pr;
+  const seen: string[] = [];
+  const tending = new TendingService({
+    projects: { list: async () => [{ name: 'app' }] },
+    tasks: { list: async () => tasks, taskPath: () => '/r/task.json' },
+    settings: async () => ProjectSettings.parse({}),
+    profile: async () => ({}) as RepoProfile,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    slot: async () => () => {},
+    storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+    github: {
+      permission: async () => ({}),
+      pr: async () => {
+        throw new Error('no conflict watch or tending outside pr-opened');
+      },
+      status: async (_cwd, number) => ({ number, state: 'MERGED', draft: false }),
+      rerunFailed: async () => {},
+      failedLog: async () => '',
+      reply: async () => {},
+      resolve: async () => {},
+    },
+    conflictFollowUp: async () => void seen.push('conflict'),
+    prObserved: async (t, p) => void seen.push(`${t.id}:${p.number}:${p.state}`),
+    log: (line) => void seen.push(line),
+  });
+  await tending.tick();
+  assert.deepEqual(seen, ['gate:18:MERGED', 'stopped:18:MERGED']);
+});
