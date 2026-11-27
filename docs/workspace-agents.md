@@ -31,8 +31,8 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 - It starts the Todo tasks of each agent with "Pick up Todo tasks" on, up to the agent's free slots. The order is priority, then the oldest task.
 - A run waiting for you (in review, blocked) does not use a slot.
 - It skips Backlog tasks, archived tasks, and tasks with an open run.
-- If a start fails, the task gets one note with the reason, and the agent waits 10 minutes before it tries that task again.
-- **Routing:** a Todo task with no agent gets one from the coordinator, Mika. The coordinator makes one model call with no tools, limited to $0.10, which returns an agent from the roster and a reason. The reason shows on the task. A "none" answer adds a note and is not asked again until you edit the task. Without an active coordinator, unassigned tasks wait for you.
+- If a start fails, the task gets one note with the reason, and the agent waits 10 minutes before it tries that task again. Each failure in a row doubles the wait, up to 1 hour. The wait, and the coordinator's "none" answers, survive a backend restart: pickup keeps them in `.workspace/pickup.json` and drops a task's entry when it starts, is archived or is deleted. An unreadable file starts empty.
+- **Routing:** a Todo task with no agent gets one from the coordinator, Mika. The coordinator makes one model call with no tools, limited to $0.10, which returns an agent from the roster and a reason. The reason shows on the task. A "none" answer adds a note and is not asked again until you edit the task, also after a restart. Without an active coordinator, unassigned tasks wait for you.
 - **New tasks:** a task from the prompt field goes to Backlog, or to Todo when "Start" is on. It never starts the old pipeline directly.
 - Set `FACTORY_AGENT_PICKUP=0` to turn pickup off for the whole backend.
 

@@ -36,6 +36,7 @@ import {
   buildAgentSession,
   ChatService,
   AgentPickup,
+  documentPickupState,
   routeTask,
   type SessionEntry,
 } from '@factory/agents';
@@ -325,6 +326,7 @@ export class BackendService {
       issues: this.issues,
       tasks: (p) => this.tasks.list(p),
       scheduled: (p, id) => this.isScheduled(p, id),
+      state: documentPickupState(this.root, this.storage),
       blocker: (p) => this.runBlocker(p),
       route: async (task) => {
         const base = this.runner ?? composeDriver(this.root).deps.runner;

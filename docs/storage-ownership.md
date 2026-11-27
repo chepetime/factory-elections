@@ -27,6 +27,7 @@ Some entities are always host files, also in Postgres mode. A Postgres dump alon
 | Repository memory | `<project>/memory/` (`facts.json`, `sessions.jsonl`, `tools.json`) | host files (always) | the memory service's per-project queue | **yes** |
 | PR reviews | `<project>/reviews/<number>/` | host files (always) | the review service's per-PR guard | **yes** |
 | Workspace agents and chats | `.workspace/agents.json`, `.workspace/chats.json`, `.workspace/chats/<id>.json` | document store | each service's serial queue | yes |
+| Pickup state (retry waits, unrouted tasks) | `.workspace/pickup.json` | document store | `AgentPickup` (writes one after another) | yes |
 | User settings | `user-settings.json` | document store | the user settings service | yes |
 | Inbox dismissals | `inbox/dismissed.json` | document store | the inbox | optional |
 | Storage configuration | `storage.json`, `.factory-data.env` | host files | the person who configures storage | **yes, privately** |

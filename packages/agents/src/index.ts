@@ -2,6 +2,7 @@
 export * from './agent-profiles.ts';
 export * from './agent-router.ts';
 export * from './agent-pickup.ts';
+export * from './pickup-state.ts';
 export * from './agent-sessions.ts';
 export * from './agent-tools.ts';
 export * from './chats.ts';
