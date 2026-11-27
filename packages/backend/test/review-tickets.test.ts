@@ -25,7 +25,10 @@ async function setup(t: TestContext) {
     storage: storageFor(root),
     tasks: { list: async () => [] },
     settings: async () =>
-      ({ task_manager: { kind: 'none' }, tending: { enabled: false, answer_threads: false } }) as never,
+      ({
+        task_manager: { kind: 'none' },
+        tending: { enabled: false, answer_threads: false, trusted_logins: [] },
+      }) as never,
     submit: async () => {
       throw new Error('a review ticket never starts a coding run');
     },

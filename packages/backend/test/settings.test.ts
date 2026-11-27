@@ -27,14 +27,14 @@ test('settings default, save without empty fields, and detection proposes withou
 
   assert.deepEqual(await settings.get('app'), {
     task_manager: { kind: 'none' },
-    tending: { enabled: false, answer_threads: false },
+    tending: { enabled: false, answer_threads: false, trusted_logins: [] },
   });
   const proposal = await settings.detect({ project: 'app' });
   assert.deepEqual(seen, [base]);
   assert.equal(proposal.task_manager.cli, 'acli');
   assert.deepEqual(await settings.get('app'), {
     task_manager: { kind: 'none' },
-    tending: { enabled: false, answer_threads: false },
+    tending: { enabled: false, answer_threads: false, trusted_logins: [] },
   });
 
   const saved = await settings.save({
