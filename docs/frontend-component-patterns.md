@@ -12,6 +12,8 @@ The package ships TypeScript source; Next transpiles it (`transpilePackages`), s
 
 ## Add a shadcn component
 
+Start from the shadcn catalog (`pnpm exec shadcn search @shadcn` lists it); add a component when a change first needs it, so every file in the package has a caller (`unused-files` lint enforces that).
+
 ```sh
 cd packages/ui
 yes n | pnpm exec shadcn add <name>   # "n": never overwrite a component we already adjusted

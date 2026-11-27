@@ -5,6 +5,7 @@ Use pnpm and Node 26+. Work in an isolated checkout; anchor commands to its abso
 - Worktrees: `node scripts/worktree.mjs new agent/my-task HEAD --install`; [lifecycle](docs/worktrees.md).
 - Fullstack: `node scripts/worktree.mjs run 3001 4320` with free ports; [local running](docs/harnes/RUNNING.md).
 - Dev server on main or in a worktree: [operations](docs/operations/dev-server.md). Docs site: `pnpm docs` (http://localhost:3100).
+- UI: build from a shadcn component in `packages/ui`, adding one with `shadcn add` when it is missing; write a custom component only when no shadcn component fits. [UI components](docs/frontend-component-patterns.md).
 - Browser review: `pnpm storybook` for components; use [browser checks](docs/harnes/BROWSER.md) for flows.
 - Terminal work: scope `rg` to the owning package, then run its focused check; [commands and output](docs/harnes/TERMINAL.md).
 - CI or changed checks: [selection and caching](docs/agents/ci.md).
