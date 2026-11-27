@@ -31,7 +31,10 @@ import {
   type TendAction,
   type TendFix,
   type TendingWaiting,
+  classifyFlake,
   conflictFollowUpSeen,
+  MAX_CI_RETRIES,
+  type FlakeVerdict,
   PrStatus,
   protectedPaths,
 } from '@factory/core';
@@ -203,6 +206,9 @@ export const ghTending: TendingGitHub = {
   },
 };
 
+const allPassed = (pr: PrState) =>
+  pr.checks.length > 0 && pr.checks.every((c) => c.state === 'pass' || c.state === 'skipped');
+
 async function git(cwd: string, args: string[]) {
   // No repository hooks: `merge` and `commit` would run the PR's own hooks on the host.
   return run('git', [...NO_HOOKS, ...args], { cwd, timeoutMs: 120_000 });
@@ -337,7 +343,8 @@ export class TendingService {
         : read;
       const now = new Date().toISOString();
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
-      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads });
+      const verdicts = await this.triage(pr, record, settings, cwd);
+      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads, verdicts });
       record = { ...record, checked_at: now, last: action.kind };
       switch (action.kind) {
         case 'end':
@@ -351,14 +358,31 @@ export class TendingService {
         case 'rerun':
           for (const id of new Set(action.checks.flatMap((c) => (c.run_id ? [c.run_id] : []))))
             await this.github.rerunFailed(cwd, id);
-          record.reruns = [...record.reruns, pr.head_sha];
-          record.fixes = [...record.fixes, { kind: 'rerun', at: now, sha: pr.head_sha, outcome: 'rerun' }];
+          record.ci_retries = [
+            ...record.ci_retries,
+            ...action.checks.map((c) => ({
+              sha: pr.head_sha,
+              check: c.name,
+              verdict: verdicts[c.name] === 'flake' ? ('flake' as const) : ('unknown' as const),
+            })),
+          ].slice(-MAX_CI_RETRIES);
+          record.fixes = [
+            ...record.fixes,
+            {
+              kind: 'rerun',
+              at: now,
+              sha: pr.head_sha,
+              outcome: 'rerun',
+              note: action.checks.map((c) => `${c.name}: ${verdicts[c.name] ?? 'unknown'}`).join(', '),
+            },
+          ];
           break;
         default: {
           const release = await this.deps.slot();
           if (!release) return { kind: 'wait', reason: 'every agent slot is in use' };
           try {
             const fix = await this.fix(task, pr, action, cwd, record.setup_key ?? task.worktree.setup_key);
+            if (action.kind === 'merge-base') fix.fix.was_green = allPassed(pr);
             record.fixes = [...record.fixes, fix.fix];
             if (fix.setupKey) record.setup_key = fix.setupKey;
             if (fix.fix.outcome !== 'no-change') record.fixes_since_green++;
@@ -375,6 +399,35 @@ export class TendingService {
     } finally {
       this.busy.delete(key);
     }
+  }
+
+  /**
+   * Classifies each failed check from GitHub facts and its failed log (see `classifyFlake`), only
+   * when the failures are settled and a rerun is still open for one of them. A real failure skips
+   * the rerun. A log that cannot be read leaves the check `unknown`.
+   */
+  private async triage(
+    pr: PrState,
+    record: TendRecord,
+    settings: ProjectSettings,
+    cwd: string,
+  ): Promise<Record<string, FlakeVerdict>> {
+    const verdicts: Record<string, FlakeVerdict> = {};
+    if (pr.state !== 'OPEN' || pr.checks.some((c) => c.state === 'pending')) return verdicts;
+    const history = {
+      passed_on_head: pr.checks.filter((c) => c.state === 'pass').map((c) => c.name),
+      flaky_checks: settings.tending.flaky_checks ?? [],
+      base_merge_on_green: record.fixes.some(
+        (f) => f.kind === 'merge-base' && f.outcome === 'pushed' && f.was_green && f.head === pr.head_sha,
+      ),
+    };
+    for (const check of pr.checks.filter((c) => c.state === 'fail')) {
+      const log = check.run_id
+        ? await this.github.failedLog(cwd, check.run_id).catch(() => undefined)
+        : undefined;
+      verdicts[check.name] = classifyFlake(check, history, log).verdict;
+    }
+    return verdicts;
   }
 
   /**
@@ -434,7 +487,11 @@ export class TendingService {
   ): Promise<{ fix: TendFix; answered: string[]; replyIds?: string[]; setupKey?: string }> {
     const at = new Date().toISOString();
     const branch = task.worktree!.branch;
-    const done = (outcome: TendFix['outcome'], cost: number | null, note?: string) => ({
+    const done = (
+      outcome: TendFix['outcome'],
+      cost: number | null,
+      note?: string,
+    ): { fix: TendFix; answered: string[] } => ({
       fix: { kind: action.kind, at, sha: pr.head_sha, outcome, cost_usd: cost, ...(note ? { note } : {}) },
       answered: [] as string[],
     });
@@ -609,6 +666,7 @@ export class TendingService {
       answered.push(answeredKey(thread));
     }
     const result = done(head !== before ? 'pushed' : 'no-change', cost);
+    if (head !== before) result.fix.head = head;
     return { ...result, answered, replyIds, ...(setupKey ? { setupKey } : {}) };
   }
 

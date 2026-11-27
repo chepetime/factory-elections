@@ -180,7 +180,7 @@ Tending is off by default. Turn it on in the project settings with `"tending": {
 1. **The PR is merged or closed:** tending ends for that PR.
 2. **The PR conflicts with its base:** tending merges the base in. An agent resolves the conflicts, and the merge is committed.
 3. **Review threads wait for an answer:** this happens only with `answer_threads` on. An agent replies to each thread and changes code where it agrees with the comment. A thread is resolved only when its code change was pushed. Only [trusted comments](#whose-comments-tending-answers) count.
-4. **Checks failed:** tending reruns the failed jobs once for each head commit. If they fail again, an agent fixes the cause from the failed logs.
+4. **Checks failed:** tending first reads each failed log and classifies the check with `classifyFlake`, from GitHub facts only and never a model. In order: the same check passed on the same head, the check is in `tending.flaky_checks`, an assertion or compile signature (a real failure), an infrastructure signature (timeout, `ECONNRESET`, lost runner, exit 143), and a failure on a commit that only merged the base into a green head. A real failure goes straight to an agent fix, with no rerun. Any other failed check is rerun once for each head commit and check (`ci_retries` in `tending.json`, the newest 100 kept; an old `reruns` list loads as a retry of every check on that head). A failure with no Actions run cannot be rerun and goes to a fix. If a check fails again after its rerun, an agent fixes the cause from the failed logs. An unclear failure is `unknown`: it keeps the one rerun and is never recorded as a flake.
 5. **Otherwise:** tending waits.
 
 Safety rules:
