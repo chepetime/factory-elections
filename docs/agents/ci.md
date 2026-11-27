@@ -19,6 +19,12 @@ changes only the entries of files changed since local `main` (on `main` it consi
 When the check fails, move a cohesive part of the file into its own module. Do not raise the baseline.
 After a rename or move, move the baseline entry to the new path by hand.
 
+Repository rules live in `tests/repo/*.test.ts` (`node:test`, Node built-ins only): relative links in
+`AGENTS.md` and `docs/harnes/*.md` resolve, factory `git commit` calls pass `--no-verify`, and each
+hook script in `.claude/settings.json` exists. `pnpm test` and `ci-run.mjs` run them on every plan,
+also a documentation-only one; run them alone with `node --test tests/repo`. A new file under
+`tests/` is an unknown path to `ci-plan.mjs`, so it selects all workspaces.
+
 ## Local git hooks
 
 Work lands directly on local `main` with no PR and no push, so neither workflow runs. Git hooks cover that gap.

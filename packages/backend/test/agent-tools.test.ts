@@ -26,7 +26,7 @@ test('an agent comments and reports status through its grant, and chats create t
     tasks: { list: async () => [] },
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async ({ prompt }) => (submitted.push(prompt), 'never'),
     run: async () => undefined,

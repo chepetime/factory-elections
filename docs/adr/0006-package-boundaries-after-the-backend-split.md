@@ -19,13 +19,15 @@ ADR 0001 named a `packages/dispatcher` that was never built. Queueing, agent lim
    | `pr-reviews` | Review turns, records and worktrees, behind `ReviewDelegation` and `ReviewMemory` | core, dispatcher, evidence, adapters |
    | `agents` | Profiles, routing, pickup, chats, sessions, tools, delegation, memory, behind `AgentBoard` | core, driver, dispatcher, adapters |
    | `backend` | RPC, command ownership, recovery, the board, features, tending, and the composition of the packages above | all of the above |
+   | `apps/cli` | The `factory` command line: runs, inspection, profile drafts, `serve` | core, driver, compose, evidence, backend, backend-client, adapters |
+   | `apps/backend` | The backend process: starts `serveBackend` | backend, adapters-fs |
 
 2. **The web app reaches the backend only through `backend-client`.** It may not import `backend`, `driver` or any adapter.
 3. **Adapters have two layers.** `adapters-process` is the base: it spawns processes and depends on nothing. `adapters-git`, `adapters-github` and `adapters-codex` may import it. `adapters-data` is the storage layer over the local files or Postgres and S3, so it may import `adapters-fs`. No other adapter imports another adapter, and no adapter imports the driver or a backend package.
 4. **The driver imports only core.** It reaches adapters through the ports that a composition root passes in.
 5. **Shared types and errors live in core.** `Conflict`, `IssueView`, `IssueRun`, `IssueList` and `QueueWait` are in core, so a port and the service behind it use one type, and the server maps one `Conflict` class to `FAILED_PRECONDITION`.
 
-`.oxlintrc.json` enforces items 1 to 4 with `no-restricted-imports` overrides per package.
+`.oxlintrc.json` enforces items 1 to 4 with `no-restricted-imports` overrides per package. Each override is an allow-list: it bans every `@factory/*` import except the packages in the table row, so a package added later is denied until its row says otherwise. The rules cover `src` only; tests may cross layers. Lint cannot see a relative import across packages or a dependency that is declared in `package.json` but never imported.
 
 ## Consequences
 

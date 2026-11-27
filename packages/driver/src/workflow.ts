@@ -245,6 +245,24 @@ export class Driver {
 
   // ---------- worktree ----------
 
+  /**
+   * Where new work starts: the base as GitHub has it, so PRs merged there are in and commits only
+   * on the local base stay out (they would join the PR and count toward its size). A stacked
+   * ticket starts from its blocker's local branch; without a remote, the local base is used.
+   */
+  private async startPoint(repo: string, base: string, stacked: boolean): Promise<string> {
+    const { git } = this.deps;
+    if (stacked || !git.fetchRefs || !git.remoteBranchExists) return base;
+    try {
+      await git.fetchRefs(repo, [base]);
+    } catch (error) {
+      this.deps.log(
+        `Could not fetch origin/${base}; starting from the local ${base}: ${(error as Error).message}`,
+      );
+    }
+    return (await git.remoteBranchExists(repo, base)) ? `origin/${base}` : base;
+  }
+
   async prepareWorktree(project: string, id: string): Promise<TaskRecord> {
     const { git } = this.deps;
     const task = await this.deps.tasks.read(project, id);
@@ -270,8 +288,9 @@ export class Driver {
     if (await this.deps.definitions.exists(path))
       throw new DriverError(`worktree path already exists: ${path}`);
     if (await git.branchExists(repo, branch)) throw new DriverError(`branch already exists: ${branch}`);
+    const start = await this.startPoint(repo, base, Boolean(task.stack_on));
     try {
-      await git.addWorktree(repo, path, branch, base);
+      await git.addWorktree(repo, path, branch, start);
     } catch (error) {
       await git.removeWorktree(repo, path, branch).catch(() => undefined);
       throw new DriverError((error as Error).message);
@@ -284,7 +303,7 @@ export class Driver {
       { ...task, worktree: { path, branch, base_branch: base } },
       this.deps.now(),
       'worktree',
-      `Created ${branch} from ${base}${baseSha ? ` at ${baseSha.slice(0, 12)}` : ''}`,
+      `Created ${branch} from ${start}${baseSha ? ` at ${baseSha.slice(0, 12)}` : ''}`,
     );
     if (changed.length)
       updated = withEvent(

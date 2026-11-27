@@ -469,10 +469,16 @@ export const ProjectSettings = z.object({
    * PR tending: every 10 minutes the factory keeps this project's open factory PRs moving. It
    * reruns failed checks once, fixes failing CI, merges the base in on conflicts, and (with
    * `answer_threads`) answers review threads. It never force-pushes and never merges. Off by default.
+   * It answers only comments from logins with write, maintain or admin access to the repository, plus
+   * `trusted_logins` (for example a review bot). The list is empty by default.
    */
   tending: z
-    .object({ enabled: z.boolean().default(false), answer_threads: z.boolean().default(false) })
-    .default({ enabled: false, answer_threads: false }),
+    .object({
+      enabled: z.boolean().default(false),
+      answer_threads: z.boolean().default(false),
+      trusted_logins: z.array(z.string().max(100)).max(50).default([]),
+    })
+    .default({ enabled: false, answer_threads: false, trusted_logins: [] }),
   updated_at: z.string().optional(),
 });
 export type ProjectSettings = z.infer<typeof ProjectSettings>;

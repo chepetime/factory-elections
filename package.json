@@ -12,7 +12,7 @@
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "factory": "node apps/cli/src/main.ts",
-    "test": "node --test --test-timeout=120000 --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\" && pnpm --filter @factory/web test",
+    "test": "node --test --test-timeout=120000 --test-reporter=spec \"packages/*/test/**/*.test.ts\" \"apps/cli/test/**/*.test.ts\" \"tests/repo/**/*.test.ts\" && pnpm --filter @factory/web test",
     "typecheck": "tsc --noEmit --pretty false && pnpm --filter @factory/web typecheck && pnpm --filter @factory/docs typecheck",
     "lint": "oxlint --deny-warnings . && node scripts/unused-files.mjs && node scripts/file-size-ratchet.mjs",
     "check:file-size": "node scripts/file-size-ratchet.mjs",

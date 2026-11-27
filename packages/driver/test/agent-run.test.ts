@@ -320,3 +320,45 @@ test('an agent session gets a check_change tool that runs the size and test gate
   const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
   assert.equal(done.stage, 'awaiting-approval');
 });
+
+test("new work starts from GitHub's base branch: local-only commits stay out, merged PRs are in", async () => {
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 's' };
+    },
+  ]);
+  const repo = ctx.task.repo;
+  const remote = `${repo}-origin.git`;
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+  sh(repo, 'remote', 'add', 'origin', remote);
+  sh(repo, 'push', '-q', 'origin', 'main');
+  // A PR merged on GitHub that the local checkout has not pulled.
+  const other = `${repo}-other`;
+  execFileSync('git', ['clone', '-q', remote, other]);
+  sh(other, 'config', 'user.name', 't');
+  sh(other, 'config', 'user.email', 't@example.com');
+  await writeFile(join(other, 'merged.txt'), 'from GitHub\n');
+  sh(other, 'add', '.');
+  sh(other, 'commit', '-qm', 'merged on GitHub');
+  sh(other, 'push', '-q', 'origin', 'main');
+  // A commit on local main that was never pushed.
+  await writeFile(join(repo, 'local.txt'), 'not pushed\n');
+  sh(repo, 'add', '.');
+  sh(repo, 'commit', '-qm', 'local only');
+
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  const worktree = ctx.calls[0]!.cwd!;
+  assert.equal(existsSync(join(worktree, 'merged.txt')), true, 'the merged PR is in');
+  assert.equal(existsSync(join(worktree, 'local.txt')), false, 'the unpushed commit stays out');
+  assert.match(done.events!.find((e) => e.kind === 'worktree')!.message, /from origin\/main at /);
+  const tracked = (() => {
+    try {
+      return sh(worktree, 'config', '--get', `branch.factory/${ctx.task.id}.merge`).trim();
+    } catch {
+      return undefined; // exit 1: no such key
+    }
+  })();
+  assert.equal(tracked, undefined, 'the task branch does not track main');
+});
