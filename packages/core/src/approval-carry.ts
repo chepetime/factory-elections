@@ -99,37 +99,117 @@ export function isSiblingTestOrDoc(path: string, commented: string): boolean {
   return root(path) === root(commented) && stem(path) === stem(commented);
 }
 
+const C_ESCAPES: Record<string, number> = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, '"': 34, '\\': 92 };
+
+/** Reads one C-quoted path (git's `core.quotePath` form) that starts at `start`; undefined if malformed. */
+function readQuoted(text: string, start: number): { value: string; next: number } | undefined {
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  for (let i = start + 1; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === '"') return { value: new TextDecoder().decode(new Uint8Array(bytes)), next: i + 1 };
+    if (ch !== '\\') {
+      bytes.push(...encoder.encode(ch));
+      continue;
+    }
+    const octal = /^[0-7]{1,3}/.exec(text.slice(i + 1, i + 4))?.[0];
+    if (octal) {
+      bytes.push(parseInt(octal, 8) & 0xff);
+      i += octal.length;
+      continue;
+    }
+    const code = C_ESCAPES[text[i + 1] ?? ''];
+    if (code === undefined) return undefined;
+    bytes.push(code);
+    i++;
+  }
+  return undefined;
+}
+
+/**
+ * The path in a `diff --git` header (the text after `diff --git `), or undefined when it cannot be
+ * read. With `--no-renames` both sides name the same path, quoted or not.
+ */
+function headerPath(rest: string): string | undefined {
+  if (rest.startsWith('"')) {
+    const a = readQuoted(rest, 0);
+    if (!a || rest[a.next] !== ' ') return undefined;
+    const tail = rest.slice(a.next + 1);
+    let b = tail;
+    if (tail.startsWith('"')) {
+      const q = readQuoted(tail, 0);
+      if (!q || q.next !== tail.length) return undefined;
+      b = q.value;
+    }
+    return a.value.startsWith('a/') && b.startsWith('b/') && a.value.slice(2) === b.slice(2)
+      ? b.slice(2)
+      : undefined;
+  }
+  const length = (rest.length - 5) / 2;
+  if (!Number.isInteger(length) || length < 1) return undefined;
+  const path = rest.slice(2, 2 + length);
+  return rest === `a/${path} b/${path}` ? path : undefined;
+}
+
 /**
  * Splits a unified diff (`git diff --no-color --no-renames`) into one fingerprint per file. A
- * fingerprint is `hash` of the file's `+`, `-` and context lines: hunk headers (line numbers) and
- * file headers are left out, so the same change at another place in the file, or on a newer base,
- * has the same fingerprint.
+ * fingerprint is `hash` of the file's `+`, `-` and context lines and its mode changes: hunk headers
+ * (line numbers) and file headers are left out, so the same change at another place in the file, or
+ * on a newer base, has the same fingerprint. A binary file has no lines to compare, so its post-image
+ * blob id (from the `index` line) is part of its fingerprint: two different contents never match.
+ *
+ * Fails closed: throws when a `diff --git` header cannot be read, a path repeats, or a binary entry
+ * has no blob id. A caller must treat that as "do not carry".
  */
 export function patchFingerprints(diff: string, hash: (text: string) => string): FileFingerprints {
   const files = new Map<string, string[]>();
   let current: string[] | undefined;
   let inHunk = false;
+  let raw = false;
+  let binary = false;
+  let blob: string | undefined;
+  const finish = () => {
+    if (current && binary) {
+      if (!blob) throw new Error('patch fingerprints: a binary change has no blob id');
+      current.push(`blob ${blob}`);
+    }
+  };
   for (const line of diff.split('\n')) {
-    const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-    if (header) {
-      current = files.get(header[2]!) ?? [];
-      files.set(header[2]!, current);
-      inHunk = false;
+    if (line.startsWith('diff --git ')) {
+      finish();
+      const path = headerPath(line.slice('diff --git '.length));
+      if (path === undefined || files.has(path))
+        throw new Error(`patch fingerprints: cannot read the diff header: ${line}`);
+      current = [];
+      files.set(path, current);
+      inHunk = raw = binary = false;
+      blob = undefined;
       continue;
     }
-    if (!current) continue;
+    if (!current) {
+      if (line !== '') throw new Error(`patch fingerprints: text before the first diff header: ${line}`);
+      continue;
+    }
+    if (raw) {
+      current.push(line);
+      continue;
+    }
     if (line.startsWith('@@')) {
       inHunk = true;
       continue;
     }
-    // Before the first hunk: `index`, mode, `---` and `+++` lines, or a binary marker.
-    if (!inHunk) {
-      if (line.startsWith('Binary files') || line.startsWith('GIT binary patch')) current.push(line);
+    if (inHunk) {
+      if (/^[-+ \\]/.test(line)) current.push(line);
       continue;
     }
-    if (line.startsWith('+') || line.startsWith('-') || line.startsWith(' ') || line.startsWith('\\'))
-      current.push(line);
+    // Before the first hunk: mode lines count; `---`, `+++` and the paths in them do not.
+    const index = /^index [0-9a-f]+\.\.([0-9a-f]+)/.exec(line);
+    if (index) blob = index[1];
+    else if (/^(old|new|deleted file|new file) mode /.test(line)) current.push(line);
+    else if (line.startsWith('Binary files ')) binary = true;
+    else if (line.startsWith('GIT binary patch')) raw = binary = true;
   }
+  finish();
   const out: Record<string, string> = {};
   for (const [path, lines] of files) out[path] = hash(lines.join('\n'));
   return out;

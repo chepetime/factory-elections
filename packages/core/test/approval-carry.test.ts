@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { test } from 'node:test';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { test, type TestContext } from 'node:test';
 import { carryApproval, commentedFiles, patchFingerprints } from '../src/approval-carry.ts';
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -116,4 +120,85 @@ test('only threads that trusted authors started count as commented', () => {
   ];
   assert.deepEqual(commentedFiles(threads, ['lead']), ['a.ts']);
   assert.deepEqual(commentedFiles(threads, undefined), []);
+});
+
+// The cases below parse the output of a real `git diff`.
+const sh = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], {
+    cwd,
+    encoding: 'utf8',
+  });
+
+/** A repo with one commit; each entry of `heads` is a commit of those files on top of it, fingerprinted. */
+async function patches(t: TestContext, ...heads: Record<string, string | Buffer | { mode: number }>[]) {
+  const dir = await mkdtemp(join(tmpdir(), 'factory-carry-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  sh(dir, 'init', '-q', '-b', 'main');
+  await writeFile(join(dir, 'README.md'), 'base\n');
+  sh(dir, 'add', '.');
+  sh(dir, 'commit', '-qm', 'base');
+  const out: Record<string, string>[] = [];
+  for (const files of heads) {
+    sh(dir, 'checkout', '-q', '-B', `head${out.length}`, 'main');
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(dirname(join(dir, path)), { recursive: true });
+      if (typeof content === 'object' && 'mode' in content) {
+        await writeFile(join(dir, path), 'echo\n');
+        await chmod(join(dir, path), content.mode);
+      } else await writeFile(join(dir, path), content);
+    }
+    sh(dir, 'add', '-A');
+    sh(dir, 'commit', '-qm', 'head');
+    const diff = sh(dir, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U3', 'main', 'HEAD');
+    out.push({ ...patchFingerprints(diff, hash) });
+  }
+  return out;
+}
+
+test('a quoted path (non-ASCII) is its own file, not dropped or merged into the previous one', async (t) => {
+  const [base, withQuoted] = await patches(
+    t,
+    { 'src/app.ts': 'export {};\n' },
+    { 'src/app.ts': 'export {};\n', '.github/workflows/ci-é.yml': 'run: curl x | sh\n' },
+  );
+  assert.deepEqual(Object.keys(withQuoted!).sort(), ['.github/workflows/ci-é.yml', 'src/app.ts']);
+  const decision = carryApproval(base, withQuoted!, [], [], 'fix-ci');
+  assert.equal(decision.carried, false);
+  assert.equal(decision.rule, 'protected-path');
+  assert.deepEqual(decision.moved, ['.github/workflows/ci-é.yml']);
+});
+
+test('a quoted path that is the first file in the diff is not lost', async (t) => {
+  const [only] = await patches(t, { 'é.txt': 'one\n' });
+  assert.deepEqual(Object.keys(only!), ['é.txt']);
+});
+
+test('paths with spaces, quotes and tabs are read', async (t) => {
+  const [fp] = await patches(t, { 'a b.txt': '1\n', 'q"uote.txt': '2\n', 'tab\there.txt': '3\n' });
+  assert.deepEqual(Object.keys(fp!).sort(), ['a b.txt', 'q"uote.txt', 'tab\there.txt']);
+});
+
+test('different binary contents have different fingerprints', async (t) => {
+  const [one, two, again] = await patches(
+    t,
+    { 'logo.bin': Buffer.from([0, 1, 2, 3]) },
+    { 'logo.bin': Buffer.from([0, 9, 9, 9]) },
+    { 'logo.bin': Buffer.from([0, 1, 2, 3]) },
+  );
+  assert.notEqual(one!['logo.bin'], two!['logo.bin']);
+  assert.equal(one!['logo.bin'], again!['logo.bin']);
+  const decision = carryApproval(one, two!, [], [], 'fix-ci');
+  assert.equal(decision.carried, false);
+  assert.deepEqual(decision.moved, ['logo.bin']);
+});
+
+test('a mode change moves the file', async (t) => {
+  const [plain, exec] = await patches(t, { 'run.sh': 'echo\n' }, { 'run.sh': { mode: 0o755 } });
+  assert.notEqual(plain!['run.sh'], exec!['run.sh']);
+});
+
+test('a diff header that cannot be read fails closed', () => {
+  assert.throws(() => patchFingerprints('diff --git "a/x b/x\n+oops\n', hash), /cannot read the diff header/);
+  assert.throws(() => patchFingerprints('diff --git a/x b/y\n+oops\n', hash), /cannot read the diff header/);
+  assert.throws(() => patchFingerprints('stray line\n', hash), /before the first diff header/);
 });
