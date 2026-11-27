@@ -56,7 +56,7 @@ test('publication push does not run a pre-push hook from the worktree', async (t
   git('push', '-q', 'origin', 'feature:control');
   assert.equal(existsSync(marker), true);
   await rm(marker);
-  await push(repo, 'feature');
+  await push(repo, git('rev-parse', 'HEAD'), 'feature');
   assert.equal(existsSync(marker), false);
 });
 
