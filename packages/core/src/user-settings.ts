@@ -79,8 +79,10 @@ export const UserSettings = z.object({
       start_runs: z.boolean().default(false),
       /** Show the optional Jira issue key field for "Work on task". */
       jira_key_field: z.boolean().default(true),
+      /** Show the right sidebar (Run, Status, Timeline, Changes, Details) on the ticket page. */
+      details_pane: z.boolean().default(true),
     })
-    .default({ default_type: 'work', start_runs: false, jira_key_field: true }),
+    .default({ default_type: 'work', start_runs: false, jira_key_field: true, details_pane: true }),
   chat: z
     .object({ approval_mode: z.enum(['request', 'auto', 'full']).default('request') })
     .default({ approval_mode: 'request' }),
