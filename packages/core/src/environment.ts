@@ -1,5 +1,6 @@
-// Check output that shows the machine, not the change, is at fault. A stronger model cannot fix
-// an expired login or a stopped database, so such a failure stops the coder ladder.
+// Check output that shows the machine, setup or a protected path, not the code, is at fault. A
+// stronger model cannot fix an expired login, a missing tool or a path only a person can allow,
+// so such a failure stops the coder ladder. Test and type failures still climb it.
 
 export interface EnvironmentFailure {
   /** Plain words for the task page, e.g. "a network service is not reachable". */
@@ -18,6 +19,11 @@ const KNOWN: [RegExp, string][] = [
   ],
   [/Cannot connect to the Docker daemon|docker daemon is not running/i, 'Docker is not running'],
   [/\bENOSPC\b|no space left on device/i, 'the disk is full'],
+  [
+    /command not found|ERR_PNPM_(UNSUPPORTED_ENGINE|OUTDATED_LOCKFILE|NO_MATCHING_VERSION)/,
+    'setup is incomplete (a tool or dependency is missing)',
+  ],
+  [/the change touches protected paths/, 'the change touches protected paths, which a person must allow'],
   [TOO_BROAD, 'the check command refused this change as too broad for this machine'],
 ];
 

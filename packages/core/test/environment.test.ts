@@ -14,6 +14,9 @@ test('known machine faults in check output are environment failures', () => {
       /Docker/,
     ],
     ['ENOSPC: no space left on device, write', /disk/],
+    ['sh: pnpm: command not found', /setup/],
+    ['ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile"', /setup/],
+    ['[the change touches protected paths: .github/ci.yml. Undo those changes]', /protected paths/],
     [
       'test:changed: this diff affects 9 workspaces (limit 6), too broad to run on this machine.',
       /too broad/,
