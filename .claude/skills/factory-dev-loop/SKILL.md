@@ -24,6 +24,7 @@ Each step names the command. Do not rebuild these by hand.
 
 - Focused tests first: `node --test <file>` (packages) or `pnpm exec vitest run --project unit <file>` (in `apps/web`).
 - Then `pnpm check` once. `pnpm lint` includes `scripts/unused-files.mjs`: delete a file nobody imports.
+- `pnpm lint` also runs the file-size ratchet (`pnpm check:file-size`): production files stay at or under 1000 lines, and files listed in `file-size-baseline.json` may only shrink. When it fails, move a cohesive part of the file into its own module. Never raise the baseline; after a rename, move its entry by hand.
 
 ## 4. See it
 
