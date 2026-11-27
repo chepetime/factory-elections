@@ -32,6 +32,9 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
   const other = join(base, 'other');
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['clone', '-q', origin, work], { stdio: 'pipe' });
+  // The service under test merges and commits in `work`; CI runners have no global git identity.
+  git(work, 'config', 'user.name', 't');
+  git(work, 'config', 'user.email', 't@example.com');
   await writeFile(join(work, 'app.txt'), 'line one\n');
   git(work, 'add', '.');
   git(work, 'commit', '-qm', 'init');
