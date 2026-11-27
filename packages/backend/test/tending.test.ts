@@ -87,7 +87,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     pr: async () => pr,
     status: async () => ({ number: pr.number, state: pr.state, draft: false }),
     rerunFailed: async (_c, id) => void calls.push(`rerun ${id}`),
-    failedLog: async () => 'AssertionError: expected fixed',
+    failedLog: async () => 'unit failed: expected fixed',
     reply: async (_c, id, body) => {
       calls.push(`reply ${id}: ${body.replace(/\n\n<!-- factory-tending -->$/, '')}`);
       return `reply-${++replyNo}`;
@@ -136,6 +136,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     task,
     calls,
     shells,
+    docs,
     lookups,
     requests,
     tending,
@@ -673,4 +674,20 @@ test('a PR that merged while its follow-up waits at the gate is still reported, 
   });
   await tending.tick();
   assert.deepEqual(seen, ['gate:18:MERGED', 'stopped:18:MERGED']);
+});
+
+test('an old reruns record still loads', async (t) => {
+  const f = await fixture(t);
+  f.docs.set(join(f.base, 'data', 'tending.json'), {
+    number: 1,
+    url: f.task.pr!.url,
+    reruns: ['h1'],
+  });
+  const old = (await f.tending.record(f.task))!;
+  assert.deepEqual(old.ci_retries, [{ sha: 'h1', check: '*', verdict: 'unknown' }]);
+  assert.equal('reruns' in old, false);
+  // The legacy entry counts as the rerun of this head: the next failure goes to a fix, not a second rerun.
+  f.setPr({ checks: [{ name: 'unit', state: 'fail', run_id: '42' }] });
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'fix-ci');
+  assert.deepEqual(f.calls, []);
 });
