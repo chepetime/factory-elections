@@ -129,7 +129,7 @@ test('a ticket left at running follows its task, or starts over when the task is
     ],
   });
   await service.recover();
-  const byId = new Map((await feature.read()).tickets.map((x: Ticket) => [x.id, x]));
+  const byId = new Map<string, Ticket>((await feature.read()).tickets.map((x: Ticket) => [x.id, x]));
   assert.equal(byId.get('T1')?.state, 'failed');
   assert.equal(byId.get('T2')?.state, 'done');
   // The task is gone: the loop makes a new one.
