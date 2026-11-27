@@ -139,3 +139,21 @@ test('a legacy reruns list loads as retries of every check, and the retries stay
   assert.equal(capped.ci_retries.length, 100);
   assert.equal(capped.ci_retries[99]!.sha, 's149');
 });
+
+test('nextTendAction holds checks that fail on the base and merges the base once it is green', () => {
+  const check = { name: 'unit', state: 'fail' as const, run_id: '1' };
+  const run = (base: 'pass' | 'fail' | 'pending' | undefined, rec = record()) =>
+    nextTendAction(pr({ checks: [check] }), rec, { ...me, ...(base ? { base: { unit: base } } : {}) });
+  assert.deepEqual(run('fail'), { kind: 'wait', reason: 'Waiting for unit to pass on main' });
+  assert.deepEqual(run('pending'), { kind: 'wait', reason: 'Waiting for unit to pass on main' });
+  assert.equal(run('pass').kind, 'merge-base');
+  assert.equal(run(undefined).kind, 'rerun');
+  const merged = record({ fixes: [{ kind: 'merge-base', at: 't', sha: 'h0', outcome: 'pushed' }] });
+  assert.equal(run('pass', merged).kind, 'rerun');
+  const spent = record({ fixes_since_green: 3 });
+  assert.equal(run('fail', spent).kind, 'wait');
+  assert.equal(run('pending', spent).kind, 'wait');
+  const own = { name: 'lint', state: 'fail' as const };
+  const mixed = nextTendAction(pr({ checks: [check, own] }), record(), { ...me, base: { unit: 'fail' } });
+  assert.equal(mixed.kind, 'fix-ci');
+});
