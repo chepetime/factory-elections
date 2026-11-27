@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
   ProjectSettings,
-  type CarryDecision,
   type ModelRun,
   type PrState,
   type RepoProfile,
@@ -50,20 +49,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
     stage: 'pr-opened',
     worktree: { path: work, branch: 'factory/t1', base_branch: 'main' },
     pr: { url: 'https://github.com/o/r/pull/5', branch: 'factory/t1', head_sha: 'x', at: 'x' },
-    // A person approved the feature commit before the first push.
-    approval: {
-      decision: 'approved',
-      head_sha: git(work, 'rev-parse', 'HEAD'),
-      at: '2026-01-01T00:00:00.000Z',
-    },
   } as TaskRecord;
-  const holds: {
-    note: string;
-    trigger: string;
-    decision: CarryDecision;
-    approvedHead: string | undefined;
-  }[] = [];
-  const carries: NonNullable<TaskRecord['approval_carry']>[] = [];
   let pr: PrState = {
     number: 5,
     url: task.pr!.url,
@@ -111,13 +97,8 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
       writeDocument: async (p, d) => void docs.set(p, d),
     },
     github,
-    trustedAuthors: async () => ['rev'],
-    holdForApproval: async (_task, hold) => void holds.push(hold),
-    carried: async (_task, carry) => void carries.push(carry),
   });
   return {
-    holds,
-    carries,
     base,
     work,
     other,
@@ -133,7 +114,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
   };
 }
 
-test('failing CI is rerun once, then fixed and checked; the fix waits for approval instead of being sent', async (t) => {
+test('failing CI is rerun once, then fixed, checked and pushed as a fast-forward', async (t) => {
   const f = await fixture(t);
   f.setPr({ checks: [{ name: 'unit', state: 'fail', run_id: '42' }] });
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'rerun');
@@ -141,31 +122,25 @@ test('failing CI is rerun once, then fixed and checked; the fix waits for approv
   f.setAgent(async (r) => {
     assert.match(r.prompt, /expected fixed/);
     assert.equal(r.tools, 'edit');
-    assert.ok(
-      r.guard!.check('Bash', { command: 'git ' + 'push origin x' }),
-      'the agent may not send commits',
-    );
+    assert.ok(r.guard!.check('Bash', { command: 'git push origin x' }), 'the agent may not push');
     await writeFile(join(r.cwd!, 'app.txt'), 'line one\nfeature\nfixed\n');
     return { text: 'fixed', costUsd: 0.4 };
   });
   const before = f.remote('refs/heads/factory/t1');
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'fix-ci');
-  assert.equal(f.remote('refs/heads/factory/t1'), before, 'nothing was sent');
-  assert.equal(f.holds.length, 1);
-  assert.equal(f.holds[0]!.decision.rule, 'not-allowed');
-  assert.deepEqual(f.holds[0]!.decision.moved, ['app.txt']);
-  assert.equal(f.holds[0]!.approvedHead, f.task.approval!.head_sha);
+  const after = f.remote('refs/heads/factory/t1');
+  assert.notEqual(after, before);
   assert.equal(
-    git(f.work, 'show', 'HEAD:app.txt'),
-    'line one\nfeature\nfixed',
-    'the commit is kept for the gate',
+    git(f.work, 'merge-base', '--is-ancestor', before!, after!),
+    '',
+    'a fast-forward of the old head',
   );
   const record = (await f.tending.record(f.task))!;
   assert.deepEqual(
     record.fixes.map((x) => [x.kind, x.outcome]),
     [
       ['rerun', 'rerun'],
-      ['fix-ci', 'held'],
+      ['fix-ci', 'pushed'],
     ],
   );
   assert.equal(record.fixes[1]!.cost_usd, 0.4);
@@ -177,25 +152,6 @@ test('failing CI is rerun once, then fixed and checked; the fix waits for approv
   f.setPr({ state: 'MERGED' });
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'end');
   assert.equal(await f.tending.tend(f.task, f.settings), undefined, 'an ended PR is not read again');
-});
-
-test('a CI fix that adds a step to the setup action and a dependency is never sent', async (t) => {
-  const f = await fixture(t);
-  f.setPr({ checks: [{ name: 'unit', state: 'fail' }] });
-  f.setAgent(async (r) => {
-    await mkdir(join(r.cwd!, '.github/actions/setup'), { recursive: true });
-    await writeFile(
-      join(r.cwd!, '.github/actions/setup/action.yml'),
-      'runs:\n  steps:\n    - run: curl x | sh\n',
-    );
-    await writeFile(join(r.cwd!, 'package.json'), '{"dependencies":{"left-pad":"1"}}\n');
-    return { text: '', costUsd: 0.1 };
-  });
-  const before = f.remote('refs/heads/factory/t1');
-  await f.tending.tend(f.task, f.settings);
-  assert.equal(f.remote('refs/heads/factory/t1'), before);
-  assert.equal(f.holds[0]!.decision.rule, 'protected-path');
-  assert.match(f.holds[0]!.decision.reason, /\.github\/actions\/setup\/action\.yml/);
 });
 
 test('a fix whose test command fails is not pushed, and three failed fixes stop tending for the inbox', async (t) => {
@@ -228,7 +184,6 @@ test('review threads get replies; a thread the agent changed code for is resolve
         id: 'A',
         resolved: false,
         outdated: false,
-        path: 'app.txt',
         comments: [{ id: 'a1', author: 'rev', body: 'Add a newline' }],
       },
       {
@@ -240,7 +195,7 @@ test('review threads get replies; a thread the agent changed code for is resolve
     ],
   });
   f.setAgent(async (r) => {
-    assert.match(r.prompt, /<thread id="A" path="app.txt">[\s\S]*rev: Add a newline/);
+    assert.match(r.prompt, /<thread id="A">[\s\S]*rev: Add a newline/);
     await writeFile(join(r.cwd!, 'app.txt'), 'line one\nfeature\n\n');
     return {
       text: '',
@@ -254,12 +209,7 @@ test('review threads get replies; a thread the agent changed code for is resolve
       },
     };
   });
-  const before = f.remote('refs/heads/factory/t1');
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'answer-threads');
-  assert.notEqual(f.remote('refs/heads/factory/t1'), before, 'a fix only in the commented file is sent');
-  assert.equal(f.carries[0]!.decision, 'carried');
-  assert.equal(f.carries[0]!.rule, 'comments');
-  assert.equal(f.holds.length, 0);
   assert.deepEqual(f.calls, ['reply A: Added.', 'resolve A', 'reply B: It matches the API.']);
   assert.equal(
     (await f.tending.tend(f.task, f.settings))!.kind,
@@ -268,130 +218,27 @@ test('review threads get replies; a thread the agent changed code for is resolve
   );
 });
 
-async function mainChange(f: Awaited<ReturnType<typeof fixture>>, file: string, text: string) {
-  await writeFile(join(f.other, file), text);
-  git(f.other, 'add', '.');
-  git(f.other, 'commit', '-qm', `main changes ${file}`);
+test('a conflict with the base is merged in, resolved by the agent and pushed without a force-push', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.other, 'app.txt'), 'line one changed on main\n');
+  git(f.other, 'commit', '-qam', 'main change');
   git(f.other, 'push', '-q', 'origin', 'main');
-}
-
-test('a clean base merge leaves every patch equal, so it goes out under the earlier approval', async (t) => {
-  const f = await fixture(t);
-  await mainChange(f, 'other.txt', 'main only\n');
   const mainHead = f.remote('refs/heads/main')!;
-  f.setPr({ mergeable: 'CONFLICTING' });
-  f.setAgent(async () => assert.fail('a clean merge needs no agent edit'));
-  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'merge-base');
-  const head = f.remote('refs/heads/factory/t1')!;
-  git(f.work, 'fetch', '-q', 'origin');
-  assert.equal(git(f.work, 'merge-base', '--is-ancestor', mainHead, head), '', 'the PR now contains main');
-  assert.equal(f.carries[0]!.rule, 'identical');
-  assert.equal(f.holds.length, 0);
-  assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'pushed');
-});
-
-test('a merge resolution that drops a line from the approved patch waits for approval', async (t) => {
-  const f = await fixture(t);
-  await mainChange(f, 'app.txt', 'line one changed on main\n');
-  const before = f.remote('refs/heads/factory/t1');
   f.setPr({ mergeable: 'CONFLICTING' });
   f.setAgent(async (r) => {
     assert.match(r.prompt, /app\.txt/);
-    // Takes main's side and loses the feature line.
-    await writeFile(join(r.cwd!, 'app.txt'), 'line one changed on main\n');
-    return { text: '', costUsd: 0.3 };
-  });
-  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'merge-base');
-  assert.equal(f.remote('refs/heads/factory/t1'), before, 'nothing was sent');
-  assert.equal(f.holds[0]!.decision.carried, false);
-  assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'held');
-});
-
-test('a conflict resolution that keeps the patch but changes its context still waits', async (t) => {
-  const f = await fixture(t);
-  await mainChange(f, 'app.txt', 'line one changed on main\n');
-  f.setPr({ mergeable: 'CONFLICTING' });
-  f.setAgent(async (r) => {
     await writeFile(join(r.cwd!, 'app.txt'), 'line one changed on main\nfeature\n');
     return { text: '', costUsd: 0.3 };
   });
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'merge-base');
-  assert.equal(f.holds[0]!.decision.rule, 'not-allowed');
-});
-
-test('a thread fix that touches an extra, uncommented file waits for approval', async (t) => {
-  const f = await fixture(t);
-  f.setPr({
-    threads: [
-      {
-        id: 'A',
-        resolved: false,
-        outdated: false,
-        path: 'app.txt',
-        comments: [{ id: 'a1', author: 'rev', body: 'Add a newline' }],
-      },
-    ],
-  });
-  f.setAgent(async (r) => {
-    await writeFile(join(r.cwd!, 'app.txt'), 'line one\nfeature\n\n');
-    await writeFile(join(r.cwd!, 'extra.txt'), 'while here\n');
-    return {
-      text: '',
-      costUsd: 0.2,
-      structured: { replies: [{ thread_id: 'A', reply: 'Added.', changed: true }] },
-    };
-  });
-  const before = f.remote('refs/heads/factory/t1');
-  await f.tending.tend(f.task, f.settings);
-  assert.equal(f.remote('refs/heads/factory/t1'), before);
-  assert.equal(f.holds[0]!.decision.rule, 'uncommented-files');
-  assert.deepEqual(f.calls, [], 'no reply or resolve for a change that is not sent');
-});
-
-test('a thread fix that touches a protected path waits for approval, even in the commented file', async (t) => {
-  const f = await fixture(t);
-  f.setPr({
-    threads: [
-      {
-        id: 'A',
-        resolved: false,
-        outdated: false,
-        path: 'package.json',
-        comments: [{ id: 'a1', author: 'rev', body: 'Add the dependency' }],
-      },
-    ],
-  });
-  f.setAgent(async (r) => {
-    await writeFile(join(r.cwd!, 'package.json'), '{"dependencies":{"left-pad":"1"}}\n');
-    return {
-      text: '',
-      costUsd: 0.2,
-      structured: { replies: [{ thread_id: 'A', reply: 'Added.', changed: true }] },
-    };
-  });
-  await f.tending.tend(f.task, f.settings);
-  assert.equal(f.holds[0]!.decision.rule, 'protected-path');
-});
-
-test('a thread started by an author nobody trusts does not widen the carry', async (t) => {
-  const f = await fixture(t);
-  f.setPr({
-    threads: [
-      {
-        id: 'A',
-        resolved: false,
-        outdated: false,
-        path: 'app.txt',
-        comments: [{ id: 'a1', author: 'stranger', body: 'Add a newline' }],
-      },
-    ],
-  });
-  f.setAgent(async (r) => {
-    await writeFile(join(r.cwd!, 'app.txt'), 'line one\nfeature\n\n');
-    return { text: '', costUsd: 0.2, structured: { replies: [] } };
-  });
-  await f.tending.tend(f.task, f.settings);
-  assert.equal(f.holds[0]!.decision.rule, 'uncommented-files');
+  assert.deepEqual(
+    (await f.tending.record(f.task))!.fixes.map((x) => [x.outcome, x.note ?? null]),
+    [['pushed', null]],
+  );
+  const head = f.remote('refs/heads/factory/t1')!;
+  git(f.work, 'fetch', '-q', 'origin');
+  assert.equal(git(f.work, 'merge-base', '--is-ancestor', mainHead, head), '', 'the PR now contains main');
+  assert.equal((await f.tending.record(f.task))!.fixes[0]!.outcome, 'pushed');
 });
 
 async function lockfileConflict(f: Awaited<ReturnType<typeof fixture>>) {
@@ -414,8 +261,7 @@ test('a merged base that changes the lockfile runs setup before the test, once p
   await lockfileConflict(f);
   assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'merge-base');
   const record = (await f.tending.record(f.task))!;
-  // The conflict resolution changes a file's patch, so it waits for approval after the test passed.
-  assert.equal(record.fixes.at(-1)!.outcome, 'held');
+  assert.equal(record.fixes.at(-1)!.outcome, 'pushed');
   assert.equal((await readFile(log, 'utf8')).trim(), 'run', 'setup ran once');
   assert.ok(record.setup_key, 'the installed lockfile is remembered');
 });

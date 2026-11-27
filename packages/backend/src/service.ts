@@ -418,11 +418,6 @@ export class BackendService {
           by: 'factory',
           pr_head: pr.head_sha,
         }),
-      holdForApproval: (task, hold) => this.driver().holdForApproval(task.project, task.id, hold),
-      carried: async (task, carry) => {
-        const current = await this.tasks.read(task.project, task.id);
-        await this.tasks.write({ ...current, approval_carry: carry });
-      },
       projects: this.projects,
       tasks: this.tasks,
       settings: (p) => this.settings.get(p),

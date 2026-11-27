@@ -26,12 +26,9 @@ import {
   type TendFix,
   type TendingWaiting,
   conflictFollowUpSeen,
-  commentedFiles,
   PrStatus,
-  type CarryDecision,
 } from '@factory/core';
-import { approvedHeadOf, carryRecord, decideCarry, setupInputsKey, worktreeGuard } from '@factory/driver';
-import { patchOf } from '@factory/adapters-git';
+import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
 
 export interface TendingGitHub {
@@ -69,22 +66,6 @@ export interface TendingDeps {
    * the PR conflicts with its base, once per PR head.
    */
   conflictFollowUp?(task: TaskRecord, pr: { head_sha: string; base: string }): Promise<unknown>;
-  /**
-   * The people whose review comments count as asked-for changes (FE-8): a thread they started lets an
-   * `answer-threads` fix touch that thread's file without a new approval. Without it no thread counts.
-   */
-  trustedAuthors?(task: TaskRecord): Promise<readonly string[]>;
-  /**
-   * A fix that the approval carry rule did not clear: adds a follow-up for the task and puts the
-   * worktree's commit at the approval gate (stage `awaiting-approval`). Without it, such a fix is
-   * dropped, never pushed.
-   */
-  holdForApproval?(
-    task: TaskRecord,
-    hold: { note: string; trigger: string; decision: CarryDecision; approvedHead: string | undefined },
-  ): Promise<unknown>;
-  /** A fix that the carry rule cleared was pushed: keeps the decision on the task. */
-  carried?(task: TaskRecord, carry: NonNullable<TaskRecord['approval_carry']>): Promise<unknown>;
   log?(line: string): void;
 }
 
@@ -489,41 +470,8 @@ export class TendingService {
         await git(cwd, ['reset', '-q', '--hard', before]);
         return done('failed', cost, `the test command failed: ${(test.stdout + test.stderr).slice(-500)}`);
       }
-      // The approval covers one exact commit: a new head goes out only when code shows its patch is
-      // the approved one, or the approved one plus what trusted reviewers asked for.
-      const approvedHead = approvedHeadOf(task);
-      const decision = await decideCarry({
-        approvedHead,
-        head,
-        trigger: action.kind,
-        comments:
-          action.kind === 'answer-threads'
-            ? commentedFiles(action.threads, await this.deps.trustedAuthors?.(task))
-            : [],
-        protectedPaths: profile.confirmed.forbidden_paths,
-        patchOf: (sha) => patchOf(cwd, sha, `origin/${pr.base}`),
-      });
-      if (!decision.carried) {
-        const note = `${describeAction(action)}: ${decision.reason}`;
-        if (!this.deps.holdForApproval) {
-          await git(cwd, ['reset', '-q', '--hard', before]);
-          return done('failed', cost, `needs a new approval, and nothing can hold it: ${decision.reason}`);
-        }
-        // The commit stays in the worktree for the gate; the PR on GitHub is not touched.
-        await this.deps.holdForApproval(task, { note, trigger: action.kind, decision, approvedHead });
-        return { ...done('held', cost, decision.reason), ...(setupKey ? { setupKey } : {}) };
-      }
       // A plain push of new commits on top of the PR head: a fast-forward, never a force-push.
       await gitOk(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`]);
-      await this.deps.carried?.(
-        task,
-        carryRecord(decision, {
-          approvedHead,
-          head: await gitOk(cwd, ['rev-parse', 'HEAD']),
-          trigger: action.kind,
-          at: new Date().toISOString(),
-        }),
-      );
     }
     const answered: string[] = [];
     for (const reply of replies) {
@@ -566,14 +514,6 @@ function describeThread(t: PrThread): string {
     ...t.comments.map((c) => `${c.author}: ${c.body}`),
     '</thread>',
   ].join('\n');
-}
-
-function describeAction(action: { kind: string }): string {
-  return action.kind === 'merge-base'
-    ? 'PR tending resolved merge conflicts'
-    : action.kind === 'fix-ci'
-      ? 'PR tending fixed failing CI checks'
-      : 'PR tending answered review threads';
 }
 
 async function commitAll(cwd: string, message: string): Promise<void> {

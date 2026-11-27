@@ -1,16 +1,14 @@
 // Follow-ups: more work on a run whose PR is already open, by a workspace agent, on the same branch
 // and PR. The run goes through the usual stages again (coding, the approval gate with the new commit,
 // then a push to the same PR), so the board shows the ticket in progress, in review or blocked, and
-// nothing reaches GitHub without a person approving that exact commit, unless the commit is the
-// approved patch itself (a clean base merge: see approval-carry.ts).
+// nothing reaches GitHub without a person approving that exact commit.
 import type { TaskRecord } from './schemas.ts';
 
 export type FollowUpKind = 'custom' | 'conflicts' | 'review';
 
 /**
- * Whether the follow-up's commit may be pushed once the checks pass, without the approval gate. Only
- * the review loop's fixes may, and only when `carryApproval` shows the approved patch did not
- * change (see approval-carry.ts); any other change waits at the gate for a person.
+ * Whether the follow-up's commit is pushed once the checks pass, without the approval gate. Only
+ * the review loop's fixes are: the person reviews the whole PR on GitHub when the loop is done.
  */
 export function followUpPushesItself(kind: FollowUpKind): boolean {
   return kind === 'review';
