@@ -27,6 +27,8 @@ export interface ClaudeTurnResult {
   costUsd?: number;
   /** Why the turn failed, when it did. */
   error?: string;
+  /** `budget` when the turn stopped at its dollar limit; absent for any other failure. */
+  kind?: 'budget';
   /** The turn ended because the signal aborted. */
   aborted: boolean;
   /** The SDK sent a result message; false when the stream threw or ended without one. */
@@ -134,6 +136,7 @@ export async function runClaudeTurn(
           reported: true,
           ...(sessionId ? { sessionId } : {}),
           ...(typeof message.total_cost_usd === 'number' ? { costUsd: message.total_cost_usd } : {}),
+          ...(message.subtype === 'error_max_budget_usd' ? { kind: 'budget' as const } : {}),
           ...(ok
             ? {}
             : {

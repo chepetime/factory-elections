@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   DelegateInput,
   parseModelRef,
+  tokensCostUsd,
   type FactoryTool,
   type McpEndpoint,
   type ModelRun,
@@ -323,16 +324,22 @@ export class DelegationServer {
     this.deps.log?.(`  · delegate ${grant.label} → ${provider} (${access}, up to $${budget.toFixed(2)})`);
     try {
       const result = await runner.run(request);
-      const cost = (result.costUsd ?? 0) + (child?.spent() ?? 0);
+      // Codex reports tokens, not dollars: they count against the grant at the token price.
+      const cost = (result.costUsd ?? tokensCostUsd(result.usage)) + (child?.spent() ?? 0);
       grant.spentUsd += cost;
       grant.left -= cost;
-      const spend = result.costUsd === null ? 'cost not reported' : `$${cost.toFixed(2)}`;
+      const spend = result.costUsd === null ? `about $${cost.toFixed(2)} in tokens` : `$${cost.toFixed(2)}`;
       return { text: `Child task (${provider}, ${spend}) finished:\n\n${result.text}`, isError: false };
     } catch (error) {
-      const cost =
-        (typeof (error as { costUsd?: unknown }).costUsd === 'number'
-          ? (error as { costUsd: number }).costUsd
-          : 0) + (child?.spent() ?? 0);
+      const reported = (error as { costUsd?: unknown }).costUsd;
+      // A child stopped at its limit spent about that limit, even when its provider reports no cost.
+      const own =
+        typeof reported === 'number'
+          ? reported
+          : (error as { kind?: unknown }).kind === 'budget'
+            ? budget
+            : 0;
+      const cost = own + (child?.spent() ?? 0);
       grant.spentUsd += cost;
       grant.left -= cost;
       return {
