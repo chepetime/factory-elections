@@ -1,0 +1,159 @@
+{
+  "apps/cli/src/inspect.ts": 29,
+
+  "apps/cli/src/main.ts": 75,
+
+  "apps/web/src/app/actions.ts": 16,
+
+  "apps/web/src/app/dashboard/page.tsx": 17,
+
+  "apps/web/src/app/projects/[project]/agents/[id]/page.tsx": 24,
+
+  "apps/web/src/app/projects/[project]/features/[id]/page.tsx": 41,
+
+  "apps/web/src/app/projects/[project]/tasks/[id]/page.tsx": 176,
+
+  "apps/web/src/components/agent-checkpoints.tsx": 31,
+
+  "apps/web/src/components/agent-findings.tsx": 21,
+
+  "apps/web/src/components/app-shell.tsx": 25,
+
+  "apps/web/src/components/backdrops/crt-warp.tsx": 36,
+
+  "apps/web/src/components/backdrops/dither.tsx": 29,
+
+  "apps/web/src/components/backdrops/faulty-terminal.tsx": 35,
+
+  "apps/web/src/components/backdrops/line-waves.tsx": 25,
+
+  "apps/web/src/components/backdrops/reflective-card.tsx": 38,
+
+  "apps/web/src/components/chat-composer.tsx": 57,
+
+  "apps/web/src/components/feature-gate.tsx": 17,
+
+  "apps/web/src/components/markdown.tsx": 18,
+
+  "apps/web/src/components/pr-reviews.tsx": 31,
+
+  "apps/web/src/components/profile-status.tsx": 16,
+
+  "apps/web/src/components/project-settings-form.tsx": 29,
+
+  "apps/web/src/components/review-chat.tsx": 32,
+
+  "apps/web/src/components/review-report.tsx": 35,
+
+  "apps/web/src/components/system-status.tsx": 22,
+
+  "apps/web/src/components/task-board.tsx": 18,
+
+  "apps/web/src/components/task-chat.tsx": 32,
+
+  "apps/web/src/components/task-run.tsx": 140,
+
+  "apps/web/src/components/team-table.tsx": 17,
+
+  "apps/web/src/components/user-settings/providers-view.tsx": 16,
+
+  "apps/web/src/lib/board.ts": 74,
+
+  "apps/web/src/lib/chat-transport.ts": 24,
+
+  "apps/web/src/lib/diff-files.ts": 20,
+
+  "apps/web/src/lib/network.ts": 49,
+
+  "apps/web/src/lib/status.ts": 25,
+
+  "apps/web/src/lib/task-chat.ts": 20,
+
+  "apps/web/src/lib/ticket-timeline.ts": 27,
+
+  "packages/adapters-claude/src/cli.ts": 46,
+
+  "packages/adapters-claude/src/index.ts": 68,
+
+  "packages/adapters-claude/src/turn.ts": 19,
+
+  "packages/adapters-codex/src/app-server.ts": 41,
+
+  "packages/adapters-codex/src/index.ts": 33,
+
+  "packages/adapters-data/src/migrate.ts": 47,
+
+  "packages/agents/src/agent-pickup.ts": 55,
+
+  "packages/agents/src/chats.ts": 27,
+
+  "packages/agents/src/delegation.ts": 32,
+
+  "packages/backend/src/features.ts": 27,
+
+  "packages/backend/src/issues.ts": 24,
+
+  "packages/backend/src/review-loop.ts": 18,
+
+  "packages/backend/src/run-executor.ts": 21,
+
+  "packages/backend/src/service.ts": 21,
+
+  "packages/backend/src/tending.ts": 36,
+
+  "packages/core/src/domain.ts": 16,
+
+  "packages/core/src/inbox.ts": 58,
+
+  "packages/core/src/issues.ts": 25,
+
+  "packages/core/src/metrics.ts": 63,
+
+  "packages/core/src/pull-requests.ts": 22,
+
+  "packages/core/src/receipt.ts": 28,
+
+  "packages/core/src/run-signals.ts": 24,
+
+  "packages/core/src/spend-spikes.ts": 18,
+
+  "packages/core/src/task-controls.ts": 17,
+
+  "packages/core/src/tending.ts": 17,
+
+  "packages/core/src/test-integrity.ts": 20,
+
+  "packages/driver/src/agent-run.ts": 75,
+
+  "packages/driver/src/merge-conflicts.ts": 22,
+
+  "packages/driver/src/pr-draft.ts": 31,
+
+  "packages/driver/src/publication.ts": 21,
+
+  "packages/driver/src/result-retry.ts": 25,
+
+  "packages/driver/src/verification.ts": 28,
+
+  "packages/driver/src/workflow.ts": 43,
+
+  "packages/evidence/src/receipts.ts": 16,
+
+  "packages/evidence/src/traces.ts": 22,
+
+  "packages/pr-reviews/src/reviews.ts": 43,
+
+  "packages/ui/src/components/call-chip.tsx": 30,
+
+  "packages/ui/src/components/code-block.tsx": 27,
+
+  "packages/ui/src/components/hold-button.tsx": 21,
+
+  "packages/ui/src/components/lattice-loader.tsx": 31,
+
+  "packages/ui/src/components/specular-button.tsx": 22,
+
+  "packages/ui/src/components/thought-line.tsx": 46,
+
+  "scripts/restart.mjs": 19
+}
