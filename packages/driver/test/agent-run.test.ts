@@ -63,6 +63,7 @@ async function setup(
     },
   };
   let status: 'in_review' | 'blocked' | undefined;
+  let commented = false;
   const replies: (string | undefined)[] = [];
   const senders: (string | undefined)[] = [];
   const grants: {
@@ -107,6 +108,7 @@ async function setup(
       replies.push(reply);
       senders.push(from);
       status = undefined;
+      commented = false;
       return {
         name: 'Devin',
         model: 'claude-sonnet-5-5',
@@ -117,6 +119,7 @@ async function setup(
         passEnv: [],
         tools: [],
         reported: () => status,
+        commented: () => commented,
       };
     },
   };
@@ -130,6 +133,11 @@ async function setup(
     senders,
     grants,
     block: () => (status = 'blocked'),
+    /** A real question: blocked, with a comment on the task. */
+    ask: () => {
+      status = 'blocked';
+      commented = true;
+    },
   };
 }
 
@@ -161,7 +169,7 @@ test('an agent run works in one guarded session, then the driver commits and ver
 test('an agent that asks for help waits, and a reply resumes its session', async () => {
   const ctx = await setup([
     async () => {
-      ctx.block();
+      ctx.ask();
       return { text: 'Which file name?', costUsd: 0.1, sessionId: 'sess-1' };
     },
     async (r) => {
@@ -528,4 +536,96 @@ test('a resumed turn that failed before any activity retries with its own prompt
   assert.equal(ctx.calls[1]!.resume, 'sess-1');
   assert.equal(ctx.calls[1]!.prompt, 'Please also add feature.txt', "the person's reply is kept");
   assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
+});
+
+const PROGRESS = { text: 'Waiting for tests, then I commit.', costUsd: 0.1, sessionId: 'sess-1' };
+
+test('a turn that ends with a progress note gets one steer from Factory, and the steered turn reaches verification', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({
+        type: 'tool',
+        name: 'Bash',
+        input: { command: 'pnpm test', run_in_background: true },
+      } as never);
+      return PROGRESS;
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Committed.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, 'sess-1', 'the steer resumes the same session');
+  assert.deepEqual(ctx.senders, [undefined, 'factory']);
+  assert.match(ctx.replies[1]!, /Your turn changed nothing/);
+  assert.match(ctx.replies[1]!, /Bash: pnpm test/, 'the steer names the background command that stopped');
+  assert.equal(done.attempts![0]!.no_change_steered, true);
+  assert.equal(done.attempts![1]!.no_change_steered, undefined);
+});
+
+test("two no-change turns block the task with the agent's last message", async () => {
+  const ctx = await setup([
+    async () => PROGRESS,
+    async () => ({ text: 'No change is needed.', costUsd: 0.1, sessionId: 'sess-1' }),
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'blocked');
+  assert.equal(ctx.calls.length, 2, 'one steer, then it settles');
+  assert.match(done.events!.at(-1)!.message, /Devin made no changes/);
+  assert.match(done.events!.at(-1)!.message, /No change is needed\./);
+});
+
+test('blocked with a comment is a real question: it settles at once, with no steer', async () => {
+  const ctx = await setup([
+    async () => {
+      ctx.ask();
+      return { text: 'Which file name?', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'blocked');
+  assert.equal(ctx.calls.length, 1);
+});
+
+test('blocked with no comment gets the steer', async () => {
+  const ctx = await setup([
+    async () => {
+      ctx.block();
+      return PROGRESS;
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Committed.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+});
+
+test('a restart after a steer does not steer again', async () => {
+  const ctx = await setup([async () => PROGRESS]);
+  const at = new Date().toISOString();
+  await ctx.store.write({
+    ...ctx.task,
+    attempts: [
+      {
+        step: 'agent',
+        rung: 'Devin',
+        model: 'claude-sonnet-5-5',
+        effort: 'high',
+        started_at: at,
+        finished_at: at,
+        outcome: 'completed',
+        cost_usd: 0.1,
+        no_change_steered: true,
+      },
+    ],
+  });
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'blocked');
+  assert.equal(ctx.calls.length, 1, 'the one steer was already spent');
 });
