@@ -97,6 +97,11 @@ export const RPCS = {
   AddExperiment: ['SettingsUpdate', 'Snapshot'],
   /** Everything that waits on the human, across projects: `{ items, dismissed }`. */
   GetInbox: ['Empty', 'Snapshot'],
+  /**
+   * `{ boot, projects }`: a counter per project that rises with every write to its tasks, runs or
+   * board in this backend, and the backend's boot id. Clients poll it and reload lists only on change.
+   */
+  GetVersions: ['Empty', 'Snapshot'],
   /** `json`: `{ id }`; `project` is unused. */
   DismissInboxItem: ['SettingsUpdate', 'Text'],
   /** Tends task `id`'s PR now (and resumes a stopped one); empty `id`: one pass over every tended PR. */

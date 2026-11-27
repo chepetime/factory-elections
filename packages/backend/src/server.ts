@@ -14,6 +14,7 @@ import type { SettingsDetector } from './settings.ts';
 import { Evidence } from '@factory/evidence';
 import type { Check } from '@factory/compose/diagnostics';
 import { definition, type Command, type Methods, type Target } from '@factory/backend-client/protocol';
+import { ChangeCounter } from './change-counter.ts';
 
 export interface ServerOptions {
   root: string;
@@ -64,6 +65,8 @@ export async function startBackend(options: ServerOptions) {
     options.detector,
     generation,
   );
+  // Writes per project since this backend started, for GetVersions.
+  const changes = new ChangeCounter(service.storage);
   // Ledger scans can be expensive. Share one refresh across callers and cache it briefly.
   let ledgerCache:
     { at: number; value: Awaited<ReturnType<typeof service.traces.health>> | undefined } | undefined;
@@ -365,6 +368,7 @@ export async function startBackend(options: ServerOptions) {
         };
       },
       GetInbox: async () => ({ json: JSON.stringify(await service.inbox()) }),
+      GetVersions: async () => ({ json: JSON.stringify(changes.versions()) }),
       DismissInboxItem: async (request) => {
         await service.dismissInbox(jsonObject(request.json));
         return { text: 'dismissed' };

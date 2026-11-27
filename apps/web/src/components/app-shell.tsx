@@ -43,6 +43,7 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { ISSUES_CHANGED } from '@/lib/issues-changed';
+import { changeGate } from '@/lib/change-gate';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
@@ -156,19 +157,28 @@ function useIssues(project: string | undefined, pathname: string) {
     };
     // Refetch on navigation, so a new task shows up after it is created.
   }, [project, pathname, tick]);
-  // Agents change state on their own; poll while the tab is visible. A change made on this page
+  // Agents change state on their own. While the tab is visible, ask the backend's write counter
+  // every 3 s and reload the list only when this project's moved. A change made on this page
   // (issuesChanged) reloads at once.
   useEffect(() => {
+    if (!project) return;
+    const gate = changeGate();
+    let busy = false;
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, 10_000);
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      void gate
+        .due(project)
+        .then((due) => due && setTick((t) => t + 1))
+        .finally(() => (busy = false));
+    }, 3000);
     const now = () => setTick((t) => t + 1);
     window.addEventListener(ISSUES_CHANGED, now);
     return () => {
       clearInterval(timer);
       window.removeEventListener(ISSUES_CHANGED, now);
     };
-  }, []);
+  }, [project]);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   return { state, refresh };
 }

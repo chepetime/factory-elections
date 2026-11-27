@@ -62,6 +62,62 @@ export class DataStorage {
       this.tasks = new fs.TaskStore(this.root);
       this.projects = new fs.ProjectStore(this.root);
     }
+    this.reportWrites();
+  }
+
+  private readonly listeners = new Set<(project: string) => void>();
+  /**
+   * Calls `listener` with the project after each write of a task, a run or any other document under
+   * `<root>/<project>/`, in this process. The backend counts them so clients poll a number, not lists.
+   * Returns the unsubscribe.
+   */
+  onChange(listener: (project: string) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  private changed(project: string | undefined): void {
+    if (!project) return;
+    for (const listener of this.listeners) listener(project);
+  }
+  /** The project a document belongs to: the first folder under the root, if there is one. */
+  private projectOf(path: string): string | undefined {
+    try {
+      const parts = this.key(path).split('/');
+      return parts.length > 1 ? parts[0] : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  /** Wraps every write path, in both storage modes, so `onChange` hears each one that succeeded. */
+  private reportWrites(): void {
+    const writeDocuments = this.writeDocuments.bind(this);
+    this.writeDocuments = async (entries) => {
+      await writeDocuments(entries);
+      for (const project of new Set(entries.map(([path]) => this.projectOf(path)))) this.changed(project);
+    };
+    const writeDocumentIf = this.writeDocumentIf.bind(this);
+    this.writeDocumentIf = async (path, data, expected) => {
+      const result = await writeDocumentIf(path, data, expected);
+      if (result.written) this.changed(this.projectOf(path));
+      return result;
+    };
+    const tasks = this.tasks;
+    const create = tasks.create.bind(tasks);
+    tasks.create = async (...args: Parameters<typeof create>) => {
+      const task = await create(...args);
+      this.changed(task.project);
+      return task;
+    };
+    const write = tasks.write.bind(tasks);
+    tasks.write = async (task) => {
+      await write(task);
+      this.changed(task.project);
+    };
+    const remove = tasks.delete.bind(tasks);
+    tasks.delete = async (project, id, before) => {
+      await remove(project, id, before);
+      this.changed(project);
+    };
   }
   init(): Promise<void> {
     return (this.ready ??= this.initialize().catch((error) => {

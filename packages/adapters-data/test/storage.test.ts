@@ -432,3 +432,22 @@ test('file compare-and-set writes only when the stored generation matches', asyn
   ]);
   assert.equal(race.filter((r) => r.written).length, 1);
 });
+
+test('every write reports its project, so the backend can count changes per project', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-changes-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const storage = new DataStorage(root);
+  const heard: string[] = [];
+  const stop = storage.onChange((project) => heard.push(project));
+  await storage.projects.add('demo', root);
+  const task = await storage.tasks.create('demo', root, 'Count me', new Date().toISOString());
+  await storage.tasks.write({ ...task, stage: 'coding' });
+  await storage.writeDocument(join(root, 'demo', 'issues.json'), { next: 1, items: [] });
+  await storage.writeDocumentIf(join(root, 'demo', 'tasks', task.id, 'run.json'), { a: 1 }, 0);
+  await storage.writeDocument(join(root, 'backend-generation.json'), { n: 1 }); // not a project's
+  await storage.tasks.delete('demo', task.id);
+  assert.deepEqual(heard, ['demo', 'demo', 'demo', 'demo']);
+  stop();
+  await storage.writeDocument(join(root, 'demo', 'issues.json'), { next: 2, items: [] });
+  assert.equal(heard.length, 4, 'an unsubscribed listener hears nothing');
+});

@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { inboxDestination } from '@/components/inbox';
 import { useUserPreferences } from '@/components/user-preferences';
 import type { InboxItem } from '@/lib/inbox';
+import { changeGate } from '@/lib/change-gate';
 
 const POLL_MS = 15_000;
 
@@ -43,7 +44,15 @@ export function InboxNotifier() {
       }
     };
     void poll();
-    const timer = setInterval(() => void poll(), POLL_MS);
+    // The inbox spans every project: reload it only when any project's write counter moved.
+    const gate = changeGate();
+    const timer = setInterval(
+      () =>
+        void gate.due().then(async (due) => {
+          if (due) await poll();
+        }),
+      POLL_MS,
+    );
     return () => {
       live = false;
       clearInterval(timer);

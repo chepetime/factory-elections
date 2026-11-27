@@ -503,6 +503,10 @@
                   "requestType": "Empty",
                   "responseType": "Snapshot"
                 },
+                "GetVersions": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
                 "DismissInboxItem": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Text"
