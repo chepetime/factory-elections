@@ -60,9 +60,8 @@ if (runs('node')) {
   }
 }
 if (plan.web && (runs('web-check') || runs('web-build'))) {
-  // Each @factory/web script builds affect-ui first. Build it once here, then call the same tools
-  // as the web typecheck, test and build scripts directly. Keep these in step with apps/web/package.json.
-  run('pnpm', ['--filter', '@factory/affect-ui', 'build']);
+  // Call the same tools as the web typecheck, test and build scripts directly. Keep these in step
+  // with apps/web/package.json.
   const web = (...args) => run('pnpm', ['--filter', '@factory/web', 'exec', ...args]);
   if (runs('web-check')) {
     web('tsc', '--noEmit', '--pretty', 'false');

@@ -33,7 +33,7 @@ curl -s http://127.0.0.1:4318/health                             # "engine":"run
 | You change | Do this |
 | --- | --- |
 | `apps/web/src` | Nothing. Next.js dev reloads it. |
-| `packages/affect-ui` | `pnpm --filter @factory/affect-ui build`. The dev script builds it only at start. |
+| `packages/ui` | Nothing. Next.js transpiles its source and reloads it. |
 | `packages/backend`, `packages/driver`, `packages/core`, `packages/adapters-*`, `apps/backend`, `definitions/` | Restart the stack. The backend loads this code once. |
 | `next.config.ts`, environment variables, dependencies | Restart the stack. Run `pnpm install` first for dependencies. |
 | Storage schema | `pnpm data:migrate` from this checkout, then restart the stack. |

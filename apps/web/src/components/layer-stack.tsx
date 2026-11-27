@@ -253,8 +253,8 @@ const css = /* css */ `
   --u: calc(100cqw / 600);
   --ui-lyr-row: calc(52 * var(--u));
   /* The accent blue used across the library */
-  --ui-lyr-accent: #2f6bff;
-  --ui-lyr-accent-deep: #2557d9;
+  --ui-lyr-accent: #2557d9;
+  --ui-lyr-accent-deep: #1d47b8;
   --ui-lyr-tint: #e9f0ff;
   --ui-lyr-glow: rgba(47, 107, 255, 0.28);
   --ui-lyr-face: rgba(255, 255, 255, 0.6);
@@ -266,7 +266,7 @@ const css = /* css */ `
   --ui-lyr-pill: #ffffff;
   --ui-lyr-pill-ring: #e5e5e5;
   --ui-lyr-text: #171717;
-  --ui-lyr-muted: #8f8f8f;
+  --ui-lyr-muted: var(--muted-foreground);
   --ui-lyr-ease: cubic-bezier(0.65, 0, 0.25, 1);
   position: relative;
   width: 100%;
@@ -398,6 +398,6 @@ const css = /* css */ `
   --ui-lyr-pill: #232326;
   --ui-lyr-pill-ring: rgba(255, 255, 255, 0.08);
   --ui-lyr-text: #ededed;
-  --ui-lyr-muted: #8f8f8f;
+  --ui-lyr-muted: var(--muted-foreground);
 }
 `;

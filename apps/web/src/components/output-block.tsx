@@ -1,5 +1,5 @@
 'use client';
-import { CodeBlock } from '@factory/affect-ui/components/code-block-clean';
+import { CodeBlock } from '@factory/ui/components/code-block';
 
 /** Command or run output as a scrollable, copyable code block, so line breaks and spacing stay intact. */
 export function OutputBlock({
@@ -15,8 +15,13 @@ export function OutputBlock({
   maxHeight?: string;
 }) {
   return (
-    <div className="affect-ui-theme mt-2 min-w-0" data-tone={tone}>
-      <CodeBlock code={output} filename={label} wrap maxHeight={maxHeight} copyable />
-    </div>
+    <CodeBlock
+      code={output}
+      filename={label}
+      wrap
+      maxHeight={maxHeight}
+      tone={tone === 'danger' ? 'destructive' : 'default'}
+      className="mt-2"
+    />
   );
 }

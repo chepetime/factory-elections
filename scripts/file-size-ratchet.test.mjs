@@ -40,7 +40,6 @@ test('measure skips unreadable files and non-production paths', () => {
     'apps/x/src/a.stories.tsx': 'a\n',
     'apps/x/src/a.d.ts': 'a\n',
     'apps/docs/src/a.ts': 'a\n',
-    'packages/affect-ui/upstream/a.ts': 'a\n',
     'apps/x/e2e/a.ts': 'a\n',
     'apps/x/README.md': 'a\n',
   };

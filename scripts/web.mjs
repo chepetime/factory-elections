@@ -12,13 +12,12 @@ const web = join(root, 'apps', 'web');
 const dev = process.argv.includes('--dev');
 process.env.FACTORY_BACKEND_ADDRESS ??= `127.0.0.1:${process.env.FACTORY_BACKEND_PORT ?? 4319}`;
 const env = { ...process.env };
-// One-off builds go through pnpm; the long-running server does not (see below). Dev needs the
-// affect-ui build that apps/web's `dev` script would have run.
-const build = dev
-  ? spawnSync('pnpm', ['--filter', '@factory/affect-ui', 'build'], { cwd: root, env, stdio: 'inherit' })
-  : (console.log('Building the web app…'),
-    spawnSync('pnpm', ['run', 'build'], { cwd: web, env, stdio: 'inherit' }));
-if (build.status !== 0) process.exit(build.status ?? 1);
+// The production build goes through pnpm; the long-running server does not (see below).
+if (!dev) {
+  console.log('Building the web app…');
+  const build = spawnSync('pnpm', ['run', 'build'], { cwd: web, env, stdio: 'inherit' });
+  if (build.status !== 0) process.exit(build.status ?? 1);
+}
 let backend;
 const reachable = async () => {
   try {

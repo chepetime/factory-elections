@@ -8,7 +8,7 @@
 ## File-size ratchet
 
 `pnpm check:file-size` (also part of `pnpm lint`) caps production source at 1000 lines per file.
-Tests, stories, e2e, `.d.ts`, `apps/docs/` and vendored `packages/affect-ui/upstream/` are out of scope.
+Tests, stories, e2e, `.d.ts` and `apps/docs/` are out of scope.
 `file-size-baseline.json` lists the files already over the cap with their line counts. A baseline file
 may only shrink; a file not in the baseline fails once it passes 1000 lines. Deleted files pass.
 
@@ -53,7 +53,6 @@ root TypeScript, Node tests, harness tests), `web-check` (web TypeScript and uni
 install. The `checks` job needs all three and fails unless all passed (also when one is cancelled),
 so the workflow always emits `CI / checks`, including documentation-only PRs; require this
 check in branch protection. CI runs on PRs, not branch pushes, and cancels stale runs.
-`ci-run.mjs` builds affect-ui once per run instead of once per web script.
 
 Tests are never cached. Tool caches are: prettier results by file content and tsc build info
 (`node_modules/.cache/factory-ci`, `apps/web/tsconfig.tsbuildinfo`), and the Next.js compiler
@@ -78,7 +77,7 @@ commit, supply runtime dependencies, and keep production secrets out of PR jobs.
 
 Baseline before the parallel jobs (2026-11-26, full plan, one job): 130–195 s per PR run. The
 validate step took 103–162 s: Node tests 40–55 s (one 40 s file), `next build` 45 s with no compiler
-cache, web typecheck 18 s and web tests 16 s (each with its own affect-ui build), format 5–8 s.
+cache, web typecheck 18 s and web tests 16 s (each then with its own affect-ui build, since removed), format 5–8 s.
 Compare Actions durations and selected test counts on equivalent PRs before claiming further speed improvements. Storybook/browser tests and
 data integration checks remain explicit task-specific checks, as in the existing
 local check command; these workflows do not claim to cover them.

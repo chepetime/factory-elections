@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @factory/affect-ui build && next dev --webpack --hostname localhost",
-    "build": "pnpm --filter @factory/affect-ui build && next build --webpack",
+    "dev": "next dev --webpack --hostname localhost",
+    "build": "next build --webpack",
     "start": "next start --hostname localhost",
-    "typecheck": "pnpm --filter @factory/affect-ui build && tsc --noEmit --pretty false",
-    "test": "pnpm --filter @factory/affect-ui build && vitest run --project unit",
-    "storybook": "pnpm --filter @factory/affect-ui build && storybook dev --host 127.0.0.1 -p 6006 --no-open --disable-telemetry",
-    "storybook:build": "pnpm --filter @factory/affect-ui build && storybook build --disable-telemetry",
-    "storybook:test": "pnpm --filter @factory/affect-ui build && vitest run --project storybook-light --project storybook-dark"
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run --project unit",
+    "storybook": "storybook dev --host 127.0.0.1 -p 6006 --no-open --disable-telemetry",
+    "storybook:build": "storybook build --disable-telemetry",
+    "storybook:test": "vitest run --project storybook-light --project storybook-dark"
   },
   "devDependencies": {
     "@factory/backend": "workspace:*",
@@ -34,7 +34,6 @@
   "dependencies": {
     "@ai-sdk/react": "4.0.187",
     "@base-ui/react": "^1.9.0",
-    "@factory/affect-ui": "workspace:*",
     "@factory/backend-client": "workspace:*",
     "@factory/core": "workspace:*",
     "@factory/ui": "workspace:*",

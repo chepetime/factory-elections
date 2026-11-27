@@ -1,7 +1,7 @@
 // The task panel's Changes tab: what the run changed against its base branch, file by file.
 // Each file folds open to its own diff; the list on top shows the size of each change.
 import { ChevronRight } from 'lucide-react';
-import { DiffCodeBlock } from '@/components/diff-code-block';
+import { DiffView } from '@/components/diff-view';
 import { diffFiles, type DiffFile } from '@/lib/diff-files';
 import { cn } from '@factory/ui/lib/utils';
 
@@ -64,7 +64,7 @@ export function TaskChanges({ diff, base }: { diff: string; base?: string }) {
                   <Counts added={f.added} removed={f.removed} />
                 </summary>
                 <div className="border-t">
-                  <DiffCodeBlock code={f.text} filename={f.path} showLineNumbers maxHeight="28rem" />
+                  <DiffView code={f.text} filename={f.path} maxHeight="28rem" />
                 </div>
               </details>
             </li>

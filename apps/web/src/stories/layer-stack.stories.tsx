@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { LayerStack } from '@factory/affect-ui/illustrations/layer-stack';
+import { LayerStack } from '@/components/layer-stack';
 import { expect, fn, userEvent, within } from 'storybook/test';
 
 const meta = {
-  title: 'affectUI/Illustrations/Layer Stack',
+  title: 'Factory/Layer Stack',
   component: LayerStack,
   tags: ['autodocs'],
   parameters: {
     docs: {
       description: {
         component:
-          'Isometric stack of five layers with a list beside it. Official MIT source. [Usage reference](https://www.affectui.com/illustrations/layer-stack) \u00b7 [Pinned source](https://github.com/flohoeller/affectui/blob/46721aa59276d97927a8cb89ee898027b637834d/illustrations/layer-stack.tsx). Sample actions only log to Storybook.',
+          'Isometric stack of five layers with a list beside it, waiting for a place in the app (see TODO.md). Sample actions only log to Storybook.',
       },
     },
   },

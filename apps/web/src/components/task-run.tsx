@@ -10,7 +10,7 @@ import {
   type TaskRecord,
   stageLabel,
 } from '@factory/core';
-import { DiffCodeBlock } from '@/components/diff-code-block';
+import { DiffView } from '@/components/diff-view';
 import {
   approveAndOpenPullRequest,
   approveTask,
@@ -1001,7 +1001,7 @@ export async function renderRun(
           )}
           {diff && (
             <Disclosure label="Full diff" className="mt-3">
-              <DiffCodeBlock code={diff} filename="Changes.diff" showLineNumbers maxHeight="32rem" />
+              <DiffView code={diff} filename="Changes.diff" maxHeight="32rem" />
             </Disclosure>
           )}
         </Section>

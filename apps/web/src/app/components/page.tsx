@@ -6,7 +6,6 @@ import { ChatComposerDemo } from '@/components/chat-composer-demo';
 import { ComponentSupport } from '@/components/component-support';
 import { AgentFindingsDemo } from '@/components/agent-findings-demo';
 import { AgentCheckpointsDemo } from '@/components/agent-checkpoints-demo';
-import { FreeComponentLibrary } from '@/components/free-component-library';
 
 export const metadata: Metadata = {
   title: 'Components',
@@ -18,12 +17,6 @@ export default function ComponentsPage() {
     <main className="space-y-10 py-4 sm:py-8">
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Components</h1>
       <nav aria-label="Component collections" className="flex flex-wrap gap-4 text-sm">
-        <a
-          href="#free-library"
-          className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
-        >
-          Free library · 74
-        </a>
         <a
           href="#factory-components"
           className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
@@ -37,7 +30,6 @@ export default function ComponentsPage() {
           Support roadmap · 26
         </a>
       </nav>
-      <FreeComponentLibrary />
       <section
         id="factory-components"
         aria-label="Component gallery"

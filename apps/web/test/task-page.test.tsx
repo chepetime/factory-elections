@@ -220,9 +220,11 @@ it('shows the approval diff in a copyable code view and reports read errors', as
   expect(page).toContain('Full diff');
   expect(page).toContain('Changes.diff');
   expect(page).toContain('+new line');
-  // Line 4 is the deletion and line 5 the addition.
-  expect(page).toContain(':nth-child(n+4):nth-child(-n+4){background:var(--diff-del-bg)}');
-  expect(page).toContain(':nth-child(n+5):nth-child(-n+5){background:var(--diff-add-bg)}');
+  // Line 4 is the deletion and line 5 the addition; the --- and +++ headers are neither.
+  const diffLines = [
+    ...page.slice(page.indexOf('Changes.diff')).matchAll(/data-slot="code-line"([^>]*)>/g),
+  ].map((m) => /data-diff="(\w+)"/.exec(m[1]!)?.[1] ?? null);
+  expect(diffLines).toEqual([null, null, null, 'del', 'add']);
   expect(page).toContain('Copy code');
   vi.mocked(readDiff).mockResolvedValueOnce({ ok: false, error: 'unavailable' });
   expect(await html(undefined, 'details')).toContain('Could not load the diff: unavailable');
@@ -282,11 +284,11 @@ it('shows command output of a failed step and the last run output as copyable co
   });
   const page = await html(undefined, 'status');
   expect(page).toContain('Worktree setup (`pnpm install`) exited with status 1.');
-  expect(page).toMatch(/ui-codec[\s\S]*aws: \[ERROR\] Token has expired/);
-  expect(page).toMatch(/data-tone="danger"[\s\S]*Error output[\s\S]*Token has expired/);
-  expect(page.match(/data-tone="danger"/g)).toHaveLength(1);
+  expect(page).toMatch(/data-slot="code-block"[\s\S]*aws: \[ERROR\] Token has expired/);
+  expect(page).toMatch(/data-tone="destructive"[\s\S]*Error output[\s\S]*Token has expired/);
+  expect(page.match(/data-tone="destructive"/g)).toHaveLength(1);
   expect(page).toContain('Copy');
-  expect(page).toMatch(/ui-codec[\s\S]*\$ pnpm install/);
+  expect(page).toMatch(/data-slot="code-block"[\s\S]*\$ pnpm install/);
   expect(page).not.toContain('Token has expired</span><time');
 });
 it('while a run works: a stop composer, the latest activity and the following live output', async () => {

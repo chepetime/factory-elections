@@ -10,7 +10,7 @@ function ThemeFrame({ dark, children }: { dark: boolean; children: ReactNode }) 
   }, [dark]);
   return (
     <div className={dark ? 'dark' : undefined}>
-      <div className="affect-ui-theme min-h-screen bg-background px-4 py-6 font-sans text-foreground antialiased sm:px-6">
+      <div className="min-h-screen bg-background px-4 py-6 font-sans text-foreground antialiased sm:px-6">
         <div className="mx-auto max-w-4xl">
           <MotionConfig reducedMotion="user">{children}</MotionConfig>
         </div>
@@ -39,7 +39,7 @@ const preview: Preview = {
     layout: 'fullscreen',
     controls: { expanded: true },
     a11y: { test: 'error' },
-    options: { storySort: { order: ['Library', 'Factory', 'affectUI', 'shadcn'] } },
+    options: { storySort: { order: ['Factory', 'shadcn'] } },
     viewport: {
       options: {
         phone: { name: 'Phone', styles: { width: '390px', height: '844px' } },

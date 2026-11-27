@@ -324,9 +324,6 @@ importers:
       '@base-ui/react':
         specifier: ^1.9.0
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@factory/affect-ui':
-        specifier: workspace:*
-        version: link:../../packages/affect-ui
       '@factory/backend-client':
         specifier: workspace:*
         version: link:../../packages/backend-client
@@ -490,19 +487,6 @@ importers:
         version: link:../adapters-process
 
   packages/adapters-process: {}
-
-  packages/affect-ui:
-    dependencies:
-      react:
-        specifier: ^19.0.0
-        version: 19.3.1
-    devDependencies:
-      '@types/react':
-        specifier: ^19.3.0
-        version: 19.3.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/agents:
     dependencies:

@@ -53,7 +53,7 @@ describe('Check setup', () => {
     expect(page).toMatch(/Preflight: AWS SSO[\s\S]*Passed[\s\S]*1s/);
     expect(page).toMatch(/Setup[\s\S]*Failed[\s\S]*1m/);
     expect(page).toContain('Machine fault: a credential has expired or is missing');
-    expect(page).toMatch(/data-tone="danger"[\s\S]*401 Unauthorized/);
+    expect(page).toMatch(/data-tone="destructive"[\s\S]*401 Unauthorized/);
     expect(page).toMatch(/Test[\s\S]*Skipped/);
     expect(page).toContain('Check setup');
   });

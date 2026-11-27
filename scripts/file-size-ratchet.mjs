@@ -19,7 +19,7 @@ export function isProduction(path) {
   if (!SOURCE.test(path)) return false;
   if (path.includes('/test/') || path.includes('/e2e/')) return false;
   if (/\.(test|stories)\.[^/]*$/.test(path) || path.endsWith('.d.ts')) return false;
-  return !path.startsWith('apps/docs/') && !path.startsWith('packages/affect-ui/upstream/');
+  return !path.startsWith('apps/docs/');
 }
 
 /** `{ path: lines }` for the production files among `files`; files `readFile` cannot read are skipped. */

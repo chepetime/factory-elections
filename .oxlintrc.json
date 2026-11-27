@@ -3,8 +3,6 @@
     "plain_modules/**",
     "dist/**",
     "apps/web/.next/**",
-    "packages/affect-ui/upstream/**",
-    "packages/affect-ui/dist/**",
     "apps/web/storybook-static/**",
     "apps/web/test-results/**",
     "apps/docs/.next/**",
@@ -363,8 +361,6 @@
                   "!@factory/core/**",
                   "!@factory/backend-client",
                   "!@factory/backend-client/**",
-                  "!@factory/affect-ui",
-                  "!@factory/affect-ui/**",
                   "!@factory/ui",
                   "!@factory/ui/**"
                 ],
