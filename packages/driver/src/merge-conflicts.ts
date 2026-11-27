@@ -1,12 +1,15 @@
 // Merging the base into a task branch. A tool resolves some conflicts better than an agent: a
-// lockfile is regenerated from the merged package files, outside the sandbox, so the agent gets only
-// the conflicts that need judgment.
+// lockfile is regenerated from the merged package files, so the agent gets only the conflicts that
+// need judgment. Git runs outside the sandbox (it writes the main repository's .git); the lockfile
+// tool reads the coder's package files and config, so it runs in the check sandbox.
 import { dirname, join } from 'node:path';
+import type { RepoProfile } from '@factory/core';
 import type { DriverDeps } from './ports.ts';
+import { checkOptions } from './verification.ts';
 
 /** Lockfiles by file name, with the command that rewrites one from its package files. */
 const LOCKFILES: Record<string, string> = {
-  'pnpm-lock.yaml': 'pnpm install --lockfile-only --ignore-scripts',
+  'pnpm-lock.yaml': 'pnpm install --lockfile-only --ignore-scripts --ignore-pnpmfile',
   'package-lock.json': 'npm install --package-lock-only --ignore-scripts',
 };
 
@@ -22,6 +25,7 @@ export async function mergeBase(
   deps: Pick<DriverDeps, 'git' | 'shell' | 'log'>,
   dir: string,
   ref: string,
+  profile: Pick<RepoProfile, 'sandbox'> = {},
 ): Promise<{ clean: boolean; conflicted: string[]; regenerated: string[] }> {
   const merge = await deps.git.mergeRef!(dir, ref);
   if (merge.clean) return { ...merge, regenerated: [] };
@@ -34,10 +38,17 @@ export async function mergeBase(
       continue;
     }
     // In a merge, "theirs" is `ref`: start from the base's lockfile, then add the branch's changes.
-    const result = await deps.shell.runShell(
-      `git checkout --theirs -- ${quote(file)} && (cd ${quote(dirname(join(dir, file)))} && ${command}) && git add -- ${quote(file)}`,
-      { cwd: dir, captureLimit: 4000, timeoutMs: 10 * 60_000 },
-    );
+    const git = (args: string) =>
+      deps.shell.runShell(`${NO_HOOKS} ${args}`, { cwd: dir, captureLimit: 4000 });
+    let result = await git(`checkout --theirs -- ${quote(file)}`);
+    if (result.code === 0)
+      result = await deps.shell.runShell(command, {
+        ...checkOptions(profile, dir),
+        cwd: dirname(join(dir, file)),
+        captureLimit: 4000,
+        timeoutMs: 10 * 60_000,
+      });
+    if (result.code === 0) result = await git(`add -- ${quote(file)}`);
     if (result.code === 0) regenerated.push(file);
     else {
       deps.log(`Could not regenerate ${file}; it goes to the agent: ${result.stderr.trim().slice(-500)}`);
