@@ -55,6 +55,22 @@ export function verificationSteer(
   ].join('\n');
 }
 
+/**
+ * The message for a fix turn when the branch is not in the state Factory checks: files are still
+ * uncommitted. The exact gap goes back to the agent before verification spends a run on it.
+ */
+export function branchGapSteer(dirty: readonly string[]): string {
+  return [
+    'Factory checked your branch after your turn, before verification. This message is from Factory, not from a person.',
+    '',
+    `uncommitted changes: ${dirty.slice(0, 20).join(', ')}${dirty.length > 20 ? `, and ${dirty.length - 20} more` : ''}`,
+    '',
+    'Commit the files you mean to keep. Remove the rest, or add generated files to .gitignore. Stop every background process you started, since a running one can change files after the turn.',
+    '',
+    RULES,
+  ].join('\n');
+}
+
 /** The agent's own run of Factory's change gates (size, tests) on its committed change. */
 export function changeCheckTool(check: () => Promise<string | undefined>): FactoryTool {
   return {
