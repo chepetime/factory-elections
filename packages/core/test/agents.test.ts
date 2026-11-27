@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ModelLadder, ModelRef, parseModelRef, ProviderRouter, type ModelRun } from '../src/index.ts';
+import {
+  ModelLadder,
+  ModelRef,
+  parseModelRef,
+  PROVIDER_CAPABILITIES,
+  ProviderRouter,
+  tokenCapFor,
+  type ModelRun,
+} from '../src/index.ts';
 
 const call = (over: Partial<ModelRun>): ModelRun => ({
   model: 'claude-sonnet-5-5',
@@ -42,4 +50,29 @@ test('the router sends each call to its provider and refuses what the provider c
     )!,
     /not available/,
   );
+});
+
+test('the router refuses a Codex call with a dollar limit and no token cap', async () => {
+  const seen: ModelRun[] = [];
+  const run = async (r: ModelRun) => (seen.push(r), { text: 'x', costUsd: null });
+  // The exec transport sees usage only when the turn ends, so it cannot hold a limit.
+  const exec = new ProviderRouter({ codex: { run } });
+  const limited = call({ model: 'codex', step: 'coder', maxBudgetUsd: 0.5 });
+  assert.match(exec.refusal(limited)!, /codex cannot stop at a dollar limit/);
+  await assert.rejects(exec.run(limited), /coder: codex cannot stop at a dollar limit/);
+  assert.match(exec.refusal(call({ model: 'codex', maxTokens: 1000 }))!, /token limit/);
+  assert.equal(seen.length, 0, 'the provider never sees a call it cannot bound');
+  // Without a limit the call is allowed: time limits still hold.
+  assert.equal(exec.refusal(call({ model: 'codex' })), undefined);
+  // Claude stops at the dollar limit itself.
+  assert.equal(new ProviderRouter({ claude: { run } }).refusal(call({ maxBudgetUsd: 1 })), undefined);
+
+  // The app-server transport takes the limit: a dollar limit reaches it as a token cap.
+  const appServer = new ProviderRouter({
+    codex: { run, capabilities: { ...PROVIDER_CAPABILITIES.codex, tokenCap: true } },
+  });
+  await appServer.run(limited);
+  assert.equal(seen[0]!.maxTokens, tokenCapFor(0.5));
+  await appServer.run(call({ model: 'codex', maxBudgetUsd: 0.5, maxTokens: 123 }));
+  assert.equal(seen[1]!.maxTokens, 123, 'an explicit token cap wins');
 });

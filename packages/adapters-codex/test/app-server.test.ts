@@ -337,3 +337,22 @@ test(
     );
   },
 );
+
+test('a token cap interrupts the turn and fails with kind budget', stopTest, async (t) => {
+  const { runner, request, sent } = await setup(t, 'spend');
+  const error = await runner.run(request({ maxTokens: 1_000 })).then(
+    () => assert.fail('a turn past its token cap must not succeed'),
+    (e) => e as CodexAppServerStopped,
+  );
+  assert.equal(error.kind, 'budget', error.message);
+  assert.match(error.message, /token limit/);
+  assert.equal(error.interrupt.sent, true);
+  assert.equal(error.interrupt.acknowledged, true);
+  assert.ok((await sent()).some((m) => m.method === 'turn/interrupt' && m.params.turnId));
+});
+
+test('a turn under its token cap finishes', async (t) => {
+  const { runner, request } = await setup(t, 'turn');
+  const result = await runner.run(request({ maxTokens: 1_000_000, outputSchema: { type: 'object' } }));
+  assert.equal(result.costUsd, null);
+});

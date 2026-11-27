@@ -21,7 +21,7 @@ const pr = (x: Partial<PrState> = {}): PrState => ({
   threads: [],
   ...x,
 });
-const record = (x: Partial<TendRecord> = {}) => TendRecord.parse({ number: 1, url: 'u', ...x });
+const record = (x: Record<string, unknown> = {}) => TendRecord.parse({ number: 1, url: 'u', ...x });
 const me = { answerThreads: true };
 
 test('tending picks one action: end, conflicts, threads, rerun once, then fix, then stop', () => {
@@ -93,4 +93,49 @@ test('only write, maintain and admin access is trusted, and logins are checked b
   assert.equal(isGitHubLogin('dependabot[bot]'), true);
   for (const bad of ['', 'ghost/../x', 'a b', '-x', 'x?y=1', '../admin'])
     assert.equal(isGitHubLogin(bad), false);
+});
+
+const unit = { name: 'unit', state: 'fail' as const, run_id: '42' };
+const lint = { name: 'lint', state: 'fail' as const, run_id: '43' };
+
+test('a real failure skips the rerun', () => {
+  const action = nextTendAction(pr({ checks: [unit] }), record(), { ...me, verdicts: { unit: 'real' } });
+  assert.deepEqual(action, { kind: 'fix-ci', checks: [unit] });
+  const mixed = nextTendAction(pr({ checks: [unit, lint] }), record(), { ...me, verdicts: { unit: 'real' } });
+  assert.deepEqual(mixed, { kind: 'fix-ci', checks: [unit] }, 'only the real failure is fixed');
+});
+
+test('a flake reruns once per SHA and check', () => {
+  const flake = { verdicts: { unit: 'flake', lint: 'flake' } as const };
+  const first = nextTendAction(pr({ checks: [unit, lint] }), record(), { ...me, ...flake });
+  assert.deepEqual(first, { kind: 'rerun', checks: [unit, lint] });
+  const afterUnit = record({ ci_retries: [{ sha: 'h1', check: 'unit', verdict: 'flake' }] });
+  assert.deepEqual(nextTendAction(pr({ checks: [unit, lint] }), afterUnit, { ...me, ...flake }), {
+    kind: 'fix-ci',
+    checks: [unit],
+  });
+  assert.deepEqual(nextTendAction(pr({ checks: [lint] }), afterUnit, { ...me, ...flake }), {
+    kind: 'rerun',
+    checks: [lint],
+  });
+  assert.equal(
+    nextTendAction(pr({ head_sha: 'h2', checks: [unit] }), afterUnit, { ...me, ...flake }).kind,
+    'rerun',
+    'a new head gets its own rerun',
+  );
+});
+
+test('an unknown failure keeps the one rerun, and a failure without a run goes to a fix', () => {
+  assert.equal(nextTendAction(pr({ checks: [unit] }), record(), me).kind, 'rerun');
+  assert.equal(nextTendAction(pr({ checks: [{ name: 'x', state: 'fail' }] }), record(), me).kind, 'fix-ci');
+});
+
+test('a legacy reruns list loads as retries of every check, and the retries stay capped', () => {
+  const old = record({ reruns: ['h1'] });
+  assert.deepEqual(old.ci_retries, [{ sha: 'h1', check: '*', verdict: 'unknown' }]);
+  assert.equal('reruns' in old, false);
+  const many = Array.from({ length: 150 }, (_, i) => ({ sha: `s${i}`, check: 'unit', verdict: 'flake' }));
+  const capped = record({ ci_retries: many });
+  assert.equal(capped.ci_retries.length, 100);
+  assert.equal(capped.ci_retries[99]!.sha, 's149');
 });

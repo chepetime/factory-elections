@@ -43,6 +43,8 @@ export interface ModelRun {
   stallMs?: number;
   /** Most this call may spend. */
   maxBudgetUsd?: number;
+  /** Most input plus output tokens this call may use, for providers that report tokens, not dollars. */
+  maxTokens?: number;
   /** Session to continue, for providers that can resume. */
   resume?: string;
   /** Keep the session on disk so a later call can resume it (chats). Off by default. */

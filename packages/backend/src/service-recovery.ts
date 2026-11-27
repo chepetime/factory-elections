@@ -1,6 +1,5 @@
 // Shutdown and restart recovery for the backend: drain the runs, then recover, reconcile and
 // requeue them. BackendService methods of the same names call these.
-import { join } from 'node:path';
 import {
   taskCommandBlockers,
   withStage,
@@ -8,7 +7,7 @@ import {
   type RecoveryProblem,
   type RecoveryReport,
 } from '@factory/core';
-import { RunRecord } from './run-record.ts';
+import { ownerOf, RunRecord, writeRun } from './run-record.ts';
 import { RUN_RECOVERY, failsWhenInterrupted } from './recovery-rules.ts';
 import { DRAIN_GRACE_MS, type BackendService } from './service.ts';
 
@@ -161,17 +160,25 @@ export async function reconcileTask(
     if (queued === 'scheduled') return 'requeued';
     if (queued === 'settled') return undefined;
   }
-  await s.storage.writeDocument(join(dir, 'run.json'), {
-    ...record,
-    state: 'interrupted',
-    outcome: 'interrupted',
-    // Processes of a run that was running at a crash are not known to be gone.
-    ...(record.state === 'running'
-      ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
-      : {}),
-    error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
-    finished_at: new Date().toISOString(),
-  });
+  const settled = await writeRun(
+    s.storage,
+    dir,
+    {
+      ...record,
+      owner_generation: s.generation,
+      state: 'interrupted',
+      outcome: 'interrupted',
+      // Processes of a run that was running at a crash are not known to be gone.
+      ...(record.state === 'running'
+        ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
+        : {}),
+      error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
+      finished_at: new Date().toISOString(),
+    },
+    ownerOf(record),
+  );
+  // Another backend settled this run first: leave the task to it.
+  if (!settled.written) return undefined;
   const current = await s.tasks.read(project, id);
   if (failsWhenInterrupted(current.stage))
     await s.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));

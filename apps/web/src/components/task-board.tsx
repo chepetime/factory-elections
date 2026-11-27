@@ -2,12 +2,12 @@
 // The project's task board: one column per status. Dragging a card, or its "Move to" menu, asks the
 // backend to apply the drop (see dropAction in packages/core/src/issues.ts).
 import { Menu } from '@base-ui/react/menu';
-import { Archive, LoaderCircle, MoreHorizontal, Plus } from 'lucide-react';
+import { Archive, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useRef, useState, useTransition, type DragEvent } from 'react';
-import { archiveIssue, createIssue, moveIssue } from '@/app/actions';
+import { archiveIssue, createIssue, moveIssue, refreshReviews } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import {
   dropAction,
@@ -199,6 +199,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
     current.map((i) => (i.key === move.key ? { ...i, status: move.to } : i)),
   );
   const [, startMove] = useTransition();
+  const [refreshing, startRefresh] = useTransition();
   const [creating, setCreating] = useState<'backlog' | 'todo'>();
   const [dragging, setDragging] = useState<BoardIssue>();
   const [over, setOver] = useState<IssueStatus>();
@@ -241,6 +242,15 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       const result = await archiveIssue(project, issue.key, true);
       if (result.error) notify('error', `${issue.key}: ${result.error}`);
       else notify('status', `${result.message} Restore it from Archived in the sidebar.`);
+      router.refresh();
+    });
+
+  /** Reads every PR's state now instead of at the next tending pass (merged PRs go to Done). */
+  const refresh = () =>
+    startRefresh(async () => {
+      const result = await refreshReviews(project);
+      if (result.error) notify('error', result.error);
+      else notify('status', result.message ?? '');
       router.refresh();
     });
 
@@ -301,6 +311,23 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                   {column.label}
                 </h2>
                 <span className="text-xs text-muted-foreground tabular-nums">{cards.length}</span>
+                {status === 'in_review' && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-auto"
+                    aria-label="Check the pull requests of the tasks in review now"
+                    title="Check the pull requests now"
+                    disabled={refreshing}
+                    onClick={refresh}
+                  >
+                    {refreshing ? (
+                      <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+                    ) : (
+                      <RefreshCw aria-hidden />
+                    )}
+                  </Button>
+                )}
                 {(status === 'backlog' || status === 'todo') && (
                   <Button
                     variant="ghost"

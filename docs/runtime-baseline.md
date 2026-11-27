@@ -91,3 +91,10 @@ SDK tasks now also set `skills: []` and `--disable-slash-commands`, so finding 2
 - UTF-8 split across chunks is covered by a process test (`packages/adapters-process/test/process.test.ts`), not by a real provider stream.
 - Interrupt during model output (as opposed to during a tool) was not captured.
 - A rate limit was not provoked. The retry rule is covered only by unit tests.
+
+## Spend limits
+
+- Claude stops a call at `maxBudgetUsd` itself (`error_max_budget_usd`, kind `budget`). A Claude turn reports the same stop as `kind: "budget"` on its result.
+- Codex reports tokens, not dollars. The app-server transport (`tokenCap: true`) interrupts the turn once input plus output tokens pass `maxTokens`, and fails with kind `budget`. The router turns a dollar limit into that cap at $3 per million tokens (`tokenCapFor`). The exec transport sees usage only at `turn.completed`, so it has `tokenCap: false` and the router refuses a Codex call that has a limit.
+- Overshoot: the cap is checked on each `thread/tokenUsage/updated`, so a turn can pass it by what one update adds before the interrupt lands. Not measured against a real server.
+- Manual run with a $0.05 limit on the real Claude SDK: not done. The agent session that wrote this had no model credentials or network. Run one and record the cost here: the overshoot is `total_cost_usd - 0.05`.

@@ -123,6 +123,48 @@ export class DataStorage {
   async writeDocument(path: string, data: unknown): Promise<void> {
     await this.writeDocuments([[path, data]]);
   }
+  /** Serializes compare-and-set writes to one file within this process. */
+  private readonly casChains = new Map<string, Promise<unknown>>();
+  /**
+   * Writes `data` only if the stored document's `owner_generation` (absent = 0) equals `expected`.
+   * A missing document is never written: `current` is undefined. Postgres does one conditional
+   * UPDATE, a true compare-and-set. Files read, compare and write atomically one after another
+   * inside this process, but this is NOT atomic against another process that writes the file
+   * without calling this method (for example an old backend whose lock was removed by hand).
+   * It cannot take the task lock: the run that owns the task already holds it.
+   */
+  async writeDocumentIf(
+    path: string,
+    data: unknown,
+    expected: number,
+  ): Promise<{ written: true } | { written: false; current: unknown }> {
+    const generationOf = (doc: unknown) =>
+      Number((doc as { owner_generation?: number } | undefined)?.owner_generation ?? 0);
+    if (this.pool) {
+      await this.init();
+      const result = await this.pool.query(
+        `UPDATE factory_documents SET data=$2,updated_at=now()
+         WHERE path=$1 AND COALESCE((data->>'owner_generation')::int,0)=$3`,
+        [this.key(path), JSON.stringify(data), expected],
+      );
+      if (result.rowCount) return { written: true };
+      return { written: false, current: await this.readDocument(path).catch(() => undefined) };
+    }
+    const previous = this.casChains.get(path) ?? Promise.resolve();
+    const step = previous.then(async () => {
+      const current = await this.readDocument(path).catch(() => undefined);
+      if (current === undefined || generationOf(current) !== expected)
+        return { written: false as const, current };
+      await fs.writeJsonAtomic(path, data);
+      return { written: true as const };
+    });
+    const settled = step.catch(() => undefined);
+    this.casChains.set(path, settled);
+    void settled.then(() => {
+      if (this.casChains.get(path) === settled) this.casChains.delete(path);
+    });
+    return step;
+  }
   async writeDocuments(entries: [string, unknown][]): Promise<void> {
     if (!this.pool) {
       for (const [path, data] of entries) await fs.writeJsonAtomic(path, data);
