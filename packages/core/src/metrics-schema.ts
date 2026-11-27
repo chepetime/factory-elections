@@ -16,6 +16,14 @@ const RunSignalsSchema = z.object({
   project: z.string(),
   task_id: z.string().optional(),
   task_class: z.string().optional(),
+  source: z.string().optional(),
+  pattern: z
+    .object({
+      kind: z.enum(['fail-fix', 'repeat', 'oscillation', 'churn', 'failure-streak']),
+      tool: z.string(),
+      shape: z.string(),
+    })
+    .optional(),
   tool_calls: z.number(),
   edit_churn: z.number(),
   repeated_calls: z.number(),

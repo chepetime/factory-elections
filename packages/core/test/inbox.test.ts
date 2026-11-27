@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { inboxItems } from '../src/inbox.ts';
 import { Feature } from '../src/features.ts';
+import type { RetroFinding } from '../src/retro.ts';
 import type { TaskRecord } from '../src/schemas.ts';
 
 const task = (id: string, stage: TaskRecord['stage'], extra: Partial<TaskRecord> = {}): TaskRecord =>
@@ -117,4 +118,31 @@ test('one rule: only what needs a human decision and has no agent on it waits in
   assert.match(items[0]!.detail!, /runtime check says "unknown"/);
   assert.equal(items.find((i) => i.kind === 'blocked')!.detail, 'Which page?');
   assert.equal(new Set(items.map((i) => i.id)).size, items.length, 'ids are unique');
+});
+
+test('an open finding is an inbox item', () => {
+  const finding = (id: string, status: RetroFinding['status']): RetroFinding => ({
+    id,
+    fingerprint: `repeat|bash|${id}`,
+    title: 'repeat in Bash: pnpm build (3 runs)',
+    signal: 'repeat',
+    evidence: { trace_ids: ['t1', 't2', 't3'], task_ids: ['a'] },
+    wasted_usd: 4.5,
+    occurrences: 3,
+    first_seen: '2026-11-26T09:00:00.000Z',
+    last_seen: '2026-11-26T09:00:00.000Z',
+    status,
+  });
+  const items = inboxItems({
+    project: 'app',
+    tasks: [],
+    features: [],
+    findings: [finding('f1', 'open'), finding('f2', 'dismissed'), finding('f3', 'tasked')],
+  });
+  assert.equal(items.length, 1, 'a dismissed or tasked finding does not wait');
+  assert.equal(items[0]!.kind, 'finding');
+  assert.equal(items[0]!.action, 'Create task');
+  assert.equal(items[0]!.finding_id, 'f1');
+  assert.equal(items[0]!.since, '2026-11-26T09:00:00.000Z');
+  assert.match(items[0]!.detail!, /3 runs, about \$4\.50 wasted/);
 });

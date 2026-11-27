@@ -378,6 +378,7 @@ const KIND_TEXT: Record<(typeof NOTIFY_KINDS)[number], { label: string; hint: st
   review: { label: 'PR reviews', hint: 'A PR review finished and its findings are ready.' },
   tending: { label: 'PR tending', hint: 'Tending could not keep a PR moving on its own.' },
   recovery: { label: 'Recovery problems', hint: 'After a restart, the backend could not read some work.' },
+  finding: { label: 'Findings', hint: 'The daily retro found a waste pattern that repeats across runs.' },
 };
 
 type Permission = NotificationPermission | 'unsupported';

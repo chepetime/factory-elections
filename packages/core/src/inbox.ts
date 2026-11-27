@@ -6,6 +6,7 @@
 // when it began to wait, so a dismissal holds until the item waits again for a new reason. The
 // time between `since` and its resolution is the human's attention cost (see gate spans).
 import type { Feature } from './features.ts';
+import type { RetroFinding } from './retro.ts';
 import type { TaskRecord } from './schemas.ts';
 
 export type InboxKind =
@@ -28,7 +29,9 @@ export type InboxKind =
   /** PR tending could not keep a PR moving on its own. */
   | 'tending'
   /** Startup recovery could not read some work, so the backend cannot tell who owns it. */
-  | 'recovery';
+  | 'recovery'
+  /** The daily retro found a waste pattern that repeats across runs (retro.ts). */
+  | 'finding';
 
 export interface InboxItem {
   id: string;
@@ -41,6 +44,7 @@ export interface InboxItem {
   since: string;
   task_id?: string;
   feature_id?: string;
+  finding_id?: string;
   ticket?: string;
   pr?: { number: number; url?: string };
   detail?: string;
@@ -69,6 +73,8 @@ export interface InboxInput {
   features: readonly Feature[];
   reviews?: readonly ReviewWaiting[];
   tending?: readonly TendingWaiting[];
+  /** The project's findings; only the open ones wait on the human. */
+  findings?: readonly RetroFinding[];
 }
 
 const firstLine = (text: string, max = 120) => {
@@ -76,7 +82,7 @@ const firstLine = (text: string, max = 120) => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 };
 const item = (x: Omit<InboxItem, 'id'>): InboxItem => ({
-  id: [x.kind, x.project, x.task_id ?? x.feature_id ?? x.pr?.number, x.ticket, x.since]
+  id: [x.kind, x.project, x.task_id ?? x.feature_id ?? x.finding_id ?? x.pr?.number, x.ticket, x.since]
     .filter(Boolean)
     .join(':'),
   ...x,
@@ -234,5 +240,18 @@ export function inboxItems(input: InboxInput): InboxItem[] {
         since: t.since,
       }),
     );
+  for (const f of input.findings ?? [])
+    if (f.status === 'open')
+      out.push(
+        item({
+          project,
+          kind: 'finding',
+          finding_id: f.id,
+          title: f.title,
+          action: 'Create task',
+          detail: `Seen in ${f.occurrences} runs${f.wasted_usd === null ? '' : `, about $${f.wasted_usd.toFixed(2)} wasted`}. A task goes to Backlog; nothing starts by itself.`,
+          since: f.first_seen,
+        }),
+      );
   return out.sort((a, b) => a.since.localeCompare(b.since));
 }

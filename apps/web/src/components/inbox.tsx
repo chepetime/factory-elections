@@ -20,6 +20,7 @@ const KIND: Record<string, { label: string; dot: string }> = {
   review: { label: 'PR review', dot: 'bg-blue-500' },
   tending: { label: 'PR tending', dot: 'bg-blue-500' },
   recovery: { label: 'Recovery', dot: 'bg-destructive' },
+  finding: { label: 'Finding', dot: 'bg-blue-500' },
 };
 
 function Dismiss({ item }: { item: InboxItem }) {
