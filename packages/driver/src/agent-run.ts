@@ -20,6 +20,7 @@ import { MINUTE, errorCost, failureText } from './support.ts';
 import { changeGate } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { openPr } from './publication.ts';
+import { retrySpent, runWithResultRetry } from './result-retry.ts';
 import { mergeBase } from './merge-conflicts.ts';
 import type { Driver } from './workflow.ts';
 
@@ -268,35 +269,58 @@ export async function agentRun(
     // The agent's last message: what it says it did, for the PR writer.
     let report = '';
     let saving: Promise<void> = Promise.resolve();
+    let retried: StepAttempt['retried'];
     try {
-      const result = await d.deps.runner.run({
-        ...limits,
-        step: 'agent',
-        sandbox,
-        ...(access.env ? { env: access.env } : {}),
-        ...(passEnv.length ? { passEnv } : {}),
-        model: session.model,
-        effort: session.effort,
-        tools: 'edit',
-        cwd: path,
-        ...(await d.agentExtras(project, session.model, session.systemPrompt)),
-        prompt: session.prompt,
-        guard,
-        maxTurns: 300,
-        persistSession: true,
-        ...(task.agent_session ? { resume: task.agent_session } : {}),
-        ...(grant ? { mcp: grant.endpoint } : {}),
-        // Save the session as soon as it exists: a stopped or crashed call must still resume it,
-        // or the next reply starts an agent that remembers nothing of its own work.
-        onEvent: (event) => {
-          if (event.type !== 'session' || event.id === sessionId) return;
-          sessionId = event.id;
-          saving = saving.then(async () => {
-            const current = await d.deps.tasks.read(project, id);
-            await d.deps.tasks.write({ ...current, agent_session: event.id });
-          });
+      const ran = await runWithResultRetry(
+        d.deps.runner,
+        {
+          ...limits,
+          step: 'agent',
+          sandbox,
+          ...(access.env ? { env: access.env } : {}),
+          ...(passEnv.length ? { passEnv } : {}),
+          model: session.model,
+          effort: session.effort,
+          tools: 'edit',
+          cwd: path,
+          ...(await d.agentExtras(project, session.model, session.systemPrompt)),
+          prompt: session.prompt,
+          guard,
+          maxTurns: 300,
+          persistSession: true,
+          ...(task.agent_session ? { resume: task.agent_session } : {}),
+          ...(grant ? { mcp: grant.endpoint } : {}),
+          // Save the session as soon as it exists: a stopped or crashed call must still resume it,
+          // or the next reply starts an agent that remembers nothing of its own work.
+          onEvent: (event) => {
+            if (event.type !== 'session' || event.id === sessionId) return;
+            sessionId = event.id;
+            saving = saving.then(async () => {
+              const current = await d.deps.tasks.read(project, id);
+              await d.deps.tasks.write({ ...current, agent_session: event.id });
+            });
+          },
         },
-      });
+        {
+          sessionId: () => sessionId,
+          spent: retrySpent(task),
+          // The retry is on the record before it runs, so a restart cannot grant another.
+          onRetry: async (first, mode) => {
+            retried = 'no-result';
+            await saving.catch(() => undefined);
+            const current = await d.deps.tasks.read(project, id);
+            await d.deps.tasks.write(
+              withEvent(
+                current,
+                d.deps.now(),
+                'retry',
+                `${session.name}'s turn ended with no result (${first.message}); retrying once${mode === 'resume' ? ' in the same session' : ' from the start'}.`,
+              ),
+            );
+          },
+        },
+      );
+      const result = ran.result;
       costUsd = result.costUsd;
       sessionId = result.sessionId ?? sessionId;
       report = result.text?.trim() ?? '';
@@ -347,6 +371,7 @@ export async function agentRun(
       outcome,
       cost_usd: costUsd,
       ...(error ? { error } : {}),
+      ...(retried ? { retried } : {}),
     };
     task = withEvent(
       {

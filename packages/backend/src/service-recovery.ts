@@ -1,7 +1,6 @@
 // Shutdown and restart recovery for the backend: drain the runs, then recover, reconcile and
 // requeue them. BackendService methods of the same names call these.
 import {
-  runWorking,
   taskCommandBlockers,
   withStage,
   type TaskRecord,
@@ -9,6 +8,7 @@ import {
   type RecoveryReport,
 } from '@factory/core';
 import { ownerOf, RunRecord, writeRun } from './run-record.ts';
+import { RUN_RECOVERY, failsWhenInterrupted } from './recovery-rules.ts';
 import { DRAIN_GRACE_MS, type BackendService } from './service.ts';
 
 const RECOVERY_RETRY_MS = Number(process.env.FACTORY_RECOVERY_RETRY_MS ?? 30_000);
@@ -152,9 +152,10 @@ export async function reconcileTask(
   const latest = await s.latest(target);
   if (!latest || s.dispatcher.active(latest.record.id)) return undefined;
   const { record, dir } = latest;
-  if (record.state !== 'queued' && record.state !== 'running') return undefined;
+  const rule = RUN_RECOVERY[record.state];
+  if (rule.kind !== 'reconciler') return undefined;
   await s.tasks.clearDeadLock(project, id);
-  if (record.state === 'queued') {
+  if (rule.step === 'requeue') {
     const queued = await s.requeue(record, dir);
     if (queued === 'scheduled') return 'requeued';
     if (queued === 'settled') return undefined;
@@ -179,7 +180,7 @@ export async function reconcileTask(
   // Another backend settled this run first: leave the task to it.
   if (!settled.written) return undefined;
   const current = await s.tasks.read(project, id);
-  if (runWorking(current.stage))
+  if (failsWhenInterrupted(current.stage))
     await s.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
   return 'interrupted';
 }

@@ -428,13 +428,11 @@ export class ClaudeAgentRunner implements ModelRunner {
         }
       }
     } catch (error) {
+      // A stream error that names no other cause (a CLI crash, an unexpected exit) is `no-result`.
       const message = `model run failed: ${(error as Error).message}`;
-      throw new ModelRunError(message, null, modelFailureKind(message), activity);
+      throw new ModelRunError(message, null, noResultUnlessKnown(message), activity);
     }
-    if (!result) {
-      const message = 'model run ended without a result';
-      throw new ModelRunError(message, null, modelFailureKind(message), activity);
-    }
+    if (!result) throw new ModelRunError('model run ended without a result', null, 'no-result', activity);
     const extra = loop?.spentUsd ?? 0;
     if (extra && typeof result.total_cost_usd === 'number') result.total_cost_usd += extra;
     if (result.subtype !== 'success' || result.is_error) {
@@ -469,6 +467,11 @@ export class ClaudeAgentRunner implements ModelRunner {
         : {}),
     };
   }
+}
+
+function noResultUnlessKnown(message: string): ModelFailure {
+  const kind = modelFailureKind(message);
+  return kind === 'error' ? 'no-result' : kind;
 }
 
 function describeInput(input: unknown): string {

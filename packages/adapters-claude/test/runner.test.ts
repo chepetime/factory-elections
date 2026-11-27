@@ -265,6 +265,35 @@ test('a call gets the agent allowlist plus its extra environment, never other ho
     assert.equal(env[k], undefined, `${k} must not reach the agent`);
 });
 
+/** A stream that fails on its first read, as a crashed CLI does. */
+function failing(message: string): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => Promise.reject(new Error(message)),
+    }),
+  };
+}
+
+test('a stream that ends with no result, and a stream error with no other cause, are no-result', async () => {
+  const ended = new ClaudeAgentRunner({ query: fake([]) });
+  await assert.rejects(
+    ended.run(request),
+    (e: ModelRunError) => e.kind === 'no-result' && /ended without a result/.test(e.message),
+  );
+  const crashed = failing('Claude Code process exited with code 1');
+  const crash = new ClaudeAgentRunner({ query: (() => crashed) as unknown as Query });
+  await assert.rejects(
+    crash.run(request),
+    (e: ModelRunError) => e.kind === 'no-result' && /model run failed: .*exited with code 1/.test(e.message),
+  );
+});
+
+test('a stream error that names a rate limit keeps its own kind', async () => {
+  const limited = failing('429 too many requests');
+  const runner = new ClaudeAgentRunner({ query: (() => limited) as unknown as Query, retryDelaysMs: [] });
+  await assert.rejects(runner.run(request), (e: ModelRunError) => e.kind === 'rate-limited');
+});
+
 const toolStart = {
   type: 'assistant',
   message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'sleep 9' } }] },

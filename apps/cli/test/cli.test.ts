@@ -184,7 +184,7 @@ test('setup links factory into the bin directory and is safe to rerun', async ()
   const binDir = join(base, 'bin');
   const script = resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'setup.mjs');
   const run = () =>
-    spawnSync(process.execPath, [script, '--no-install', '--no-doctor'], {
+    spawnSync(process.execPath, [script, '--no-install', '--no-doctor', '--no-hooks'], {
       encoding: 'utf8',
       env: { ...process.env, FACTORY_BIN_DIR: binDir },
     });
@@ -197,7 +197,7 @@ test('setup links factory into the bin directory and is safe to rerun', async ()
   // Replace the link itself (writing through it would overwrite bin/factory).
   await rm(join(binDir, 'factory'));
   await writeFile(join(binDir, 'factory'), 'not a link');
-  const refused = spawnSync(process.execPath, [script, '--no-install', '--no-doctor'], {
+  const refused = spawnSync(process.execPath, [script, '--no-install', '--no-doctor', '--no-hooks'], {
     encoding: 'utf8',
     env: { ...process.env, FACTORY_BIN_DIR: binDir },
   });
