@@ -15,6 +15,7 @@ import {
   type ReviewOutcome,
   type ReviewPayload,
   type TaskRecord,
+  type TendingWaiting,
 } from '@factory/core';
 
 export interface ReviewLoopDeps {
@@ -68,6 +69,25 @@ export class ReviewLoop {
   }
   private save(task: Pick<TaskRecord, 'project' | 'id'>, state: ReviewLoopState): Promise<void> {
     return this.deps.storage.writeDocument(this.path(task), { ...state, updated_at: this.now() });
+  }
+
+  /** Agent PRs whose review loop stopped and now wait on the human. */
+  async waiting(project: string, tasks: readonly TaskRecord[]): Promise<TendingWaiting[]> {
+    const out: TendingWaiting[] = [];
+    for (const task of tasks) {
+      const number = prNumber(task);
+      if (task.project !== project || !number || !task.pr) continue;
+      const state = await this.state(task);
+      if (state?.state === 'stopped' && state.pr === number)
+        out.push({
+          task_id: task.id,
+          number,
+          url: task.pr.url,
+          reason: state.reason ?? 'The review loop stopped.',
+          since: state.updated_at,
+        });
+    }
+    return out;
   }
 
   /** One step at a time per task: a review result and a run's end may arrive together. */

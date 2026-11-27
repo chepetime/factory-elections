@@ -146,6 +146,36 @@ test('a fix that stops, a review without a result, a ready PR and a pipeline tas
   );
 });
 
+test('each stop of the loop waits in the inbox with the PR and the reason', async () => {
+  const opened = setup().task();
+  const noReport = setup();
+  await noReport.loop.prChanged(opened, { kind: 'opened', draft: true });
+  assert.deepEqual(await noReport.loop.waiting('demo', [opened]), [], 'a running loop waits on no one');
+  await noReport.loop.reviewEnded('demo', 4, undefined, 'No result saved.');
+
+  const fixStopped = setup();
+  await fixStopped.loop.prChanged(opened, { kind: 'opened', draft: true });
+  await fixStopped.loop.reviewEnded('demo', 4, payload('must-fix'));
+  fixStopped.set({ stage: 'verification-failed' });
+  await fixStopped.loop.runSettled('demo', opened.id);
+
+  const interrupted = setup();
+  await interrupted.loop.prChanged(opened, { kind: 'opened', draft: true });
+  for (let i = 0; i < 3; i++) await interrupted.loop.resumeInterrupted(interrupted.task());
+
+  for (const [ctx, reason] of [
+    [noReport, /without a report. No result saved/],
+    [fixStopped, /stopped at verification-failed/],
+    [interrupted, /interrupted three times/],
+  ] as const) {
+    const [item, ...rest] = await ctx.loop.waiting('demo', [opened]);
+    assert.equal(rest.length, 0);
+    assert.equal(item?.number, 4);
+    assert.equal(item?.task_id, opened.id);
+    assert.match(item?.reason ?? '', reason);
+  }
+});
+
 test('a follow-up pushed to the PR starts a new cycle; the PR people already review only gets new notes', async () => {
   const ctx = setup();
   await ctx.loop.prChanged(ctx.task(), { kind: 'opened', draft: true });

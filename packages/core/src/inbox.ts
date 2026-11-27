@@ -28,6 +28,8 @@ export type InboxKind =
   | 'review'
   /** PR tending could not keep a PR moving on its own. */
   | 'tending'
+  /** The review loop of an agent PR stopped; the PR may sit in draft. */
+  | 'review-loop'
   /** Startup recovery could not read some work, so the backend cannot tell who owns it. */
   | 'recovery'
   /** The daily retro found a waste pattern that repeats across runs (retro.ts). */
@@ -73,6 +75,8 @@ export interface InboxInput {
   features: readonly Feature[];
   reviews?: readonly ReviewWaiting[];
   tending?: readonly TendingWaiting[];
+  /** Review loops that stopped, with the reason (same shape as tending stops). */
+  reviewLoops?: readonly TendingWaiting[];
   /** The project's findings; only the open ones wait on the human. */
   findings?: readonly RetroFinding[];
 }
@@ -236,6 +240,19 @@ export function inboxItems(input: InboxInput): InboxItem[] {
         pr: { number: t.number, url: t.url },
         title: `PR #${t.number}`,
         action: 'Help the PR along: tending stopped',
+        detail: t.reason,
+        since: t.since,
+      }),
+    );
+  for (const t of input.reviewLoops ?? [])
+    out.push(
+      item({
+        project,
+        kind: 'review-loop',
+        task_id: t.task_id,
+        pr: { number: t.number, url: t.url },
+        title: `PR #${t.number}`,
+        action: 'Review loop stopped: open the PR and finish it, or push a fix to review it again',
         detail: t.reason,
         since: t.since,
       }),
