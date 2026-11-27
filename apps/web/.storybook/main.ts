@@ -9,7 +9,6 @@ const config: StorybookConfig = {
   core: { disableTelemetry: true },
   async viteFinal(base) {
     return mergeConfig(base, {
-      optimizeDeps: { include: ['@base-ui/react/menu'] },
       // @factory/core reads this at import time; stories that build fixtures with core use its default.
       define: { 'process.env.FACTORY_CONTEXT_TOKENS': 'undefined' },
       resolve: {

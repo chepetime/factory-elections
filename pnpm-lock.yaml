@@ -321,9 +321,6 @@ importers:
       '@ai-sdk/react':
         specifier: 4.0.187
         version: 4.0.187(react@19.3.1)(zod@4.6.7)
-      '@base-ui/react':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@factory/backend-client':
         specifier: workspace:*
         version: link:../../packages/backend-client
@@ -336,12 +333,6 @@ importers:
       ai:
         specifier: 7.0.182
         version: 7.0.182(zod@4.6.7)
-      class-variance-authority:
-        specifier: ^0.7.1
-        version: 0.7.1
-      cn:
-        specifier: ^0.5.2
-        version: 0.5.2
       lucide-react:
         specifier: ^1.72.0
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)
@@ -360,12 +351,6 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
-      shadcn:
-        specifier: ^4.23.0
-        version: 4.23.0
-      tw-animate-css:
-        specifier: ^1.4.0
-        version: 1.4.0
       zod:
         specifier: ^4.6.7
         version: 4.6.7
