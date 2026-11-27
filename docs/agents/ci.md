@@ -3,7 +3,7 @@
 - Preview impact: `node scripts/ci-plan.mjs origin/main HEAD`.
 - Run affected validation: `node scripts/ci-run.mjs origin/main HEAD`. Add `--part=node|web-check|web-build` to run one CI job's part.
 - Validate the selector: `node --test scripts/ci-plan.test.mjs`.
-- Validate the file-size ratchet: `node --test scripts/file-size-ratchet.test.mjs` (`pnpm test` does not run `scripts/*.test.mjs`).
+- Validate the ratchets: `node --test scripts/file-size-ratchet.test.mjs scripts/complexity-ratchet.test.mjs` (`pnpm test` does not run `scripts/*.test.mjs`).
 
 ## File-size ratchet
 
@@ -18,6 +18,19 @@ changes only the entries of files changed since local `main` (on `main` it consi
 
 When the check fails, move a cohesive part of the file into its own module. Do not raise the baseline.
 After a rename or move, move the baseline entry to the new path by hand.
+
+## Complexity ratchet
+
+`pnpm check:complexity` (also part of `pnpm lint`) caps the cyclomatic complexity of each function in
+production source at 15, measured with oxlint's `complexity` rule. `complexity-baseline.json` maps each
+file that already has a function over the cap to its worst function's score. The score may only fall; a
+file not in the baseline fails when a function passes 15. Same scope, entry layout and `--update`
+behaviour as the file-size ratchet: `node scripts/complexity-ratchet.mjs --update`.
+
+**Agents never raise a baseline** in `file-size-baseline.json` or `complexity-baseline.json`. When a
+ratchet fails, split the code into smaller functions or modules instead.
+
+## Repository rules
 
 Repository rules live in `tests/repo/*.test.ts` (`node:test`, Node built-ins only): relative links in
 `AGENTS.md` and `docs/harnes/*.md` resolve, factory `git commit` calls pass `--no-verify`, and each
