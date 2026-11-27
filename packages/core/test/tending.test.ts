@@ -139,3 +139,11 @@ test('a legacy reruns list loads as retries of every check, and the retries stay
   assert.equal(capped.ci_retries.length, 100);
   assert.equal(capped.ci_retries[99]!.sha, 's149');
 });
+
+test('a ticket over its cap starts no fix, and waits so a raised cap resumes it', () => {
+  const failed = { name: 'ci', state: 'fail' as const };
+  const over = { ...me, ticketCapReached: true };
+  assert.equal(nextTendAction(pr({ checks: [failed] }), record({ reruns: ['h1'] }), me).kind, 'fix-ci');
+  assert.equal(nextTendAction(pr({ checks: [failed] }), record({ reruns: ['h1'] }), over).kind, 'wait');
+  assert.equal(nextTendAction(pr({ mergeable: 'CONFLICTING' }), record(), over).kind, 'wait');
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { insertMention, mentionAt, parseMentions, workSpend, TaskRecord } from '../src/index.ts';
+import { insertMention, mentionAt, parseMentions, ticketSpend, workSpend, TaskRecord } from '../src/index.ts';
 
 test('parseMentions finds known agents once, in order, case-insensitive, not in code or emails', () => {
   assert.deepEqual(parseMentions('@Mika and @devin, then @mika again', ['devin', 'mika']), ['mika', 'devin']);
@@ -78,4 +78,16 @@ test('agents may not merge, rebase or pull the base; the factory does it', async
   assert.equal(baseSyncCommand('git merge --abort'), undefined, 'leaving a merge is fine');
   assert.equal(baseSyncCommand('git status; git log --oneline main..HEAD'), undefined);
   assert.match(BASE_SYNC_NOTE, /Do not run git merge, rebase or pull yourself/);
+});
+
+test('ticketSpend sums runs across follow-ups plus tending fixes', () => {
+  const task = {
+    attempts: [
+      { started_at: '2026-01-01', cost_usd: 4 },
+      { started_at: '2026-01-03', cost_usd: 2 },
+    ],
+    follow_ups: [{ at: '2026-01-02' }],
+  } as unknown as TaskRecord;
+  const spend = ticketSpend(task, { fixes: [{ cost_usd: 1.5 }, { cost_usd: null }] }, { review: 3 });
+  assert.deepEqual(spend, { run: 6, review: 3, tending: 1.5, chat: 0, total: 10.5 });
 });

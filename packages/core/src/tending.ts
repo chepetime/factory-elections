@@ -152,14 +152,22 @@ export const isGitHubLogin = (login: string) =>
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
-  options: { answerThreads: boolean; verdicts?: Readonly<Record<string, FlakeVerdict>> },
+  options: {
+    answerThreads: boolean;
+    verdicts?: Readonly<Record<string, FlakeVerdict>>;
+    /** The ticket's total spend has reached its cap: no new agent work starts. */
+    ticketCapReached?: boolean;
+  },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
   const agentWork = (action: TendAction): TendAction =>
-    record.fixes_since_green >= MAX_TEND_FIXES
-      ? { kind: 'stop', reason: `${MAX_TEND_FIXES} fixes did not make the PR green` }
-      : action;
+    // A wait, not a stop: raising the cap lets the next tick carry on.
+    options.ticketCapReached
+      ? { kind: 'wait', reason: 'ticket budget reached: raise the ticket cap to continue' }
+      : record.fixes_since_green >= MAX_TEND_FIXES
+        ? { kind: 'stop', reason: `${MAX_TEND_FIXES} fixes did not make the PR green` }
+        : action;
   if (pr.mergeable === 'CONFLICTING') return agentWork({ kind: 'merge-base' });
   const threads = options.answerThreads ? threadsWaiting(pr, record) : [];
   if (threads.length) return agentWork({ kind: 'answer-threads', threads });

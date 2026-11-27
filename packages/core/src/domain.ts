@@ -241,6 +241,31 @@ export function taskSpend(task: TaskRecord): number {
   return (task.attempts ?? []).reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
 }
 
+/** Dollars spent on a ticket by kind. Unknown costs count as zero. Chat and review spend join here as they are recorded on the task. */
+export interface TicketSpend {
+  run: number;
+  review: number;
+  tending: number;
+  chat: number;
+  total: number;
+}
+
+/**
+ * Every dollar tied to one ticket, never reset by a follow-up: the runs (follow-ups included), the
+ * review fixes' attempts, and the tending fixes from the PR's tend record.
+ */
+export function ticketSpend(
+  task: TaskRecord,
+  tend?: { fixes: readonly { cost_usd?: number | null }[] },
+  extra: { review?: number; chat?: number } = {},
+): TicketSpend {
+  const run = taskSpend(task);
+  const tending = (tend?.fixes ?? []).reduce((sum, f) => sum + (f.cost_usd ?? 0), 0);
+  const review = extra.review ?? 0;
+  const chat = extra.chat ?? 0;
+  return { run, review, tending, chat, total: run + review + tending + chat };
+}
+
 /**
  * Dollars spent on the task's current work: since its latest follow-up, or since it started. A
  * follow-up is new work on the same branch, so it gets the whole task budget again; the earlier
