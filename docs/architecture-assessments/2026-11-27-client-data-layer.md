@@ -95,9 +95,24 @@ Update `docs/state-machines/task-stages.md` and `ui.md` with step 1, and `approv
 
 | Step | State |
 | --- | --- |
-| 0. Measure against real data | Open: needs the live stack. |
+| 0. Measure against real data | Done, read-only against storage (no backend): see Measurements. |
 | 1. Attention states, new-tab retry | Done (`a101732`): `review`, `reply`, `problem` with their own labels and tones on the sidebar, task cards, stage pills, inbox dots and home cards; the project list retries with backoff. |
 | 2. Accept, then work | Done (`a1eefbc`), by a smaller route than proposed: approve, open-PR and reject post to a route handler with `fetch`, so navigation is never queued behind them, and a toast reports the result on any page. The backend still runs them in one request. |
 | 3. Shared, parallel reads; loaders | Done (`e8364ae`): read helpers are `cache()`d per render, the task page loads in two parallel rounds, and chats, tasks and reviews show a loader at once. |
 | 4. Backend read cost | Done (`3f6f8b1`): reads take no lock, one lock per project, and one task reads only its latest run. The full task list still selects whole records. |
-| 5. Optimistic updates | Done for status, agent, board moves and archive (`5332673`), with a `factory:issues-changed` event that reloads the sidebar at once. Version-gated polling is open. |
+| 5. Optimistic updates, version-gated polling | Done: status, agent, board moves and archive show at once (`5332673`). `GetVersions` counts each project's writes (a `DataStorage.onChange` listener); the sidebar checks it every 3 s and the inbox every 15 s, and reload their lists only when it moved, or once a minute for writes from other processes (`a77c92b`). Idle, the sidebar made no list loads in 15 s; a backend write reached it in 1.3 s. |
+
+## Measurements (2026-11-27)
+
+Real data root, Postgres storage, median of 5 reads:
+
+| Read | Result |
+| --- | --- |
+| List every run, `factory-elections` (2 runs, 37 KB) | 1.3 ms |
+| List every run, `cooking-drama` (1 run) | 0.8 ms |
+| Read one run | 0.6 ms |
+| Read the board (15 KB) | 0.8 ms |
+| A task page's git reads (head, diff stat, 51 KB diff, status) | 83 ms |
+| Workspace chats | none stored |
+
+At this size the server's reads are not what made the app feel slow; the client was: navigation queued behind server actions, sequential page reads, a second render after every action, and no loading state. Steps 1–5 fixed those. The issue store changes (step 4) matter as runs accumulate. Next.js in dev mode also compiles each page on its first visit; `pnpm prod` avoids that.
