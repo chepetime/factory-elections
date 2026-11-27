@@ -42,6 +42,7 @@ import {
   type SessionEntry,
 } from '@factory/agents';
 import { FeatureService } from './features.ts';
+import { gatedRunner, reviewRefusal } from './model-gate.ts';
 import { IssueService } from './issues.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
@@ -216,9 +217,7 @@ export class BackendService {
     this.experiments = new ExperimentStore(root, this.storage);
     this.prReviewRecords = new PrReviewStore(root, this.storage);
     this.outcomes = new OutcomeStore(root, this.storage);
-    const base: ModelRunner = {
-      run: (request) => (this.runner ?? composeDriver(this.root).deps.runner).run(request),
-    };
+    const base = gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user);
     this.delegation = new DelegationServer({
       // Children of a traced call carry `traceParent`; other calls pass through untraced.
       runner: this.traces.runner(base, () => undefined),
@@ -226,6 +225,7 @@ export class BackendService {
       traceParent: (token) => this.traces.grantParent(token),
     });
     this.reviews.delegation = this.delegation;
+    this.reviews.modelRefusal = (model) => reviewRefusal(this.user, model);
     this.memory = new MemoryService(
       root,
       (project) => this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'memory-review'),
@@ -336,9 +336,8 @@ export class BackendService {
       state: documentPickupState(this.root, this.storage),
       blocker: (p) => this.runBlocker(p),
       route: async (task) => {
-        const base = this.runner ?? composeDriver(this.root).deps.runner;
         const runner = this.traces.runner(
-          base,
+          gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user),
           () => ({ trace_id: newTraceId(), project: task.project }),
           'model',
         );
