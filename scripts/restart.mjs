@@ -74,6 +74,28 @@ function webPids() {
     });
 }
 
+/** Next.js processes still running from this checkout's apps/web (by cwd), e.g. left by an old web.mjs. */
+function nextPids() {
+  const web = join(repo, 'apps', 'web');
+  const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' });
+  return out
+    .split('\n')
+    .filter((line) => /next-server|next\/dist\/bin\/next (dev|start)/.test(line))
+    .map((line) => Number(line.trim().split(/\s+/)[0]))
+    .filter(Number.isInteger)
+    .filter((pid) => {
+      try {
+        const cwd = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' })
+          .split('\n')
+          .find((l) => l.startsWith('n'))
+          ?.slice(1);
+        return cwd === web;
+      } catch {
+        return false;
+      }
+    });
+}
+
 async function reachable() {
   try {
     await backendCall('ListProjects', {}, 1000);
@@ -140,6 +162,14 @@ async function main() {
     throw new Error('web.mjs did not stop within 6 min; inspect it before starting again.');
   if (existsSync(lock))
     throw new Error(`The backend left ${lock}; check that it stopped, then remove the lock.`);
+  // A web.mjs from before it stopped its whole process group leaves next running on the port.
+  const strays = nextPids();
+  if (strays.length) {
+    console.log(`Stopping leftover Next.js (${strays.join(', ')}).`);
+    for (const pid of strays) process.kill(pid, 'SIGTERM');
+    for (let i = 0; i < 30 && nextPids().length; i++) await sleep(1000);
+    if (nextPids().length) throw new Error(`Next.js (${nextPids().join(', ')}) did not stop; inspect it.`);
+  }
 
   mkdirSync(join(root, 'logs'), { recursive: true });
   const logPath = join(root, 'logs', 'stack.log');

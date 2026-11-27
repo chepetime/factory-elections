@@ -52,13 +52,24 @@ if (!(await reachable())) {
   throw new Error('Backend port is already occupied; choose another worktree backend port.');
 } else console.log('Using the running local backend.');
 closeBackendClient();
-const app = spawn('pnpm', ['run', dev ? 'dev' : 'start'], { cwd: web, env, stdio: 'inherit' });
+// Its own process group: pnpm does not pass SIGTERM on to next, so stopping only pnpm would leave
+// next-server holding the port. stop() signals the whole group instead.
+const app = spawn('pnpm', ['run', dev ? 'dev' : 'start'], {
+  cwd: web,
+  env,
+  stdio: 'inherit',
+  detached: true,
+});
 console.log(`\nHarbor Lighthouse: http://localhost:${env.PORT ?? 3000}  (Ctrl-C to stop)\n`);
 let stopping = false;
 const stop = () => {
   if (stopping) return;
   stopping = true;
-  app.kill('SIGTERM');
+  try {
+    process.kill(-app.pid, 'SIGTERM');
+  } catch {
+    app.kill('SIGTERM'); // the group is gone or never started
+  }
   // Only stop a backend owned by this launcher. It drains active runs before exiting.
   backend?.kill('SIGTERM');
 };
