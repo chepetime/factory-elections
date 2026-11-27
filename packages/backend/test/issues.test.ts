@@ -734,3 +734,35 @@ test('a ticket waits for its blocker, then stacks on the blocker branch once its
   assert.equal(stacked.stack_on, `factory/${record.id}`);
   assert.match(started.issue.events.at(-1)!.message, /stacked on CE-1/);
 });
+
+test('a run that waits for a person says why: the message of its latest event for its stage', async (t) => {
+  const budget =
+    "Devin spent the budget for this task ($20.08 of $15.00). Raise Devin's budget per task in the agent's settings, then reply here to continue.";
+  const blocked = run('Over budget', '2026-11-18T10:00:00.000Z', 'blocked', {
+    events: [
+      { at: '2026-11-18T10:01:00.000Z', kind: 'stage:blocked', message: 'Devin needs you' },
+      { at: '2026-11-18T10:02:00.000Z', kind: 'stage:coding', message: 'Continuing' },
+      { at: '2026-11-18T10:03:00.000Z', kind: 'stage:blocked', message: budget },
+      { at: '2026-11-18T10:04:00.000Z', kind: 'note', message: 'not a stage event' },
+    ],
+  });
+  const failed = run('Broke', '2026-11-19T10:00:00.000Z', 'failed', {
+    events: [{ at: '2026-11-19T10:01:00.000Z', kind: 'stage:failed', message: 'x'.repeat(500) }],
+  });
+  const approval = run('Ready', '2026-11-20T10:00:00.000Z', 'awaiting-approval', {
+    events: [
+      { at: '2026-11-20T10:01:00.000Z', kind: 'stage:awaiting-approval', message: 'Ready for review' },
+    ],
+  });
+  const coding = run('Working', '2026-11-21T10:00:00.000Z', 'coding', {
+    events: [{ at: '2026-11-21T10:01:00.000Z', kind: 'stage:coding', message: 'Coding' }],
+  });
+  const { service } = await setup(t, [blocked, failed, approval, coding]);
+  const { items } = await service.list('change-elections');
+  const reasons = new Map(items.map((i) => [i.run!.stage, i.run!.reason]));
+  assert.equal(reasons.get('blocked'), budget);
+  assert.equal(reasons.get('failed')?.length, 300, 'a long reason is trimmed');
+  assert.ok(reasons.get('failed')?.endsWith('…'));
+  assert.equal(reasons.get('awaiting-approval'), undefined);
+  assert.equal(reasons.get('coding'), undefined);
+});

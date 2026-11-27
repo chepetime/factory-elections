@@ -21,6 +21,7 @@ import {
   issueNumber,
   ProjectName,
   runHeld,
+  stageReason,
   statusFromStage,
   syncedStatus,
   TaskId,
@@ -232,6 +233,7 @@ export class IssueService {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
     const waiting = task ? this.queued(task.project, task.id) : undefined;
+    const reason = task ? stageReason(task) : undefined;
     const run = task
       ? {
           id: task.id,
@@ -239,6 +241,7 @@ export class IssueService {
           updated_at: task.updated_at,
           ...(waiting ? { waiting: true, waiting_for: waiting } : {}),
           owned: this.deps.owned?.(task.project, task.id) ?? false,
+          ...(reason ? { reason } : {}),
         }
       : undefined;
     return {

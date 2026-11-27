@@ -138,5 +138,6 @@ export async function buildAgentSession(input: {
     passEnv: agent.pass_env.filter((name) => allowed.has(name)),
     tools: taskTools({ issues, project: task.project, key: issue.key, agent, report }),
     reported: () => report.status,
+    commented: () => report.commented === true,
   };
 }

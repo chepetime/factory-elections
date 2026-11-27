@@ -18,6 +18,8 @@ export const IssueView = Issue.extend({
       waiting_for: QueueWait.optional(),
       /** A live run holds the task now. Absent from an older backend: the stage decides. */
       owned: z.boolean().optional(),
+      /** Why a blocked or failed run waits for a person. Absent from an older backend. */
+      reason: z.string().optional(),
     })
     .optional(),
 });
