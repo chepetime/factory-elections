@@ -12,6 +12,7 @@ import {
   isProjectName,
   isTaskId,
   startTask,
+  tendPullRequestsNow,
 } from '@/lib/factory';
 import { startProfileCheck } from '@/lib/profile-check';
 import { saveAssignment } from '@/lib/team';
@@ -478,6 +479,7 @@ export async function updateIssue(
     assignee?: string | null;
     start_date?: string | null;
     due_date?: string | null;
+    blocked_by?: string[];
   },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
@@ -517,6 +519,14 @@ export async function followUpIssue(_prev: ActionState, form: FormData): Promise
 }
 
 /** Archives a board task, or restores it with `archived: false`. */
+/** The board's refresh for In review: reads every PR's state now, so merged PRs reach Done. */
+export async function refreshReviews(project: string): Promise<ActionState> {
+  if (!isProjectName(project)) return { error: 'Invalid project.' };
+  const result = await tendPullRequestsNow(project);
+  revalidatePath(`/projects/${project}/tasks`, 'layout');
+  return result.ok ? { message: 'Checked the pull requests in review.' } : { error: result.error };
+}
+
 export async function archiveIssue(project: string, key: string, archived: boolean): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
   const result = await archiveIssueRun(project, key, archived);

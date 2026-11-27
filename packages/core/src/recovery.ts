@@ -39,3 +39,25 @@ export function recoveryInboxItems(report: RecoveryReport): InboxItem[] {
     detail: p.error,
   }));
 }
+
+/** Git locks outside a task's own files, found when its run resumed. They are never removed. */
+export interface ForeignLocks {
+  project: string;
+  task_id: string;
+  paths: string[];
+  since: string;
+}
+
+/** One inbox item per task that found a lock it does not own: a person checks that no git runs there. */
+export function foreignLockInboxItems(found: readonly ForeignLocks[]): InboxItem[] {
+  return found.map((f) => ({
+    id: ['recovery', 'locks', f.project, f.task_id, f.since].join(':'),
+    kind: 'recovery',
+    project: f.project,
+    task_id: f.task_id,
+    title: `Git locks in the repository of task ${f.task_id} were left alone`,
+    action: 'Check that no git command runs in the repository, then delete the lock files',
+    since: f.since,
+    detail: f.paths.join('\n'),
+  }));
+}

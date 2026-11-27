@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import {
   stageLabel,
+  stageReason,
   statusFromStage,
   taskAccess,
   issueCreator,
@@ -14,6 +15,7 @@ import { FollowUpForm } from '@/components/follow-up-form';
 import { LocalTime } from '@/components/local-time';
 import {
   IssueArchivedBanner,
+  IssueBlockedByField,
   IssueCommentBox,
   IssueDescription,
   IssueTitle,
@@ -120,6 +122,9 @@ export default async function TaskPage({
         runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
       })
     : undefined;
+  // Why the shown run waits for a person; a queued turn on the latest run makes it stale.
+  const reason =
+    run?.ok && !(issue.run?.waiting && runId === issue.run.id) ? stageReason(run.value.task) : undefined;
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
   const feed = feedItems(issue);
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
@@ -304,6 +309,11 @@ export default async function TaskPage({
                       ? queueWaitLabel(issue.run.waiting_for, runAuthor?.name)
                       : stageLabel(run.value.task.stage)}
                   </span>
+                  {reason && (
+                    <span title={reason} className="block truncate text-xs text-muted-foreground">
+                      {reason}
+                    </span>
+                  )}
                 </p>
                 {run.value.task.pr && (
                   <a
@@ -602,6 +612,9 @@ export default async function TaskPage({
 
             <Section title="Details">
               <Facts>
+                <Fact label="Blocked by">
+                  <IssueBlockedByField project={project} issueKey={issue.key} blockedBy={issue.blocked_by} />
+                </Fact>
                 <Fact label="Created">
                   <LocalTime iso={issue.created_at} format="date-time" />
                 </Fact>

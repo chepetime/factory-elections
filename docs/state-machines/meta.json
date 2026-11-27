@@ -3,6 +3,7 @@
   "pages": [
     "task-stages",
     "runs",
+    "recovery",
     "projects",
     "coding",
     "approval-and-publication",
@@ -12,6 +13,7 @@
     "feature-tickets",
     "tasks-board",
     "agent-pickup",
+    "workspace-agent-turns",
     "chats",
     "memory",
     "backend",

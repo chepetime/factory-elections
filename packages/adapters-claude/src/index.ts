@@ -1,7 +1,6 @@
 // Model runner backed by the Claude Agent SDK. Authentication is the machine's own Claude sign-in
 // (or ANTHROPIC_API_KEY); this adapter stores no credentials.
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import {
   query,
   type HookCallbackMatcher,
@@ -20,6 +19,8 @@ import {
   PROVIDER_CAPABILITIES,
   agentEnvironment,
   envNames,
+  SANDBOX_ALLOWED_DOMAINS,
+  sandboxAllowWrite,
   type LoopJudgement,
   type ModelFailure,
   type ModelResult,
@@ -43,18 +44,15 @@ export const CLAUDE_TOOL_ACCESS: Record<ToolAccess, string[]> = {
   edit: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash', 'Agent'],
 };
 
-/** Package registries a sandboxed coder may reach, so it can update a lockfile. */
-export const SANDBOX_ALLOWED_DOMAINS = ['registry.npmjs.org'];
-
 /**
  * OS sandbox for steps that may run Bash. A first guardrail, to be widened deliberately: commands
  * can write only inside the working directory (the task worktree) and the package-manager caches,
  * and reach only the package registries. The step guard still screens every command, because
  * sandboxed Bash is not auto-approved, and the model cannot opt a command out of the sandbox.
+ * The lists live in `@factory/core` (sandbox-policy.ts): the checks the factory runs on the
+ * coder's code read the same ones.
  */
-const PNPM_LOCK_DIRS = ['/private/tmp', '/tmp'].map(
-  (dir) => `${dir}/pnpm-store-operation-locks-${process.getuid?.() ?? 0}`,
-);
+export { SANDBOX_ALLOWED_DOMAINS };
 
 export function sandboxFor(
   tools: ToolAccess,
@@ -65,16 +63,7 @@ export function sandboxFor(
   return baseSandbox({
     home,
     allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])],
-    allowWrite: [
-      join(home, 'Library', 'pnpm'),
-      join(home, 'Library', 'Caches', 'pnpm'),
-      join(home, '.npm'),
-      join(home, '.cache'),
-      // pnpm 12 locks its store under /tmp (not $TMPDIR); without it every install fails with
-      // ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK.
-      ...PNPM_LOCK_DIRS,
-      ...(extra?.allow_write ?? []),
-    ],
+    allowWrite: sandboxAllowWrite(home, extra?.allow_write ?? []),
   });
 }
 
@@ -439,13 +428,11 @@ export class ClaudeAgentRunner implements ModelRunner {
         }
       }
     } catch (error) {
+      // A stream error that names no other cause (a CLI crash, an unexpected exit) is `no-result`.
       const message = `model run failed: ${(error as Error).message}`;
-      throw new ModelRunError(message, null, modelFailureKind(message), activity);
+      throw new ModelRunError(message, null, noResultUnlessKnown(message), activity);
     }
-    if (!result) {
-      const message = 'model run ended without a result';
-      throw new ModelRunError(message, null, modelFailureKind(message), activity);
-    }
+    if (!result) throw new ModelRunError('model run ended without a result', null, 'no-result', activity);
     const extra = loop?.spentUsd ?? 0;
     if (extra && typeof result.total_cost_usd === 'number') result.total_cost_usd += extra;
     if (result.subtype !== 'success' || result.is_error) {
@@ -480,6 +467,11 @@ export class ClaudeAgentRunner implements ModelRunner {
         : {}),
     };
   }
+}
+
+function noResultUnlessKnown(message: string): ModelFailure {
+  const kind = modelFailureKind(message);
+  return kind === 'error' ? 'no-result' : kind;
 }
 
 function describeInput(input: unknown): string {

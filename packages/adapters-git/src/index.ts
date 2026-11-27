@@ -5,6 +5,8 @@ import { run } from '@factory/adapters-process';
 
 export class GitError extends Error {}
 
+export * from './stale-locks.ts';
+
 /**
  * Factory git calls run on the host, with its credentials, in worktrees whose contents an agent
  * wrote. A hook in the worktree (`.husky/pre-push`, `.githooks/*`) would run there too, so every

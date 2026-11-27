@@ -1,7 +1,7 @@
 # CI and delivery
 
 - Preview impact: `node scripts/ci-plan.mjs origin/main HEAD`.
-- Run affected validation: `node scripts/ci-run.mjs origin/main HEAD`.
+- Run affected validation: `node scripts/ci-run.mjs origin/main HEAD`. Add `--part=node|web-check|web-build` to run one CI job's part.
 - Validate the selector: `node --test scripts/ci-plan.test.mjs`.
 - Validate the file-size ratchet: `node --test scripts/file-size-ratchet.test.mjs` (`pnpm test` does not run `scripts/*.test.mjs`).
 
@@ -47,9 +47,19 @@ workspaces. Deleted paths use `--no-renames`, retaining both sides of moves.
 Markdown under `docs/`, root Markdown and AGENTS files skips application tests.
 Prompt files under `definitions/` remain application inputs.
 
-The workflow always emits `CI / checks`, including documentation-only PRs; require
-this check in branch protection. CI runs on PRs, not branch pushes, and cancels stale
-runs. Tests are never cached. pnpm's content-addressed store is cached by the lockfile,
+PR CI runs three parallel jobs, one per `ci-run.mjs` part: `node` (repository rules, format, lint,
+root TypeScript, Node tests, harness tests), `web-check` (web TypeScript and unit tests) and
+`web-build` (`next build`). Each job plans for itself; a web job with no web inputs skips its
+install. The `checks` job needs all three and fails unless all passed (also when one is cancelled),
+so the workflow always emits `CI / checks`, including documentation-only PRs; require this
+check in branch protection. CI runs on PRs, not branch pushes, and cancels stale runs.
+`ci-run.mjs` builds affect-ui once per run instead of once per web script.
+
+Tests are never cached. Tool caches are: prettier results by file content and tsc build info
+(`node_modules/.cache/factory-ci`, `apps/web/tsconfig.tsbuildinfo`), and the Next.js compiler
+cache under the delivery build's key family, so a PR starts from the newest main build.
+Keep `node --test` files small: files run in parallel, the tests inside one file do not, so the
+slowest file sets the floor of the `node` job. pnpm's content-addressed store is cached by the lockfile,
 then a frozen install verifies the checkout. No dependency directory is shared across
 worktrees. See [setup-node caching](https://github.com/actions/setup-node#caching-global-packages-data)
 and [pnpm setup](https://github.com/pnpm/action-setup).
@@ -66,7 +76,9 @@ standalone runtime bundle. A host-specific deploy step and protected environment
 must be configured before production deployment; it must consume the validated
 commit, supply runtime dependencies, and keep production secrets out of PR jobs.
 
-No CI timing baseline exists yet. Compare Actions durations and selected test counts
-on equivalent PRs before claiming speed improvements. Storybook/browser tests and
+Baseline before the parallel jobs (2026-11-26, full plan, one job): 130–195 s per PR run. The
+validate step took 103–162 s: Node tests 40–55 s (one 40 s file), `next build` 45 s with no compiler
+cache, web typecheck 18 s and web tests 16 s (each with its own affect-ui build), format 5–8 s.
+Compare Actions durations and selected test counts on equivalent PRs before claiming further speed improvements. Storybook/browser tests and
 data integration checks remain explicit task-specific checks, as in the existing
 local check command; these workflows do not claim to cover them.

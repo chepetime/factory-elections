@@ -12,6 +12,7 @@ The second pass (2026-11-25) applies the same decision to code added after the f
 
 - [Task stages](state-machines/task-stages.md): Stage diagram, readiness, command policy, revision and stage names.
 - [Runs](state-machines/runs.md): Run execution, observation, attention, evidence and the archive guard.
+- [Recovery rules](state-machines/recovery.md): Restart recovery for runs and task stages, and stale git locks.
 - [Projects](state-machines/projects.md): Project registration, profiles and project selection.
 - [Worktrees, model attempts and checks](state-machines/coding.md): Worktree, model ladder, model SDK policy, subprocess and verification.
 - [Review, approval and publication](state-machines/approval-and-publication.md): Factory review, PR draft, human decision and publication.
@@ -21,6 +22,7 @@ The second pass (2026-11-25) applies the same decision to code added after the f
 - [Feature tickets](state-machines/feature-tickets.md): Feature ticket states, retry and merge.
 - [Tasks board](state-machines/tasks-board.md): The project board and the cross-project board.
 - [Agent pickup](state-machines/agent-pickup.md): Routing and assigning todo tasks to agents.
+- [Workspace agent turns](state-machines/workspace-agent-turns.md): Agent session turns, settle rules and the no-change steer.
 - [Chats](state-machines/chats.md): Agent chat, chat stream, composer and conversation scroll.
 - [Memory facts](state-machines/memory.md): Memory fact promotion and drop.
 - [Backend, locks and scheduling](state-machines/backend.md): Backend lifecycle, command lock, scheduler and gRPC channel.

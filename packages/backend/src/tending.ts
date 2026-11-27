@@ -6,10 +6,12 @@
 // own branch: never a force-push, never a merge of the PR. A fix is pushed only after the
 // profile's test command passes. After MAX_TEND_FIXES fixes without a green PR, tending stops and
 // the PR goes to the inbox.
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import {
   DEFAULT_TASK_LIMITS,
+  checkRun,
   answeredKey,
   hasWriteAccess,
   isGitHubLogin,
@@ -29,13 +31,16 @@ import {
   type TendAction,
   type TendFix,
   type TendingWaiting,
+  classifyFlake,
   conflictFollowUpSeen,
+  MAX_CI_RETRIES,
+  type FlakeVerdict,
   PrStatus,
   protectedPaths,
 } from '@factory/core';
 import { NO_HOOKS, changedPathsSince } from '@factory/adapters-git';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
-import { run, runShell } from '@factory/adapters-process';
+import { run, runShell, type ProcessResult } from '@factory/adapters-process';
 
 export interface TendingGitHub {
   /**
@@ -68,8 +73,9 @@ export interface TendingDeps {
   };
   github?: TendingGitHub;
   /**
-   * Every pass reads each open-PR task's PR once and reports it: the board moves a merged task to
-   * Done, and an agent's draft PR without a review loop gets one.
+   * Every pass reads the PR of each task that has one, at any stage, and reports it: the board moves
+   * a merged task to Done, a follow-up whose PR ended is settled, and an agent's draft PR without a
+   * review loop gets one.
    */
   prObserved?(task: TaskRecord, pr: PrStatus): Promise<unknown>;
   /**
@@ -78,6 +84,8 @@ export interface TendingDeps {
    */
   conflictFollowUp?(task: TaskRecord, pr: { head_sha: string; base: string }): Promise<unknown>;
   log?(line: string): void;
+  /** Runs a check command; absent: `runShell`. Tests replace it. Tending passes the sandbox and environment. */
+  runShell?(command: string, options: Parameters<typeof runShell>[1]): Promise<ProcessResult>;
 }
 
 export const TEND_MODEL = 'claude-sonnet-5-5';
@@ -198,6 +206,9 @@ export const ghTending: TendingGitHub = {
   },
 };
 
+const allPassed = (pr: PrState) =>
+  pr.checks.length > 0 && pr.checks.every((c) => c.state === 'pass' || c.state === 'skipped');
+
 async function git(cwd: string, args: string[]) {
   // No repository hooks: `merge` and `commit` would run the PR's own hooks on the host.
   return run('git', [...NO_HOOKS, ...args], { cwd, timeoutMs: 120_000 });
@@ -257,11 +268,18 @@ export class TendingService {
       const settings = await this.deps.settings(name).catch(() => undefined);
       if (!settings) continue;
       for (const task of await this.deps.tasks.list(name)) {
-        if (task.stage !== 'pr-opened' || !task.pr) continue;
+        if (!task.pr) continue;
         const log = (what: string) => (error: unknown) =>
           this.deps.log?.(
             `${what} ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
+        // A follow-up moves the run out of pr-opened, and the person may merge the PR meanwhile:
+        // read its state at every stage, so a merged PR still sets the task Done and settles the
+        // follow-up. Only an open PR at pr-opened gets the conflict watch and tending.
+        if (task.stage !== 'pr-opened') {
+          await this.observe(task).catch(log('pr watch'));
+          continue;
+        }
         // A merged or closed PR needs no conflict watch and no tending.
         const open = await this.observe(task).catch((error: unknown) => (log('pr watch')(error), true));
         if (!open) continue;
@@ -325,7 +343,8 @@ export class TendingService {
         : read;
       const now = new Date().toISOString();
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
-      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads });
+      const verdicts = await this.triage(pr, record, settings, cwd);
+      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads, verdicts });
       record = { ...record, checked_at: now, last: action.kind };
       switch (action.kind) {
         case 'end':
@@ -339,14 +358,31 @@ export class TendingService {
         case 'rerun':
           for (const id of new Set(action.checks.flatMap((c) => (c.run_id ? [c.run_id] : []))))
             await this.github.rerunFailed(cwd, id);
-          record.reruns = [...record.reruns, pr.head_sha];
-          record.fixes = [...record.fixes, { kind: 'rerun', at: now, sha: pr.head_sha, outcome: 'rerun' }];
+          record.ci_retries = [
+            ...record.ci_retries,
+            ...action.checks.map((c) => ({
+              sha: pr.head_sha,
+              check: c.name,
+              verdict: verdicts[c.name] === 'flake' ? ('flake' as const) : ('unknown' as const),
+            })),
+          ].slice(-MAX_CI_RETRIES);
+          record.fixes = [
+            ...record.fixes,
+            {
+              kind: 'rerun',
+              at: now,
+              sha: pr.head_sha,
+              outcome: 'rerun',
+              note: action.checks.map((c) => `${c.name}: ${verdicts[c.name] ?? 'unknown'}`).join(', '),
+            },
+          ];
           break;
         default: {
           const release = await this.deps.slot();
           if (!release) return { kind: 'wait', reason: 'every agent slot is in use' };
           try {
             const fix = await this.fix(task, pr, action, cwd, record.setup_key ?? task.worktree.setup_key);
+            if (action.kind === 'merge-base') fix.fix.was_green = allPassed(pr);
             record.fixes = [...record.fixes, fix.fix];
             if (fix.setupKey) record.setup_key = fix.setupKey;
             if (fix.fix.outcome !== 'no-change') record.fixes_since_green++;
@@ -363,6 +399,35 @@ export class TendingService {
     } finally {
       this.busy.delete(key);
     }
+  }
+
+  /**
+   * Classifies each failed check from GitHub facts and its failed log (see `classifyFlake`), only
+   * when the failures are settled and a rerun is still open for one of them. A real failure skips
+   * the rerun. A log that cannot be read leaves the check `unknown`.
+   */
+  private async triage(
+    pr: PrState,
+    record: TendRecord,
+    settings: ProjectSettings,
+    cwd: string,
+  ): Promise<Record<string, FlakeVerdict>> {
+    const verdicts: Record<string, FlakeVerdict> = {};
+    if (pr.state !== 'OPEN' || pr.checks.some((c) => c.state === 'pending')) return verdicts;
+    const history = {
+      passed_on_head: pr.checks.filter((c) => c.state === 'pass').map((c) => c.name),
+      flaky_checks: settings.tending.flaky_checks ?? [],
+      base_merge_on_green: record.fixes.some(
+        (f) => f.kind === 'merge-base' && f.outcome === 'pushed' && f.was_green && f.head === pr.head_sha,
+      ),
+    };
+    for (const check of pr.checks.filter((c) => c.state === 'fail')) {
+      const log = check.run_id
+        ? await this.github.failedLog(cwd, check.run_id).catch(() => undefined)
+        : undefined;
+      verdicts[check.name] = classifyFlake(check, history, log).verdict;
+    }
+    return verdicts;
   }
 
   /**
@@ -422,7 +487,11 @@ export class TendingService {
   ): Promise<{ fix: TendFix; answered: string[]; replyIds?: string[]; setupKey?: string }> {
     const at = new Date().toISOString();
     const branch = task.worktree!.branch;
-    const done = (outcome: TendFix['outcome'], cost: number | null, note?: string) => ({
+    const done = (
+      outcome: TendFix['outcome'],
+      cost: number | null,
+      note?: string,
+    ): { fix: TendFix; answered: string[] } => ({
       fix: { kind: action.kind, at, sha: pr.head_sha, outcome, cost_usd: cost, ...(note ? { note } : {}) },
       answered: [] as string[],
     });
@@ -526,6 +595,8 @@ export class TendingService {
     }
     const head = await gitOk(cwd, ['rev-parse', 'HEAD']);
     let setupKey: string | undefined;
+    // The coder's code runs here: same environment and OS sandbox as the driver's verification.
+    const shell = this.deps.runShell ?? runShell;
     // A setup or test that prints nothing for this long is stopped, like the driver's checks.
     const stallMs = Math.round(
       (profile.limits?.check_stall_minutes ?? DEFAULT_TASK_LIMITS.check_stall_minutes) * 60_000,
@@ -534,8 +605,9 @@ export class TendingService {
       // A merged base or a fix may change the lockfile; the test must run on matching dependencies.
       const key = await setupInputsKey(cwd, profile.setup_inputs);
       if (key !== installedKey) {
-        const setup = await runShell(profile.commands.setup, {
+        const setup = await shell(profile.commands.setup, {
           cwd,
+          ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
           timeoutMs: TEST_TIMEOUT_MS,
           stallMs,
           group: true,
@@ -552,8 +624,9 @@ export class TendingService {
       }
     }
     if (head !== before) {
-      const test = await runShell(profile.commands.test, {
+      const test = await shell(profile.commands.test, {
         cwd,
+        ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
         timeoutMs: TEST_TIMEOUT_MS,
         stallMs,
         group: true,
@@ -593,6 +666,7 @@ export class TendingService {
       answered.push(answeredKey(thread));
     }
     const result = done(head !== before ? 'pushed' : 'no-change', cost);
+    if (head !== before) result.fix.head = head;
     return { ...result, answered, replyIds, ...(setupKey ? { setupKey } : {}) };
   }
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { Stage } from '../src/index.ts';
 import {
   defaultPrefix,
   dropAction,
@@ -166,4 +167,78 @@ test('a queued turn names what it waits for', () => {
 test('a Done task whose PR is open asks for a follow-up when dropped on In progress; a rejected one starts again', () => {
   assert.deepEqual(dropAction('done', 'in_progress', { stage: 'pr-opened' }), { kind: 'follow-up' });
   assert.deepEqual(dropAction('cancelled', 'in_progress', { stage: 'rejected' }), { kind: 'start-run' });
+});
+
+test('blockers: FE-22 waits for FE-21 until it is Done, and a cycle or unknown key is refused', async () => {
+  const { blockerGate, blockedByProblems, openBlockers } = await import('../src/index.ts');
+  const items = [
+    { key: 'FE-20', status: 'done' as const, blocked_by: [] },
+    { key: 'FE-21', status: 'in_review' as const, blocked_by: ['FE-20'], run: { id: 'run-21' } },
+    { key: 'FE-23', status: 'todo' as const, blocked_by: [] },
+  ];
+  // Keys match by number, so a changed prefix still finds the blocker; a deleted one no longer blocks.
+  assert.deepEqual(openBlockers(['fe-21', 'FE-20', 'FE-99'], items), ['FE-21']);
+  assert.deepEqual(
+    blockerGate([], items, () => undefined),
+    { kind: 'ready' },
+  );
+  assert.deepEqual(
+    blockerGate(['FE-20'], items, () => undefined),
+    { kind: 'ready' },
+  );
+  // One blocker without an open PR: wait.
+  assert.deepEqual(
+    blockerGate(['FE-21'], items, () => undefined),
+    { kind: 'wait', open: ['FE-21'] },
+  );
+  const record = (stage: Stage, pr?: object) =>
+    ({ id: 'run-21', stage, ...(pr ? { pr } : {}), worktree: { branch: 'factory/run-21' } }) as never;
+  assert.deepEqual(
+    blockerGate(['FE-21'], items, () => record('awaiting-approval')),
+    { kind: 'wait', open: ['FE-21'] },
+  );
+  // One blocker whose latest run has an open PR: start now, stacked on its branch.
+  assert.deepEqual(
+    blockerGate(['FE-21'], items, () => record('pr-opened', { number: 7, url: 'u' })),
+    { kind: 'stack', key: 'FE-21', branch: 'factory/run-21' },
+  );
+  // Several blockers: wait until all are Done, even when one has an open PR.
+  assert.deepEqual(
+    blockerGate(['FE-21', 'FE-23'], items, () => record('pr-opened', { number: 7, url: 'u' })),
+    { kind: 'wait', open: ['FE-21', 'FE-23'] },
+  );
+  assert.deepEqual(blockedByProblems(items), []);
+  assert.deepEqual(blockedByProblems([...items, { key: 'FE-24', blocked_by: ['FE-24'] }]), [
+    'FE-24 blocks itself',
+  ]);
+  assert.deepEqual(blockedByProblems([...items, { key: 'FE-24', blocked_by: ['FE-9'] }]), [
+    'FE-24 is blocked by unknown ticket FE-9',
+  ]);
+  const cycle = items.map((i) => (i.key === 'FE-20' ? { ...i, blocked_by: ['FE-21'] } : i));
+  assert.deepEqual(blockedByProblems(cycle), ['blocking cycle: FE-20 → FE-21 → FE-20']);
+});
+
+test('moving a ticket with open blockers to In progress is refused and names them', () => {
+  const refused = dropAction('todo', 'in_progress', undefined, ['FE-21', 'FE-23']);
+  assert.equal(refused.kind, 'refused');
+  assert.match(refused.kind === 'refused' ? refused.reason : '', /FE-21, FE-23/);
+  assert.deepEqual(dropAction('todo', 'in_progress', undefined, []), { kind: 'start-run' });
+  // Other moves do not care about blockers.
+  assert.deepEqual(dropAction('todo', 'backlog', undefined, ['FE-21']), {
+    kind: 'set-status',
+    status: 'backlog',
+  });
+});
+
+test('an Issue without blockers reads as blocked by none', () => {
+  const at = '2026-11-26T00:00:00.000Z';
+  const issue = Issue.parse({
+    number: 1,
+    title: 'T',
+    status: 'todo',
+    status_at: at,
+    created_at: at,
+    updated_at: at,
+  });
+  assert.deepEqual(issue.blocked_by, []);
 });

@@ -250,6 +250,8 @@ export class TraceLog {
             duration_ms: ended - started,
             outcome: 'completed',
             ...(result?.usage ? { tokens: spanTokens(result.usage) } : {}),
+            // The length of the final message, never its text: the signal for an empty answer.
+            ...(result ? { attributes: { final_chars: result.text.length } } : {}),
             ...body,
             ...(body.cost_usd !== undefined
               ? { cost_source: body.cost_usd === null ? 'unknown' : 'reported' }

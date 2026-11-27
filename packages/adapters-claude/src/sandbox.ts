@@ -1,19 +1,12 @@
 // The rules every Claude OS sandbox shares, whether it wraps a coder step or a PR review turn. Kept
 // apart from index.ts and turn.ts, which import each other's exports, so both can use it.
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { SandboxSettings } from '@anthropic-ai/claude-agent-sdk';
-import type { HeadlessTurn } from '@factory/core';
+import { sandboxDenyRead as coreSandboxDenyRead, type HeadlessTurn } from '@factory/core';
 
-/** Credential stores a sandboxed command may not read. */
+/** Credential stores a sandboxed command may not read. The list lives in `@factory/core`. */
 export function sandboxDenyRead(home: string = homedir()): string[] {
-  return [
-    join(home, '.ssh'),
-    join(home, '.npmrc'),
-    join(home, '.aws'),
-    join(home, '.config', 'gh'),
-    join(home, 'Library', 'Keychains'),
-  ];
+  return coreSandboxDenyRead(home);
 }
 
 /**

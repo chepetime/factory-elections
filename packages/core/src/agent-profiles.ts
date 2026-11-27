@@ -145,11 +145,13 @@ export type PickupCandidate = {
   run_stage?: Stage;
   /** The latest run exists but never started, so it can start now. */
   restartable?: boolean;
+  /** Its blockers are not Done (and it cannot stack on one), so it is not started yet. */
+  waits?: boolean;
 };
 
 /**
- * Which tasks each free agent starts now: Todo tasks assigned to it with no open run, most urgent
- * first, then oldest, up to the agent's free slots. `busy` counts the runs each agent is working.
+ * Which tasks each free agent starts now: Todo tasks assigned to it with no open run and no blocker
+ * to wait for, most urgent first, then oldest, up to the agent's free slots. `busy` counts the runs each agent is working.
  */
 export function pickupPlan(
   agents: readonly Pick<AgentProfile, 'id' | 'concurrency' | 'auto_pickup' | 'archived_at'>[],
@@ -168,6 +170,7 @@ export function pickupPlan(
           t.assignee === agent.id &&
           t.status === 'todo' &&
           !t.archived &&
+          !t.waits &&
           (t.run_stage === undefined || runFinished(t.run_stage) || t.restartable === true) &&
           !skip(t),
       )

@@ -1,5 +1,6 @@
 // What the driver needs from the outside world. The CLI composes concrete adapters into these.
 import type {
+  CheckSandbox,
   ContextLimits,
   Effort,
   FactoryTool,
@@ -60,6 +61,18 @@ export interface GitPort {
   mergeRef?(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }>;
   mergeInProgress?(dir: string): Promise<boolean>;
   abortMerge?(dir: string): Promise<void>;
+  /**
+   * Removes the stale locks of the task worktree (see adapters-git stale-locks.ts) and reports
+   * the repository's other locks without touching them.
+   */
+  clearStaleGitLocks?(
+    dir: string,
+    options: { branch: string; olderThan: number },
+  ): Promise<{
+    removed: string[];
+    kept: { path: string; reason: string }[];
+    reported: string[];
+  }>;
 }
 
 export interface ShellPort {
@@ -77,6 +90,11 @@ export interface ShellPort {
       group?: boolean;
       /** The whole environment of the command; absent: this process's environment. */
       env?: Record<string, string>;
+      /**
+       * Run in an OS sandbox with these rules (needs `env`). Without a working sandbox the command
+       * does not run. Set for every command that runs the coder's code.
+       */
+      sandbox?: CheckSandbox | undefined;
     },
   ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' | 'stalled' }>;
 }
@@ -144,6 +162,8 @@ export interface AgentSession {
   tools: readonly FactoryTool[];
   /** The status the agent set with set_status during the session, read when it ends. */
   reported(): 'in_progress' | 'in_review' | 'blocked' | undefined;
+  /** Whether the agent posted a task comment during the session: `blocked` with one is a real question. */
+  commented?(): boolean;
 }
 
 export interface DriverDeps {
@@ -163,6 +183,12 @@ export interface DriverDeps {
   signal?: AbortSignal;
   /** Absent: no step can start child tasks. */
   delegation?: DelegationPort;
+  /**
+   * Set for a run that resumes an interrupted one with nothing left to confirm: its worktree's
+   * stale git locks are cleared before the first git command. Locks of this age or newer stay.
+   * `reported` receives the locks outside the task, which are never removed.
+   */
+  staleLocks?: { olderThan: number; reported?(task: TaskRecord, paths: string[]): void };
   /** Confirmed repository facts for system prompts (the backend's memory). */
   repositoryFacts?(project: string): Promise<string | undefined>;
   /** The project's context size limits; absent: the default. */

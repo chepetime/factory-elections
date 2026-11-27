@@ -162,6 +162,10 @@ export const StepAttempt = z.looseObject({
   outcome: z.enum(['completed', 'failed']),
   cost_usd: z.number().nullable(),
   error: z.string().optional(),
+  /** An agent turn that changed nothing, steered once (or already steered): the next one settles. */
+  no_change_steered: z.boolean().optional(),
+  /** Set when the call ended with no result and the driver ran it once more (ADR 0107). */
+  retried: z.literal('no-result').optional(),
 });
 export type StepAttempt = z.infer<typeof StepAttempt>;
 
@@ -286,6 +290,12 @@ export const RepoProfile = z.looseObject({
   confirmed: z.looseObject({ forbidden_paths: z.array(z.string()), forbidden_commands: z.array(z.string()) }),
   /** Repository-relative files or directories whose generated output must not be committed. */
   generated_paths: z.array(NonEmpty).optional(),
+  /**
+   * Committed files a command generates. When merging the base conflicts on a file matching a
+   * rule's `paths` (globs, repository-relative), the factory takes the base's copy and runs the
+   * rule's `command` once from the worktree root, outside the sandbox, instead of asking the agent.
+   */
+  regenerate: z.array(z.looseObject({ paths: z.array(NonEmpty).min(1), command: NonEmpty })).optional(),
   /**
    * Cheap checks run before any model call or setup, e.g. an expired cloud login. A failure stops
    * the run and shows `fix`, the command a person runs to repair it.
