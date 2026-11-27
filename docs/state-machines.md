@@ -36,6 +36,26 @@ Diagram identifiers use underscores; stored stages retain hyphens. Failures and 
 
 Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays.
 
+### Recovery rules for runs and task stages
+
+After a restart `reconcileTask` (`service-recovery.ts`) reads the task's latest run and acts through `RUN_RECOVERY` and `STAGE_RECOVERY` (`recovery-rules.ts`). Each table is `satisfies Record<State, RecoveryRule>`, so a new state does not compile until it names a rule; `recovery-rules.test.ts` checks the tables against the zod enums. Rule kinds: `final` (settled), `idle` (a person's command starts the next step), `person` (a person acts), `reconciler` (a named step).
+
+| Run state | Rule | Step |
+| --- | --- | --- |
+| `queued` | reconciler `requeue` | Queued again; if that is refused, marked `interrupted`. |
+| `running` | reconciler `interrupt` | Marked `interrupted`, cleanup `uncertain`; a task at `coding` or `reviewing` goes to `failed`. |
+| `completed`, `failed` | final | Settled. |
+| `interrupted` | person | A person runs the task again; uncertain cleanup waits for a confirm. |
+
+| Task stage | Rule | Step |
+| --- | --- | --- |
+| `queued`, `classified`, `approved`, `rejected` | idle | Waits for a person's command or the pickup. |
+| `coding`, `reviewing` | reconciler `interrupt` | With no live run the task moves to `failed`. |
+| `blocked`, `verification-failed`, `awaiting-approval`, `failed` | person | The inbox or board shows it. |
+| `pr-opened` | final | The review loop and PR tending own it. |
+
+Not covered yet: only the latest run of a task is read, so an older run left `running` is never settled; the review, review-loop, feature, ticket and `working`-flag states have no table; nothing reports a record that no owner holds.
+
 ## Workflow inventory
 
 | Machine / source | States and transitions | Decision / invariant |
