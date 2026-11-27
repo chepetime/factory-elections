@@ -125,6 +125,12 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
   const read = () => store.read('demo', task.id);
   const write = (t: TaskRecord) => store.write(t);
   const worktree = (t: TaskRecord) => t.worktree!.path;
+  /** Replaces the profile's test command. */
+  const setTest = async (command: string) => {
+    const file = join(root, 'demo', 'profile.yaml');
+    const text = await readFile(file, 'utf8');
+    await writeFile(file, text.replace('test: "test -f feature.txt"', `test: ${JSON.stringify(command)}`));
+  };
   return {
     driver,
     task: pr,
@@ -135,6 +141,7 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
     read,
     write,
     worktree,
+    setTest,
     prs: () => created_prs,
   };
 }
@@ -336,6 +343,41 @@ test('checking again runs the factory checks on the current commit with no agent
   assert.equal(checked.stage, 'awaiting-approval');
   assert.equal(checked.verification?.passed, true);
   assert.equal(ctx.calls.length, calls, 'no model call');
+});
+
+test('checking again merges a fix that landed on the base first, then the checks pass (FE-21)', async () => {
+  const ctx = await opened();
+  // A test that fails on every branch until main fixes it.
+  await ctx.setTest('test -f feature.txt && test -f fixed.txt');
+  await ctx.write({ ...(await ctx.read()), stage: 'verification-failed' });
+  await ctx.landOnMain('fixed.txt', 'the fix\n');
+  const calls = ctx.calls.length;
+  const checked = await ctx.driver.check('demo', ctx.task.id);
+  assert.equal(checked.verification?.passed, true, checked.verification?.output_tail ?? '');
+  assert.equal(checked.stage, 'awaiting-approval');
+  const dir = ctx.worktree(checked);
+  assert.equal(checked.verification?.head_sha, sh(dir, 'rev-parse', 'HEAD'), 'the merged head was verified');
+  assert.equal(await readFile(join(dir, 'fixed.txt'), 'utf8'), 'the fix\n');
+  assert.equal(ctx.calls.length, calls, 'no model call');
+  assert.equal(ctx.github[0]!.head_sha, ctx.task.pr!.head_sha, 'nothing pushed to the PR');
+});
+
+test('checking again on a base that conflicts leaves the branch as it was and says an agent turn must resolve it', async () => {
+  const ctx = await opened();
+  await ctx.write({ ...(await ctx.read()), stage: 'verification-failed' });
+  await ctx.landOnMain('feature.txt', 'from main\n');
+  const dir = ctx.worktree(ctx.task);
+  const head = sh(dir, 'rev-parse', 'HEAD');
+  const checked = await ctx.driver.check('demo', ctx.task.id);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD'), head, 'same head');
+  assert.equal(sh(dir, 'status', '--porcelain'), '', 'no merge in progress');
+  assert.throws(() => sh(dir, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'), 'no MERGE_HEAD');
+  assert.equal(checked.stage, 'blocked');
+  const why = checked.events!.at(-1)!.message;
+  assert.match(why, /origin\/main conflicts with this branch/);
+  assert.match(why, /reply here, or add a conflicts follow-up/);
+  assert.match(why, /- feature\.txt/);
+  assert.equal(checked.verification?.head_sha, ctx.task.verification?.head_sha, 'not verified');
 });
 
 test('a follow-up for a PR that merged on GitHub starts no turn and leaves the task as it was', async () => {

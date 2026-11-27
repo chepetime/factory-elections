@@ -34,7 +34,39 @@ stateDiagram-v2
 
 Diagram identifiers use underscores; stored stages retain hyphens. Failures and standalone step commands are additional paths. `withStage` stays a record update, not a global graph validator: enforcing only this graph would break valid manual/offline workflows. Readiness retains its priority (unsupported kind, then research, clarification, slicing, ready). Re-running a blocked verdict does not resolve its questions.
 
-Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays.
+Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays, with one exception: an agent turn whose model call ended with no result (the stream ended, or the CLI exited unexpectedly; failure kind `no-result`) is run once more by the driver (ADR 0107). With a saved provider session the retry resumes it with a short prompt and the budget that is left. Without one it runs again only if the call made no tool call. The retry is recorded as a `retry` task event before it runs, and as `retried: 'no-result'` on the attempt. A later launch of the same task reads that event and does not retry again until an agent turn completes after it, so a restart cannot grant a second retry. When the first call showed no activity the retry keeps the turn's own prompt (a person's reply, or a Factory fix message); after activity it resumes with "Your last turn was cut off…". A `no-result` call reports no cost, so the first call's spend is not counted against the budget: the retry gets the request's budget. A second failure fails the task and shows both errors. `aborted`, `timeout`, `stalled`, `budget`, `rate-limited` and `usage-limit` are never retried this way.
+
+### Recovery rules for runs and task stages
+
+After a restart `reconcileTask` (`service-recovery.ts`) reads the task's latest run and acts through `RUN_RECOVERY` and `STAGE_RECOVERY` (`recovery-rules.ts`). Each table is `satisfies Record<State, RecoveryRule>`, so a new state does not compile until it names a rule; `recovery-rules.test.ts` checks the tables against the zod enums. Rule kinds: `final` (settled), `idle` (a person's command starts the next step), `person` (a person acts), `reconciler` (a named step).
+
+| Run state | Rule | Step |
+| --- | --- | --- |
+| `queued` | reconciler `requeue` | Queued again; if that is refused, marked `interrupted`. |
+| `running` | reconciler `interrupt` | Marked `interrupted`, cleanup `uncertain`; a task at `coding` or `reviewing` goes to `failed`. |
+| `completed`, `failed` | final | Settled. |
+| `interrupted` | person | A person runs the task again; uncertain cleanup waits for a confirm. |
+
+| Task stage | Rule | Step |
+| --- | --- | --- |
+| `queued`, `classified`, `approved`, `rejected` | idle | Waits for a person's command or the pickup. |
+| `coding`, `reviewing` | reconciler `interrupt` | With no live run the task moves to `failed`. |
+| `blocked`, `verification-failed`, `awaiting-approval`, `failed` | person | The inbox or board shows it. |
+| `pr-opened` | final | The review loop and PR tending own it. |
+
+Not covered yet: only the latest run of a task is read, so an older run left `running` is never settled; the review, review-loop, feature, ticket and `working`-flag states have no table; nothing reports a record that no owner holds.
+
+Run record ownership: each backend start raises `<root>/backend-generation` under `backend.lock`, and `run.json` carries `owner_generation` (absent = 0). All `run.json` writes compare the stored generation first (`writeRun`; true compare-and-set on Postgres, serialized in-process on files, not atomic against a process that ignores the lock). A writer that lost the fence writes nothing and logs `finalize.fenced` in the run's `events.jsonl`. Recovery writes `interrupted` with the new generation. Fencing the old driver's `task.json` writes is a follow-up (phase 2).
+
+### Workspace agent turns
+
+A workspace agent's session (`agentRun`, settle logic in `packages/driver/src/agent-settle.ts`) runs in turns. After each turn the driver commits what changed, then settles by recorded state, never by what the agent says (ADR 0103): commits on the branch since base, and what the agent set with `set_status` and `comment`.
+
+A turn that changed nothing is steered once before it blocks the task, because a progress note ("tests still run; I commit next") looks the same as "nothing to do". The driver resumes the same session with a message from Factory, in the same way as a verification fix turn (and counted with those turns, `AGENT_FIX_TURNS`): finish the work and commit if it is in progress, run background work in the foreground (the CLI stops it when the call ends), or say why no change is needed and call `set_status blocked`. When the turn's events show a `Bash` call with `run_in_background` or an async subagent, the prompt names it. The steered turn gets the task budget left after the first. Only the next no-change turn settles the task as `blocked`, with the agent's last message in the text.
+
+- `set_status blocked` together with a task comment is a real question: it settles at once, with no steer. `blocked` with no comment is steered.
+- A follow-up on an open PR whose head did not move goes back to `pr-opened` with no steer: a PR that needs no change is a valid outcome.
+- The attempt records `no_change_steered: true` as soon as the steer is decided. A later run (restart, reply) that finds it on the latest attempt settles a no-change turn without steering again. A turn that changes something leaves the mark off, so the next reply gets a fresh steer.
 
 ## Workflow inventory
 
@@ -55,8 +87,8 @@ Execution follows `queued → running → finalizing → completed | failed`. An
 | Feature ticket — core/backend | waiting / waiting-merge → running → done or failed; failed → running on retry | State follows the ticket's task. `ticketRetryable` and `ticketAwaitsMerge` name which tickets accept `retry-ticket` and `mark-merged`. An unknown ticket id is refused. |
 | Tasks board — core/backend/web | backlog, todo, in_progress, in_review, done, blocked, cancelled; status follows the latest run when the run is newer | Keep `dropAction` as the one drop rule for board, menu and backend. Only In progress starts work; the factory alone moves work into In review and Blocked. |
 | PR review — backend/core | no review → preparing → running → completed / failed / stopped / interrupted; a reply starts a new turn | Keep one derivation (`status`) from the turn files plus live ownership. A Stop that arrives after the turn ended no longer relabels a completed review as stopped. Every turn (kickoff, re-review, reply) starts only after the backend wrote the PR data into the run's `work` directory, and runs in an OS sandbox (writes to the review worktree and `work` only, no network, no `~/.ssh`, `~/.config/gh`, Keychains) without the PR's own settings or hooks; a failed fetch is named in the prompt and never blocks the turn. `AUTOMATED_TURN_DENY` is a hint, not a boundary: the sandbox is. |
-| PR tending — core/backend | open → rerun / merge-base / answer-threads / fix-ci / wait → stopped or ended | Keep `nextTendAction` as the pure decision, with the bounded fix count. A thread waits only on a trusted comment (write, maintain or admin access, or `tending.trusted_logins`) newer than the last answer; tending's own replies never count. The backend filters the comments before the decision. |
-| Agent pickup — core/backend | todo, unassigned → routed → assigned → started, or retry later | Keep `pickupPlan` pure and the retry delay. Routing asks once per task edit. |
+| PR tending — core/backend | open → rerun / merge-base / answer-threads / fix-ci / wait → stopped or ended | Keep `nextTendAction` as the pure decision, with the bounded fix count. A failed check is classified by `classifyFlake` before the decision: `real` skips the rerun, anything else reruns once per head SHA and check (`ci_retries`). A thread waits only on a trusted comment (write, maintain or admin access, or `tending.trusted_logins`) newer than the last answer; tending's own replies never count. The backend filters the comments before the decision. |
+| Agent pickup — core/backend | todo, unassigned → routed → assigned → started (after its blockers are Done, or stacked on one open PR), or retry later | Keep `pickupPlan` pure and the retry delay. Routing asks once per task edit. |
 | Agent chat — backend | idle → working → idle; `working` without a live reply reads as idle | Keep the in-process owner as the truth; a restart never leaves a chat working. |
 | Memory fact — core | candidate → active after confirmations; any → dropped | Keep pure promotion and drop rules. |
 | Publication — driver/GitHub | approved → push → external PR → stored PR | Explicit action, no automatic retry. External creation and local persistence are not atomic; inspect GitHub after an ambiguous failure. |

@@ -1,7 +1,8 @@
 // Tasks on a project's board ("issues" in code, since "task" already names a factory run).
 // An issue is planned work with a key like CE-12; each factory run it starts is one of its runs.
 import { z } from 'zod';
-import { TaskId, type Stage } from './schemas.ts';
+import { boardProblems } from './features.ts';
+import { TaskId, type Stage, type TaskRecord } from './schemas.ts';
 import { commandAllowedIn } from './task-controls.ts';
 
 export const ISSUE_STATUSES = [
@@ -81,6 +82,8 @@ export const Issue = z.object({
   /** Planning: the day work should start and the day it is due (`YYYY-MM-DD`). */
   start_date: PlanDate.optional(),
   due_date: PlanDate.optional(),
+  /** Tickets of the same project this one needs first (keys like FE-21). Pickup waits for them. */
+  blocked_by: z.array(z.string().min(1)).default([]),
   /**
    * A review ticket: the work is a senior PR review of someone's PR, in rounds. Each round proposes
    * a decision; you pick what to post. See review-tickets.ts.
@@ -255,6 +258,41 @@ export function syncedStatus(issue: Pick<Issue, 'status' | 'status_at'>, run?: R
   return statusFromStage(run.stage);
 }
 
+type BlockerItem = { key: string; status: IssueStatus; run?: { id: string } };
+
+/** The blockers that are not Done yet, by their current keys. Keys match by number; a deleted one no longer blocks. */
+export function openBlockers(blockedBy: readonly string[], items: readonly BlockerItem[]): string[] {
+  const numbers = new Set(blockedBy.map(issueNumber));
+  return items.filter((i) => numbers.has(issueNumber(i.key)) && i.status !== 'done').map((i) => i.key);
+}
+
+/**
+ * Whether a ticket may start now. `ready`: every blocker is Done. `stack`: its one blocker has an
+ * open PR, so it starts from that blocker's branch. `wait`: the open blockers it waits for.
+ */
+export type BlockerGate =
+  { kind: 'ready' } | { kind: 'stack'; key: string; branch: string } | { kind: 'wait'; open: string[] };
+export function blockerGate(
+  blockedBy: readonly string[],
+  items: readonly BlockerItem[],
+  record: (runId: string) => Pick<TaskRecord, 'id' | 'stage' | 'pr' | 'worktree'> | undefined,
+): BlockerGate {
+  const open = openBlockers(blockedBy, items);
+  if (!open.length) return { kind: 'ready' };
+  const runId = blockedBy.length === 1 ? items.find((i) => i.key === open[0])?.run?.id : undefined;
+  const task = runId ? record(runId) : undefined;
+  if (task?.stage === 'pr-opened' && task.pr)
+    return { kind: 'stack', key: open[0]!, branch: task.worktree?.branch ?? `factory/${task.id}` };
+  return { kind: 'wait', open };
+}
+
+/** Unknown blockers, self-blocks and cycles on a board, as the feature board reports them. */
+export function blockedByProblems(
+  items: readonly { key: string; blocked_by: readonly string[] }[],
+): string[] {
+  return boardProblems(items.map((i) => ({ id: i.key, blocked_by: [...i.blocked_by] })));
+}
+
 export type DropAction =
   | { kind: 'none' }
   | { kind: 'set-status'; status: IssueStatus }
@@ -275,7 +313,13 @@ export type DropAction =
 /** Run stages that wait for a person, so moving the task back to the queue may close the run. */
 const WAITING_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-failed', 'awaiting-approval'];
 
-export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary): DropAction {
+/** `waits`: the open blockers that keep a new run from starting (see blockerGate). */
+export function dropAction(
+  from: IssueStatus,
+  to: IssueStatus,
+  run?: RunSummary,
+  waits: readonly string[] = [],
+): DropAction {
   if (from === to) return { kind: 'none' };
   // The queued turn still uses the run: closing it or starting another turn would race it.
   if (run?.waiting && to !== 'cancelled')
@@ -285,6 +329,8 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
     return { kind: 'refused', reason: 'The factory moves tasks into this column.' };
   if (to === 'in_progress') {
     if (run?.stage === 'pr-opened') return { kind: 'follow-up' };
+    if ((!run || runFinished(run.stage)) && waits.length)
+      return { kind: 'refused', reason: `Waits for ${waits.join(', ')}. Move it when they are Done.` };
     if (!run || runFinished(run.stage)) return { kind: 'start-run' };
     if (commandAllowedIn('run', run.stage)) return { kind: 'run' };
     return { kind: 'refused', reason: 'Approve, revise or reject it from the task page.' };
@@ -306,6 +352,7 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
 /**
  * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.
  * `owned`: a live run holds the task now, whatever its stage says.
+ * `reason`: why a run that waits for a person stopped: its latest message for the current stage.
  */
 export type IssueRun = {
   id: string;
@@ -314,7 +361,21 @@ export type IssueRun = {
   waiting?: boolean;
   waiting_for?: QueueWait;
   owned: boolean;
+  reason?: string;
 };
+
+/** Stages that wait for a person to act, so the board says why. Approval needs no reason. */
+const REASON_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-failed'];
+const REASON_MAX = 300;
+
+/** Why a run waits for a person: the message of its latest `stage:<stage>` event, trimmed. */
+export function stageReason(task: Pick<TaskRecord, 'stage' | 'events'>): string | undefined {
+  if (!REASON_STAGES.includes(task.stage)) return undefined;
+  const kind = `stage:${task.stage}`;
+  const message = task.events?.findLast((e) => e.kind === kind)?.message.trim();
+  if (!message) return undefined;
+  return message.length > REASON_MAX ? `${message.slice(0, REASON_MAX - 1).trimEnd()}…` : message;
+}
 export type IssueView = Omit<Issue, 'status'> & {
   key: string;
   /** The column it shows in: the latest run's status unless a person set one since. */

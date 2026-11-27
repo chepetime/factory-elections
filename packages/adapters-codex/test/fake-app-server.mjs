@@ -168,7 +168,7 @@ async function handle(m) {
       send({ id: m.id, result: { turn: { id: TURN, status: 'inProgress', items: [] } } });
       return turn();
     case 'turn/interrupt':
-      if (scenario !== 'interrupt') return; // stall: never answer
+      if (scenario !== 'interrupt' && scenario !== 'spend') return; // stall: never answer
       send({ id: m.id, result: {} });
       note('turn/completed', { threadId: THREAD, turn: { id: TURN, status: 'interrupted', error: null } });
       return;
@@ -203,6 +203,16 @@ async function turn() {
       log({ descendant: child.pid });
       return;
     }
+    case 'spend':
+      // A turn that keeps running while its token usage grows past any small cap.
+      item('item/started', {
+        type: 'commandExecution',
+        id: 'exec-4',
+        command: 'sleep 30',
+        status: 'inProgress',
+      });
+      note('thread/tokenUsage/updated', usage(5000, 0, 400));
+      return;
     case 'stall': {
       // Ignores SIGTERM, never answers the interrupt, and prints only diagnostics or repeats.
       process.on('SIGTERM', () => log({ sigterm: true }));

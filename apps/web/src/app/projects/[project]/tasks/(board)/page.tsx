@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { openBlockers } from '@factory/core';
 import { TaskBoard } from '@/components/task-board';
 import { isProjectName } from '@/lib/factory';
 import { listIssues } from '@/lib/issues';
@@ -47,6 +48,7 @@ export default async function ProjectTasks({ params }: { params: Promise<{ proje
           updated_at: i.run?.updated_at && i.run.updated_at > i.updated_at ? i.run.updated_at : i.updated_at,
           run: i.run,
           ...(i.assignee && agents.get(i.assignee) ? { agent: agents.get(i.assignee)! } : {}),
+          waits_for: openBlockers(i.blocked_by, issues.value.items),
         }))}
     />
   );

@@ -192,6 +192,15 @@ export async function confirmRunCleanup(project: string, id: string): Promise<Re
     return { ok: false, error: backendError(error) };
   }
 }
+/** Runs one tending pass over every open PR now: merges, CI and conflicts, instead of the next tick. */
+export async function tendPullRequestsNow(project: string): Promise<Result<void>> {
+  try {
+    await backendCall('TendPullRequests', { project, id: '' });
+    return { ok: true, value: undefined };
+  } catch (error) {
+    return { ok: false, error: backendError(error) };
+  }
+}
 export async function clearBackgroundLog(project: string, id: string): Promise<void> {
   await backendCall('ClearLog', { project, id });
 }

@@ -16,10 +16,17 @@ A run record has one `state`. A run that the user stopped is stored as `failed`.
 
 ## Deferred
 
-- An ownership generation for fencing, and recovery that reads cleanup records: phase 4.
+- Fencing the old driver's `task.json` writes by the run id that owns the task (in `TaskStorePort`): phase 2 of the fence. Today only `run.json` is fenced.
+- Recovery that reads cleanup records: phase 4.
 - Blocking new work while a cleanup is uncertain: done in phase 4. Run and revise wait until a person confirms (`ConfirmCleanup`).
 - Saving session IDs before the call ends, so that a crash keeps them: phases 3 and 4.
 - `inspect()` that reads the installed CLI version at runtime: phase 2, with the app-server adapter. Phase 1 uses the pinned `TESTED_RUNTIMES`.
+
+## Ownership generation
+
+`startBackend` raises the integer in `<root>/backend-generation` while it holds `backend.lock` (a missing or garbled file counts as 0, so the first start is 1) and gives it to the service. A run record carries `owner_generation` (absent means 0, so older records still parse). Every `run.json` write goes through `writeRun(storage, dir, next, expected)`, which writes only when the stored `owner_generation` equals `expected`. It is a true compare-and-set on Postgres (one conditional `UPDATE`). On files it reads, compares and writes atomically in sequence inside one process; it cannot take the task lock because the running run already holds it, and it is not atomic against a process that ignores the lock.
+
+The executor stamps its generation when it sets `running` and finalizes with that generation as `expected`. Recovery writes `interrupted` with the new backend's generation. A run that loses the fence writes nothing to `run.json` and appends a `finalize.fenced` event (stored and own generation) to its `events.jsonl`. This closes the case where a person removes the lock of a hung backend A and starts B: A's late finalize no longer overwrites B's `interrupted` record. The old driver can still write `task.json`; fencing that is the deferred item above.
 
 ## Consequences
 

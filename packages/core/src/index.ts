@@ -20,6 +20,7 @@ export * from './run-signals.ts';
 export * from './metrics-schema.ts';
 export * from './inbox.ts';
 export * from './tending.ts';
+export * from './ci-flake.ts';
 export * from './tools.ts';
 export * from './review-candidate.ts';
 export * from './routing.ts';

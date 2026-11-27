@@ -821,7 +821,11 @@ test('a turn behind its busy agent says so, and a cancel takes it out of the wai
   const { server } = await fixture(t, runner);
   const call = async (method: 'CreateIssue' | 'UpdateIssue' | 'MoveIssue' | 'GetIssue', body: object) =>
     JSON.parse((await backendCall(method, { project: 'demo', json: JSON.stringify(body) })).json);
-  await server.service.agents.update({ id: 'devin', concurrency: 1, auto_pickup: false });
+  // No agent picks up or routes on its own. Otherwise a pickup pass that reads an issue before it is
+  // assigned sends a coordinator routing call to the same scripted runner (a second model call under
+  // CI load). An update fills missing fields with defaults, so both fields go in each call.
+  for (const agent of await server.service.agents.list())
+    await server.service.agents.update({ id: agent.id, auto_pickup: false, concurrency: 1 });
   const keys: string[] = [];
   for (const title of ['First for Devin', 'Second for Devin']) {
     const created = await call('CreateIssue', { title, status: 'todo' });
@@ -919,4 +923,18 @@ test('recovery reports a run it cannot read, refuses to change it, and a later r
     closeBackendClient();
     await restarted.close();
   }
+});
+
+test('each backend start raises the generation in backend-generation', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-generation-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const options = { root, port: 0, healthPort: 0, token };
+  const first = await startBackend(options);
+  assert.equal((await readFile(join(root, 'backend-generation'), 'utf8')).trim(), '1');
+  await first.close();
+  // A hand-removed lock (a hung backend) lets a new backend start with a larger generation.
+  await rm(join(root, 'backend.lock'), { force: true });
+  const second = await startBackend(options);
+  assert.equal((await readFile(join(root, 'backend-generation'), 'utf8')).trim(), '2');
+  await second.close();
 });

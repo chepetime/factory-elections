@@ -6,6 +6,7 @@
 // force-push, never a merge of the PR itself. After MAX_TEND_FIXES agent fixes without a green PR
 // tending stops and the PR goes to the inbox.
 import { z } from 'zod';
+import type { FlakeVerdict } from './ci-flake.ts';
 
 export const MAX_TEND_FIXES = 3;
 export const TEND_EVERY_MS = 10 * 60_000;
@@ -57,28 +58,60 @@ export const TendFix = z.object({
   outcome: z.enum(['pushed', 'no-change', 'failed', 'rerun']),
   cost_usd: z.number().nullable().optional(),
   note: z.string().optional(),
+  /** The head after a pushed fix. */
+  head: z.string().optional(),
+  /** A merge-base fix: every check was green before the base came in. */
+  was_green: z.boolean().optional(),
 });
 export type TendFix = z.infer<typeof TendFix>;
 
-export const TendRecord = z.object({
-  number: z.number().int().positive(),
-  url: z.string(),
-  checked_at: z.string().optional(),
-  /** The head SHAs whose failed checks were rerun already. */
-  reruns: z.array(z.string()).default([]),
-  /** Thread comments answered already: `<thread id>:<last comment id>`. */
-  answered: z.array(z.string()).default([]),
-  /** IDs of the reply comments tending posted itself: they never start another answer. */
-  replies: z.array(z.string()).default([]),
-  fixes: z.array(TendFix).default([]),
-  /** Agent fixes since the PR was last green. */
-  fixes_since_green: z.number().int().nonnegative().default(0),
-  last: z.string().optional(),
-  /** Hash of the lockfiles that tending last installed; a change runs setup again. */
-  setup_key: z.string().optional(),
-  stopped: z.object({ reason: z.string(), at: z.string() }).optional(),
-  ended: z.object({ state: z.enum(['MERGED', 'CLOSED']), at: z.string() }).optional(),
+/** A rerun of one check on one head, with the verdict that allowed it. `check` is `*` for a legacy SHA entry. */
+export const CiRetry = z.object({
+  sha: z.string(),
+  check: z.string(),
+  verdict: z.enum(['flake', 'unknown']),
 });
+export type CiRetry = z.infer<typeof CiRetry>;
+export const MAX_CI_RETRIES = 100;
+
+/** Old records kept `reruns: string[]` (head SHAs): each becomes a retry of every check on that head. */
+const migrateRecord = (raw: unknown) => {
+  if (typeof raw !== 'object' || raw === null || !('reruns' in raw)) return raw;
+  const { reruns, ...rest } = raw as Record<string, unknown>;
+  const legacy = Array.isArray(reruns)
+    ? reruns
+        .filter((s): s is string => typeof s === 'string')
+        .map((sha) => ({ sha, check: '*', verdict: 'unknown' }))
+    : [];
+  const current = Array.isArray(rest.ci_retries) ? rest.ci_retries : [];
+  return { ...rest, ci_retries: [...legacy, ...current] };
+};
+
+export const TendRecord = z.preprocess(
+  migrateRecord,
+  z.object({
+    number: z.number().int().positive(),
+    url: z.string(),
+    checked_at: z.string().optional(),
+    /** Reruns done, per head SHA and check. Capped: the newest MAX_CI_RETRIES stay. */
+    ci_retries: z
+      .array(CiRetry)
+      .default([])
+      .transform((r) => r.slice(-MAX_CI_RETRIES)),
+    /** Thread comments answered already: `<thread id>:<last comment id>`. */
+    answered: z.array(z.string()).default([]),
+    /** IDs of the reply comments tending posted itself: they never start another answer. */
+    replies: z.array(z.string()).default([]),
+    fixes: z.array(TendFix).default([]),
+    /** Agent fixes since the PR was last green. */
+    fixes_since_green: z.number().int().nonnegative().default(0),
+    last: z.string().optional(),
+    /** Hash of the lockfiles that tending last installed; a change runs setup again. */
+    setup_key: z.string().optional(),
+    stopped: z.object({ reason: z.string(), at: z.string() }).optional(),
+    ended: z.object({ state: z.enum(['MERGED', 'CLOSED']), at: z.string() }).optional(),
+  }),
+);
 export type TendRecord = z.infer<typeof TendRecord>;
 
 export type TendAction =
@@ -119,7 +152,7 @@ export const isGitHubLogin = (login: string) =>
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
-  options: { answerThreads: boolean },
+  options: { answerThreads: boolean; verdicts?: Readonly<Record<string, FlakeVerdict>> },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
@@ -133,10 +166,14 @@ export function nextTendAction(
   const failed = pr.checks.filter((c) => c.state === 'fail');
   if (pr.checks.some((c) => c.state === 'pending')) return { kind: 'wait', reason: 'checks are running' };
   if (failed.length) {
-    // A flaky job gets one rerun per commit before an agent spends money on it.
-    if (!record.reruns.includes(pr.head_sha) && failed.some((c) => c.run_id))
-      return { kind: 'rerun', checks: failed };
-    return agentWork({ kind: 'fix-ci', checks: failed });
+    // A check that is not a real failure gets one rerun per commit before an agent spends money on
+    // it. A real failure (see `classifyFlake`) goes straight to a fix. A rerun needs a run to rerun.
+    const retried = (c: PrCheck) =>
+      record.ci_retries.some((r) => r.sha === pr.head_sha && (r.check === c.name || r.check === '*'));
+    const rerunnable = failed.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
+    const fixable = failed.filter((c) => !rerunnable.includes(c));
+    if (!fixable.length) return { kind: 'rerun', checks: rerunnable };
+    return agentWork({ kind: 'fix-ci', checks: fixable });
   }
   if (pr.mergeable === 'UNKNOWN') return { kind: 'wait', reason: 'GitHub is still computing mergeability' };
   return { kind: 'wait', reason: 'green: waiting for review and merge' };

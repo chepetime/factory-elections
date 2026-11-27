@@ -9,6 +9,7 @@ import {
   workSpend,
   withEvent,
   withStage,
+  type AgentEvent,
   type StepAttempt,
   type FollowUpKind,
   followUpPushesItself,
@@ -19,7 +20,9 @@ import { DriverError } from './ports.ts';
 import { MINUTE, errorCost, failureText } from './support.ts';
 import { changeGate } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
+import { noChangeBlocked, backgroundWork, steerPrompt, steersNoChange } from './agent-settle.ts';
 import { openPr } from './publication.ts';
+import { retrySpent, runWithResultRetry } from './result-retry.ts';
 import { mergeBase } from './merge-conflicts.ts';
 import type { Driver } from './workflow.ts';
 
@@ -127,6 +130,8 @@ export async function followUp(
 export async function syncBase(
   d: Driver,
   task: TaskRecord,
+  /** What the merge comes before, for the log. */
+  before = 'the turn',
 ): Promise<{ merged: boolean; conflicted: string[] }> {
   const { git } = d.deps;
   const none = { merged: false, conflicted: [] };
@@ -139,14 +144,14 @@ export async function syncBase(
     d.deps.log(`Could not fetch origin/${base}; the branch is not synced: ${(error as Error).message}`);
     return none;
   }
-  const before = await git.headSha(path);
+  const head = await git.headSha(path);
   const merge = await mergeBase(d.deps, path, `origin/${base}`, await d.deps.readProfile(task.project));
   if (!merge.clean) {
     d.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
     return { merged: true, conflicted: merge.conflicted };
   }
-  const merged = (await git.headSha(path)) !== before;
-  if (merged) d.deps.log(`Merged origin/${base} into ${branch} before the turn.`);
+  const merged = (await git.headSha(path)) !== head;
+  if (merged) d.deps.log(`Merged origin/${base} into ${branch} before ${before}.`);
   return { merged, conflicted: [] };
 }
 
@@ -223,7 +228,7 @@ export async function agentRun(
       d.deps.now(),
       'coding',
       fromFactory
-        ? `${session.name} works on the verification failure`
+        ? `${session.name} read Factory's message`
         : reply
           ? `${session.name} read your reply`
           : `${session.name} started`,
@@ -268,35 +273,60 @@ export async function agentRun(
     // The agent's last message: what it says it did, for the PR writer.
     let report = '';
     let saving: Promise<void> = Promise.resolve();
+    let retried: StepAttempt['retried'];
+    const tools: AgentEvent[] = [];
     try {
-      const result = await d.deps.runner.run({
-        ...limits,
-        step: 'agent',
-        sandbox,
-        ...(access.env ? { env: access.env } : {}),
-        ...(passEnv.length ? { passEnv } : {}),
-        model: session.model,
-        effort: session.effort,
-        tools: 'edit',
-        cwd: path,
-        ...(await d.agentExtras(project, session.model, session.systemPrompt)),
-        prompt: session.prompt,
-        guard,
-        maxTurns: 300,
-        persistSession: true,
-        ...(task.agent_session ? { resume: task.agent_session } : {}),
-        ...(grant ? { mcp: grant.endpoint } : {}),
-        // Save the session as soon as it exists: a stopped or crashed call must still resume it,
-        // or the next reply starts an agent that remembers nothing of its own work.
-        onEvent: (event) => {
-          if (event.type !== 'session' || event.id === sessionId) return;
-          sessionId = event.id;
-          saving = saving.then(async () => {
-            const current = await d.deps.tasks.read(project, id);
-            await d.deps.tasks.write({ ...current, agent_session: event.id });
-          });
+      const ran = await runWithResultRetry(
+        d.deps.runner,
+        {
+          ...limits,
+          step: 'agent',
+          sandbox,
+          ...(access.env ? { env: access.env } : {}),
+          ...(passEnv.length ? { passEnv } : {}),
+          model: session.model,
+          effort: session.effort,
+          tools: 'edit',
+          cwd: path,
+          ...(await d.agentExtras(project, session.model, session.systemPrompt)),
+          prompt: session.prompt,
+          guard,
+          maxTurns: 300,
+          persistSession: true,
+          ...(task.agent_session ? { resume: task.agent_session } : {}),
+          ...(grant ? { mcp: grant.endpoint } : {}),
+          // Save the session as soon as it exists: a stopped or crashed call must still resume it,
+          // or the next reply starts an agent that remembers nothing of its own work.
+          onEvent: (event) => {
+            if (event.type === 'tool') tools.push(event);
+            if (event.type !== 'session' || event.id === sessionId) return;
+            sessionId = event.id;
+            saving = saving.then(async () => {
+              const current = await d.deps.tasks.read(project, id);
+              await d.deps.tasks.write({ ...current, agent_session: event.id });
+            });
+          },
         },
-      });
+        {
+          sessionId: () => sessionId,
+          spent: retrySpent(task),
+          // The retry is on the record before it runs, so a restart cannot grant another.
+          onRetry: async (first, mode) => {
+            retried = 'no-result';
+            await saving.catch(() => undefined);
+            const current = await d.deps.tasks.read(project, id);
+            await d.deps.tasks.write(
+              withEvent(
+                current,
+                d.deps.now(),
+                'retry',
+                `${session.name}'s turn ended with no result (${first.message}); retrying once${mode === 'resume' ? ' in the same session' : ' from the start'}.`,
+              ),
+            );
+          },
+        },
+      );
+      const result = ran.result;
       costUsd = result.costUsd;
       sessionId = result.sessionId ?? sessionId;
       report = result.text?.trim() ?? '';
@@ -336,6 +366,24 @@ export async function agentRun(
       }
     }
 
+    // A turn that changed nothing: a follow-up on an open PR leaves it as it was, which is valid.
+    const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
+    const asked = session.reported();
+    const sameHead =
+      !!task.pr && asked !== 'blocked' && (await d.deps.git.headSha(path)) === task.pr.head_sha;
+    const idle =
+      outcome === 'completed' &&
+      !sameHead &&
+      (asked === 'blocked' || (await d.deps.git.commitCountSince(path, base)) === 0);
+    const steer =
+      idle &&
+      steersNoChange({
+        task,
+        asked,
+        commented: session.commented?.() === true,
+        turnsLeft: fixTurns,
+      });
+
     task = await d.deps.tasks.read(project, id);
     const attempt: StepAttempt = {
       step: 'agent',
@@ -347,6 +395,8 @@ export async function agentRun(
       outcome,
       cost_usd: costUsd,
       ...(error ? { error } : {}),
+      ...(retried ? { retried } : {}),
+      ...(steer ? { no_change_steered: true } : {}),
     };
     task = withEvent(
       {
@@ -363,10 +413,7 @@ export async function agentRun(
       await d.deps.tasks.write(withStage(task, d.deps.now(), 'failed', error ?? `${session.name} failed`));
       throw new DriverError(error ?? 'agent failed');
     }
-    const base = task.worktree?.base_branch ?? profile.repo.base_branch.value;
-    const asked = session.reported();
-    // A follow-up that changed nothing leaves the PR as it was: the task is done again.
-    if (task.pr && asked !== 'blocked' && (await d.deps.git.headSha(path)) === task.pr.head_sha) {
+    if (sameHead) {
       await d.deps.tasks.write(
         withStage(
           task,
@@ -377,12 +424,17 @@ export async function agentRun(
       );
       return await d.deps.tasks.read(project, id);
     }
-    if (asked === 'blocked' || (await d.deps.git.commitCountSince(path, base)) === 0) {
-      const message =
-        asked === 'blocked'
-          ? `${session.name} needs you. Reply on the task to continue.`
-          : `${session.name} made no changes. Reply on the task to continue.`;
-      await d.deps.tasks.write(withStage(task, d.deps.now(), 'blocked', message));
+    if (steer) {
+      // The steer is on the record (no_change_steered) before the turn runs, so a restart cannot grant another.
+      await d.deps.tasks.write(
+        withEvent(task, d.deps.now(), 'steer', `${session.name} changed nothing; Factory sends one steer.`),
+      );
+      return await d.agentRun(project, id, steerPrompt(backgroundWork(tools)), fixTurns - 1);
+    }
+    if (idle) {
+      await d.deps.tasks.write(
+        withStage(task, d.deps.now(), 'blocked', noChangeBlocked(session.name, asked, report)),
+      );
       return await d.deps.tasks.read(project, id);
     }
     await d.deps.tasks.write(task);

@@ -477,6 +477,8 @@ export const ProjectSettings = z.object({
       enabled: z.boolean().default(false),
       answer_threads: z.boolean().default(false),
       trusted_logins: z.array(z.string().max(100)).max(50).default([]),
+      /** Check names known to flake: a failure there is reran once without reading its log. */
+      flaky_checks: z.array(z.string().max(200)).max(50).optional(),
     })
     .default({ enabled: false, answer_threads: false, trusted_logins: [] }),
   updated_at: z.string().optional(),
