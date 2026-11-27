@@ -364,7 +364,12 @@ export const StepLimits = z.looseObject({
     .positive()
     .max(24 * 60)
     .optional(),
-  /** The call is stopped after this long with no message from the model. */
+  /**
+   * The call is stopped after this long with no message from the model. While a tool call is open
+   * (a long test run, a delegated child task) the model sends nothing, so the limit is 4 times
+   * longer, capped by the wall-clock limit; the stop reason names the open tool. Real activity,
+   * not elapsed time, is the rule (ADR 0061): a hung tool still stops.
+   */
   stall_minutes: z
     .number()
     .positive()
