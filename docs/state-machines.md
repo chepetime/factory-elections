@@ -34,7 +34,27 @@ stateDiagram-v2
 
 Diagram identifiers use underscores; stored stages retain hyphens. Failures and standalone step commands are additional paths. `withStage` stays a record update, not a global graph validator: enforcing only this graph would break valid manual/offline workflows. Readiness retains its priority (unsupported kind, then research, clarification, slicing, ready). Re-running a blocked verdict does not resolve its questions.
 
-Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays.
+Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays, with one exception: an agent turn whose model call ended with no result (the stream ended, or the CLI exited unexpectedly; failure kind `no-result`) is run once more by the driver (ADR 0107). With a saved provider session the retry resumes it with a short prompt and the budget that is left. Without one it runs again only if the call made no tool call. The retry is recorded as a `retry` task event before it runs, and as `retried: 'no-result'` on the attempt. A later launch of the same task reads that event and does not retry again until an agent turn completes after it, so a restart cannot grant a second retry. When the first call showed no activity the retry keeps the turn's own prompt (a person's reply, or a Factory fix message); after activity it resumes with "Your last turn was cut off…". A `no-result` call reports no cost, so the first call's spend is not counted against the budget: the retry gets the request's budget. A second failure fails the task and shows both errors. `aborted`, `timeout`, `stalled`, `budget`, `rate-limited` and `usage-limit` are never retried this way.
+
+### Recovery rules for runs and task stages
+
+After a restart `reconcileTask` (`service-recovery.ts`) reads the task's latest run and acts through `RUN_RECOVERY` and `STAGE_RECOVERY` (`recovery-rules.ts`). Each table is `satisfies Record<State, RecoveryRule>`, so a new state does not compile until it names a rule; `recovery-rules.test.ts` checks the tables against the zod enums. Rule kinds: `final` (settled), `idle` (a person's command starts the next step), `person` (a person acts), `reconciler` (a named step).
+
+| Run state | Rule | Step |
+| --- | --- | --- |
+| `queued` | reconciler `requeue` | Queued again; if that is refused, marked `interrupted`. |
+| `running` | reconciler `interrupt` | Marked `interrupted`, cleanup `uncertain`; a task at `coding` or `reviewing` goes to `failed`. |
+| `completed`, `failed` | final | Settled. |
+| `interrupted` | person | A person runs the task again; uncertain cleanup waits for a confirm. |
+
+| Task stage | Rule | Step |
+| --- | --- | --- |
+| `queued`, `classified`, `approved`, `rejected` | idle | Waits for a person's command or the pickup. |
+| `coding`, `reviewing` | reconciler `interrupt` | With no live run the task moves to `failed`. |
+| `blocked`, `verification-failed`, `awaiting-approval`, `failed` | person | The inbox or board shows it. |
+| `pr-opened` | final | The review loop and PR tending own it. |
+
+Not covered yet: only the latest run of a task is read, so an older run left `running` is never settled; the review, review-loop, feature, ticket and `working`-flag states have no table; nothing reports a record that no owner holds.
 
 ## Workflow inventory
 

@@ -162,6 +162,8 @@ export const StepAttempt = z.looseObject({
   outcome: z.enum(['completed', 'failed']),
   cost_usd: z.number().nullable(),
   error: z.string().optional(),
+  /** Set when the call ended with no result and the driver ran it once more (ADR 0107). */
+  retried: z.literal('no-result').optional(),
 });
 export type StepAttempt = z.infer<typeof StepAttempt>;
 

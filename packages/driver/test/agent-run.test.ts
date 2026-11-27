@@ -11,6 +11,7 @@ import * as fsAdapter from '@factory/adapters-fs';
 import * as git from '@factory/adapters-git';
 import { runShell } from '@factory/adapters-process';
 import { Driver, type AgentSession, type DriverDeps } from '../src/index.ts';
+import { retrySpent } from '../src/result-retry.ts';
 
 const DEFS = resolve(import.meta.dirname, '..', '..', '..', 'definitions');
 const paths = (n: string) => ({
@@ -121,6 +122,7 @@ async function setup(
   };
   return {
     driver: new Driver(deps),
+    deps,
     store,
     task,
     calls,
@@ -322,6 +324,103 @@ test('an agent session gets a check_change tool that runs the size and test gate
   assert.equal(done.stage, 'awaiting-approval');
 });
 
+// A model call that ends with no result is retried once (ADR 0107).
+function failure(
+  kind: string,
+  toolCalls = 0,
+  message = 'model run ended without a result',
+  assistantMessages = 1,
+) {
+  return Object.assign(new Error(message), {
+    kind,
+    costUsd: null,
+    activity: { assistantMessages, toolCalls },
+  });
+}
+
+test('a stream that ends with no result resumes the saved session once, and the task continues', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 3);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.4, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, 'sess-1');
+  assert.match(ctx.calls[1]!.prompt, /Your last turn was cut off/);
+  const attempt = done.attempts?.at(-1);
+  assert.equal(attempt?.outcome, 'completed');
+  assert.equal(attempt?.retried, 'no-result');
+  assert.ok(
+    done.events?.some((e) => e.kind === 'retry' && /ended with no result/.test(e.message)),
+    'the retry is an event on the task',
+  );
+});
+
+test('a second no-result fails the task and keeps both errors', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 1, 'model run failed: CLI exited with code 1');
+    },
+    async () => {
+      throw failure('no-result', 1);
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /without a result.*CLI exited with code 1/s);
+  const failed = await ctx.store.read('demo', ctx.task.id);
+  assert.equal(failed.stage, 'failed');
+  assert.equal(ctx.calls.length, 2, 'one retry, not more');
+  assert.match(failed.attempts?.at(-1)?.error ?? '', /without a result.*CLI exited with code 1/s);
+});
+
+for (const kind of ['stalled', 'timeout', 'budget', 'aborted', 'usage-limit', 'rate-limited', 'error']) {
+  test(`a ${kind} failure is not retried`, async () => {
+    const ctx = await setup([
+      async (r) => {
+        r.onEvent?.({ type: 'session', id: 'sess-1' });
+        throw failure(kind, 0, `model run stopped: ${kind}`);
+      },
+    ]);
+    await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id));
+    assert.equal(ctx.calls.length, 1);
+    assert.equal((await ctx.store.read('demo', ctx.task.id)).stage, 'failed');
+  });
+}
+
+test('with no session id and a tool call made, a no-result is not retried', async () => {
+  const ctx = await setup([
+    async () => {
+      throw failure('no-result', 1);
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /without a result/);
+  assert.equal(ctx.calls.length, 1, 'a tool may have had a side effect');
+});
+
+test('with no session id and no tool call, a no-result starts the same request again', async () => {
+  const ctx = await setup([
+    async () => {
+      throw failure('no-result', 0);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.2 };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, undefined);
+  assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
+});
+
 test("new work starts from GitHub's base branch: local-only commits stay out, merged PRs are in", async () => {
   const ctx = await setup([
     async (r) => {
@@ -362,4 +461,71 @@ test("new work starts from GitHub's base branch: local-only commits stay out, me
     }
   })();
   assert.equal(tracked, undefined, 'the task branch does not track main');
+});
+
+test('a second launch after a retried no-result does not retry again, even after a restart', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 2, 'first stream lost');
+    },
+    async () => {
+      throw failure('no-result', 2, 'second stream lost');
+    },
+    async () => {
+      throw failure('no-result', 2, 'third stream lost');
+    },
+  ]);
+  await assert.rejects(ctx.driver.agentRun('demo', ctx.task.id), /second stream lost/);
+  assert.equal(ctx.calls.length, 2);
+  // A new launch: the saved retry is read from the task, so there is no second retry.
+  const again = new Driver(ctx.deps);
+  await assert.rejects(again.agentRun('demo', ctx.task.id), /third stream lost/);
+  assert.equal(ctx.calls.length, 3, 'one more call, no retry');
+  const failed = await ctx.store.read('demo', ctx.task.id);
+  assert.equal(failed.events?.filter((e) => e.kind === 'retry').length, 1);
+});
+
+test('a retry is spent until a turn completes after it', () => {
+  const attempt = (outcome: 'completed' | 'failed', finished_at: string) => ({
+    step: 'agent',
+    rung: 'Devin',
+    model: 'm',
+    effort: 'low' as const,
+    started_at: finished_at,
+    finished_at,
+    outcome,
+    cost_usd: null,
+  });
+  const retry = { at: '2026-11-13T00:00:05.000Z', kind: 'retry', message: 'retrying' };
+  assert.equal(retrySpent({}), false, 'no retry event');
+  assert.equal(retrySpent({ events: [retry] }), true, 'the process stopped mid-retry');
+  assert.equal(
+    retrySpent({ events: [retry], attempts: [attempt('failed', '2026-11-13T00:00:09.000Z')] }),
+    true,
+    'a failed turn leaves it spent',
+  );
+  assert.equal(
+    retrySpent({ events: [retry], attempts: [attempt('completed', '2026-11-13T00:00:09.000Z')] }),
+    false,
+    'a turn that completed after it is progress',
+  );
+});
+
+test('a resumed turn that failed before any activity retries with its own prompt', async () => {
+  const ctx = await setup([
+    async (r) => {
+      r.onEvent?.({ type: 'session', id: 'sess-1' });
+      throw failure('no-result', 0, 'model run ended without a result', 0);
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.2, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.agentRun('demo', ctx.task.id, 'Please also add feature.txt');
+  assert.equal(done.attempts?.at(-1)?.retried, 'no-result');
+  assert.equal(ctx.calls[1]!.resume, 'sess-1');
+  assert.equal(ctx.calls[1]!.prompt, 'Please also add feature.txt', "the person's reply is kept");
+  assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
 });
