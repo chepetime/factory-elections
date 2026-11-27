@@ -20,6 +20,7 @@ import { MINUTE, errorCost, failureText } from './support.ts';
 import { changeGate } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { openPr } from './publication.ts';
+import { mergeBase } from './merge-conflicts.ts';
 import type { Driver } from './workflow.ts';
 
 /** Changed files that still hold a conflict marker line. */
@@ -83,7 +84,7 @@ export async function followUp(
   let note = input.note;
   if (input.kind === 'conflicts') {
     d.deps.log(`Merging ${base} into ${branch}…`);
-    const merge = await git.mergeRef(path, `origin/${base}`);
+    const merge = await mergeBase(d.deps, path, `origin/${base}`);
     if (merge.clean) {
       // Nothing for an agent: the merge adds only the base's own reviewed commits. When the checks
       // pass, the factory approves and pushes it to the same PR; a failed check stops as usual.
@@ -123,7 +124,7 @@ export async function syncBase(
     return none;
   }
   const before = await git.headSha(path);
-  const merge = await git.mergeRef(path, `origin/${base}`);
+  const merge = await mergeBase(d.deps, path, `origin/${base}`);
   if (!merge.clean) {
     d.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
     return { merged: true, conflicted: merge.conflicted };
