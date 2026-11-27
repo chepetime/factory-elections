@@ -27,7 +27,8 @@ export async function inbox(s: BackendService): Promise<{ items: InboxItem[]; di
       s.reviews.waiting(name).catch(() => []),
     ]);
     const tending = await s.tending.waiting(name, tasks).catch(() => []);
-    items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
+    const reviewLoops = await s.reviewLoop.waiting(name, tasks).catch(() => []);
+    items.push(...inboxItems({ project: name, tasks, features, reviews, tending, reviewLoops }));
   }
   items.push(
     ...recoveryInboxItems(s.recovery),

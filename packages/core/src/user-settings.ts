@@ -20,6 +20,7 @@ export const NOTIFY_KINDS = [
   'merge',
   'review',
   'tending',
+  'review-loop',
   'recovery',
   'finding',
 ] as const;
