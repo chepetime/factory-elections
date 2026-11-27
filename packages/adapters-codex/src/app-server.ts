@@ -41,6 +41,8 @@ export const CODEX_APP_SERVER_CAPABILITIES: ProviderCapabilities = {
   interrupt: true,
   supplementalInput: false,
   descendantCleanup: true,
+  // `thread/tokenUsage/updated` streams while a turn runs, and `turn/interrupt` stops it.
+  tokenCap: true,
 };
 
 /** `codex app-server` arguments: the same isolation as `execArgs`, where app-server accepts it. */
@@ -373,11 +375,12 @@ export interface CodexAppServerRunnerOptions {
   stallCheckMs?: number;
 }
 
-type StopKind = 'aborted' | 'timeout' | 'stalled';
+type StopKind = 'aborted' | 'timeout' | 'stalled' | 'budget';
 const STOP_MESSAGE: Record<StopKind, string> = {
   aborted: 'model run stopped: the backend is shutting down or the run was cancelled',
   timeout: 'model run stopped: it reached its time limit',
   stalled: 'model run stopped: no message from the model within the stall limit',
+  budget: 'model run stopped: it reached its token limit',
 };
 
 class Stop extends Error {}
@@ -590,6 +593,13 @@ export class CodexAppServerRunner implements ModelRunner {
         if (!m) return;
         const { events, progress } = turn.take(m);
         if (progress) last = Date.now();
+        const used = turn.usage();
+        if (
+          request.maxTokens !== undefined &&
+          used &&
+          used.inputTokens + used.outputTokens > request.maxTokens
+        )
+          stop('budget');
         for (const event of events) {
           request.onEvent?.(event);
           if (event.type === 'tool') o.onProgress?.(`  · ${event.name} ${describe(event.input)}`);

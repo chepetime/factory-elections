@@ -33,6 +33,8 @@ export interface ProviderCapabilities {
   osSandbox: boolean;
   /** Stops a call at a dollar limit. */
   budget: boolean;
+  /** Stops a call at a token limit while it runs (a dollar limit becomes one: see `tokenCapFor`). */
+  tokenCap: boolean;
   /** Reports what a call cost in dollars. */
   costReport: boolean;
   /** Returns a final answer that matches a JSON schema. */
@@ -58,6 +60,7 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     denyRules: true,
     osSandbox: true,
     budget: true,
+    tokenCap: false,
     costReport: true,
     structuredOutput: true,
     resume: true,
@@ -75,6 +78,7 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     denyRules: false,
     osSandbox: true,
     budget: false,
+    tokenCap: false,
     costReport: false,
     structuredOutput: true,
     resume: true,
@@ -92,6 +96,7 @@ const CAPABILITY_TEXT: Record<Capability, string> = {
   denyRules: 'enforce command deny rules',
   osSandbox: 'run commands in an OS sandbox',
   budget: 'stop at a dollar limit',
+  tokenCap: 'stop at a token limit',
   costReport: 'report cost',
   structuredOutput: 'return structured output',
   resume: 'continue a session',
@@ -266,7 +271,10 @@ export const DelegateInput = z.object({
 });
 export type DelegateInput = z.infer<typeof DelegateInput>;
 
-/** What a model call needs from its provider. A missing dollar limit is allowed: time limits still hold. */
+/**
+ * What a model call needs from its provider. A missing limit is allowed: time limits still hold.
+ * A dollar or token limit is checked in `ProviderRouter.refusal`: either one stops it.
+ */
 export function callNeeds(request: ModelRun): Capability[] {
   const needs: Capability[] = [];
   if (request.guard) needs.push('toolGuard');
@@ -292,13 +300,45 @@ export class ProviderRouter implements ModelRunner {
     const provider = this.provider(request);
     const runner = this.runners[provider];
     if (!runner) return `${provider} is not available on this backend`;
-    return missingCapabilities(provider, callNeeds(request), runner.capabilities);
+    const have = runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
+    const unbounded =
+      request.maxTokens !== undefined
+        ? !have.tokenCap
+        : request.maxBudgetUsd !== undefined && !have.budget && !have.tokenCap;
+    if (unbounded)
+      return `${provider} cannot stop at a ${request.maxTokens !== undefined ? 'token' : 'dollar'} limit, and this call has one that nothing else would enforce`;
+    return missingCapabilities(provider, callNeeds(request), have);
   }
   async run(request: ModelRun): Promise<ModelResult> {
     const refusal = this.refusal(request);
     if (refusal) throw new ProviderRefused(`${request.step ?? 'model call'}: ${refusal}`);
-    return this.runners[this.provider(request)]!.run(request);
+    const provider = this.provider(request);
+    const runner = this.runners[provider]!;
+    const have = runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
+    // A provider that counts tokens, not dollars, gets the dollar limit as a token cap.
+    const bound =
+      !have.budget && have.tokenCap && request.maxBudgetUsd !== undefined && request.maxTokens === undefined
+        ? { ...request, maxTokens: tokenCapFor(request.maxBudgetUsd) }
+        : request;
+    return runner.run(bound);
   }
+}
+
+/**
+ * Dollars per million tokens used to turn a dollar limit into a token cap. It is one rough, high
+ * blended rate (input and output, cache reads included), so the cap stops a call near the limit
+ * rather than far past it. The provider bills the call, not this number.
+ */
+export const USD_PER_MILLION_TOKENS = 3;
+
+/** What a provider's token usage counts as against a dollar budget: the inverse of `tokenCapFor`. */
+export function tokensCostUsd(usage: Usage | undefined): number {
+  return usage ? ((usage.inputTokens + usage.outputTokens) / 1_000_000) * USD_PER_MILLION_TOKENS : 0;
+}
+
+/** The token cap that stands for a dollar limit on a provider that reports tokens only. */
+export function tokenCapFor(usd: number): number {
+  return Math.max(1, Math.floor((usd / USD_PER_MILLION_TOKENS) * 1_000_000));
 }
 
 /** Where the "dumb zone" starts for current models: quality falls as context grows past it. */

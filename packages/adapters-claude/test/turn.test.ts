@@ -210,3 +210,20 @@ test('a review turn does not load the pull request own settings or hooks, on eit
   assert.ok(!args.includes('project'));
   assert.ok(!args.includes('--setting-sources'), 'no separate value that could name a source');
 });
+
+test('a Claude turn that hits its budget reports kind budget, with its cost', async () => {
+  const base = { turn, systemPrompt: '', cwd: '/w', env: {}, onLine: () => {} };
+  const stopped = await runClaudeTurn(
+    { ...base, signal: new AbortController().signal },
+    fake([
+      { type: 'result', subtype: 'error_max_budget_usd', is_error: true, errors: [], total_cost_usd: 0.06 },
+    ]),
+  );
+  assert.deepEqual([stopped.ok, stopped.kind, stopped.costUsd], [false, 'budget', 0.06]);
+  // Any other failure has no kind, so a caller cannot mistake it for a spend stop.
+  const failed = await runClaudeTurn(
+    { ...base, signal: new AbortController().signal },
+    fake([{ type: 'result', subtype: 'error_during_execution', is_error: true, errors: ['boom'] }]),
+  );
+  assert.equal(failed.kind, undefined);
+});
