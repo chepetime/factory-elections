@@ -20,6 +20,7 @@ export const NOTIFY_KINDS = [
   'merge',
   'review',
   'tending',
+  'review-loop',
   'recovery',
   'finding',
 ] as const;
@@ -79,8 +80,10 @@ export const UserSettings = z.object({
       start_runs: z.boolean().default(false),
       /** Show the optional Jira issue key field for "Work on task". */
       jira_key_field: z.boolean().default(true),
+      /** Show the right sidebar (Run, Status, Timeline, Changes, Details) on the ticket page. */
+      details_pane: z.boolean().default(true),
     })
-    .default({ default_type: 'work', start_runs: false, jira_key_field: true }),
+    .default({ default_type: 'work', start_runs: false, jira_key_field: true, details_pane: true }),
   chat: z
     .object({ approval_mode: z.enum(['request', 'auto', 'full']).default('request') })
     .default({ approval_mode: 'request' }),
@@ -166,6 +169,25 @@ export function modelRefused(settings: UserSettings, ref: string): string | unde
   if (!p.enabled) return `${PROVIDER_NAMES[provider]} is turned off in your user settings`;
   if (model && p.disabled_models.includes(model)) return `${model} is turned off in your user settings`;
   return undefined;
+}
+
+/** The model a call runs: its own reference, else the user's default for the provider that would run it. */
+export function effectiveModel(settings: UserSettings, ref: string | undefined): string {
+  if (ref) return ref;
+  return settings.providers.claude.default_model ?? '';
+}
+
+/**
+ * The one check every model call passes: the reference to run (the default model when `ref` is
+ * empty) or the reason it is refused. Wording tells the person where to turn it back on.
+ */
+export function checkModel(
+  settings: UserSettings,
+  ref: string | undefined,
+): { model: string; refused?: string } {
+  const model = effectiveModel(settings, ref);
+  const why = modelRefused(settings, model);
+  return why ? { model, refused: `${why}. Turn it on at /user, or pick another model.` } : { model };
 }
 
 /** The system prompt with what the person wrote about themselves and their rules, when there is any. */

@@ -18,7 +18,7 @@ import {
 import { readFile } from 'node:fs/promises';
 import { DriverError } from './ports.ts';
 import { MINUTE, errorCost, failureText } from './support.ts';
-import { changeGate } from './verification.ts';
+import { changeGate, verifyCommandProblem, type VerifyCommands } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { noChangeBlocked, backgroundWork, steerPrompt, steersNoChange } from './agent-settle.ts';
 import { openPr } from './publication.ts';
@@ -194,6 +194,8 @@ export async function agentRun(
   reply?: string,
   /** Fix turns still left in this run; below AGENT_FIX_TURNS, `reply` is Factory's own fix message. */
   fixTurns = AGENT_FIX_TURNS,
+  /** The verify commands pinned by the run's first turn; fix and steer turns reuse them. */
+  pinned?: VerifyCommands,
 ): Promise<TaskRecord> {
   if (!d.deps.agentSession) throw new DriverError('Agent runs are not available here.');
   const fromFactory = fixTurns < AGENT_FIX_TURNS;
@@ -202,6 +204,17 @@ export async function agentRun(
     let task = await d.deps.tasks.read(project, id);
     task = task.worktree ? await d.setupWorktree(project, id) : await d.prepareWorktree(project, id);
     const profile = await d.deps.readProfile(project);
+    // The verify commands come from the approved profile and are pinned before the agent runs: the
+    // worktree cannot change them, and a missing one blocks the run here rather than at the end.
+    const problem = verifyCommandProblem(profile.commands);
+    if (problem) {
+      await d.deps.tasks.write(withStage(task, d.deps.now(), 'blocked', problem));
+      return await d.deps.tasks.read(project, id);
+    }
+    const captured: VerifyCommands = pinned ?? {
+      test: profile.commands.test,
+      full_check: profile.commands.full_check,
+    };
     const { path, branch, compare } = await d.checkedWorktree(task);
     // A reply to a follow-up at the gate is another turn on the same PR: only while it is open.
     if (!fromFactory) await refuseEndedPr(d, task, path, branch);
@@ -429,7 +442,7 @@ export async function agentRun(
       await d.deps.tasks.write(
         withEvent(task, d.deps.now(), 'steer', `${session.name} changed nothing; Factory sends one steer.`),
       );
-      return await d.agentRun(project, id, steerPrompt(backgroundWork(tools)), fixTurns - 1);
+      return await d.agentRun(project, id, steerPrompt(backgroundWork(tools)), fixTurns - 1, captured);
     }
     if (idle) {
       await d.deps.tasks.write(
@@ -439,7 +452,7 @@ export async function agentRun(
     }
     await d.deps.tasks.write(task);
     d.deps.log('Verifying…');
-    const checked = await d.verifyAndRecord(project, id);
+    const checked = await d.verifyAndRecord(project, id, captured);
     if (!checked.verification?.passed) {
       // An agent can fix most failures itself: it gets the failure in the same session.
       const steer =
@@ -456,7 +469,7 @@ export async function agentRun(
           `Verification failed; ${session.name} gets fix turn ${turn} of ${AGENT_FIX_TURNS}.`,
         ),
       );
-      return await d.agentRun(project, id, steer, fixTurns - 1);
+      return await d.agentRun(project, id, steer, fixTurns - 1, captured);
     }
     // The PR text is written now, so you read it at the gate; a failure leaves the template fallback.
     const verified = await d.draftPrQuietly(project, id, { agentReport: report });

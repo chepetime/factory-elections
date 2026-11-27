@@ -60,3 +60,21 @@ test('an assertion beats an infra signature', () => {
     evidence: 'assertion',
   });
 });
+
+test('no-fix log fixtures: nothing in the PR can change the outcome', () => {
+  const fixtures: [string, string][] = [
+    ['cancelled', '##[error]The operation was canceled.'],
+    ['cancelled', 'Error: The run was canceled by @someone'],
+    ['missing-secret', 'Error: Input required and not supplied: token'],
+    ['permission', 'RequestError: Resource not accessible by integration'],
+    ['quota', 'Error: API rate limit exceeded for installation'],
+    ['deploy-lock', 'The environment production is locked by another deployment'],
+  ];
+  for (const [evidence, log] of fixtures)
+    assert.deepEqual(classifyFlake(check, none, log), { verdict: 'no-fix', evidence }, log);
+  assert.equal(
+    classifyFlake(check, none, 'AssertionError: x\nThe operation was canceled').verdict,
+    'real',
+    'an assertion failure still wins',
+  );
+});

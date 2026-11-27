@@ -53,7 +53,7 @@ factory doctor
 
 `pnpm run setup` installs locked dependencies, links `factory` into `~/.local/bin`, and runs the environment checks. Use `pnpm run setup`, not pnpm's unrelated `pnpm setup` command. Add the PATH export to your shell configuration for future terminals. If setup reports a failed check, resolve that check and rerun `factory doctor`.
 
-The backend and CLI run TypeScript directly with Node. The web app builds when started with `pnpm web`.
+The backend and CLI run TypeScript directly with Node. The web app builds when started in production mode (`pnpm prod`).
 
 ## 2. Initialize local data storage
 
@@ -135,7 +135,7 @@ pnpm data:up
 pnpm web -- --dev
 ```
 
-Open **http://localhost:3000**. Keep this terminal running. The launcher starts or reuses the authenticated backend. For production mode, use `pnpm web`, which builds the web app first.
+Open **http://localhost:3000**. Keep this terminal running. The launcher starts or reuses the authenticated backend. For production mode, run `pnpm prod`: it installs, builds, starts everything and prints `Ready` once the app answers. See [Run in production mode](docs/operations/production.md).
 
 In another terminal, verify the installation without spending model credits:
 
@@ -189,7 +189,7 @@ For changes, use `factory task revise --project "$FACTORY_PROJECT" --id "$TASK_I
 
 ## Restart, update, and recover
 
-- **Later startup:** start Docker, enter the factory checkout, run `pnpm data:up`, then `pnpm web -- --dev` or `pnpm web`.
+- **Later startup:** enter the factory checkout and run `pnpm start -- --dev` (dev) or `pnpm prod` (production). Both start OrbStack and the data services when storage is configured.
 - **Stop apps:** Ctrl-C stops the launcher-owned web/backend processes. The backend drains accepted work, so shutdown may wait for an active run. A backend the launcher reused is left running.
 - **Stop storage:** after the apps stop, `pnpm data:down` stops the services and preserves their volumes.
 - **Update:** stop the apps, update this checkout, run `pnpm install --frozen-lockfile`, then start data services and apps again. Existing project registration and storage remain local.

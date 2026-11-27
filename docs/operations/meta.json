@@ -1,4 +1,4 @@
 {
   "title": "Operations",
-  "pages": ["dev-server", "docs-app"]
+  "pages": ["dev-server", "production", "docs-app"]
 }

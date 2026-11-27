@@ -26,6 +26,7 @@ vi.mock('@/lib/run-session', () => ({
 vi.mock('@/lib/pane-width', () => ({ paneWidth: async (spec: { default: number }) => spec.default }));
 vi.mock('@/lib/page-title', () => ({ projectLabel: async (p: string) => p, clip: (t: string) => t }));
 vi.mock('@/lib/issues', () => ({ getIssue: vi.fn() }));
+vi.mock('@/lib/user-settings', () => ({ userSettings: async () => ({ ok: false, error: 'not loaded' }) }));
 vi.mock('@/components/issue-editor', () => ({
   IssueTitle: ({ title }: { title: string }) => <h1>{title}</h1>,
   IssueDescription: ({ description }: { description: string }) => <p>description:{description}</p>,

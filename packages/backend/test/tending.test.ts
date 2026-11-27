@@ -77,6 +77,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
   };
   const lookups: string[] = [];
   let replyNo = 0;
+  let logOf: TendingGitHub['failedLog'] = async () => 'unit failed: expected fixed';
   const github: TendingGitHub = {
     permission: async (_c, login) => {
       lookups.push(login);
@@ -87,7 +88,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     pr: async () => pr,
     status: async () => ({ number: pr.number, state: pr.state, draft: false }),
     rerunFailed: async (_c, id) => void calls.push(`rerun ${id}`),
-    failedLog: async () => 'unit failed: expected fixed',
+    failedLog: async (...args) => logOf(...args),
     reply: async (_c, id, body) => {
       calls.push(`reply ${id}: ${body.replace(/\n\n<!-- factory-tending -->$/, '')}`);
       return `reply-${++replyNo}`;
@@ -142,6 +143,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     tending,
     setPr: (x: Partial<PrState>) => (pr = { ...pr, ...x }),
     setAgent: (f: typeof agent) => (agent = f),
+    setLog: (f: TendingGitHub['failedLog']) => (logOf = f),
     remote: (ref: string) => git(work, 'ls-remote', origin, ref).split('\t')[0],
     settings,
   };
@@ -810,4 +812,16 @@ test('a profile with no tending block tends an agent PR, and enabled: false does
   }
   assert.equal(await readsPr({}), true, 'tended by default');
   assert.equal(await readsPr({ tending: { enabled: false } }), false, 'an explicit opt-out is respected');
+});
+
+test('a failed log fetch is not read as a log, and a cancelled-run log stops without an agent', async (t) => {
+  const f = await fixture(t);
+  f.setPr({ checks: [{ name: 'unit', state: 'fail', run_id: '42' }] });
+  f.setLog(async () => {
+    throw new Error('gh failed: HTTP 403: API rate limit exceeded');
+  });
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'rerun', 'unknown, so one rerun as before');
+  f.setLog(async () => 'Error: The operation was canceled.');
+  const action = await f.tending.tend(f.task, f.settings);
+  assert.deepEqual(action, { kind: 'stop', reason: 'no code change can fix: unit (cancelled)' });
 });

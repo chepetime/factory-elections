@@ -52,7 +52,7 @@ export interface TendingGitHub {
   /** State and draft flag only: one cheap call per PR per pass. */
   status(cwd: string, number: number): Promise<PrStatus>;
   rerunFailed(cwd: string, runId: string): Promise<void>;
-  failedLog(cwd: string, runId: string): Promise<string>;
+  failedLog(cwd: string, runId: string, strict?: boolean): Promise<string>;
   /** Posts a reply and returns the ID of the new comment. */
   reply(cwd: string, threadId: string, body: string): Promise<string | void>;
   resolve(cwd: string, threadId: string): Promise<void>;
@@ -172,8 +172,12 @@ export const ghTending: TendingGitHub = {
   async rerunFailed(cwd, runId) {
     await gh(cwd, ['run', 'rerun', runId, '--failed']);
   },
-  async failedLog(cwd, runId) {
-    const out = await gh(cwd, ['run', 'view', runId, '--log-failed']).catch((e: unknown) => String(e));
+  async failedLog(cwd, runId, strict) {
+    // Triage passes `strict` so a failed fetch throws instead of its error text passing for a log.
+    const out = await gh(cwd, ['run', 'view', runId, '--log-failed']).catch((e: unknown) => {
+      if (strict) throw e;
+      return String(e);
+    });
     return out.slice(-6000);
   },
   async reply(cwd, threadId, body) {
@@ -358,8 +362,13 @@ export class TendingService {
         : read;
       const now = new Date().toISOString();
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
-      const verdicts = await this.triage(pr, record, settings, cwd);
-      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads, verdicts });
+      const reasons: Record<string, string> = {};
+      const verdicts = await this.triage(pr, record, settings, cwd, reasons);
+      const action = nextTendAction(pr, record, {
+        answerThreads: settings.tending.answer_threads,
+        verdicts,
+        reasons,
+      });
       record = { ...record, checked_at: now, last: action.kind };
       switch (action.kind) {
         case 'end':
@@ -426,6 +435,7 @@ export class TendingService {
     record: TendRecord,
     settings: ProjectSettings,
     cwd: string,
+    reasons: Record<string, string> = {},
   ): Promise<Record<string, FlakeVerdict>> {
     const verdicts: Record<string, FlakeVerdict> = {};
     if (pr.state !== 'OPEN' || pr.checks.some((c) => c.state === 'pending')) return verdicts;
@@ -438,9 +448,11 @@ export class TendingService {
     };
     for (const check of pr.checks.filter((c) => c.state === 'fail')) {
       const log = check.run_id
-        ? await this.github.failedLog(cwd, check.run_id).catch(() => undefined)
+        ? await this.github.failedLog(cwd, check.run_id, true).catch(() => undefined)
         : undefined;
-      verdicts[check.name] = classifyFlake(check, history, log).verdict;
+      const result = classifyFlake(check, history, log);
+      verdicts[check.name] = result.verdict;
+      if (result.verdict === 'no-fix') reasons[check.name] = result.evidence;
     }
     return verdicts;
   }

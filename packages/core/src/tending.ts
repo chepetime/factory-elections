@@ -173,6 +173,8 @@ export function nextTendAction(
   options: {
     answerThreads: boolean;
     verdicts?: Readonly<Record<string, FlakeVerdict>>;
+    /** Why a check is `no-fix`, by check name; used in the stop reason. */
+    reasons?: Readonly<Record<string, string>>;
     /** The same checks on the base branch tip, by name. A check missing here has no base result. */
     base?: Readonly<Record<string, BaseCheckState>>;
   },
@@ -201,9 +203,18 @@ export function nextTendAction(
     // it. A real failure (see `classifyFlake`) goes straight to a fix. A rerun needs a run to rerun.
     const retried = (c: PrCheck) =>
       record.ci_retries.some((r) => r.sha === pr.head_sha && (r.check === c.name || r.check === '*'));
-    const rerunnable = failed.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
-    const fixable = failed.filter((c) => !rerunnable.includes(c));
-    if (!fixable.length) return { kind: 'rerun', checks: rerunnable };
+    // A `no-fix` check (cancelled run, missing secret, quota) starts no agent: no PR change helps.
+    const noFix = failed.filter((c) => options.verdicts?.[c.name] === 'no-fix');
+    const rest = failed.filter((c) => !noFix.includes(c));
+    const rerunnable = rest.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
+    const fixable = rest.filter((c) => !rerunnable.includes(c));
+    if (!fixable.length) {
+      if (rerunnable.length) return { kind: 'rerun', checks: rerunnable };
+      const why = noFix
+        .map((c) => `${c.name} (${options.reasons?.[c.name] ?? 'needs no PR change'})`)
+        .join(', ');
+      return { kind: 'stop', reason: `no code change can fix: ${why}` };
+    }
     // The same fix on the same head that changed nothing never runs twice: only a new head, which
     // a person or a push brings, can change the outcome. Tending stops and the PR goes to the inbox.
     const idle = record.fixes.findLast((f) => f.kind === 'fix-ci' && f.sha === pr.head_sha);

@@ -19,6 +19,7 @@ export * from './metrics.ts';
 export * from './run-signals.ts';
 export * from './retro.ts';
 export * from './metrics-schema.ts';
+export * from './spend-caps.ts';
 export * from './inbox.ts';
 export * from './tending.ts';
 export * from './ci-flake.ts';
