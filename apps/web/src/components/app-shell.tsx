@@ -9,6 +9,7 @@ import {
   Archive,
   Blocks,
   Bot,
+  Brain,
   Bug,
   Cpu,
   FolderOpen,
@@ -333,6 +334,7 @@ const MORE_PAGES = [
   { segment: 'features', label: 'Features', icon: Tickets },
   { segment: 'llms', label: 'LLMs', icon: Cpu },
   { segment: 'tools', label: 'Tools', icon: Wrench },
+  { segment: 'memory', label: 'Memory', icon: Brain },
 ] as const;
 
 /**
