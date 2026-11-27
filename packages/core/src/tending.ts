@@ -68,6 +68,8 @@ export const TendRecord = z.object({
   reruns: z.array(z.string()).default([]),
   /** Thread comments answered already: `<thread id>:<last comment id>`. */
   answered: z.array(z.string()).default([]),
+  /** IDs of the reply comments tending posted itself: they never start another answer. */
+  replies: z.array(z.string()).default([]),
   fixes: z.array(TendFix).default([]),
   /** Agent fixes since the PR was last green. */
   fixes_since_green: z.number().int().nonnegative().default(0),
@@ -90,23 +92,34 @@ export type TendAction =
 
 const threadKey = (t: PrThread) => `${t.id}:${t.comments.at(-1)?.id ?? ''}`;
 
-/** Threads whose last comment is from someone else, not answered yet. */
-export function threadsWaiting(pr: PrState, record: TendRecord, me: string): PrThread[] {
+/**
+ * Threads with a comment not answered yet. The thread's comments are already only the trusted ones
+ * (see `trustedThreads` in the backend), without tending's own replies: the last one is the newest
+ * trusted comment, and a thread waits only while that comment is newer than the last answer.
+ */
+export function threadsWaiting(pr: PrState, record: TendRecord): PrThread[] {
   return pr.threads.filter(
-    (t) =>
-      !t.resolved &&
-      !t.outdated &&
-      t.comments.length > 0 &&
-      t.comments.at(-1)!.author.toLowerCase() !== me.toLowerCase() &&
-      !record.answered.includes(threadKey(t)),
+    (t) => !t.resolved && !t.outdated && t.comments.length > 0 && !record.answered.includes(threadKey(t)),
   );
 }
 export const answeredKey = threadKey;
 
+/** Permission levels that may steer an agent that pushes. `permission` reports `maintain` as `write`. */
+const TRUSTED_ROLES = new Set(['admin', 'maintain', 'write']);
+
+/** True when a collaborator's permission lookup shows write access. Anything else is not trusted. */
+export function hasWriteAccess(access: { permission?: string | null; role_name?: string | null }): boolean {
+  return [access.permission, access.role_name].some((p) => TRUSTED_ROLES.has((p ?? '').toLowerCase()));
+}
+
+/** GitHub logins: letters, digits and hyphens, with `[bot]` for apps. Checked before a login is put in a path. */
+export const isGitHubLogin = (login: string) =>
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?$/.test(login);
+
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
-  options: { me: string; answerThreads: boolean },
+  options: { answerThreads: boolean },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
@@ -115,7 +128,7 @@ export function nextTendAction(
       ? { kind: 'stop', reason: `${MAX_TEND_FIXES} fixes did not make the PR green` }
       : action;
   if (pr.mergeable === 'CONFLICTING') return agentWork({ kind: 'merge-base' });
-  const threads = options.answerThreads ? threadsWaiting(pr, record, options.me) : [];
+  const threads = options.answerThreads ? threadsWaiting(pr, record) : [];
   if (threads.length) return agentWork({ kind: 'answer-threads', threads });
   const failed = pr.checks.filter((c) => c.state === 'fail');
   if (pr.checks.some((c) => c.state === 'pending')) return { kind: 'wait', reason: 'checks are running' };

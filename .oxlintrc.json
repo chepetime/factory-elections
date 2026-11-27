@@ -20,8 +20,8 @@
           {
             "patterns": [
               {
-                "group": ["node:*", "@anthropic-ai/*", "@factory/adapters-*", "@factory/driver"],
-                "message": "packages/core must stay pure"
+                "group": ["node:*", "@anthropic-ai/*", "@factory/**"],
+                "message": "ADR 0006: packages/core must stay pure: it imports no other workspace package"
               }
             ]
           }
@@ -29,15 +29,15 @@
       }
     },
     {
-      "files": ["apps/web/src/**"],
+      "files": ["packages/backend-client/src/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
               {
-                "group": ["@factory/backend", "@factory/backend/*", "@factory/driver", "@factory/adapters-*"],
-                "message": "apps/web talks to the backend only through @factory/backend-client"
+                "group": ["@factory/**", "!@factory/core", "!@factory/core/**"],
+                "message": "ADR 0006: backend-client may import only core"
               }
             ]
           }
@@ -56,28 +56,11 @@
                   "node:fs",
                   "node:fs/*",
                   "node:child_process",
-                  "@factory/adapters-*",
-                  "@factory/driver",
-                  "@factory/backend",
-                  "@factory/backend/*"
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**"
                 ],
-                "message": "packages/dispatcher only schedules: the backend passes each job's work in"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["packages/pr-reviews/src/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["@factory/backend", "@factory/backend/*"],
-                "message": "packages/pr-reviews must not depend on the backend: take what it needs as a port"
+                "message": "ADR 0006: packages/dispatcher only schedules and may import only core: the backend passes each job's work in"
               }
             ]
           }
@@ -92,8 +75,14 @@
           {
             "patterns": [
               {
-                "group": ["@factory/backend", "@factory/backend/*"],
-                "message": "packages/evidence must not depend on the backend: take what it needs as a port"
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**"
+                ],
+                "message": "ADR 0006: packages/evidence may import only core and adapters-data: take anything else as a port"
               }
             ]
           }
@@ -108,8 +97,66 @@
           {
             "patterns": [
               {
-                "group": ["@factory/backend", "@factory/backend/*"],
-                "message": "packages/compose must not depend on the backend: take what it needs as a port"
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/driver",
+                  "!@factory/driver/**",
+                  "!@factory/adapters-claude",
+                  "!@factory/adapters-claude/**",
+                  "!@factory/adapters-codex",
+                  "!@factory/adapters-codex/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**",
+                  "!@factory/adapters-git",
+                  "!@factory/adapters-git/**",
+                  "!@factory/adapters-github",
+                  "!@factory/adapters-github/**",
+                  "!@factory/adapters-process",
+                  "!@factory/adapters-process/**"
+                ],
+                "message": "ADR 0006: packages/compose may import only core, driver and adapters"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/pr-reviews/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/dispatcher",
+                  "!@factory/dispatcher/**",
+                  "!@factory/evidence",
+                  "!@factory/evidence/**",
+                  "!@factory/adapters-claude",
+                  "!@factory/adapters-claude/**",
+                  "!@factory/adapters-codex",
+                  "!@factory/adapters-codex/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**",
+                  "!@factory/adapters-git",
+                  "!@factory/adapters-git/**",
+                  "!@factory/adapters-github",
+                  "!@factory/adapters-github/**",
+                  "!@factory/adapters-process",
+                  "!@factory/adapters-process/**"
+                ],
+                "message": "ADR 0006: packages/pr-reviews may import only core, dispatcher, evidence and adapters: take the backend as a port"
               }
             ]
           }
@@ -124,8 +171,78 @@
           {
             "patterns": [
               {
-                "group": ["@factory/backend", "@factory/backend/*"],
-                "message": "packages/agents must not depend on the backend: use the AgentBoard port"
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/driver",
+                  "!@factory/driver/**",
+                  "!@factory/dispatcher",
+                  "!@factory/dispatcher/**",
+                  "!@factory/adapters-claude",
+                  "!@factory/adapters-claude/**",
+                  "!@factory/adapters-codex",
+                  "!@factory/adapters-codex/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**",
+                  "!@factory/adapters-git",
+                  "!@factory/adapters-git/**",
+                  "!@factory/adapters-github",
+                  "!@factory/adapters-github/**",
+                  "!@factory/adapters-process",
+                  "!@factory/adapters-process/**"
+                ],
+                "message": "ADR 0006: packages/agents may import only core, driver, dispatcher and adapters: use the AgentBoard port for the backend"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/backend/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/backend-client",
+                  "!@factory/backend-client/**",
+                  "!@factory/dispatcher",
+                  "!@factory/dispatcher/**",
+                  "!@factory/evidence",
+                  "!@factory/evidence/**",
+                  "!@factory/compose",
+                  "!@factory/compose/**",
+                  "!@factory/pr-reviews",
+                  "!@factory/pr-reviews/**",
+                  "!@factory/agents",
+                  "!@factory/agents/**",
+                  "!@factory/driver",
+                  "!@factory/driver/**",
+                  "!@factory/adapters-claude",
+                  "!@factory/adapters-claude/**",
+                  "!@factory/adapters-codex",
+                  "!@factory/adapters-codex/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**",
+                  "!@factory/adapters-git",
+                  "!@factory/adapters-git/**",
+                  "!@factory/adapters-github",
+                  "!@factory/adapters-github/**",
+                  "!@factory/adapters-process",
+                  "!@factory/adapters-process/**"
+                ],
+                "message": "ADR 0006: the backend composes the packages below it and never imports an app"
               }
             ]
           }
@@ -144,19 +261,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@factory/adapters-*",
-                  "@factory/driver",
-                  "@factory/dispatcher",
-                  "@factory/evidence",
-                  "@factory/compose",
-                  "@factory/pr-reviews",
-                  "@factory/agents",
-                  "@factory/backend",
-                  "@factory/backend/*",
-                  "@factory/backend-client",
-                  "@factory/backend-client/*"
-                ],
+                "group": ["@factory/**", "!@factory/core", "!@factory/core/**"],
                 "message": "ADR 0006: this adapter imports only core"
               }
             ]
@@ -177,18 +282,11 @@
             "patterns": [
               {
                 "group": [
-                  "@factory/adapters-*",
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
                   "!@factory/adapters-process",
-                  "@factory/driver",
-                  "@factory/dispatcher",
-                  "@factory/evidence",
-                  "@factory/compose",
-                  "@factory/pr-reviews",
-                  "@factory/agents",
-                  "@factory/backend",
-                  "@factory/backend/*",
-                  "@factory/backend-client",
-                  "@factory/backend-client/*"
+                  "!@factory/adapters-process/**"
                 ],
                 "message": "ADR 0006: this adapter may import only core and adapters-process"
               }
@@ -206,18 +304,11 @@
             "patterns": [
               {
                 "group": [
-                  "@factory/adapters-*",
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
                   "!@factory/adapters-fs",
-                  "@factory/driver",
-                  "@factory/dispatcher",
-                  "@factory/evidence",
-                  "@factory/compose",
-                  "@factory/pr-reviews",
-                  "@factory/agents",
-                  "@factory/backend",
-                  "@factory/backend/*",
-                  "@factory/backend-client",
-                  "@factory/backend-client/*"
+                  "!@factory/adapters-fs/**"
                 ],
                 "message": "ADR 0006: adapters-data may import only core and adapters-fs"
               }
@@ -234,19 +325,98 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@factory/adapters-*",
-                  "@factory/dispatcher",
-                  "@factory/evidence",
-                  "@factory/compose",
-                  "@factory/pr-reviews",
-                  "@factory/agents",
-                  "@factory/backend",
-                  "@factory/backend/*",
-                  "@factory/backend-client",
-                  "@factory/backend-client/*"
-                ],
+                "group": ["@factory/**", "!@factory/core", "!@factory/core/**"],
                 "message": "ADR 0006: the driver imports only core; adapters come in through ports"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/backend-client",
+                  "!@factory/backend-client/**",
+                  "!@factory/affect-ui",
+                  "!@factory/affect-ui/**"
+                ],
+                "message": "ADR 0006: apps/web talks to the backend only through @factory/backend-client"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/cli/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/**",
+                  "!@factory/core",
+                  "!@factory/core/**",
+                  "!@factory/backend",
+                  "!@factory/backend/**",
+                  "!@factory/backend-client",
+                  "!@factory/backend-client/**",
+                  "!@factory/driver",
+                  "!@factory/driver/**",
+                  "!@factory/compose",
+                  "!@factory/compose/**",
+                  "!@factory/evidence",
+                  "!@factory/evidence/**",
+                  "!@factory/adapters-claude",
+                  "!@factory/adapters-claude/**",
+                  "!@factory/adapters-codex",
+                  "!@factory/adapters-codex/**",
+                  "!@factory/adapters-data",
+                  "!@factory/adapters-data/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**",
+                  "!@factory/adapters-git",
+                  "!@factory/adapters-git/**",
+                  "!@factory/adapters-github",
+                  "!@factory/adapters-github/**",
+                  "!@factory/adapters-process",
+                  "!@factory/adapters-process/**"
+                ],
+                "message": "ADR 0006: apps/cli may import only core, driver, compose, evidence, backend, backend-client and adapters"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/backend/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@factory/**",
+                  "!@factory/backend",
+                  "!@factory/backend/**",
+                  "!@factory/adapters-fs",
+                  "!@factory/adapters-fs/**"
+                ],
+                "message": "ADR 0006: apps/backend starts the backend and may import only backend and adapters-fs"
               }
             ]
           }

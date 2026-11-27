@@ -11,6 +11,8 @@ function run(command, args) {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
 }
+// Repository rules only read files, so they run on every plan, also a docs-only one.
+run(process.execPath, ['--test', '--test-reporter=dot', ...globSync('tests/repo/**/*.test.ts')]);
 if (plan.code) {
   run('pnpm', ['format:check']);
   run('pnpm', ['lint']);
