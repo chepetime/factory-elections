@@ -2,22 +2,11 @@ import { createMDX } from 'fumadocs-mdx/next';
 
 const withMDX = createMDX();
 
-// Content lives in the repository `docs/` folder, outside this package, so
-// imports in the compiled pages cannot find this package's node_modules.
-// Point them at the installed copy.
-const fumadocsServer = './node_modules/fumadocs-core/dist/server.js';
-
+// The scripts run webpack (`--webpack`), like apps/web: pnpm's global virtual store links `next`
+// from outside the repository, and Turbopack refuses to resolve files outside its root.
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  turbopack: {
-    resolveAlias: {
-      'fumadocs-core/server': {
-        browser: './node_modules/fumadocs-core/dist/server.browser.js',
-        default: fumadocsServer,
-      },
-    },
-  },
   async rewrites() {
     return [
       { source: '/docs.md', destination: '/llms.mdx/docs.md' },

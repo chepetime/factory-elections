@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --hostname localhost --port 3100",
-    "build": "next build",
+    "dev": "next dev --webpack --hostname localhost --port 3100",
+    "build": "next build --webpack",
     "start": "next start --hostname localhost --port 3100",
     "typecheck": "next typegen && tsc --noEmit --pretty false"
   },
