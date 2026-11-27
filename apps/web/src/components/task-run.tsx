@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, ChevronRight, CircleAlert, CircleCheck } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, CircleCheck } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 import {
@@ -7,10 +7,10 @@ import {
   executionBusy,
   runWorking,
   taskActions,
-  type PersonAttention,
   type TaskRecord,
   stageLabel,
 } from '@factory/core';
+import { AttentionCard } from '@/components/attention-card';
 import { DiffView } from '@/components/diff-view';
 import {
   approveAndOpenPullRequest,
@@ -53,6 +53,11 @@ const TONE_DOT: Record<AgentStep['tone'], string> = {
   danger: 'bg-destructive',
   attention: 'bg-amber-500',
 };
+
+/** The task as the toasts of its commands name it. */
+function quotedName(task: TaskRecord): string {
+  return task.name ? `“${task.name}”` : 'the task';
+}
 
 export function money(task: TaskRecord): string {
   const attempts = task.attempts ?? [];
@@ -212,25 +217,6 @@ const SHOW_ON_HOVER = {
 const FINDING_ORDER = ['blocking', 'major', 'minor', 'nit'] as const;
 
 /** The end of a successful run: what changed, what was checked, what the reviewer found. */
-/** A card on the ticket for something only you can do now, in the tone of its attention state. */
-const ATTENTION_TONE: Record<PersonAttention, { box: string; heading: string }> = {
-  review: { box: 'border-blue-500/40 bg-blue-500/5', heading: 'text-blue-800 dark:text-blue-300' },
-  reply: { box: 'border-amber-500/40 bg-amber-500/5', heading: 'text-amber-800 dark:text-amber-300' },
-  problem: { box: 'border-destructive/40 bg-destructive/5', heading: 'text-destructive' },
-};
-
-function NeedsYou({ title, kind, children }: { title: string; kind: PersonAttention; children: ReactNode }) {
-  const tone = ATTENTION_TONE[kind];
-  return (
-    <section aria-label={title} className={cn('rounded-xl border p-4 text-sm', tone.box)}>
-      <h2 className={cn('mb-2 flex items-center gap-2 font-semibold', tone.heading)}>
-        <CircleAlert className="size-4" aria-hidden />
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 function ReadyCard({ task, diffStat }: { task: TaskRecord; diffStat?: string }) {
   const verification = task.verification;
@@ -564,7 +550,7 @@ export async function renderRun(
   if (!shown.ok) return { ok: false, error: shown.error };
   const controls = shown.value;
   const task = controls.task;
-  const taskName = task.name ? `“${task.name}”` : 'the task';
+  const taskName = quotedName(task);
   const roster = task.workflow === 'agent' && task.agent ? await listAgents() : undefined;
   const found = roster?.ok ? roster.value.find((a) => a.id === task.agent) : undefined;
   const author: RunAuthor | undefined = found
@@ -794,7 +780,7 @@ export async function renderRun(
         />
       </div>
     ) : allowed('open-pr') ? (
-      <NeedsYou title="Approved: open the pull request" kind="review">
+      <AttentionCard title="Approved: open the pull request" kind="review">
         <ActionForm
           action={openPullRequest}
           command={{ name: 'open-pr', title: `Opening the pull request for ${taskName}…` }}
@@ -815,18 +801,18 @@ export async function renderRun(
             </label>
           )}
         </ActionForm>
-      </NeedsYou>
+      </AttentionCard>
     ) : task.stage === 'approved' ? (
-      <NeedsYou title="Approved, but the pull request cannot open yet" kind="problem">
+      <AttentionCard title="Approved, but the pull request cannot open yet" kind="problem">
         <p className="text-sm">
           {actions
             .find((a) => a.action === 'open-pr')
             ?.blockers.map((b) => b.message)
             .join('; ')}
         </p>
-      </NeedsYou>
+      </AttentionCard>
     ) : ['blocked', 'failed', 'verification-failed'].includes(task.stage) ? (
-      <NeedsYou
+      <AttentionCard
         title={
           task.stage === 'blocked' ? `${who} needs a reply` : `${who} stopped: ${stageLabel(task.stage)}`
         }
@@ -867,9 +853,9 @@ export async function renderRun(
             </>
           )}
         </p>
-      </NeedsYou>
+      </AttentionCard>
     ) : run.cleanup?.status === 'uncertain' && !run.cleanup.confirmed_at ? (
-      <NeedsYou title="Confirm that nothing from the last run still runs" kind="problem">
+      <AttentionCard title="Confirm that nothing from the last run still runs" kind="problem">
         <ActionForm
           action={confirmCleanup}
           hidden={hidden}
@@ -882,7 +868,7 @@ export async function renderRun(
             any you find, then confirm.
           </p>
         </ActionForm>
-      </NeedsYou>
+      </AttentionCard>
     ) : undefined;
 
   const sections = (
