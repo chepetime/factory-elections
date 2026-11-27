@@ -105,3 +105,70 @@ test('delegate runs a child on any provider within the grant: access, budget, sl
     undefined,
   );
 });
+
+/** A runner whose child runs until its signal stops it, and reports when it stopped. */
+function hangingRunner() {
+  let started!: () => void;
+  let stopped!: () => void;
+  const state = {
+    started: new Promise<void>((done) => (started = done)),
+    stopped: new Promise<void>((done) => (stopped = done)),
+  };
+  const runner = {
+    run: (r: ModelRun) =>
+      new Promise<never>((_, fail) => {
+        started();
+        r.signal?.addEventListener('abort', () => (stopped(), fail(new Error('aborted'))), { once: true });
+      }),
+  };
+  return { runner, ...state };
+}
+
+const within = (p: Promise<void>, ms = 2000) =>
+  Promise.race([
+    p,
+    new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`not within ${ms}ms`)), ms).unref()),
+  ]);
+
+test('a delegate call the client stops waiting for stops its child', async (t) => {
+  const { runner, started, stopped } = hangingRunner();
+  const server = new DelegationServer({ runner, slot: async () => () => {} });
+  const url = await server.start();
+  t.after(() => server.close());
+  const grant = server.grant({ label: 'coder app/t1', cwd: '/work', access: 'edit', budgetUsd: 1 })!;
+
+  const client = new AbortController();
+  const call = fetch(url, {
+    method: 'POST',
+    signal: client.signal,
+    headers: { authorization: `Bearer ${grant.endpoint.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'delegate', arguments: { provider: 'claude', task: 'Fix it', access: 'edit' } },
+    }),
+  }).catch(() => undefined);
+  await within(started);
+  // Claude Code gives up on a silent tool call: the child must not keep editing the worktree.
+  client.abort();
+  await call;
+  await within(stopped);
+});
+
+test('revoking a grant when the parent turn ends stops its running children', async (t) => {
+  const { runner, started, stopped } = hangingRunner();
+  const server = new DelegationServer({ runner, slot: async () => () => {} });
+  const url = await server.start();
+  t.after(() => server.close());
+  const grant = server.grant({ label: 'coder app/t1', cwd: '/work', access: 'edit', budgetUsd: 1 })!;
+
+  const call = rpc(url, grant.endpoint.token, 'tools/call', {
+    name: 'delegate',
+    arguments: { provider: 'claude', task: 'Fix it', access: 'edit' },
+  }).catch(() => undefined);
+  await within(started);
+  grant.revoke();
+  await within(stopped);
+  await call;
+});
