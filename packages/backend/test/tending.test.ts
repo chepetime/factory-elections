@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
+  checkRun,
   ProjectSettings,
   type ModelRun,
   type PrState,
   type RepoProfile,
   type TaskRecord,
 } from '@factory/core';
+import { runShell } from '@factory/adapters-process';
 import { TendingService, type TendingGitHub } from '../src/tending.ts';
 
 const git = (cwd: string, ...args: string[]) =>
@@ -58,6 +60,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
     threads: [],
   };
   const calls: string[] = [];
+  const shells: { command: string; options: Parameters<typeof runShell>[1] }[] = [];
   const github: TendingGitHub = {
     me: async () => 'me',
     pr: async () => pr,
@@ -82,6 +85,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
     profile: async () =>
       ({
         commands: { test: testCommand, ...(setup ? { setup } : {}) },
+        sandbox: { allowed_domains: ['registry.example.com'], env: { CI: '1' }, pass_env: ['TEND_PASSED'] },
         confirmed: { forbidden_paths: [], forbidden_commands: [] },
       }) as unknown as RepoProfile,
     runner: () => ({ run: async (r) => (requests.push(r), agent(r)) }),
@@ -94,6 +98,11 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
       writeDocument: async (p, d) => void docs.set(p, d),
     },
     github,
+    // Real commands run here; the sandbox itself is covered in adapters-process.
+    runShell: (command, options) => {
+      shells.push({ command, options });
+      return runShell(command, { ...options, sandbox: undefined });
+    },
   });
   return {
     base,
@@ -102,6 +111,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string) {
     origin,
     task,
     calls,
+    shells,
     requests,
     tending,
     setPr: (x: Partial<PrState>) => (pr = { ...pr, ...x }),
@@ -261,6 +271,40 @@ test('a merged base that changes the lockfile runs setup before the test, once p
   assert.equal(record.fixes.at(-1)!.outcome, 'pushed');
   assert.equal((await readFile(log, 'utf8')).trim(), 'run', 'setup ran once');
   assert.ok(record.setup_key, 'the installed lockfile is remembered');
+});
+
+test('tending runs setup and test with the same environment and sandbox as verification', async (t) => {
+  const keep = { secret: process.env.FACTORY_TEST_STORAGE_KEY, passed: process.env.TEND_PASSED };
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  process.env.TEND_PASSED = 'ok';
+  t.after(() => {
+    for (const [name, value] of [
+      ['FACTORY_TEST_STORAGE_KEY', keep.secret],
+      ['TEND_PASSED', keep.passed],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  const f = await fixture(t, 'true', 'true');
+  await lockfileConflict(f);
+  await f.tending.tend(f.task, f.settings);
+  assert.deepEqual(
+    f.shells.map((s) => s.command),
+    ['true', 'true'],
+    'setup, then test',
+  );
+  const expected = checkRun({
+    sandbox: { allowed_domains: ['registry.example.com'], env: { CI: '1' }, pass_env: ['TEND_PASSED'] },
+    cwd: f.work,
+  });
+  for (const { options } of f.shells) {
+    assert.deepEqual(options!.env, expected.env);
+    assert.deepEqual(options!.sandbox, expected.sandbox);
+    assert.equal(options!.env!.FACTORY_TEST_STORAGE_KEY, undefined, 'a backend secret does not reach checks');
+    assert.equal(options!.env!.TEND_PASSED, 'ok');
+    assert.equal(options!.env!.CI, '1');
+    assert.ok(options!.sandbox!.allowedDomains.includes('registry.example.com'));
+  }
 });
 
 test('a failed setup after a base merge is not pushed', async (t) => {

@@ -69,17 +69,30 @@ export function envNames(list: string | undefined): string[] {
  * values the caller chose (a profile's `sandbox.env`) are added after this, not here.
  */
 export function agentEnvironment(
-  provider: ProviderId,
+  provider: ProviderId | undefined,
   source: NodeJS.ProcessEnv,
   extra: readonly string[] = [],
 ): Record<string, string> {
-  const allowed = new Set<string>([...NAMES, ...PROVIDER_ENV[provider], ...extra]);
+  const allowed = new Set<string>([...NAMES, ...(provider ? PROVIDER_ENV[provider] : []), ...extra]);
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(source)) {
     if (value === undefined) continue;
     if (allowed.has(name) || PREFIXES.some((p) => name.startsWith(p))) env[name] = value;
   }
   return env;
+}
+
+/**
+ * The environment of a check command (setup, test, full_check, runtime_check) that runs the
+ * coder's code: the agent allowlist with no provider credential (a check calls no model), plus the
+ * profile's `sandbox.pass_env` names, then its explicit `sandbox.env` values. Verification and
+ * tending both build it here, so the two cannot drift apart.
+ */
+export function checkEnvironment(
+  source: NodeJS.ProcessEnv,
+  sandbox?: { pass_env?: readonly string[] | undefined; env?: Readonly<Record<string, string>> | undefined },
+): Record<string, string> {
+  return { ...agentEnvironment(undefined, source, sandbox?.pass_env ?? []), ...(sandbox?.env ?? {}) };
 }
 
 /**

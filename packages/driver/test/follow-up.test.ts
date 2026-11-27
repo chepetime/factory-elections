@@ -69,7 +69,8 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
     tasks: store,
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
-    shell: { runShell },
+    // These tests run real commands; the sandbox itself is covered in adapters-process.
+    shell: { runShell: (command, options) => runShell(command, { ...options, sandbox: undefined }) },
     github: {
       createPullRequest: async () => {
         created_prs++;
