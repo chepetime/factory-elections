@@ -100,7 +100,8 @@ async function setup(
     tasks: store,
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
-    shell: { runShell },
+    // These tests run real commands; the sandbox itself is covered in adapters-process.
+    shell: { runShell: (command, options) => runShell(command, { ...options, sandbox: undefined }) },
     github: {
       createPullRequest: async (o) => (prs.push(o), 'https://github.com/example/demo/pull/1'),
       pullRequestsFrom: async () => [],
@@ -649,6 +650,59 @@ test('verification retains only the output tail while forwarding the complete lo
   assert.ok(streamed > 1_000_000);
   assert.ok(result.output.length <= 6001);
   assert.match(result.output, /failure-end/);
+});
+
+test('verification runs every check with the sandboxed environment, never the backend environment', async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  const seen: { command: string; env?: Record<string, string>; sandbox?: unknown; cwd: string }[] = [];
+  driver.deps.shell.runShell = async (command, options) => {
+    seen.push({ command, cwd: options.cwd, env: options.env, sandbox: options.sandbox });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await driver.verify('demo', task.id);
+  assert.deepEqual(
+    seen.map((s) => s.command),
+    ['test -f feature.txt', 'true'],
+  );
+  for (const call of seen) {
+    assert.ok(call.env, 'an explicit environment');
+    assert.equal(call.env.FACTORY_TEST_STORAGE_KEY, undefined);
+    assert.equal(call.env.PATH, process.env.PATH);
+    const sandbox = call.sandbox as { allowWrite: string[]; denyRead: string[]; allowedDomains: string[] };
+    assert.ok(sandbox.allowWrite.includes(call.cwd), 'the worktree is writable');
+    assert.ok(sandbox.denyRead.some((p) => p.endsWith('/.ssh')));
+    assert.deepEqual(sandbox.allowedDomains, ['registry.npmjs.org']);
+  }
+});
+
+test("setup runs the coder's install scripts in the same sandbox as the checks, never with the backend environment", async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, setup: 'pnpm install' },
+  }));
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  const seen: { command: string; env?: Record<string, string>; sandbox?: unknown; cwd: string }[] = [];
+  driver.deps.shell.runShell = async (command, options) => {
+    seen.push({ command, cwd: options.cwd, env: options.env, sandbox: options.sandbox });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await driver.setupWorktree('demo', task.id);
+  const install = seen.find((s) => s.command === 'pnpm install');
+  assert.ok(install, 'setup ran');
+  assert.ok(install.env, 'an explicit environment');
+  assert.equal(install.env.FACTORY_TEST_STORAGE_KEY, undefined);
+  const sandbox = install.sandbox as { allowWrite: string[]; hideRoots: string[]; reopen: string[] };
+  assert.ok(sandbox.allowWrite.includes(install.cwd), 'the worktree is writable');
+  assert.ok(sandbox.hideRoots.length > 0, 'the factory data root is hidden');
+  assert.deepEqual(sandbox.reopen, [install.cwd]);
 });
 
 test('running an already reviewed or approved task cannot spend on more model calls', async () => {

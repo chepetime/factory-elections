@@ -1,5 +1,6 @@
 // What the driver needs from the outside world. The CLI composes concrete adapters into these.
 import type {
+  CheckSandbox,
   ContextLimits,
   Effort,
   FactoryTool,
@@ -77,6 +78,11 @@ export interface ShellPort {
       group?: boolean;
       /** The whole environment of the command; absent: this process's environment. */
       env?: Record<string, string>;
+      /**
+       * Run in an OS sandbox with these rules (needs `env`). Without a working sandbox the command
+       * does not run. Set for every command that runs the coder's code.
+       */
+      sandbox?: CheckSandbox | undefined;
     },
   ): Promise<{ code: number; stdout: string; stderr: string; stopped?: 'timeout' | 'aborted' | 'stalled' }>;
 }

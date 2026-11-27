@@ -3,6 +3,8 @@
 // then a push to the same PR), so the board shows the ticket in progress, in review or blocked, and
 // nothing reaches GitHub without a person approving that exact commit.
 import type { TaskRecord } from './schemas.ts';
+import { withStage } from './domain.ts';
+import { runWorking } from './issues.ts';
 
 export type FollowUpKind = 'custom' | 'conflicts' | 'review';
 
@@ -40,6 +42,23 @@ export function conflictFollowUpNote(base: string): string {
 /** The agent a follow-up uses when the person does not pick one: the one that did the run. */
 export function followUpAgent(task: TaskRecord, assignee?: string): string | undefined {
   return (task.workflow === 'agent' ? task.agent : undefined) ?? assignee ?? task.agent;
+}
+
+/**
+ * The task after its PR merged or closed on GitHub while a follow-up was out of `pr-opened` (at the
+ * gate, blocked or failed): the follow-up is moot, and the run ends at `pr-opened` again, where a
+ * merged PR's run stays. Undefined when there is nothing to settle: the PR is open, the run is at
+ * `pr-opened` or rejected, or an agent works on it now.
+ */
+export function settleEndedPr(
+  task: TaskRecord,
+  pr: { number: number; state: 'OPEN' | 'MERGED' | 'CLOSED' },
+  now: string,
+): TaskRecord | undefined {
+  if (pr.state === 'OPEN' || !task.pr || ['pr-opened', 'rejected'].includes(task.stage)) return undefined;
+  if (runWorking(task.stage)) return undefined;
+  const ended = pr.state === 'MERGED' ? 'merged' : 'closed';
+  return withStage(task, now, 'pr-opened', `PR #${pr.number} was ${ended} on GitHub; the follow-up is moot.`);
 }
 
 /** Whether the conflict watcher already added a follow-up for this PR head. */

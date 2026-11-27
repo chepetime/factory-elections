@@ -34,6 +34,21 @@ async function conflictMarkers(dir: string, files: string[]): Promise<string[]> 
 }
 
 /**
+ * Refuses a turn on a task whose PR merged or closed on GitHub: the work could never reach the PR,
+ * and the tending pass settles the task (see core settleEndedPr). A PR GitHub does not list passes.
+ */
+async function refuseEndedPr(d: Driver, task: TaskRecord, path: string, branch: string): Promise<void> {
+  if (!task.pr) return;
+  const own = (await d.deps.github.pullRequestsFrom({ cwd: path, head: branch })).find(
+    (pr) => pr.url === task.pr!.url,
+  );
+  if (own && own.state !== 'OPEN')
+    throw new DriverError(
+      `the task's pull request is ${own.state.toLowerCase()}: ${own.url}. No turn started; the follow-up is moot`,
+    );
+}
+
+/**
  * More work on a task whose PR is open, by a workspace agent on the same branch and PR (see
  * core follow-ups.ts). It starts from the PR head and refuses a branch that diverged from it. A
  * conflict follow-up merges the base first: a clean merge goes straight to verification, and
@@ -52,6 +67,7 @@ export async function followUp(
   if (!d.deps.agentSession || !git.fetchRefs || !git.fastForwardTo || !git.mergeRef)
     throw new DriverError('Follow-ups are not available here.');
   const { path, branch, base } = await d.checkedWorktree(task);
+  await refuseEndedPr(d, task, path, branch);
   if (!(await git.isClean(path))) throw new DriverError('the task worktree has uncommitted changes');
   // Start from the PR head: someone may have pushed to it since the factory did.
   await git.fetchRefs(path, [branch, base]);
@@ -192,6 +208,8 @@ export async function agentRun(
     task = task.worktree ? await d.setupWorktree(project, id) : await d.prepareWorktree(project, id);
     const profile = await d.deps.readProfile(project);
     const { path, branch, compare } = await d.checkedWorktree(task);
+    // A reply to a follow-up at the gate is another turn on the same PR: only while it is open.
+    if (!fromFactory) await refuseEndedPr(d, task, path, branch);
     // The factory, not the agent, brings the base in: outside the sandbox, before the turn.
     const synced = await d.syncBase(task);
     if (synced.conflicted.length)

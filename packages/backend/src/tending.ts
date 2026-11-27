@@ -6,10 +6,12 @@
 // own branch: never a force-push, never a merge of the PR. A fix is pushed only after the
 // profile's test command passes. After MAX_TEND_FIXES fixes without a green PR, tending stops and
 // the PR goes to the inbox.
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import {
   DEFAULT_TASK_LIMITS,
+  checkRun,
   answeredKey,
   hasWriteAccess,
   isGitHubLogin,
@@ -35,7 +37,7 @@ import {
 } from '@factory/core';
 import { NO_HOOKS, changedPathsSince } from '@factory/adapters-git';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
-import { run, runShell } from '@factory/adapters-process';
+import { run, runShell, type ProcessResult } from '@factory/adapters-process';
 
 export interface TendingGitHub {
   /**
@@ -68,8 +70,9 @@ export interface TendingDeps {
   };
   github?: TendingGitHub;
   /**
-   * Every pass reads each open-PR task's PR once and reports it: the board moves a merged task to
-   * Done, and an agent's draft PR without a review loop gets one.
+   * Every pass reads the PR of each task that has one, at any stage, and reports it: the board moves
+   * a merged task to Done, a follow-up whose PR ended is settled, and an agent's draft PR without a
+   * review loop gets one.
    */
   prObserved?(task: TaskRecord, pr: PrStatus): Promise<unknown>;
   /**
@@ -78,6 +81,8 @@ export interface TendingDeps {
    */
   conflictFollowUp?(task: TaskRecord, pr: { head_sha: string; base: string }): Promise<unknown>;
   log?(line: string): void;
+  /** Runs a check command; absent: `runShell`. Tests replace it. Tending passes the sandbox and environment. */
+  runShell?(command: string, options: Parameters<typeof runShell>[1]): Promise<ProcessResult>;
 }
 
 export const TEND_MODEL = 'claude-sonnet-5-5';
@@ -257,11 +262,18 @@ export class TendingService {
       const settings = await this.deps.settings(name).catch(() => undefined);
       if (!settings) continue;
       for (const task of await this.deps.tasks.list(name)) {
-        if (task.stage !== 'pr-opened' || !task.pr) continue;
+        if (!task.pr) continue;
         const log = (what: string) => (error: unknown) =>
           this.deps.log?.(
             `${what} ${name}/${task.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
+        // A follow-up moves the run out of pr-opened, and the person may merge the PR meanwhile:
+        // read its state at every stage, so a merged PR still sets the task Done and settles the
+        // follow-up. Only an open PR at pr-opened gets the conflict watch and tending.
+        if (task.stage !== 'pr-opened') {
+          await this.observe(task).catch(log('pr watch'));
+          continue;
+        }
         // A merged or closed PR needs no conflict watch and no tending.
         const open = await this.observe(task).catch((error: unknown) => (log('pr watch')(error), true));
         if (!open) continue;
@@ -526,6 +538,8 @@ export class TendingService {
     }
     const head = await gitOk(cwd, ['rev-parse', 'HEAD']);
     let setupKey: string | undefined;
+    // The coder's code runs here: same environment and OS sandbox as the driver's verification.
+    const shell = this.deps.runShell ?? runShell;
     // A setup or test that prints nothing for this long is stopped, like the driver's checks.
     const stallMs = Math.round(
       (profile.limits?.check_stall_minutes ?? DEFAULT_TASK_LIMITS.check_stall_minutes) * 60_000,
@@ -534,8 +548,9 @@ export class TendingService {
       // A merged base or a fix may change the lockfile; the test must run on matching dependencies.
       const key = await setupInputsKey(cwd, profile.setup_inputs);
       if (key !== installedKey) {
-        const setup = await runShell(profile.commands.setup, {
+        const setup = await shell(profile.commands.setup, {
           cwd,
+          ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
           timeoutMs: TEST_TIMEOUT_MS,
           stallMs,
           group: true,
@@ -552,8 +567,9 @@ export class TendingService {
       }
     }
     if (head !== before) {
-      const test = await runShell(profile.commands.test, {
+      const test = await shell(profile.commands.test, {
         cwd,
+        ...checkRun({ sandbox: profile.sandbox, cwd, home: homedir() }),
         timeoutMs: TEST_TIMEOUT_MS,
         stallMs,
         group: true,

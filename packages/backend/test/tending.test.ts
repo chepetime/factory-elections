@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import {
+  checkRun,
   ProjectSettings,
   type ModelRun,
   type PrState,
   type RepoProfile,
   type TaskRecord,
 } from '@factory/core';
+import { runShell } from '@factory/adapters-process';
 import { TendingService, type TendingGitHub } from '../src/tending.ts';
 
 const git = (cwd: string, ...args: string[]) =>
@@ -64,6 +66,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     threads: [],
   };
   const calls: string[] = [];
+  const shells: { command: string; options: Parameters<typeof runShell>[1] }[] = [];
   // Who has what access. A login that is not listed is a 404 from GitHub: the lookup throws.
   const access: Record<string, { permission: string; role_name?: string }> = {
     rev: { permission: 'write', role_name: 'write' },
@@ -106,6 +109,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     profile: async () =>
       ({
         commands: { test: testCommand, ...(setup ? { setup } : {}) },
+        sandbox: { allowed_domains: ['registry.example.com'], env: { CI: '1' }, pass_env: ['TEND_PASSED'] },
         confirmed: { forbidden_paths: [], forbidden_commands: [] },
       }) as unknown as RepoProfile,
     runner: () => ({ run: async (r) => (requests.push(r), agent(r)) }),
@@ -118,6 +122,11 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
       writeDocument: async (p, d) => void docs.set(p, d),
     },
     github,
+    // Real commands run here; the sandbox itself is covered in adapters-process.
+    runShell: (command, options) => {
+      shells.push({ command, options });
+      return runShell(command, { ...options, sandbox: undefined });
+    },
   });
   return {
     base,
@@ -126,6 +135,7 @@ async function fixture(t: TestContext, testCommand = 'true', setup?: string, tru
     origin,
     task,
     calls,
+    shells,
     lookups,
     requests,
     tending,
@@ -469,6 +479,41 @@ test('a merged base that changes the lockfile runs setup before the test, once p
   assert.ok(record.setup_key, 'the installed lockfile is remembered');
 });
 
+test('tending runs setup and test with the same environment and sandbox as verification', async (t) => {
+  const keep = { secret: process.env.FACTORY_TEST_STORAGE_KEY, passed: process.env.TEND_PASSED };
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  process.env.TEND_PASSED = 'ok';
+  t.after(() => {
+    for (const [name, value] of [
+      ['FACTORY_TEST_STORAGE_KEY', keep.secret],
+      ['TEND_PASSED', keep.passed],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  const f = await fixture(t, 'true', 'true');
+  await lockfileConflict(f);
+  await f.tending.tend(f.task, f.settings);
+  assert.deepEqual(
+    f.shells.map((s) => s.command),
+    ['true', 'true'],
+    'setup, then test',
+  );
+  const expected = checkRun({
+    sandbox: { allowed_domains: ['registry.example.com'], env: { CI: '1' }, pass_env: ['TEND_PASSED'] },
+    cwd: f.work,
+    home: homedir(),
+  });
+  for (const { options } of f.shells) {
+    assert.deepEqual(options!.env, expected.env);
+    assert.deepEqual(options!.sandbox, expected.sandbox);
+    assert.equal(options!.env!.FACTORY_TEST_STORAGE_KEY, undefined, 'a backend secret does not reach checks');
+    assert.equal(options!.env!.TEND_PASSED, 'ok');
+    assert.equal(options!.env!.CI, '1');
+    assert.ok(options!.sandbox!.allowedDomains.includes('registry.example.com'));
+  }
+});
+
 test('a failed setup after a base merge is not pushed', async (t) => {
   const f = await fixture(t, 'true', 'echo install failed >&2; exit 1');
   await lockfileConflict(f);
@@ -581,4 +626,51 @@ test("each pass reports every open-PR task's PR state, and skips conflict watch 
   state = 'MERGED';
   await tending.tick();
   assert.deepEqual(seen, ['5:MERGED:true'], 'a merged PR is reported and not read again for conflicts');
+});
+
+test('a PR that merged while its follow-up waits at the gate is still reported, without a conflict watch', async () => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/18',
+    branch: 'b',
+    head_sha: 'h',
+    at: '2026-11-26T00:00:00.000Z',
+  };
+  const at = (id: string, stage: string) =>
+    ({
+      id,
+      project: 'app',
+      repo: '/r',
+      prompt: 'x',
+      stage,
+      worktree: { path: '/w', branch: 'b', base_branch: 'main' },
+      pr,
+    }) as unknown as TaskRecord;
+  const tasks = [at('gate', 'awaiting-approval'), at('stopped', 'blocked'), at('none', 'queued')];
+  delete (tasks[2] as { pr?: unknown }).pr;
+  const seen: string[] = [];
+  const tending = new TendingService({
+    projects: { list: async () => [{ name: 'app' }] },
+    tasks: { list: async () => tasks, taskPath: () => '/r/task.json' },
+    settings: async () => ProjectSettings.parse({}),
+    profile: async () => ({}) as RepoProfile,
+    runner: () => ({ run: async () => ({ text: '', costUsd: 0 }) }),
+    slot: async () => () => {},
+    storage: { readDocument: async () => ({}), writeDocument: async () => {} },
+    github: {
+      permission: async () => ({}),
+      pr: async () => {
+        throw new Error('no conflict watch or tending outside pr-opened');
+      },
+      status: async (_cwd, number) => ({ number, state: 'MERGED', draft: false }),
+      rerunFailed: async () => {},
+      failedLog: async () => '',
+      reply: async () => {},
+      resolve: async () => {},
+    },
+    conflictFollowUp: async () => void seen.push('conflict'),
+    prObserved: async (t, p) => void seen.push(`${t.id}:${p.number}:${p.state}`),
+    log: (line) => void seen.push(line),
+  });
+  await tending.tick();
+  assert.deepEqual(seen, ['gate:18:MERGED', 'stopped:18:MERGED']);
 });
