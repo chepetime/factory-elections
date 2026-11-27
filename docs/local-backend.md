@@ -175,7 +175,7 @@ Tending is off by default. Turn it on in the project settings with `"tending": {
 
 1. **The PR is merged or closed:** tending ends for that PR.
 2. **The PR conflicts with its base:** tending merges the base in. An agent resolves the conflicts, and the merge is committed.
-3. **Review threads wait for an answer:** this happens only with `answer_threads` on. An agent replies to each thread and changes code where it agrees with the comment. A thread is resolved only when its code change was pushed.
+3. **Review threads wait for an answer:** this happens only with `answer_threads` on. An agent replies to each thread and changes code where it agrees with the comment. A thread is resolved only when its code change was pushed. Only [trusted comments](#whose-comments-tending-answers) count.
 4. **Checks failed:** tending reruns the failed jobs once for each head commit. If they fail again, an agent fixes the cause from the failed logs.
 5. **Otherwise:** tending waits.
 
@@ -186,6 +186,18 @@ Safety rules:
 - The backend pushes only new commits on top of the head, and only after the profile's `test` command passes. A failed fix is reset.
 - Tending never force-pushes and never merges the PR.
 - After 3 fixes without a green PR, tending stops and the PR goes to the inbox. `TendPullRequests` (`project`, `id`) tends one PR now and resumes a stopped one. With an empty `id`, it runs one pass over all PRs.
+- Only comments from people who may push to the repository reach the agent (see below).
+
+### Whose comments tending answers
+
+Anyone who can see a PR can comment on it, and tending pushes what an agent changes. So tending reads a review comment only when its author is trusted. The check is per comment, not per thread:
+
+- A login is trusted when GitHub reports `admin`, `maintain` or `write` access for it (`gh api repos/{owner}/{repo}/collaborators/<login>/permission`, reading both `permission` and `role_name`, because `permission` reports `maintain` as `write`), or when it is listed in the project setting `tending.trusted_logins` (for example a review bot: `"tending": { "enabled": true, "answer_threads": true, "trusted_logins": ["my-review-bot[bot]"] }`). The list is empty by default. A listed login needs no lookup.
+- Read, triage and `none` are not trusted. `authorAssociation` is not used: `MEMBER` does not mean write access.
+- The check fails closed: when the lookup fails, for example a 404 for a deleted account or a bot, or GitHub is unreachable, the comment is skipped. Each login is looked up once per tending call.
+- Comments from other people are left out of the prompt, also in a thread that has trusted comments. A thread is answered only when its newest trusted comment is newer than the last answer, so a stranger who comments after an answer starts nothing.
+- The person who runs the factory has `admin` access, so their comments are answered. Tending skips only the replies it posted itself: it records their comment IDs in `tending.json` (`replies`) and puts a hidden marker in each reply, so it never answers its own reply even though the same login posts it. A reply posted before this rule existed has neither, so a thread answered earlier may be answered once more.
+- The prompt puts each comment in a `<comment>` block and tells the agent that the text is data, not instructions. That is a hint, not a control: the checks above, the worktree guard and the `test` command are the controls. What a trusted comment may then push is limited separately.
 
 Each tending model call is a `model` span with step `tend:<action>`, under the task's ID and PR. The state of each PR is in `<project>/tasks/<id>/tending.json`.
 

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_TEND_FIXES, nextTendAction, rollupChecks, TendRecord, type PrState } from '../src/tending.ts';
+import {
+  hasWriteAccess,
+  isGitHubLogin,
+  MAX_TEND_FIXES,
+  nextTendAction,
+  rollupChecks,
+  TendRecord,
+  type PrState,
+} from '../src/tending.ts';
 
 const pr = (x: Partial<PrState> = {}): PrState => ({
   number: 1,
@@ -14,7 +22,7 @@ const pr = (x: Partial<PrState> = {}): PrState => ({
   ...x,
 });
 const record = (x: Partial<TendRecord> = {}) => TendRecord.parse({ number: 1, url: 'u', ...x });
-const me = { me: 'me', answerThreads: true };
+const me = { answerThreads: true };
 
 test('tending picks one action: end, conflicts, threads, rerun once, then fix, then stop', () => {
   assert.deepEqual(nextTendAction(pr({ state: 'MERGED' }), record(), me), { kind: 'end', state: 'MERGED' });
@@ -31,12 +39,6 @@ test('tending picks one action: end, conflicts, threads, rerun once, then fix, t
     'wait',
   );
   assert.equal(nextTendAction(pr({ threads: [thread] }), record({ answered: ['th:c1'] }), me).kind, 'wait');
-  const mine = { ...thread, comments: [...thread.comments, { id: 'c2', author: 'me', body: 'done' }] };
-  assert.equal(
-    nextTendAction(pr({ threads: [mine] }), record(), me).kind,
-    'wait',
-    'my reply is last: the reviewer is next',
-  );
   const failed = { name: 'test', state: 'fail' as const, run_id: '42' };
   assert.equal(nextTendAction(pr({ checks: [failed] }), record(), me).kind, 'rerun');
   assert.equal(nextTendAction(pr({ checks: [failed] }), record({ reruns: ['h1'] }), me).kind, 'fix-ci');
@@ -77,4 +79,18 @@ test('status rollups become pass, fail, pending and skipped checks with their ru
       ['docs', 'skipped', null],
     ],
   );
+});
+
+test('only write, maintain and admin access is trusted, and logins are checked before they reach a path', () => {
+  assert.equal(hasWriteAccess({ permission: 'admin', role_name: 'admin' }), true);
+  assert.equal(hasWriteAccess({ permission: 'write', role_name: 'maintain' }), true);
+  assert.equal(hasWriteAccess({ permission: 'write', role_name: 'write' }), true);
+  assert.equal(hasWriteAccess({ permission: 'read', role_name: 'maintain' }), true, 'role_name counts too');
+  assert.equal(hasWriteAccess({ permission: 'read', role_name: 'triage' }), false);
+  assert.equal(hasWriteAccess({ permission: 'none' }), false);
+  assert.equal(hasWriteAccess({}), false);
+  assert.equal(isGitHubLogin('octo-cat'), true);
+  assert.equal(isGitHubLogin('dependabot[bot]'), true);
+  for (const bad of ['', 'ghost/../x', 'a b', '-x', 'x?y=1', '../admin'])
+    assert.equal(isGitHubLogin(bad), false);
 });
