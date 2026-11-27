@@ -177,8 +177,28 @@ export async function remoteUrl(dir: string, remote = 'origin'): Promise<string 
   return result.code === 0 ? result.stdout.trim() : undefined;
 }
 
-export async function push(dir: string, branch: string, remote = 'origin'): Promise<void> {
-  await exclusive(dir, () => git(dir, ['push', '--set-upstream', remote, `${branch}:${branch}`]));
+/**
+ * Pushes the commit `sha` to `refs/heads/<branch>` on the remote, never the branch as it is at push
+ * time, so a commit made after the caller's check is not sent. No `--force`: a non-fast-forward
+ * rejection fails. A SHA source sets no upstream, so tracking is set in a separate step.
+ */
+export async function push(dir: string, sha: string, branch: string, remote = 'origin'): Promise<void> {
+  await exclusive(dir, async () => {
+    await git(dir, ['push', remote, `${sha}:refs/heads/${branch}`]);
+    await git(dir, ['config', `branch.${branch}.remote`, remote]);
+    await git(dir, ['config', `branch.${branch}.merge`, `refs/heads/${branch}`]);
+  });
+}
+
+/** The commit the remote's `refs/heads/<branch>` points at, read from the remote itself; undefined when absent. */
+export async function remoteHead(
+  dir: string,
+  branch: string,
+  remote = 'origin',
+): Promise<string | undefined> {
+  const out = await git(dir, ['ls-remote', remote, `refs/heads/${branch}`]);
+  const line = out.split('\n').find((l) => l.endsWith(`\trefs/heads/${branch}`));
+  return line?.split('\t')[0]?.trim() || undefined;
 }
 
 /** `git fetch --all --prune`, retrying once after packing refs when a stale ref lock blocks it. */

@@ -1212,6 +1212,57 @@ test('the publication intent is saved before the push, so a failed push leaves a
   assert.deepEqual([record.publication?.step, record.stage], ['push', 'approved']);
 });
 
+test('a commit made after the head check is not pushed: openPr sends the approved SHA only', async () => {
+  const { driver, task, remote, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  const real = driver.deps.git;
+  // After the head check, while openPr does its other async work, someone commits in the worktree.
+  driver.deps.git = {
+    ...real,
+    isClean: async (dir) => {
+      await writeFile(join(dir, 'late.txt'), 'late\n');
+      sh(dir, 'add', 'late.txt');
+      sh(dir, 'commit', '-qm', 'late commit nobody approved');
+      return real.isClean(dir);
+    },
+  };
+  const opened = await driver.openPr('demo', task.id);
+  const branch = `factory/${task.id}`;
+  assert.notEqual(sh(opened.worktree!.path, 'rev-parse', 'HEAD').trim(), gate.headSha, 'the branch moved');
+  assert.equal(
+    sh(remote, 'rev-parse', `refs/heads/${branch}`).trim(),
+    gate.headSha,
+    'origin has the approved SHA, not the moved branch tip',
+  );
+  assert.equal(opened.pr?.head_sha, gate.headSha);
+  assert.equal(prs.length, 1);
+});
+
+test('a push that leaves another commit on the remote fails openPr and keeps the publication intent', async () => {
+  const { driver, task, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  // The push reports success, but origin's ref is not the approved SHA (a hook, a proxy, a concurrent push).
+  driver.deps.git = { ...driver.deps.git, remoteHead: async () => 'f'.repeat(40) };
+  await assert.rejects(driver.openPr('demo', task.id), /after the push, not the approved/);
+  const record = await driver.deps.tasks.read('demo', task.id);
+  assert.deepEqual([record.publication?.step, record.publication?.head_sha], ['push', gate.headSha]);
+  assert.equal(record.pr, undefined);
+  assert.equal(record.stage, 'approved');
+  assert.equal(prs.length, 0, 'no pull request was opened');
+});
+
 test('a runtime check (Reticle) runs after full_check: yes passes, no fails, unknown passes for a human to check', async () => {
   const withRuntime = (driver: Driver, command: string) => {
     const read = driver.deps.readProfile;

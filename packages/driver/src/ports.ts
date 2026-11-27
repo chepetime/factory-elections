@@ -42,7 +42,10 @@ export interface GitPort {
   ): Promise<{ path: string; added: number | null; deleted: number | null }[]>;
   commitCountSince(dir: string, base: string): Promise<number>;
   remoteUrl(dir: string): Promise<string | undefined>;
-  push(dir: string, branch: string): Promise<void>;
+  /** Pushes commit `sha` to `refs/heads/<branch>` on origin, not the branch's current tip. Never forced. */
+  push(dir: string, sha: string, branch: string): Promise<void>;
+  /** The commit origin's `refs/heads/<branch>` points at, read from origin; undefined when absent. */
+  remoteHead(dir: string, branch: string): Promise<string | undefined>;
   /** Whether origin has this branch (after the last fetch or push). */
   remoteBranchExists?(repo: string, branch: string): Promise<boolean>;
   /** Ignores a pattern in this repository only, without a committed .gitignore change. */

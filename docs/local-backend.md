@@ -184,6 +184,7 @@ Safety rules:
 - Agents run with the coder's worktree guard and cannot commit, push or post.
 - The backend first fast-forwards to the PR head and refuses a branch that has diverged.
 - The backend pushes only new commits on top of the head, and only after the profile's `test` command passes. A failed fix is reset.
+- The backend pushes the exact SHA it tested (`<sha>:refs/heads/<branch>`), not `HEAD`. If `HEAD` moved while setup or the test ran, the fix fails and is reset. After the push it reads the remote ref back with `git ls-remote`, and a ref that is not the tested SHA fails the fix.
 - Tending never force-pushes and never merges the PR.
 - After 3 fixes without a green PR, tending stops and the PR goes to the inbox. `TendPullRequests` (`project`, `id`) tends one PR now and resumes a stopped one. With an empty `id`, it runs one pass over all PRs.
 
