@@ -399,260 +399,252 @@ export default async function TaskPage({
         {comment}
       </section>
 
-      {showPane && (
-        <ResizablePane
-          spec={TASK_DETAILS_PANE}
-          initialWidth={detailsWidth}
-          edge="left"
-          label="Task details"
-          className="min-h-0 border-t bg-muted/30 lg:flex lg:flex-col lg:border-t-0 lg:border-l"
-        >
-          <nav aria-label="Panel" className="flex shrink-0 gap-1 border-b bg-muted/80 px-3 pt-2">
-            {(
-              [
-                ['run', 'Run'],
-                ['status', 'Status'],
-                ['timeline', 'Timeline'],
-                ['changes', 'Changes'],
-                ['details', 'Details'],
-              ] as const
-            ).map(([id, label]) => (
-              <Link
-                key={id}
-                href={panelHref(id)}
-                aria-current={panel === id ? 'page' : undefined}
-                className={cn(
-                  '-mb-px border-b-2 px-3 pb-2 text-sm',
-                  panel === id
-                    ? 'border-foreground font-medium text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-          {panel === 'run' ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              {!run ? (
-                <p className="px-5 py-6 text-sm text-muted-foreground">
-                  No run yet.{' '}
-                  {runAgent
-                    ? `${runAgent.name} starts when the task is in Todo.`
-                    : 'Move the task to In progress to start one.'}
-                </p>
-              ) : !run.ok ? (
-                <p role="alert" className="px-5 py-6 text-sm text-destructive">
-                  Run unavailable: {run.error}
-                </p>
-              ) : (
-                <>
-                  <div className="flex shrink-0 items-center gap-2 px-5 pt-4 text-sm">
-                    <span className="font-medium">Run {runIndex}</span>
-                    <StageBadge stage={run.value.task.stage} />
-                    {runId !== issue.run?.id && (
-                      <Link
-                        href={`/projects/${project}/tasks/${issue.key}?panel=run`}
-                        className="ml-auto text-xs text-muted-foreground hover:underline"
-                      >
-                        Show the latest run
-                      </Link>
-                    )}
-                  </div>
-                  <div data-run-scroll className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                    {session?.ok ? (
-                      <RunSessionView
-                        project={project}
-                        runId={runId!}
-                        initial={session.value}
-                        author={runAuthor ?? { name: 'Factory', avatar: '🏭' }}
-                      />
-                    ) : (
-                      session && (
-                        <p role="alert" className="text-sm text-destructive">
-                          Session unavailable: {session.error}
-                        </p>
-                      )
-                    )}
-                  </div>
-                  {/* The chat holds the session only; what the run needs from you is one link away. */}
-                  {run.value.attention && (
+      <ResizablePane
+        spec={TASK_DETAILS_PANE}
+        hidden={!showPane}
+        initialWidth={detailsWidth}
+        edge="left"
+        label="Task details"
+        className="min-h-0 border-t bg-muted/30 lg:flex lg:flex-col lg:border-t-0 lg:border-l"
+      >
+        <nav aria-label="Panel" className="flex shrink-0 gap-1 border-b bg-muted/80 px-3 pt-2">
+          {(
+            [
+              ['run', 'Run'],
+              ['status', 'Status'],
+              ['timeline', 'Timeline'],
+              ['changes', 'Changes'],
+              ['details', 'Details'],
+            ] as const
+          ).map(([id, label]) => (
+            <Link
+              key={id}
+              href={panelHref(id)}
+              aria-current={panel === id ? 'page' : undefined}
+              className={cn(
+                '-mb-px border-b-2 px-3 pb-2 text-sm',
+                panel === id
+                  ? 'border-foreground font-medium text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        {panel === 'run' ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {!run ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                No run yet.{' '}
+                {runAgent
+                  ? `${runAgent.name} starts when the task is in Todo.`
+                  : 'Move the task to In progress to start one.'}
+              </p>
+            ) : !run.ok ? (
+              <p role="alert" className="px-5 py-6 text-sm text-destructive">
+                Run unavailable: {run.error}
+              </p>
+            ) : (
+              <>
+                <div className="flex shrink-0 items-center gap-2 px-5 pt-4 text-sm">
+                  <span className="font-medium">Run {runIndex}</span>
+                  <StageBadge stage={run.value.task.stage} />
+                  {runId !== issue.run?.id && (
                     <Link
-                      href={panelHref('status')}
-                      className="mx-5 mb-2 flex shrink-0 items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                      href={`/projects/${project}/tasks/${issue.key}?panel=run`}
+                      className="ml-auto text-xs text-muted-foreground hover:underline"
                     >
-                      <span>{runAuthor?.name ?? 'The run'} needs you.</span>
-                      <span className="font-medium">Open Status and actions →</span>
+                      Show the latest run
                     </Link>
                   )}
-                  <div className="shrink-0 border-t bg-muted/80 pt-3">{run.value.composer}</div>
-                </>
-              )}
-            </div>
-          ) : panel === 'status' ? (
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {!run ? (
-                <p className="text-sm text-muted-foreground">No run yet, so nothing to act on.</p>
-              ) : !run.ok ? (
-                <p role="alert" className="text-sm text-destructive">
-                  Run unavailable: {run.error}
-                </p>
-              ) : (
-                <>
-                  <p className="mb-4 flex items-center gap-2 text-sm">
-                    <span className="font-medium">Run {runIndex}</span>
-                    <StageBadge stage={run.value.task.stage} />
-                  </p>
-                  <div className="flex flex-col gap-5">{run.value.activity}</div>
-                  <div className="mt-5 border-t pt-3">{run.value.composer}</div>
-                </>
-              )}
-            </div>
-          ) : panel === 'timeline' ? (
-            <div className="min-h-0 flex-1 px-5 py-4 lg:overflow-y-auto">
-              <p className="mb-4 flex items-center justify-between text-sm">
-                <span className="font-medium">Ticket timeline</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {timeline.length} {timeline.length === 1 ? 'event' : 'events'}
-                </span>
-              </p>
-              <TicketTimeline entries={timeline} models={modelTotals(records, reviewTurns)} />
-            </div>
-          ) : panel === 'changes' ? (
-            <div className="min-h-0 flex-1 lg:overflow-y-auto">
-              {!runId || !run?.ok ? (
-                <p className="px-5 py-6 text-sm text-muted-foreground">
-                  No changes yet. A run writes its changes on its own branch.
-                </p>
-              ) : !run.value.task.worktree ? (
-                <p className="px-5 py-6 text-sm text-muted-foreground">
-                  Run {runIndex} has no branch yet, so it has no changes.
-                </p>
-              ) : changes && !changes.ok ? (
-                <p role="alert" className="px-5 py-6 text-sm text-destructive">
-                  Changes unavailable: {changes.error}
-                </p>
-              ) : (
-                <TaskChanges
-                  diff={changes?.ok ? changes.value : ''}
-                  {...(run.value.task.worktree.base_branch
-                    ? { base: run.value.task.worktree.base_branch }
-                    : {})}
-                />
-              )}
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 lg:overflow-y-auto">
-              <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
-                <AccessList
-                  access={taskAccess({
-                    workflow: runAgent ? 'agent' : 'pipeline',
-                    ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
-                  })}
-                />
-              </Section>
-
-              <Section title="Pull requests">
-                {pulls.length ? (
-                  <ul className="flex flex-col gap-2 text-sm">
-                    {pulls.map((pr) => (
-                      <li key={pr.url} className="flex items-start gap-2">
-                        <GitPullRequest
-                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                          aria-hidden
-                        />
-                        <span className="min-w-0">
-                          <a
-                            href={pr.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-medium underline-offset-2 hover:underline"
-                          >
-                            {prLabel(pr.url)}
-                          </a>
-                          <span
-                            className="block truncate font-mono text-xs text-muted-foreground"
-                            title={pr.branch}
-                          >
-                            {pr.branch} · {pr.head_sha.slice(0, 12)}
-                          </span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No pull request yet. A run opens one after you approve its change.
-                  </p>
-                )}
-              </Section>
-
-              <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
-                {latestRow ? (
-                  <ol className="flex flex-col">
-                    <RunRow
-                      href={runHref(latestRow.rid)}
-                      index={latestRow.index}
-                      record={latestRow.record}
-                      current={latestRow.rid === runId}
-                      latest={pastRows.length > 0}
-                    />
-                    {pastRows.length > 0 && (
-                      <li>
-                        <details open={pastRows.some((r) => r.rid === runId)} className="group/past">
-                          <summary className="-mx-2 flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                            <ChevronRight
-                              aria-hidden
-                              className="size-3.5 transition-transform duration-150 ease-out group-open/past:rotate-90 motion-reduce:transition-none"
-                            />
-                            Past runs ({pastRows.length})
-                          </summary>
-                          <ol className="flex flex-col">
-                            {pastRows.map((r) => (
-                              <RunRow
-                                key={r.rid}
-                                href={runHref(r.rid)}
-                                index={r.index}
-                                record={r.record}
-                                current={r.rid === runId}
-                                latest={false}
-                              />
-                            ))}
-                          </ol>
-                        </details>
-                      </li>
-                    )}
-                  </ol>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No runs yet. Move the task to In progress to start one.
-                  </p>
-                )}
-              </Section>
-
-              <Section title="Details">
-                <Facts>
-                  <Fact label="Blocked by">
-                    <IssueBlockedByField
+                </div>
+                <div data-run-scroll className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                  {session?.ok ? (
+                    <RunSessionView
                       project={project}
-                      issueKey={issue.key}
-                      blockedBy={issue.blocked_by}
+                      runId={runId!}
+                      initial={session.value}
+                      author={runAuthor ?? { name: 'Factory', avatar: '🏭' }}
                     />
-                  </Fact>
-                  <Fact label="Created">
-                    <LocalTime iso={issue.created_at} format="date-time" />
-                  </Fact>
-                  <Fact label="Updated">
-                    <LocalTime iso={issue.updated_at} format="date-time" />
-                  </Fact>
-                </Facts>
-              </Section>
+                  ) : (
+                    session && (
+                      <p role="alert" className="text-sm text-destructive">
+                        Session unavailable: {session.error}
+                      </p>
+                    )
+                  )}
+                </div>
+                {/* The chat holds the session only; what the run needs from you is one link away. */}
+                {run.value.attention && (
+                  <Link
+                    href={panelHref('status')}
+                    className="mx-5 mb-2 flex shrink-0 items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                  >
+                    <span>{runAuthor?.name ?? 'The run'} needs you.</span>
+                    <span className="font-medium">Open Status and actions →</span>
+                  </Link>
+                )}
+                <div className="shrink-0 border-t bg-muted/80 pt-3">{run.value.composer}</div>
+              </>
+            )}
+          </div>
+        ) : panel === 'status' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {!run ? (
+              <p className="text-sm text-muted-foreground">No run yet, so nothing to act on.</p>
+            ) : !run.ok ? (
+              <p role="alert" className="text-sm text-destructive">
+                Run unavailable: {run.error}
+              </p>
+            ) : (
+              <>
+                <p className="mb-4 flex items-center gap-2 text-sm">
+                  <span className="font-medium">Run {runIndex}</span>
+                  <StageBadge stage={run.value.task.stage} />
+                </p>
+                <div className="flex flex-col gap-5">{run.value.activity}</div>
+                <div className="mt-5 border-t pt-3">{run.value.composer}</div>
+              </>
+            )}
+          </div>
+        ) : panel === 'timeline' ? (
+          <div className="min-h-0 flex-1 px-5 py-4 lg:overflow-y-auto">
+            <p className="mb-4 flex items-center justify-between text-sm">
+              <span className="font-medium">Ticket timeline</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {timeline.length} {timeline.length === 1 ? 'event' : 'events'}
+              </span>
+            </p>
+            <TicketTimeline entries={timeline} models={modelTotals(records, reviewTurns)} />
+          </div>
+        ) : panel === 'changes' ? (
+          <div className="min-h-0 flex-1 lg:overflow-y-auto">
+            {!runId || !run?.ok ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                No changes yet. A run writes its changes on its own branch.
+              </p>
+            ) : !run.value.task.worktree ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                Run {runIndex} has no branch yet, so it has no changes.
+              </p>
+            ) : changes && !changes.ok ? (
+              <p role="alert" className="px-5 py-6 text-sm text-destructive">
+                Changes unavailable: {changes.error}
+              </p>
+            ) : (
+              <TaskChanges
+                diff={changes?.ok ? changes.value : ''}
+                {...(run.value.task.worktree.base_branch
+                  ? { base: run.value.task.worktree.base_branch }
+                  : {})}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 lg:overflow-y-auto">
+            <Section title="Access" aside={runAgent?.name ?? 'Pipeline'}>
+              <AccessList
+                access={taskAccess({
+                  workflow: runAgent ? 'agent' : 'pipeline',
+                  ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
+                })}
+              />
+            </Section>
 
-              {run?.ok && run.value.sections}
-            </div>
-          )}
-        </ResizablePane>
-      )}
+            <Section title="Pull requests">
+              {pulls.length ? (
+                <ul className="flex flex-col gap-2 text-sm">
+                  {pulls.map((pr) => (
+                    <li key={pr.url} className="flex items-start gap-2">
+                      <GitPullRequest className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0">
+                        <a
+                          href={pr.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium underline-offset-2 hover:underline"
+                        >
+                          {prLabel(pr.url)}
+                        </a>
+                        <span
+                          className="block truncate font-mono text-xs text-muted-foreground"
+                          title={pr.branch}
+                        >
+                          {pr.branch} · {pr.head_sha.slice(0, 12)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No pull request yet. A run opens one after you approve its change.
+                </p>
+              )}
+            </Section>
+
+            <Section title="Execution log" aside={cost && <span className="tabular-nums">{cost}</span>}>
+              {latestRow ? (
+                <ol className="flex flex-col">
+                  <RunRow
+                    href={runHref(latestRow.rid)}
+                    index={latestRow.index}
+                    record={latestRow.record}
+                    current={latestRow.rid === runId}
+                    latest={pastRows.length > 0}
+                  />
+                  {pastRows.length > 0 && (
+                    <li>
+                      <details open={pastRows.some((r) => r.rid === runId)} className="group/past">
+                        <summary className="-mx-2 flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground select-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                          <ChevronRight
+                            aria-hidden
+                            className="size-3.5 transition-transform duration-150 ease-out group-open/past:rotate-90 motion-reduce:transition-none"
+                          />
+                          Past runs ({pastRows.length})
+                        </summary>
+                        <ol className="flex flex-col">
+                          {pastRows.map((r) => (
+                            <RunRow
+                              key={r.rid}
+                              href={runHref(r.rid)}
+                              index={r.index}
+                              record={r.record}
+                              current={r.rid === runId}
+                              latest={false}
+                            />
+                          ))}
+                        </ol>
+                      </details>
+                    </li>
+                  )}
+                </ol>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No runs yet. Move the task to In progress to start one.
+                </p>
+              )}
+            </Section>
+
+            <Section title="Details">
+              <Facts>
+                <Fact label="Blocked by">
+                  <IssueBlockedByField project={project} issueKey={issue.key} blockedBy={issue.blocked_by} />
+                </Fact>
+                <Fact label="Created">
+                  <LocalTime iso={issue.created_at} format="date-time" />
+                </Fact>
+                <Fact label="Updated">
+                  <LocalTime iso={issue.updated_at} format="date-time" />
+                </Fact>
+              </Facts>
+            </Section>
+
+            {run?.ok && run.value.sections}
+          </div>
+        )}
+      </ResizablePane>
     </div>
   );
 }
