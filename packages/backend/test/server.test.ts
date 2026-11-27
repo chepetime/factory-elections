@@ -173,6 +173,11 @@ test('server runs the workflow, retains Effect spans, logs and costs, and enforc
   const task = JSON.parse((await backendCall('GetTask', { project: 'demo', id })).json);
   assert.equal(task.stage, 'awaiting-approval');
   assert.equal(task.attempts.length, 4);
+  // check is a schedulable command: it reaches the task's own rules (not the scheduler's refusal).
+  await assert.rejects(
+    backendCall('StartRun', { project: 'demo', id, action: 'check' }),
+    (error: Error) => !/can be scheduled/.test(error.message),
+  );
   // The run's session log survives the run: the coder's message, tool call and result, in order.
   const session = JSON.parse((await backendCall('GetRunSession', { project: 'demo', id })).json);
   assert.equal(session.live, false);

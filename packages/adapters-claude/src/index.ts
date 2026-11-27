@@ -21,7 +21,6 @@ import {
   envNames,
   SANDBOX_ALLOWED_DOMAINS,
   sandboxAllowWrite,
-  sandboxDenyRead,
   type LoopJudgement,
   type ModelFailure,
   type ModelResult,
@@ -30,9 +29,11 @@ import {
   type ToolAccess,
 } from '@factory/core';
 import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, claudeMessageEvents, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
+import { baseSandbox } from './sandbox.ts';
 
 export * from './cli.ts';
 export * from './turn.ts';
+export * from './sandbox.ts';
 
 /** The built-in Claude tools each tool access level allows. */
 export const CLAUDE_TOOL_ACCESS: Record<ToolAccess, string[]> = {
@@ -59,17 +60,11 @@ export function sandboxFor(
   extra?: ModelRun['sandbox'],
 ): SandboxSettings | undefined {
   if (!CLAUDE_TOOL_ACCESS[tools].includes('Bash')) return undefined;
-  return {
-    enabled: true,
-    failIfUnavailable: true,
-    autoAllowBashIfSandboxed: false,
-    allowUnsandboxedCommands: false,
-    network: { allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])] },
-    filesystem: {
-      denyRead: sandboxDenyRead(home),
-      allowWrite: sandboxAllowWrite(home, extra?.allow_write ?? []),
-    },
-  };
+  return baseSandbox({
+    home,
+    allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])],
+    allowWrite: sandboxAllowWrite(home, extra?.allow_write ?? []),
+  });
 }
 
 /** What a call was seen to do before it failed: the evidence a retry decision reads. */
@@ -123,6 +118,18 @@ export interface ClaudeRunnerOptions {
   retryDelaysMs?: readonly number[];
   /** How often the stall check looks at the last message time. */
   stallCheckMs?: number;
+  /**
+   * The silence allowed while a tool call is open (a long Bash run, a delegated child task): the
+   * model sends nothing meanwhile. Default 4 x the call's stallMs, capped by its timeoutMs. A hung
+   * tool still stops.
+   */
+  openToolStallMs?: number;
+}
+
+/** A tool call the model started and has not yet seen a result for. */
+export interface OpenTool {
+  name: string;
+  since: number;
 }
 
 const LIMIT_REASONS = ['aborted', 'timeout', 'stalled'] as const;
@@ -209,18 +216,37 @@ export class ClaudeAgentRunner implements ModelRunner {
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (request.timeoutMs) timers.push(setTimeout(() => stop('timeout'), request.timeoutMs));
     let lastMessage = Date.now();
+    const open = new Map<string, OpenTool>();
+    let stalledOn: OpenTool | undefined;
     if (request.stallMs) {
       const every = this.options.stallCheckMs ?? Math.min(30_000, Math.max(10, request.stallMs / 4));
+      const openLimit = Math.min(
+        this.options.openToolStallMs ?? request.stallMs * 4,
+        request.timeoutMs ?? Infinity,
+      );
       timers.push(
         setInterval(() => {
-          if (Date.now() - lastMessage >= request.stallMs!) stop('stalled');
+          const silent = Date.now() - lastMessage;
+          // A tool call that is still open holds the call for longer: the model says nothing while it runs.
+          const longest = [...open.values()].sort((a, b) => a.since - b.since)[0];
+          const limit = longest ? Math.max(request.stallMs!, openLimit) : request.stallMs!;
+          if (silent >= limit) {
+            stalledOn = longest;
+            stop('stalled');
+          }
         }, every),
       );
     }
     try {
-      return await this.call(request, controller, () => (lastMessage = Date.now()));
+      return await this.call(request, controller, () => (lastMessage = Date.now()), open);
     } catch (error) {
-      if (reason) throw new ModelRunError(LIMIT_TEXT[reason], null, reason);
+      if (reason) {
+        const text =
+          reason === 'stalled' && stalledOn
+            ? `${LIMIT_TEXT.stalled}; open tool: ${stalledOn.name} (${Math.max(1, Math.round((Date.now() - stalledOn.since) / 60_000))} min)`
+            : LIMIT_TEXT[reason];
+        throw new ModelRunError(text, null, reason);
+      }
       throw error;
     } finally {
       for (const t of timers) clearTimeout(t);
@@ -232,6 +258,7 @@ export class ClaudeAgentRunner implements ModelRunner {
     request: ModelRun,
     controller: AbortController,
     heard: () => void,
+    open: Map<string, OpenTool>,
   ): Promise<ModelResult> {
     const tools = CLAUDE_TOOL_ACCESS[request.tools];
     // Factory and agent MCP tools are allowed by name or server prefix; the step guard still screens them.
@@ -365,7 +392,18 @@ export class ClaudeAgentRunner implements ModelRunner {
         heard();
         if (message.type === 'assistant') {
           activity.assistantMessages++;
-          for (const block of message.message.content) if (block.type === 'tool_use') activity.toolCalls++;
+          for (const block of message.message.content)
+            if (block.type === 'tool_use') {
+              activity.toolCalls++;
+              if (block.name !== 'StructuredOutput')
+                open.set(block.id, { name: block.name, since: Date.now() });
+            }
+        } else if (message.type === 'user') {
+          // A tool_result closes its call, also for subagents (parent_tool_use_id is set).
+          const content = (message.message as { content?: unknown }).content;
+          if (Array.isArray(content))
+            for (const block of content as { type?: string; tool_use_id?: string }[])
+              if (block?.type === 'tool_result' && block.tool_use_id) open.delete(block.tool_use_id);
         }
         if (request.context && message.type === 'assistant')
           for (const event of claudeMessageEvents(message as unknown as Record<string, unknown>))

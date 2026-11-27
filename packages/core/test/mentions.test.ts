@@ -69,3 +69,13 @@ test('a follow-up that asks to merge or rebase on the base, or to resolve confli
   for (const no of ['Fix the copy on the landing page', 'The main menu is broken', 'Update the README'])
     assert.equal(asksForBaseMerge(no), false, no);
 });
+
+test('agents may not merge, rebase or pull the base; the factory does it', async () => {
+  const { baseSyncCommand, BASE_SYNC_NOTE } = await import('../src/index.ts');
+  assert.equal(baseSyncCommand('git merge origin/main'), 'git merge origin/main');
+  assert.equal(baseSyncCommand('git fetch origin && git rebase origin/main'), 'git rebase origin/main');
+  assert.equal(baseSyncCommand('git pull'), 'git pull');
+  assert.equal(baseSyncCommand('git merge --abort'), undefined, 'leaving a merge is fine');
+  assert.equal(baseSyncCommand('git status; git log --oneline main..HEAD'), undefined);
+  assert.match(BASE_SYNC_NOTE, /Do not run git merge, rebase or pull yourself/);
+});

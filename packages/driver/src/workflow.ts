@@ -15,7 +15,8 @@ import {
   approvalBlockers,
   blockingFindings,
   describeIssues,
-  isForbiddenPath,
+  BUILT_IN_PROTECTED_PATHS,
+  protectedPaths,
   taskTitle,
   taskCommandBlockers,
   readinessDecision,
@@ -54,7 +55,8 @@ import {
   readPrTemplate,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
-import { checkProfile, verifyWorktree } from './verification.ts';
+import { changeGate, checkProfile, verifyWorktree } from './verification.ts';
+import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
 export { readPrTemplate, worktreeGuard } from './support.ts';
@@ -243,6 +245,24 @@ export class Driver {
 
   // ---------- worktree ----------
 
+  /**
+   * Where new work starts: the base as GitHub has it, so PRs merged there are in and commits only
+   * on the local base stay out (they would join the PR and count toward its size). A stacked
+   * ticket starts from its blocker's local branch; without a remote, the local base is used.
+   */
+  private async startPoint(repo: string, base: string, stacked: boolean): Promise<string> {
+    const { git } = this.deps;
+    if (stacked || !git.fetchRefs || !git.remoteBranchExists) return base;
+    try {
+      await git.fetchRefs(repo, [base]);
+    } catch (error) {
+      this.deps.log(
+        `Could not fetch origin/${base}; starting from the local ${base}: ${(error as Error).message}`,
+      );
+    }
+    return (await git.remoteBranchExists(repo, base)) ? `origin/${base}` : base;
+  }
+
   async prepareWorktree(project: string, id: string): Promise<TaskRecord> {
     const { git } = this.deps;
     const task = await this.deps.tasks.read(project, id);
@@ -268,8 +288,9 @@ export class Driver {
     if (await this.deps.definitions.exists(path))
       throw new DriverError(`worktree path already exists: ${path}`);
     if (await git.branchExists(repo, branch)) throw new DriverError(`branch already exists: ${branch}`);
+    const start = await this.startPoint(repo, base, Boolean(task.stack_on));
     try {
-      await git.addWorktree(repo, path, branch, base);
+      await git.addWorktree(repo, path, branch, start);
     } catch (error) {
       await git.removeWorktree(repo, path, branch).catch(() => undefined);
       throw new DriverError((error as Error).message);
@@ -282,7 +303,7 @@ export class Driver {
       { ...task, worktree: { path, branch, base_branch: base } },
       this.deps.now(),
       'worktree',
-      `Created ${branch} from ${base}${baseSha ? ` at ${baseSha.slice(0, 12)}` : ''}`,
+      `Created ${branch} from ${start}${baseSha ? ` at ${baseSha.slice(0, 12)}` : ''}`,
     );
     if (changed.length)
       updated = withEvent(
@@ -399,11 +420,30 @@ export class Driver {
     throw new DriverError(message);
   }
 
-  private checkedWorktree(task: TaskRecord): Promise<{ path: string; branch: string; base: string }> {
+  private checkedWorktree(
+    task: TaskRecord,
+  ): Promise<{ path: string; branch: string; base: string; compare: string }> {
     return checkedWorktree(this.deps, task);
   }
 
   // ---------- verification ----------
+
+  /**
+   * Runs the factory's checks again on the task's current commit, with no agent turn. A pass puts
+   * it at the approval gate; a failure records the output, as after any run. Agent tasks only: a
+   * pipeline task needs its reviewer step after verification.
+   */
+  async check(project: string, id: string): Promise<TaskRecord> {
+    const task = await this.deps.tasks.read(project, id);
+    const blockers = taskCommandBlockers(task, 'check');
+    if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
+    if (task.workflow !== 'agent')
+      throw new DriverError('Checking again is for agent tasks; revise a pipeline task.');
+    const { path } = await this.checkedWorktree(task);
+    if (!(await this.deps.git.isClean(path)))
+      throw new DriverError('the task worktree has uncommitted changes; commit them first');
+    return this.gateAfterFollowUp(project, id);
+  }
 
   /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
   verify(project: string, id: string) {
@@ -432,6 +472,9 @@ export class Driver {
       ...(result.runtime ? { runtime: result.runtime } : {}),
       ...(result.notRunLocally ? { not_run_locally: result.notRunLocally } : {}),
       ...(result.testIntegrity ? { test_integrity: result.testIntegrity } : {}),
+      ...(result.protectedPathsAllowed?.length
+        ? { protected_paths_allowed: result.protectedPathsAllowed }
+        : {}),
     };
     const updated = result.passed
       ? withEvent(
@@ -449,8 +492,8 @@ export class Driver {
 
   // ---------- coding ----------
 
-  private coderGuard(worktree: string, profile: RepoProfile): ToolGuard {
-    return worktreeGuard(worktree, profile);
+  private coderGuard(worktree: string, profile: RepoProfile, task: TaskRecord): ToolGuard {
+    return worktreeGuard(worktree, profile, task.allow_protected_paths === true);
   }
 
   /**
@@ -546,7 +589,7 @@ export class Driver {
             `Then \`${profile.commands.runtime_check}\` starts the app and drives it in a browser: the change must load with no console errors and no failed requests.`,
           ]
         : []),
-      `Do not commit, push, switch branches or edit these paths: ${profile.confirmed.forbidden_paths.join(', ') || '(none)'}.`,
+      `Do not commit, push, switch branches or edit these paths: ${[...new Set([...BUILT_IN_PROTECTED_PATHS, ...profile.confirmed.forbidden_paths])].join(', ')}.`,
     ].join('\n');
 
     const started = this.deps.now();
@@ -554,7 +597,7 @@ export class Driver {
     let error: string | undefined;
     let costUsd: number | null = null;
     let finalText = '';
-    const guard = this.coderGuard(path, profile);
+    const guard = this.coderGuard(path, profile, task);
     // Children share a pool as large as the step's own budget; their cost is added to the attempt.
     const sandbox = {
       allowed_domains: profile.sandbox?.allowed_domains,
@@ -604,7 +647,11 @@ export class Driver {
     let commitMessage: string | undefined;
     if (outcome === 'completed') {
       const changed = await this.deps.git.stageAll(path);
-      const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+      const forbidden = protectedPaths(
+        changed,
+        profile.confirmed.forbidden_paths,
+        task.allow_protected_paths === true,
+      );
       if (forbidden.length) {
         await this.deps.git.unstageAll(path);
         outcome = 'failed';
@@ -701,14 +748,49 @@ export class Driver {
       this.deps.log(`Merging ${base} into ${branch}…`);
       const merge = await git.mergeRef(path, `origin/${base}`);
       if (merge.clean) {
-        // Nothing for an agent: the merged commit goes through verification to the gate.
+        // Nothing for an agent: the merge adds only the base's own reviewed commits. When the checks
+        // pass, the factory approves and pushes it to the same PR; a failed check stops as usual.
         this.deps.log('The merge applied without conflicts. Verifying…');
-        return this.gateAfterFollowUp(project, id);
+        const gated = await this.gateAfterFollowUp(project, id);
+        if (gated.stage !== 'awaiting-approval' || !gated.verification?.passed) return gated;
+        await this.approve(project, id, {
+          head: gated.verification.head_sha,
+          note: `Approved by the factory: only origin/${base} was merged in, with no conflicts, and the checks passed.`,
+        });
+        return openPr(this.deps, project, id, {});
       }
       note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
     }
     const done = await this.agentRun(project, id, note);
     return followUpPushesItself(input.kind) ? this.pushReviewFix(project, id, done) : done;
+  }
+
+  /**
+   * Merges `origin/<base>` into the task branch when the branch is behind it: a clean merge is
+   * committed, a conflicted one is left for the agent with its files. Skipped when the worktree has
+   * uncommitted work or a merge in progress, or the git port cannot fetch and merge.
+   */
+  private async syncBase(task: TaskRecord): Promise<{ merged: boolean; conflicted: string[] }> {
+    const { git } = this.deps;
+    const none = { merged: false, conflicted: [] };
+    if (!git.fetchRefs || !git.mergeRef || !task.worktree) return none;
+    const { path, base, branch } = await this.checkedWorktree(task);
+    if (!(await git.isClean(path)) || (await git.mergeInProgress?.(path))) return none;
+    try {
+      await git.fetchRefs(path, [base]);
+    } catch (error) {
+      this.deps.log(`Could not fetch origin/${base}; the branch is not synced: ${(error as Error).message}`);
+      return none;
+    }
+    const before = await git.headSha(path);
+    const merge = await git.mergeRef(path, `origin/${base}`);
+    if (!merge.clean) {
+      this.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
+      return { merged: true, conflicted: merge.conflicted };
+    }
+    const merged = (await git.headSha(path)) !== before;
+    if (merged) this.deps.log(`Merged origin/${base} into ${branch} before the turn.`);
+    return { merged, conflicted: [] };
   }
 
   /**
@@ -738,15 +820,31 @@ export class Driver {
    * driver commits and verifies. A reply resumes the same session. There is no reviewer step: the
    * person reviews the change before approving it, and only a person opens the pull request.
    */
-  async agentRun(project: string, id: string, reply?: string): Promise<TaskRecord> {
+  async agentRun(
+    project: string,
+    id: string,
+    reply?: string,
+    /** Fix turns still left in this run; below AGENT_FIX_TURNS, `reply` is Factory's own fix message. */
+    fixTurns = AGENT_FIX_TURNS,
+  ): Promise<TaskRecord> {
     if (!this.deps.agentSession) throw new DriverError('Agent runs are not available here.');
+    const fromFactory = fixTurns < AGENT_FIX_TURNS;
     try {
       await this.preflight(project, id);
       let task = await this.deps.tasks.read(project, id);
       task = task.worktree ? await this.setupWorktree(project, id) : await this.prepareWorktree(project, id);
       const profile = await this.deps.readProfile(project);
-      const { path, branch } = await this.checkedWorktree(task);
-      const session = await this.deps.agentSession(task, reply);
+      const { path, branch, compare } = await this.checkedWorktree(task);
+      // The factory, not the agent, brings the base in: outside the sandbox, before the turn.
+      const synced = await this.syncBase(task);
+      if (synced.conflicted.length)
+        reply = [
+          `The factory merged the base branch into this branch before your turn and stopped on conflicts in:`,
+          ...synced.conflicted.map((f) => `- ${f}`),
+          'Resolve every conflict first so both changes keep working, and remove all conflict markers. Then continue:',
+          reply ?? 'Continue the task.',
+        ].join('\n');
+      const session = await this.deps.agentSession(task, reply, fromFactory ? 'factory' : undefined);
       const spent = workSpend(task);
       const left = session.budgetUsd - spent;
       if (left <= 0) {
@@ -759,7 +857,11 @@ export class Driver {
         task,
         this.deps.now(),
         'coding',
-        reply ? `${session.name} read your reply` : `${session.name} started`,
+        fromFactory
+          ? `${session.name} works on the verification failure`
+          : reply
+            ? `${session.name} read your reply`
+            : `${session.name} started`,
       );
       await this.deps.tasks.write(task);
 
@@ -767,7 +869,7 @@ export class Driver {
         allowed_domains: profile.sandbox?.allowed_domains,
         allow_write: profile.sandbox?.allow_write,
       };
-      const guard = this.coderGuard(path, profile);
+      const guard = this.coderGuard(path, profile, task);
       const access = await this.coderAccess(project, id, task.repo, profile);
       const limits = {
         signal: this.deps.signal,
@@ -783,7 +885,13 @@ export class Driver {
         budgetUsd: Math.min(left, DEFAULT_STEP_LIMITS.budget_usd),
         guard,
         runner: this.deps.runner,
-        tools: session.tools,
+        tools: [
+          ...session.tools,
+          changeCheckTool(async () => {
+            const current = await this.deps.tasks.read(project, id);
+            return changeGate(this.deps, path, compare, current.allow_test_changes === true);
+          }),
+        ],
         ...(limits.signal ? { signal: limits.signal } : {}),
       });
       const passEnv = [...(profile.sandbox?.pass_env ?? []), ...session.passEnv];
@@ -844,7 +952,11 @@ export class Driver {
       const merging = (await this.deps.git.mergeInProgress?.(path)) ?? false;
       if (outcome === 'completed') {
         const changed = await this.deps.git.stageAll(path);
-        const forbidden = changed.filter((file) => isForbiddenPath(file, profile.confirmed.forbidden_paths));
+        const forbidden = protectedPaths(
+          changed,
+          profile.confirmed.forbidden_paths,
+          task.allow_protected_paths === true,
+        );
         const marked = merging ? await conflictMarkers(path, changed) : [];
         if (forbidden.length) {
           await this.deps.git.unstageAll(path);
@@ -916,7 +1028,24 @@ export class Driver {
       await this.deps.tasks.write(task);
       this.deps.log('Verifying…');
       const checked = await this.verifyAndRecord(project, id);
-      if (!checked.verification?.passed) return checked;
+      if (!checked.verification?.passed) {
+        // An agent can fix most failures itself: it gets the failure in the same session.
+        const steer =
+          fixTurns > 0
+            ? verificationSteer(checked.verification?.output_tail ?? '', profile.environment_errors)
+            : undefined;
+        if (!steer) return checked;
+        const turn = AGENT_FIX_TURNS - fixTurns + 1;
+        await this.deps.tasks.write(
+          withEvent(
+            checked,
+            this.deps.now(),
+            'verification',
+            `Verification failed; ${session.name} gets fix turn ${turn} of ${AGENT_FIX_TURNS}.`,
+          ),
+        );
+        return await this.agentRun(project, id, steer, fixTurns - 1);
+      }
       // The PR text is written now, so you read it at the gate; a failure leaves the template fallback.
       const verified = await this.draftPrQuietly(project, id, { agentReport: report });
       const ready = withStage(
@@ -976,7 +1105,7 @@ export class Driver {
 
   async review(project: string, id: string): Promise<TaskRecord> {
     let task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, base, compare } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
     if (!task.verification?.passed || task.verification.head_sha !== head)
       throw new DriverError('verification has not passed for the current commit');
@@ -988,7 +1117,7 @@ export class Driver {
     const limits = await this.callLimits(task, step);
     const ladder: ModelLadder = await this.deps.definitions.readLadder(this.deps.steps.reviewer.ladder);
     const rung = ladder.rungs[0]!;
-    let diff = await this.deps.git.diffSince(path, base);
+    let diff = await this.deps.git.diffSince(path, compare);
     if (diff.length > MAX_DIFF_CHARS)
       diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n… diff truncated; read the changed files directly …`;
     task = withStage(task, this.deps.now(), 'reviewing', `Reviewer on ${rung.name}`);
@@ -1018,7 +1147,7 @@ export class Driver {
           '</diff>',
           'Respond only with the JSON review.',
         ].join('\n'),
-        guard: this.coderGuard(path, await this.deps.readProfile(project)),
+        guard: this.coderGuard(path, await this.deps.readProfile(project), task),
         outputSchema: REVIEW_OUTPUT_SCHEMA as unknown as Record<string, unknown>,
         maxTurns: 60,
       });
@@ -1102,7 +1231,7 @@ export class Driver {
     const paths = this.deps.steps.prWriter;
     if (!paths) throw new DriverError('no pr-writer step is configured');
     let task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, base, compare } = await this.checkedWorktree(task);
     const head = await this.deps.git.headSha(path);
     // An agent run has no reviewer step; its verified commit and report are the inputs instead.
     if (task.workflow !== 'agent' && (!task.review || task.review.head_sha !== head))
@@ -1114,7 +1243,7 @@ export class Driver {
     const limits = await this.callLimits(task, step);
     if ((await this.budgetLeft(task)) <= 0) throw new DriverError('the task budget is spent');
     const rung = (await this.deps.definitions.readLadder(paths.ladder)).rungs[0]!;
-    let diff = await this.deps.git.diffSince(path, base);
+    let diff = await this.deps.git.diffSince(path, compare);
     if (diff.length > MAX_PR_DIFF_CHARS)
       diff = `${diff.slice(0, MAX_PR_DIFF_CHARS)}\n… diff truncated; read the changed files directly …`;
     const prompt = task.prompt.trim();
@@ -1167,14 +1296,14 @@ export class Driver {
               ]
             : []),
           `<diff-stat base="${base}">`,
-          await this.deps.git.diffSince(path, base, true),
+          await this.deps.git.diffSince(path, compare, true),
           '</diff-stat>',
           `<diff base="${base}">`,
           diff,
           '</diff>',
           'Respond only with the JSON object.',
         ].join('\n'),
-        guard: this.coderGuard(path, await this.deps.readProfile(project)),
+        guard: this.coderGuard(path, await this.deps.readProfile(project), task),
         outputSchema: PR_DRAFT_SCHEMA as unknown as Record<string, unknown>,
         maxTurns: 30,
       });
@@ -1287,20 +1416,20 @@ export class Driver {
     id: string,
   ): Promise<{ task: TaskRecord; headSha: string; diffStat: string; blockers: string[] }> {
     const task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
+    const { path, compare } = await this.checkedWorktree(task);
     const headSha = await this.deps.git.headSha(path);
     return {
       task,
       headSha,
-      diffStat: await this.deps.git.diffSince(path, base, true),
+      diffStat: await this.deps.git.diffSince(path, compare, true),
       blockers: approvalBlockers(task, headSha),
     };
   }
 
   async diff(project: string, id: string): Promise<string> {
     const task = await this.deps.tasks.read(project, id);
-    const { path, base } = await this.checkedWorktree(task);
-    return this.deps.git.diffSince(path, base);
+    const { path, compare } = await this.checkedWorktree(task);
+    return this.deps.git.diffSince(path, compare);
   }
 
   async approve(

@@ -8,6 +8,7 @@ import {
   parseModelRef,
   type AgentProfile,
   type TaskRecord,
+  BASE_SYNC_NOTE,
 } from '@factory/core';
 import type { AgentSession } from '@factory/driver';
 import { taskTools, type SessionReport } from './agent-tools.ts';
@@ -85,6 +86,8 @@ function taskText(issue: IssueView): string {
 export async function buildAgentSession(input: {
   task: TaskRecord;
   reply?: string;
+  /** `factory`: the reply is Factory's own message (a fix turn), not a person's comment. */
+  from?: 'factory';
   agent: AgentProfile;
   issues: Pick<AgentBoard, 'get' | 'comment' | 'setStatus'>;
   profile: { test: string; full_check: string; forbidden_paths: readonly string[] };
@@ -104,12 +107,13 @@ export async function buildAgentSession(input: {
     `You are ${agent.name}. ${agent.description}`.trim(),
     `The checks: \`${profile.test}\`, then \`${profile.full_check}\`. Factory runs them again after you stop.`,
     `Do not edit these paths: ${profile.forbidden_paths.join(', ') || '(none)'}.`,
+    BASE_SYNC_NOTE,
     ...(notes ? [`## Notes from your team\n\n${notes}`] : []),
     ...(skills ? [skills] : []),
   ].join('\n\n');
   const unseen = newComments(issue, task);
   const prompt = reply
-    ? `The person replied on ${issue.key}:\n\n${reply}`
+    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}`
     : task.agent_session && unseen.length
       ? `New comments on ${issue.key} since your last turn:\n\n${unseen.map((c) => `- ${c}`).join('\n')}`
       : task.agent_session

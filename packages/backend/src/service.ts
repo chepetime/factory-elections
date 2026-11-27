@@ -26,6 +26,7 @@ import {
   recoveryBlocker,
   prBody,
   conflictFollowUpNote,
+  BUILT_IN_PROTECTED_PATHS,
   recoveryInboxItems,
   type RecoveryProblem,
   type RecoveryReport,
@@ -522,18 +523,21 @@ export class BackendService {
     return composeDriver(this.root, log, runner, signal, this.delegation, {
       repositoryFacts: (project) => this.memory.prompt(project),
       contextLimits: async (project) => (await this.settings.get(project)).context_tokens,
-      agentSession: async (task, reply) => {
+      agentSession: async (task, reply, from) => {
         if (!task.agent) throw new Conflict('This run has no agent.');
         const profile = await readProfile(this.root, task.project);
         return buildAgentSession({
           task,
           ...(reply ? { reply } : {}),
+          ...(from ? { from } : {}),
           agent: await this.agents.active(task.agent),
           issues: this.issues,
           profile: {
             test: profile.commands.test,
             full_check: profile.commands.full_check,
-            forbidden_paths: profile.confirmed.forbidden_paths,
+            forbidden_paths: [
+              ...new Set([...BUILT_IN_PROTECTED_PATHS, ...profile.confirmed.forbidden_paths]),
+            ],
           },
           allowedEnv: process.env.FACTORY_AGENT_ENV_ALLOW,
         });
@@ -731,8 +735,8 @@ export class BackendService {
   }
   async start(raw: Command): Promise<RunRecord> {
     const command = this.command(raw);
-    if (!['run', 'revise', 'follow-up'].includes(command.action))
-      throw new Error('Only run, revise and follow-up can be scheduled');
+    if (!['run', 'revise', 'follow-up', 'check'].includes(command.action))
+      throw new Error('Only run, revise, follow-up and check can be scheduled');
     if (command.action === 'follow-up' && !command.agent)
       throw new Conflict('Name the agent for the follow-up.');
     const unknown = recoveryBlocker(this.recovery, command.project, command.id);

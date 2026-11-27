@@ -36,6 +36,8 @@ export interface GitPort {
   unstageAll(dir: string): Promise<void>;
   commit(dir: string, message: string): Promise<string>;
   addedOrModifiedSince(dir: string, base: string): Promise<string[]>;
+  /** Every path the branch touches since `base`: both paths of a rename or copy, and deletions. */
+  changedPathsSince(dir: string, base: string): Promise<string[]>;
   diffSince(dir: string, base: string, stat?: boolean): Promise<string>;
   diffLineCounts(
     dir: string,
@@ -43,7 +45,10 @@ export interface GitPort {
   ): Promise<{ path: string; added: number | null; deleted: number | null }[]>;
   commitCountSince(dir: string, base: string): Promise<number>;
   remoteUrl(dir: string): Promise<string | undefined>;
-  push(dir: string, branch: string): Promise<void>;
+  /** Pushes commit `sha` to `refs/heads/<branch>` on origin, not the branch's current tip. Never forced. */
+  push(dir: string, sha: string, branch: string): Promise<void>;
+  /** The commit origin's `refs/heads/<branch>` points at, read from origin; undefined when absent. */
+  remoteHead(dir: string, branch: string): Promise<string | undefined>;
   /** Whether origin has this branch (after the last fetch or push). */
   remoteBranchExists?(repo: string, branch: string): Promise<boolean>;
   /** Ignores a pattern in this repository only, without a committed .gitignore change. */
@@ -168,8 +173,11 @@ export interface DriverDeps {
   repositoryFacts?(project: string): Promise<string | undefined>;
   /** The project's context size limits; absent: the default. */
   contextLimits?(project: string): Promise<ContextLimits | undefined>;
-  /** Builds an agent run's session; `reply` is the person's comment that resumes it. Absent: no agent runs. */
-  agentSession?(task: TaskRecord, reply?: string): Promise<AgentSession>;
+  /**
+   * Builds an agent run's session; `reply` is the person's comment that resumes it, or Factory's
+   * own message when `from` is `factory` (a fix turn after failed verification). Absent: no agent runs.
+   */
+  agentSession?(task: TaskRecord, reply?: string, from?: 'factory'): Promise<AgentSession>;
 }
 
 export class DriverError extends Error {}

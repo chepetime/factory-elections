@@ -41,8 +41,14 @@ import {
   moveIssueRun,
   updateIssueRun,
 } from '@/lib/issues';
-import { HOME_BACKGROUNDS, IssueStatus, type HomeBackground } from '@factory/core';
-import { saveUserSettingsRun, userSettings, type UserSettings } from '@/lib/user-settings';
+import { HOME_BACKGROUNDS, IssueStatus, USER_PROVIDERS, type HomeBackground } from '@factory/core';
+import {
+  saveUserSettingsRun,
+  testProviderRun,
+  userSettings,
+  type ProviderCheck,
+  type UserSettings,
+} from '@/lib/user-settings';
 
 export interface ActionState {
   error?: string;
@@ -117,6 +123,15 @@ export async function runTask(_prev: ActionState, form: FormData): Promise<Actio
   const started = await startTask({ ...t, action: 'run' });
   refresh(t.project, t.id);
   return started.ok ? { message: 'Started.' } : { error: started.error };
+}
+
+/** The factory's checks again on the current commit, with no agent turn. */
+export async function checkTask(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const t = target(form);
+  if ('error' in t) return t;
+  const started = await startTask({ ...t, action: 'check' });
+  refresh(t.project, t.id);
+  return started.ok ? { message: 'Checking again…' } : { error: started.error };
 }
 
 export async function reviseTask(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -548,6 +563,15 @@ export async function saveHomeBackground(background: HomeBackground): Promise<Ac
   });
   revalidatePath('/', 'layout');
   return saved.ok ? { message: 'Saved' } : { error: saved.error };
+}
+
+/** Runs the "responds" check for one provider: one tiny model call, only when the Test button asks. */
+export async function testProvider(
+  provider: string,
+): Promise<{ check: ProviderCheck; error?: undefined } | { error: string; check?: undefined }> {
+  if (!(USER_PROVIDERS as readonly string[]).includes(provider)) return { error: 'Unknown provider.' };
+  const result = await testProviderRun(provider);
+  return result.ok ? { check: result.value } : { error: result.error };
 }
 
 /** Saves one section of the user settings and keeps the rest as stored. */

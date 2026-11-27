@@ -28,7 +28,7 @@ test('a free agent starts its Todo tasks, waits while busy, and notes a failed s
     tasks: { list: async () => tasks },
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async ({ prompt, agent }) => {
       if (refuse) throw new Conflict(refuse);
@@ -134,7 +134,7 @@ test('the coordinator assigns unassigned Todo tasks, once, and the chosen agent 
     tasks: { list: async () => tasks },
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async ({ prompt, agent }) => {
       const run = TaskRecord.parse({

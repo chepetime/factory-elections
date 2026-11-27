@@ -39,7 +39,7 @@ async function setup(
     tasks: { list: async () => tasks },
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
       ...settings,
     }),
     submit: async ({ prompt, jiraKey }) => {
@@ -392,7 +392,7 @@ test('a task view says whether a live run holds its latest run', async (t) => {
     owned: (_project, id) => id === live.id,
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async () => '',
     run: async () => undefined,
@@ -422,7 +422,7 @@ test('an interrupted run at coding can be archived and deleted; a live run canno
     owned: (_project, id) => id === live.id,
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async () => '',
     run: async () => undefined,

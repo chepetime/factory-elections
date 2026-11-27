@@ -20,9 +20,11 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 1. Set the task's **Agent** on the task page, or use **Assign work** on the agent's page.
 2. Put the task in **Todo**. The agent starts it when it has a free slot (see Pickup below). You can also move the task to **In progress** to start it now. The run is a factory run with `workflow: agent`. The driver's `agentRun` in `packages/driver/src/workflow.ts` runs it:
    - It prepares the worktree, with no classifier step.
+   - New work starts from `origin/<base>` after a fetch, not the local base: PRs merged on GitHub are in, and unpushed local commits stay out. Push the base first if a task needs a local fix. A stacked ticket starts from its blocker's branch; a repository with no remote starts from the local base.
    - It runs one model session with `tools: edit`, the coder guard (`worktreeGuard`), the OS sandbox and the agent's budget. The session persists, so later turns resume it.
    - It commits what the agent left, then runs the profile's checks (verify).
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
+   - **Fix turns.** When verification fails for a reason the agent can fix (size limit, weakened tests, late edits, failing checks), the same session gets the failure and an instruction for it, up to two times (`AGENT_FIX_TURNS` in `packages/driver/src/agent-fixes.ts`). An environment fault gets no fix turn. After the last fix turn, the task stays `verification-failed` for you.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
 
 **Pickup.** `AgentPickup` (`packages/agents/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
@@ -42,6 +44,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 - `comment`: posts on the task as the agent.
 - `set_status`: sets the task to `in_progress`, `in_review` or `blocked`. Done and cancelled stay with you.
+- `check_change`: runs Factory's change gates (at most 400 non-test lines, no weakened tests) on the committed change, the same way verification runs them.
 - `delegate`: starts a child task, as for the coder.
 
 ## Follow-ups

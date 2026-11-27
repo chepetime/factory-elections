@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { InboxNotifier } from '@/components/inbox-notifier';
+import { Toaster } from '@/components/ui/toast';
 import { UserPreferencesProvider } from '@/components/user-preferences';
 import { DEFAULT_PREFERENCES } from '@/lib/user-preferences';
 import { userSettings } from '@/lib/user-settings';
@@ -41,6 +42,7 @@ export default async function RootLayout({ children, modal }: { children: ReactN
       <body className="font-sans text-foreground antialiased">
         <UserPreferencesProvider value={prefs}>
           <InboxNotifier />
+          <Toaster />
           <AppShell>
             {children}
             {modal}

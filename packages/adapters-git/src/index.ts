@@ -5,12 +5,17 @@ import { run } from '@factory/adapters-process';
 
 export class GitError extends Error {}
 
+/**
+ * Factory git calls run on the host, with its credentials, in worktrees whose contents an agent
+ * wrote. A hook in the worktree (`.husky/pre-push`, `.githooks/*`) would run there too, so every
+ * call that can fire a hook (commit, merge, push, checkout) points hooksPath at nothing.
+ */
+export const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+
+const gitEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' });
+
 async function git(cwd: string, args: string[], input?: string): Promise<string> {
-  const result = await run('git', args, {
-    cwd,
-    input,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-  });
+  const result = await run('git', [...NO_HOOKS, ...args], { cwd, input, env: gitEnv() });
   if (result.code !== 0)
     throw new GitError(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}`);
   return result.stdout;
@@ -38,7 +43,7 @@ export async function exclusive<T>(dir: string, action: () => Promise<T>): Promi
 }
 
 async function gitOk(cwd: string, args: string[]): Promise<boolean> {
-  return (await run('git', args, { cwd })).code === 0;
+  return (await run('git', [...NO_HOOKS, ...args], { cwd })).code === 0;
 }
 
 export async function topLevel(dir: string): Promise<string | undefined> {
@@ -104,7 +109,8 @@ export async function commitOf(repo: string, ref: string | undefined): Promise<s
 }
 
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
-  await exclusive(repo, () => git(repo, ['worktree', 'add', '-b', branch, path, base]));
+  // No tracking: a branch started from origin/main must not pull main or push to it by default.
+  await exclusive(repo, () => git(repo, ['worktree', 'add', '--no-track', '-b', branch, path, base]));
 }
 
 export async function removeWorktree(repo: string, path: string, branch: string): Promise<void> {
@@ -135,6 +141,27 @@ export async function addedOrModifiedSince(dir: string, base: string): Promise<s
   return (await git(dir, ['diff', '--name-only', '--diff-filter=d', '-z', `${base}...HEAD`]))
     .split('\0')
     .filter(Boolean);
+}
+
+/**
+ * Every path the branch touches since it left `base`: added, modified and deleted paths, and both
+ * the old and the new path of a rename or copy (`git diff --name-only` shows only the new one, so a
+ * file moved out of a protected folder would look like a new file elsewhere).
+ */
+export async function changedPathsSince(dir: string, base: string): Promise<string[]> {
+  const fields = (await git(dir, ['diff', '--name-status', '-M', '-z', `${base}...HEAD`])).split('\0');
+  const paths: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const status = fields[i];
+    if (!status) continue;
+    // Renames and copies (R100, C75) list two paths; every other status lists one.
+    const count = status.startsWith('R') || status.startsWith('C') ? 2 : 1;
+    for (let n = 0; n < count; n++) {
+      const path = fields[++i];
+      if (path) paths.push(path);
+    }
+  }
+  return [...new Set(paths)];
 }
 
 /** Added and deleted lines per path, retaining rename destinations and binary markers. */
@@ -177,8 +204,28 @@ export async function remoteUrl(dir: string, remote = 'origin'): Promise<string 
   return result.code === 0 ? result.stdout.trim() : undefined;
 }
 
-export async function push(dir: string, branch: string, remote = 'origin'): Promise<void> {
-  await exclusive(dir, () => git(dir, ['push', '--set-upstream', remote, `${branch}:${branch}`]));
+/**
+ * Pushes the commit `sha` to `refs/heads/<branch>` on the remote, never the branch as it is at push
+ * time, so a commit made after the caller's check is not sent. No `--force`: a non-fast-forward
+ * rejection fails. A SHA source sets no upstream, so tracking is set in a separate step.
+ */
+export async function push(dir: string, sha: string, branch: string, remote = 'origin'): Promise<void> {
+  await exclusive(dir, async () => {
+    await git(dir, ['push', remote, `${sha}:refs/heads/${branch}`]);
+    await git(dir, ['config', `branch.${branch}.remote`, remote]);
+    await git(dir, ['config', `branch.${branch}.merge`, `refs/heads/${branch}`]);
+  });
+}
+
+/** The commit the remote's `refs/heads/<branch>` points at, read from the remote itself; undefined when absent. */
+export async function remoteHead(
+  dir: string,
+  branch: string,
+  remote = 'origin',
+): Promise<string | undefined> {
+  const out = await git(dir, ['ls-remote', remote, `refs/heads/${branch}`]);
+  const line = out.split('\n').find((l) => l.endsWith(`\trefs/heads/${branch}`));
+  return line?.split('\t')[0]?.trim() || undefined;
 }
 
 /** `git fetch --all --prune`, retrying once after packing refs when a stale ref lock blocks it. */
@@ -244,10 +291,11 @@ export async function fastForwardTo(dir: string, ref: string): Promise<boolean> 
  * on conflicts and stays in progress, with the conflicted paths listed. Any other failure throws.
  */
 export async function mergeRef(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }> {
-  const result = await run('git', ['-c', 'user.useConfigOnly=false', 'merge', '--no-edit', '-q', ref], {
-    cwd: dir,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-  });
+  const result = await run(
+    'git',
+    [...NO_HOOKS, '-c', 'user.useConfigOnly=false', 'merge', '--no-edit', '-q', ref],
+    { cwd: dir, env: gitEnv() },
+  );
   if (result.code === 0) return { clean: true, conflicted: [] };
   const conflicted = (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
   if (!conflicted.length) {

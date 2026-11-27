@@ -4,7 +4,7 @@ import { STAGES, TaskRecord, type Stage } from './schemas.ts';
 import { approvalBlockers, blockingFindings, openPrBlockers } from './domain.ts';
 import { cleanupBlocker, type CleanupRecord } from './execution.ts';
 
-export const TaskCommand = z.enum(['run', 'revise', 'approve', 'reject', 'open-pr', 'follow-up']);
+export const TaskCommand = z.enum(['run', 'revise', 'approve', 'reject', 'open-pr', 'follow-up', 'check']);
 export type TaskCommand = z.infer<typeof TaskCommand>;
 export const ExecutionPhase = z.enum([
   'idle',
@@ -56,6 +56,9 @@ const COMMAND_STAGES: Record<TaskCommand, readonly Stage[]> = {
   'open-pr': ['approved'],
   // A follow-up continues a finished run on its own branch and PR (see follow-ups.ts).
   'follow-up': ['pr-opened'],
+  // The factory's checks again on the current commit, with no agent turn: after a fix made outside
+  // the run, a flaky test, or when the agent's budget is spent but its work is done.
+  check: ['verification-failed', 'blocked', 'failed'],
 };
 /** Whether a task in `stage` accepts `command`, before the worktree, lock and PR checks. */
 export function commandAllowedIn(command: TaskCommand, stage: Stage): boolean {
@@ -68,6 +71,7 @@ const COMMAND_RESULT: Record<TaskCommand, string> = {
   reject: 'rejected',
   'open-pr': 'opened as a pull request',
   'follow-up': 'followed up',
+  check: 'checked again',
 };
 
 /** Structural guards shared by the offline driver, scheduler and action discovery. */
