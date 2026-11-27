@@ -9,6 +9,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ProjectStore } from '@factory/adapters-fs';
+import { runShell } from '@factory/adapters-process';
 import { TaskControls, type ModelRunner } from '@factory/core';
 import { backendCall, closeBackendClient } from '@factory/backend-client';
 import { Evidence } from '@factory/evidence';
@@ -46,6 +47,14 @@ qa_targets: []
     runner,
     environment: async () => [{ name: 'Node.js >= 26', ok: true, detail: 'scripted' }],
   });
+  // Checks run in a macOS-only OS sandbox and refuse to run without one (CI is Linux). These tests
+  // cover the workflow, not the sandbox (adapters-process tests that), so they run checks unsandboxed.
+  const driver = server.service.driver.bind(server.service);
+  server.service.driver = (...args) => {
+    const d = driver(...args);
+    d.deps.shell = { runShell: (command, options) => runShell(command, { ...options, sandbox: undefined }) };
+    return d;
+  };
   const original = {
     address: process.env.FACTORY_BACKEND_ADDRESS,
     token: process.env.FACTORY_BACKEND_TOKEN,
