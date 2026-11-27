@@ -34,7 +34,10 @@ export type BoardIssue = {
   status: IssueStatus;
   jira_key?: string;
   updated_at: string;
-  /** `waiting`: a new turn is queued until its agent is free. `owned`: a live run holds the task. */
+  /**
+   * `waiting`: a new turn is queued until its agent is free. `owned`: a live run holds the task.
+   * `reason`: why a blocked or failed run waits for a person.
+   */
   run?: {
     id: string;
     stage: Stage;
@@ -42,6 +45,7 @@ export type BoardIssue = {
     waiting?: boolean;
     waiting_for?: QueueWait;
     owned?: boolean;
+    reason?: string;
   };
   /** The agent that works it, when one is assigned. */
   agent?: { name: string; avatar: string };
@@ -405,6 +409,12 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                     </Link>
                     {preview(issue) && (
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{preview(issue)}</p>
+                    )}
+                    {/* A queued turn makes the old reason stale. */}
+                    {issue.run?.reason && !issue.run.waiting && (
+                      <p title={issue.run.reason} className="mt-1.5 truncate text-xs text-muted-foreground">
+                        {issue.run.reason}
+                      </p>
                     )}
                     <div className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
                       {issue.run ? (
