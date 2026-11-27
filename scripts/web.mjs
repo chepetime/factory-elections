@@ -2,6 +2,7 @@
 // Starts Next.js and the persistent local backend. Existing authenticated backends can be reused.
 import './load-env.ts';
 import { spawn, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backendCall, closeBackendClient } from '../packages/backend-client/src/client.ts';
@@ -11,11 +12,13 @@ const web = join(root, 'apps', 'web');
 const dev = process.argv.includes('--dev');
 process.env.FACTORY_BACKEND_ADDRESS ??= `127.0.0.1:${process.env.FACTORY_BACKEND_PORT ?? 4319}`;
 const env = { ...process.env };
-if (!dev) {
-  console.log('Building the web app…');
-  const build = spawnSync('pnpm', ['run', 'build'], { cwd: web, env, stdio: 'inherit' });
-  if (build.status !== 0) process.exit(build.status ?? 1);
-}
+// One-off builds go through pnpm; the long-running server does not (see below). Dev needs the
+// affect-ui build that apps/web's `dev` script would have run.
+const build = dev
+  ? spawnSync('pnpm', ['--filter', '@factory/affect-ui', 'build'], { cwd: root, env, stdio: 'inherit' })
+  : (console.log('Building the web app…'),
+    spawnSync('pnpm', ['run', 'build'], { cwd: web, env, stdio: 'inherit' }));
+if (build.status !== 0) process.exit(build.status ?? 1);
 let backend;
 const reachable = async () => {
   try {
@@ -52,9 +55,12 @@ if (!(await reachable())) {
   throw new Error('Backend port is already occupied; choose another worktree backend port.');
 } else console.log('Using the running local backend.');
 closeBackendClient();
-// Its own process group: pnpm does not pass SIGTERM on to next, so stopping only pnpm would leave
-// next-server holding the port. stop() signals the whole group instead.
-const app = spawn('pnpm', ['run', dev ? 'dev' : 'start'], {
+// Next runs directly, not through `pnpm run`: no resident pnpm process, no update check, and signals
+// and exit codes come straight from Next. Keep these arguments in step with apps/web's scripts.
+// Its own process group: `next dev` forks next-server, so stop() signals the whole group.
+const nextBin = createRequire(join(web, 'package.json')).resolve('next/dist/bin/next');
+const nextArgs = dev ? ['dev', '--webpack', '--hostname', 'localhost'] : ['start', '--hostname', 'localhost'];
+const app = spawn(process.execPath, [nextBin, ...nextArgs], {
   cwd: web,
   env,
   stdio: 'inherit',
