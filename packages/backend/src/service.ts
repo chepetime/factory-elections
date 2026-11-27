@@ -23,6 +23,7 @@ import {
   settleEndedPr,
   BUILT_IN_PROTECTED_PATHS,
   type RecoveryReport,
+  type ForeignLocks,
 } from '@factory/core';
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
@@ -108,6 +109,9 @@ export class BackendService {
   /** Executes accepted runs and holds what is live about each one. */
   // Not private: service-recovery.ts uses it too.
   readonly executor: RunExecutor;
+  /** Git locks outside a task that its last resumed run found; they wait for a person. In memory. */
+  // Not private: service-inbox.ts uses it too.
+  readonly foreignLocks = new Map<string, ForeignLocks>();
   readonly root: string;
   private readonly runner?: ModelRunner;
   /** The `delegate` MCP server. Children take agent slots like any other agent. */
@@ -289,6 +293,13 @@ export class BackendService {
       stopRequested: (runId) => this.dispatcher.stopRequested(runId),
       receipt: (project, id) => this.issueReceipt(project, id),
       kick: () => this.pickup?.kick(),
+      foreignLocks: (task, paths) =>
+        this.foreignLocks.set(`${task.project}/${task.id}`, {
+          project: task.project,
+          task_id: task.id,
+          paths,
+          since: new Date().toISOString(),
+        }),
     });
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
@@ -684,7 +695,8 @@ export class BackendService {
       const blockers = taskCommandBlockers(task, command.action);
       if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
       // A run that may have left processes behind blocks the next one on the same worktree.
-      const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
+      const previous = (await this.latest(command))?.record;
+      const waiting = cleanupBlocker(previous?.cleanup);
       if (waiting) throw new Conflict(waiting);
       if (command.action === 'revise') await this.taskTraces.gate(task, 'revise').catch(() => undefined);
       const blocked = await this.runBlocker(command.project);
@@ -699,6 +711,8 @@ export class BackendService {
         label: await this.runLabel(task, command.action, command.agent),
         state: 'queued',
         created_at: new Date().toISOString(),
+        // The cleanup check above passed: no old process can still hold a lock of this worktree.
+        ...(previous?.state === 'interrupted' ? { after_interrupted: true } : {}),
       };
       const taskDir = dirname(this.tasks.taskPath(command.project, command.id));
       const dir = join(taskDir, 'runs', record.id);

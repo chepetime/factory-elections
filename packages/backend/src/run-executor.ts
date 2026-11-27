@@ -89,7 +89,12 @@ export interface RunExecutorDeps {
   receipt(project: string, id: string): Promise<unknown>;
   /** A slot is free again: an agent may take its next Todo task. */
   kick(): void;
+  /** A resumed run found git locks that are not the task's: they wait for a person (the inbox). */
+  foreignLocks?(task: TaskRecord, paths: string[]): void;
 }
+
+/** Locks older than the backend's own start belong to a process of an earlier backend. */
+const BACKEND_STARTED = Date.now();
 
 export class RunExecutor {
   private readonly deps: RunExecutorDeps;
@@ -235,6 +240,11 @@ export class RunExecutor {
           };
           const driver = this.deps.driver(log, checked, controller.signal);
           driver.deps.shell = trackShell(driver.deps.shell, activity);
+          if (record.after_interrupted)
+            driver.deps.staleLocks = {
+              olderThan: BACKEND_STARTED,
+              ...(this.deps.foreignLocks ? { reported: this.deps.foreignLocks } : {}),
+            };
           await performCommand(command, driver);
           if (logFailure) throw logFailure;
         },

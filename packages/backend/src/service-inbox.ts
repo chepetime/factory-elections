@@ -3,7 +3,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { inboxItems, type InboxItem, recoveryInboxItems } from '@factory/core';
+import { inboxItems, type InboxItem, foreignLockInboxItems, recoveryInboxItems } from '@factory/core';
 import type { BackendService } from './service.ts';
 
 export function inboxPath(s: BackendService): string {
@@ -29,7 +29,7 @@ export async function inbox(s: BackendService): Promise<{ items: InboxItem[]; di
     const tending = await s.tending.waiting(name, tasks).catch(() => []);
     items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
   }
-  items.push(...recoveryInboxItems(s.recovery));
+  items.push(...recoveryInboxItems(s.recovery), ...foreignLockInboxItems([...s.foreignLocks.values()]));
   const open = items.filter((i) => !dismissed[i.id]);
   return {
     items: open.sort((a, b) => a.since.localeCompare(b.since)),

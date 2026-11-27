@@ -54,6 +54,18 @@ After a restart `reconcileTask` (`service-recovery.ts`) reads the task's latest 
 | `blocked`, `verification-failed`, `awaiting-approval`, `failed` | person | The inbox or board shows it. |
 | `pr-opened` | final | The review loop and PR tending own it. |
 
+#### Stale git locks after an interrupted run
+
+A backend killed during a git command leaves a lock file (`index.lock`) that fails the next git command with "File exists". The task worktree is linked, so its own index lives in the common repository's `worktrees/<name>/` directory, next to the person's checkout and other worktrees. The rule:
+
+- `reconcileTask` never touches locks: while cleanup is `uncertain`, a git process of the old run may still live.
+- `start` marks the new run `after_interrupted` when the task's previous run is `interrupted` and `cleanupBlocker` passed (cleanup clean or confirmed). Only such a run clears locks.
+- `setupWorktree` (the driver, before the first git command on `task.worktree`) calls `clearStaleGitLocks` (`adapters-git`). It removes `index.lock`, `HEAD.lock` and `ORIG_HEAD.lock` in the worktree's own git directory, and `refs/heads/<task branch>.lock` in the common directory.
+- A lock goes only if its mtime is older than this backend's start and no live `git` process has the worktree as its working directory (`lsof -a -c git -d cwd`, injectable as `liveGit`). If the probe fails, the lock stays.
+- Each removed or kept path is logged to the run's evidence.
+- Every other lock (`packed-refs.lock`, `config.lock`, other refs, the main worktree's `index.lock`, other worktrees') is reported to the recovery inbox and never removed. The inbox item is in memory: a restart drops it until the next resumed run finds the lock again.
+- Review worktrees (`packages/pr-reviews`) have the same risk and do not clear locks yet.
+
 Not covered yet: only the latest run of a task is read, so an older run left `running` is never settled; the review, review-loop, feature, ticket and `working`-flag states have no table; nothing reports a record that no owner holds.
 
 ## Workflow inventory
