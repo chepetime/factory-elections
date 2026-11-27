@@ -1,6 +1,5 @@
 'use client';
-// The two buttons of the memory page. Each asks the server action to do its work and shows the error the
-// backend gave when it cannot; Remove asks first, because agents stop being told the fact.
+// The memory page's buttons: each runs a server action and shows the backend's error; Remove asks first.
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/confirm-dialog';

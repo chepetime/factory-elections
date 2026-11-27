@@ -1,5 +1,4 @@
-// What the factory remembers about a project: its facts, the sessions that show them, and the tools
-// review turns no longer get. Reads and removals go through the GetMemory, ForgetFact and RestoreTools RPCs.
+// Facts and pruned tools of a project, through the GetMemory, ForgetFact and RestoreTools RPCs.
 import 'server-only';
 import { backendCall } from '@factory/backend-client';
 import { Fact } from '@factory/core';
@@ -30,7 +29,6 @@ export function getMemory(project: string): Promise<Result<MemorySnapshot>> {
   );
 }
 
-/** Marks the fact dropped; the backend keeps it so a later review cannot propose it again. */
 export function forgetFact(project: string, id: string): Promise<Result<void>> {
   return attempt(async () => void (await backendCall('ForgetFact', { project, id })));
 }

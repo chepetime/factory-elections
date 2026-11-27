@@ -5,7 +5,6 @@ import { forgetFact, restorePrunedTools } from '@/lib/memory';
 
 export type MemoryActionResult = { error?: string };
 
-/** Removes one fact from what agents are told. The fact stays on the page under Removed. */
 export async function forgetFactAction(project: string, id: string): Promise<MemoryActionResult> {
   if (!isProjectName(project) || !id) return { error: 'Invalid project or fact.' };
   const result = await forgetFact(project, id);
@@ -14,7 +13,6 @@ export async function forgetFactAction(project: string, id: string): Promise<Mem
   return {};
 }
 
-/** Gives review turns every built-in tool again. */
 export async function restoreToolsAction(project: string): Promise<MemoryActionResult> {
   if (!isProjectName(project)) return { error: 'Invalid project.' };
   const result = await restorePrunedTools(project);
