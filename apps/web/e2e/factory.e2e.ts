@@ -181,20 +181,36 @@ async function page(path: string): Promise<Page> {
 
 test('the task list shows the seeded task at the approval gate', async () => {
   const p = await page('/projects/demo/tasks');
-  await p.getByRole('heading', { name: 'Tasks: demo' }).waitFor();
-  await p.getByRole('link', { name: 'Add the feature file' }).waitFor();
+  await p.getByRole('heading', { name: 'Tasks', exact: true }).waitFor();
+  await p.getByText('Add the feature file').first().waitFor();
   await p.close();
 });
 
 test('the approval gate approves exactly the reviewed commit', async () => {
   const gate = JSON.parse((await backendCall('GetGate', { project: 'demo', id: taskId })).json);
   const p = await page(`/projects/demo/tasks/${taskId}`);
-  await p.getByText('Waiting for your decision').waitFor();
-  await p.getByRole('button', { name: `Approve ${gate.head_sha.slice(0, 12)}` }).click();
+  await p.getByRole('link', { name: /Open Status and actions/ }).click();
+  await p.getByText('Ready for your approval').waitFor();
+  assert.ok((await p.content()).includes(gate.head_sha.slice(0, 12)), 'the gate names the reviewed commit');
+  await p.getByRole('button', { name: 'Approve only' }).click();
+  // The approval runs as a background command: the app navigates at once, and its toast follows.
+  await p.getByRole('link', { name: 'Tasks', exact: true }).first().click();
+  await p.waitForURL(/\/projects\/demo\/tasks$/, { timeout: 5000 });
+  await p.getByText('Approved.').waitFor({ timeout: 60_000 });
   await waitFor('the approval', async () => {
     const task = JSON.parse((await backendCall('GetTask', { project: 'demo', id: taskId })).json);
     return task.stage === 'approved' ? true : undefined;
   });
+  // Opening the pull request reports its outcome on whatever page you moved to.
+  await p.goto(`${url}/projects/demo/tasks/${taskId}`);
+  await p.getByRole('link', { name: /Open Status and actions/ }).click();
+  await p.getByRole('button', { name: 'Push and open pull request' }).first().click();
+  await p.getByRole('link', { name: 'Tasks', exact: true }).first().click();
+  await p.waitForURL(/\/projects\/demo\/tasks$/, { timeout: 5000 });
+  await p
+    .getByText(/^Opened |Opening the pull request for .* failed/)
+    .first()
+    .waitFor({ timeout: 120_000 });
   // The gate wait is in the trace, and the inbox is empty again.
   const metrics = JSON.parse((await backendCall('GetMetrics', { project: 'demo', json: '{}' })).json);
   assert.equal(metrics.gates.count, 1);
@@ -210,6 +226,7 @@ test('project settings show the task manager and the list-tickets command', asyn
     }),
   });
   const p = await page('/projects/demo/settings');
+  await p.getByRole('tab', { name: 'Task manager' }).click();
   await p.getByText('List tickets').first().waitFor();
   assert.ok((await p.content()).includes('acli jira workitem search'), 'the saved command is shown');
   await p.close();

@@ -309,6 +309,7 @@ function ReadyCard({ task, diffStat }: { task: TaskRecord; diffStat?: string }) 
 
 /** What you can do next with a change that is ready: the same gates as the decision panel. */
 function DecisionOptions({
+  name,
   hidden,
   head,
   blockers,
@@ -316,6 +317,8 @@ function DecisionOptions({
   branch,
   askHref,
 }: {
+  /** The task's name, for the toasts of its commands. */
+  name: string;
   hidden: Record<string, string>;
   head: string;
   branch?: string;
@@ -336,6 +339,7 @@ function DecisionOptions({
       <div className="flex flex-wrap items-start gap-2">
         <ActionForm
           action={approveAndOpenPullRequest}
+          command={{ name: 'approve-open-pr', title: `Approving and opening the pull request for ${name}…` }}
           hidden={{ ...hidden, head }}
           submit="Approve and open draft PR"
           pendingLabel="Approving and pushing…"
@@ -344,6 +348,7 @@ function DecisionOptions({
         </ActionForm>
         <ActionForm
           action={approveTask}
+          command={{ name: 'approve', title: `Approving ${name}…` }}
           hidden={{ ...hidden, head }}
           submit="Approve only"
           variant="outline"
@@ -371,6 +376,7 @@ function DecisionOptions({
         <div className="mt-2 max-w-md">
           <ActionForm
             action={rejectTask}
+            command={{ name: 'reject', title: `Rejecting ${name}…` }}
             hidden={hidden}
             submit="Reject"
             variant="destructive"
@@ -558,6 +564,7 @@ export async function renderRun(
   if (!shown.ok) return { ok: false, error: shown.error };
   const controls = shown.value;
   const task = controls.task;
+  const taskName = task.name ? `“${task.name}”` : 'the task';
   const roster = task.workflow === 'agent' && task.agent ? await listAgents() : undefined;
   const found = roster?.ok ? roster.value.find((a) => a.id === task.agent) : undefined;
   const author: RunAuthor | undefined = found
@@ -743,6 +750,7 @@ export async function renderRun(
           <ReadyCard task={task} diffStat={controls.diff_stat} />
           {gate && (
             <DecisionOptions
+              name={taskName}
               hidden={hidden}
               head={gate.head_sha}
               blockers={gate.blockers}
@@ -776,6 +784,7 @@ export async function renderRun(
       <div className="flex flex-col gap-1">
         <ReadyCard task={task} diffStat={controls.diff_stat} />
         <DecisionOptions
+          name={taskName}
           hidden={hidden}
           head={gate.head_sha}
           blockers={gate.blockers}
@@ -788,6 +797,7 @@ export async function renderRun(
       <NeedsYou title="Approved: open the pull request" kind="review">
         <ActionForm
           action={openPullRequest}
+          command={{ name: 'open-pr', title: `Opening the pull request for ${taskName}…` }}
           hidden={hidden}
           submit={task.pr ? 'Push and update the pull request' : 'Push and open pull request'}
           pendingLabel="Pushing…"
@@ -895,6 +905,7 @@ export async function renderRun(
             <div className="flex flex-col gap-3">
               <ActionForm
                 action={approveTask}
+                command={{ name: 'approve', title: `Approving ${taskName}…` }}
                 hidden={{ ...hidden, head: gate.head_sha }}
                 submit={`Approve ${gate.head_sha.slice(0, 12)}`}
                 pendingLabel="Approving…"
@@ -912,6 +923,7 @@ export async function renderRun(
               <Disclosure label="Reject the change…">
                 <ActionForm
                   action={rejectTask}
+                  command={{ name: 'reject', title: `Rejecting ${taskName}…` }}
                   hidden={hidden}
                   submit="Reject"
                   variant="destructive"
@@ -939,6 +951,7 @@ export async function renderRun(
         <Section title="Open the pull request">
           <ActionForm
             action={openPullRequest}
+            command={{ name: 'open-pr', title: `Opening the pull request for ${taskName}…` }}
             hidden={hidden}
             submit="Push and open pull request"
             pendingLabel="Pushing…"
