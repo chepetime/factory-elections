@@ -1,5 +1,5 @@
-// Check output that shows the machine, setup or a protected path, not the code, is at fault. A
-// stronger model cannot fix an expired login, a missing tool or a path only a person can allow,
+// Check output that shows the machine or its setup, not the code, is at fault. A
+// stronger model cannot fix an expired login or a missing tool,
 // so such a failure stops the coder ladder. Test and type failures still climb it.
 
 export interface EnvironmentFailure {
@@ -11,6 +11,13 @@ export interface EnvironmentFailure {
 
 const TOO_BROAD = /too broad to run on this machine/;
 
+const SETUP: [RegExp, string][] = [
+  [
+    /command not found|ERR_PNPM_(UNSUPPORTED_ENGINE|OUTDATED_LOCKFILE|NO_MATCHING_VERSION)/,
+    'setup is incomplete (a tool or dependency is missing)',
+  ],
+];
+
 const KNOWN: [RegExp, string][] = [
   [/\b(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET)\b|tunnel error/, 'a network service is not reachable'],
   [
@@ -19,11 +26,6 @@ const KNOWN: [RegExp, string][] = [
   ],
   [/Cannot connect to the Docker daemon|docker daemon is not running/i, 'Docker is not running'],
   [/\bENOSPC\b|no space left on device/i, 'the disk is full'],
-  [
-    /command not found|ERR_PNPM_(UNSUPPORTED_ENGINE|OUTDATED_LOCKFILE|NO_MATCHING_VERSION)/,
-    'setup is incomplete (a tool or dependency is missing)',
-  ],
-  [/the change touches protected paths/, 'the change touches protected paths, which a person must allow'],
   [TOO_BROAD, 'the check command refused this change as too broad for this machine'],
 ];
 
@@ -65,6 +67,23 @@ export function environmentFailure(
     ]),
   ];
   for (const [pattern, reason] of rules) {
+    const line = lines.find((text) => pattern.test(text));
+    if (line !== undefined) return { reason, line: line.trim() };
+  }
+  return undefined;
+}
+
+/**
+ * Output a stronger model cannot fix: an environment fault, or an incomplete setup. The coder ladder stops on these; test and type failures climb.
+ */
+export function ladderStopFailure(
+  output: string,
+  patterns: readonly string[] = [],
+): EnvironmentFailure | undefined {
+  const found = environmentFailure(output, patterns);
+  if (found) return found;
+  const lines = output.split('\n');
+  for (const [pattern, reason] of SETUP) {
     const line = lines.find((text) => pattern.test(text));
     if (line !== undefined) return { reason, line: line.trim() };
   }

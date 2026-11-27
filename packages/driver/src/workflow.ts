@@ -8,7 +8,7 @@ import {
   ClassifierVerdict,
   DEFAULT_STEP_LIMITS,
   DEFAULT_TASK_LIMITS,
-  environmentFailure,
+  ladderStopFailure,
   approvalBlockers,
   blockingFindings,
   describeIssues,
@@ -771,9 +771,9 @@ export class Driver {
       if (task.verification?.passed) return task;
       feedback = task.verification?.output_tail;
       const profile = await this.deps.readProfile(project);
-      const environment = environmentFailure(feedback ?? '', profile.environment_errors);
+      const environment = ladderStopFailure(feedback ?? '', profile.environment_errors);
       if (environment) {
-        const message = `Verification failed for a reason a stronger model cannot fix: ${environment.reason}. The coder ladder stopped. Fix that, then run the task again.\n${tail(feedback ?? '', 2000)}`;
+        const message = `Verification failed for an environment reason: ${environment.reason}. A stronger model cannot fix this, so the coder ladder stopped. Fix the cause, then run the task again.\n${tail(feedback ?? '', 2000)}`;
         await this.deps.tasks.write(withStage(task, this.deps.now(), 'failed', message));
         throw new DriverError(message.split('\n')[0]!);
       }
