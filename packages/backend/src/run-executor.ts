@@ -44,6 +44,8 @@ export async function performCommand(command: RunCommand, driver: Driver): Promi
           ...(command.note ? { reply: command.note } : {}),
         })
       ).stage;
+    case 'check':
+      return (await driver.check(project, id)).stage;
     case 'revise':
       return (await driver.revise(project, id, command.note, { maxAttempts: command.max_attempts || 3 }))
         .stage;
