@@ -3,6 +3,7 @@
 //
 // Cost rules follow the ledger: each span's cost is its own, so sums add every span; a span with
 // `cost_usd: null` is counted in `unknown_cost_spans`, never as $0.
+import { rankWaste, runSignals, type RunSignals } from './run-signals.ts';
 import type { SpanRecord, SpanTokens } from './trace.ts';
 
 export interface CostSum {
@@ -118,6 +119,10 @@ export interface MetricsSummary {
     /** Runs whose coder calls used more than one model. */
     climb_rate?: number;
     median_duration_ms?: number;
+    /** Runs with no waste signal (thrash, errors, failure) over all runs. */
+    clean_rate?: number;
+    /** The 10 runs that wasted the most (known cost first), from the span shapes alone. */
+    waste: RunSignals[];
     /** Runs above the 90th percentile of at least 20 earlier complete-cost runs of the same project and class in the last 90 days. */
     unusual: {
       trace_id: string;
@@ -168,7 +173,7 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
     by_step: {},
     by_project: {},
     by_feature: {},
-    runs: { count: 0, failed: 0, unusual: [] },
+    runs: { count: 0, failed: 0, waste: [], unusual: [] },
     reliability: { stalls: 0, repeat_loops: 0, failed_tool_calls: 0, tool_calls: 0 },
     prs: { count: 0, cost_usd: 0 },
     gates: { count: 0, total_wait_ms: 0 },
@@ -342,6 +347,10 @@ export function metricsSummary(spans: readonly SpanRecord[], from: string, to: s
   summary.runs.first_pass_rate = rate(firstPass, coded);
   summary.runs.climb_rate = rate(climbed, coded);
   summary.runs.median_duration_ms = median(durations);
+  const traced = new Set(inRange.filter((s) => s.type === 'run').map((s) => `${s.project}\0${s.trace_id}`));
+  const signals = runSignals(spans.filter((s) => traced.has(`${s.project}\0${s.trace_id}`)));
+  summary.runs.clean_rate = rate(signals.filter((s) => s.category === 'fine').length, signals.length);
+  summary.runs.waste = rankWaste(signals);
   summary.call_grading = [...grades.values()]
     .map((g) => ({
       ...g,

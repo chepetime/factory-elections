@@ -60,3 +60,16 @@ test('a trace write error reported from outside the log counts in ledger health'
   assert.equal((await traces.health([])).write_errors, 1);
   assert.match(messages[0]!, /ECONNREFUSED/);
 });
+
+test('a model span records final_chars and no output text', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-traces-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const traces = new TraceLog(root);
+  const answer = 'the private final answer';
+  await traces
+    .runner({ run: async () => ({ text: answer, costUsd: 0.1 }) }, { trace_id: 't', project: 'app' })
+    .run({ step: 'coder', model: 'codex', effort: 'low', systemPrompt: '', prompt: '', tools: 'edit' });
+  const [span] = await traces.read('app');
+  assert.equal(span!.attributes?.final_chars, answer.length);
+  assert.ok(!JSON.stringify(span).includes('private'), 'the text is never stored');
+});

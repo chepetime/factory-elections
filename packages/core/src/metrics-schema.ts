@@ -11,6 +11,24 @@ const Tokens = z.object({
 });
 const CostSum = z.object({ cost_usd: z.number(), unknown_cost_spans: z.number(), tokens: Tokens });
 const opt = z.number().optional();
+const RunSignalsSchema = z.object({
+  trace_id: z.string(),
+  project: z.string(),
+  task_id: z.string().optional(),
+  task_class: z.string().optional(),
+  tool_calls: z.number(),
+  edit_churn: z.number(),
+  repeated_calls: z.number(),
+  oscillations: z.number(),
+  fail_fix_loops: z.number(),
+  max_failure_streak: z.number(),
+  empty_answers: z.number(),
+  wasted_calls: z.number(),
+  waste_ratio: z.number(),
+  wasted_usd: z.number().nullable(),
+  wasted_tokens: z.number(),
+  category: z.enum(['thrash', 'errors', 'failed', 'fine']),
+});
 
 export const MetricsSummarySchema = z.object({
   from: z.string(),
@@ -30,6 +48,8 @@ export const MetricsSummarySchema = z.object({
     first_pass_rate: opt,
     climb_rate: opt,
     median_duration_ms: opt,
+    clean_rate: opt,
+    waste: z.array(RunSignalsSchema).default([]),
     unusual: z.array(
       z.object({
         trace_id: z.string(),
