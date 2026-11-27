@@ -76,6 +76,8 @@ interface GrantState extends GrantOptions {
   depth: number;
   left: number;
   spentUsd: number;
+  /** Aborts when the grant is revoked: the parent's turn is over, so its children stop too. */
+  ended: AbortController;
 }
 
 export interface DelegationDeps {
@@ -147,7 +149,14 @@ export class DelegationServer {
     const depth = options.depth ?? 0;
     if (!this.address || depth >= MAX_DELEGATION_DEPTH) return undefined;
     const token = randomBytes(24).toString('base64url');
-    const state: GrantState = { ...options, token, depth, left: options.budgetUsd, spentUsd: 0 };
+    const state: GrantState = {
+      ...options,
+      token,
+      depth,
+      left: options.budgetUsd,
+      spentUsd: 0,
+      ended: new AbortController(),
+    };
     this.grants.set(token, state);
     return {
       endpoint: {
@@ -156,7 +165,10 @@ export class DelegationServer {
         ...(options.tools?.length ? { tools: options.tools.map((t) => t.name) } : {}),
       },
       spent: () => state.spentUsd,
-      revoke: () => this.grants.delete(token),
+      revoke: () => {
+        this.grants.delete(token);
+        state.ended.abort();
+      },
     };
   }
 
@@ -174,7 +186,13 @@ export class DelegationServer {
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const messages = Array.isArray(body) ? body : [body];
-      const answers = (await Promise.all(messages.map((m) => this.answer(grant, m)))).filter(
+      // A client that stops waiting (Claude Code gives up on a silent call) closes the request:
+      // stop the child then, or it keeps editing the worktree after the parent's turn has ended.
+      const dropped = new AbortController();
+      res.once('close', () => {
+        if (!res.writableEnded) dropped.abort();
+      });
+      const answers = (await Promise.all(messages.map((m) => this.answer(grant, m, dropped.signal)))).filter(
         (a) => a !== undefined,
       );
       if (!answers.length) return reply(202);
@@ -184,7 +202,7 @@ export class DelegationServer {
     }
   }
 
-  private async answer(grant: GrantState, raw: unknown): Promise<unknown> {
+  private async answer(grant: GrantState, raw: unknown, dropped?: AbortSignal): Promise<unknown> {
     const parsed = Rpc.safeParse(raw);
     if (!parsed.success)
       return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid request' } };
@@ -235,7 +253,7 @@ export class DelegationServer {
         }
         if (message.params?.name !== 'delegate')
           return { jsonrpc: '2.0', id: message.id, error: { code: -32602, message: 'unknown tool' } };
-        const { text, isError } = await this.delegate(grant, message.params.arguments);
+        const { text, isError } = await this.delegate(grant, message.params.arguments, dropped);
         return ok({ content: [{ type: 'text', text }], isError });
       }
       default:
@@ -248,7 +266,11 @@ export class DelegationServer {
   }
 
   /** Runs one child task. Failures come back as tool errors the parent can read and act on. */
-  async delegate(grant: GrantState, raw: unknown): Promise<{ text: string; isError: boolean }> {
+  async delegate(
+    grant: GrantState,
+    raw: unknown,
+    dropped?: AbortSignal,
+  ): Promise<{ text: string; isError: boolean }> {
     const input = DelegateInput.safeParse(raw);
     if (!input.success)
       return { text: `Invalid delegate input: ${input.error.issues[0]?.message}`, isError: true };
@@ -292,7 +314,9 @@ export class DelegationServer {
       stallMs: CHILD_STALL_MS,
       maxBudgetUsd: budget,
       maxTurns: 100,
-      signal: grant.signal ? AbortSignal.any([grant.signal, this.stopping.signal]) : this.stopping.signal,
+      signal: AbortSignal.any(
+        [grant.signal, this.stopping.signal, grant.ended.signal, dropped].filter((s) => s !== undefined),
+      ),
       ...(child ? { mcp: child.endpoint } : {}),
       ...(traceParent ? { traceParent } : {}),
     };
