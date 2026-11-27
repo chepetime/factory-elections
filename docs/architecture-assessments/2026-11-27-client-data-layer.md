@@ -90,3 +90,14 @@ Counts on home and dashboard become "3 to review · 1 problem". Red is then rese
 5. Optimistic updates, then version-gated polling.
 
 Update `docs/state-machines/task-stages.md` and `ui.md` with step 1, and `approval-and-publication.md` with step 2.
+
+## Status (2026-11-27)
+
+| Step | State |
+| --- | --- |
+| 0. Measure against real data | Open: needs the live stack. |
+| 1. Attention states, new-tab retry | Done (`a101732`): `review`, `reply`, `problem` with their own labels and tones on the sidebar, task cards, stage pills, inbox dots and home cards; the project list retries with backoff. |
+| 2. Accept, then work | Done (`a1eefbc`), by a smaller route than proposed: approve, open-PR and reject post to a route handler with `fetch`, so navigation is never queued behind them, and a toast reports the result on any page. The backend still runs them in one request. |
+| 3. Shared, parallel reads; loaders | Done (`e8364ae`): read helpers are `cache()`d per render, the task page loads in two parallel rounds, and chats, tasks and reviews show a loader at once. |
+| 4. Backend read cost | Done (`3f6f8b1`): reads take no lock, one lock per project, and one task reads only its latest run. The full task list still selects whole records. |
+| 5. Optimistic updates | Done for status, agent, board moves and archive (`5332673`), with a `factory:issues-changed` event that reloads the sidebar at once. Version-gated polling is open. |
