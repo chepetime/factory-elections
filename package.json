@@ -20,6 +20,7 @@
     "format:check": "prettier --list-different --ignore-unknown .",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @factory/web build",
     "start": "node scripts/start.mjs",
+    "prod": "node scripts/prod.mjs",
     "web": "node scripts/web.mjs",
     "restart": "node scripts/restart.mjs",
     "shot": "node scripts/shot.mjs",

@@ -5,7 +5,7 @@ The small backend owns task execution and persistent run evidence. The configure
 ```sh
 pnpm backend       # backend only: gRPC 127.0.0.1:4319, HTTP health 127.0.0.1:4318
 pnpm web -- --dev  # backend plus Next.js on localhost:3000
-pnpm web           # production build, backend and Next.js
+pnpm web           # production build, backend and Next.js (pnpm prod wraps it)
 ```
 
 `pnpm web` reuses an authenticated, reachable backend or starts one. It only stops the backend it started. Shutdown stops acceptance and drains accepted runs before exit; it can take as long as the active work. `factory serve` starts the same complete backend. Its existing `--port` flag selects the health port; `FACTORY_BACKEND_PORT` selects gRPC. All entry points share shutdown and ownership behavior.
