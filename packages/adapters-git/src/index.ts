@@ -168,6 +168,16 @@ export async function diffSince(dir: string, base: string, stat = false): Promis
   return git(dir, ['diff', ...(stat ? ['--stat'] : []), `${base}...HEAD`]);
 }
 
+/**
+ * The patch a commit adds to the merge base of that commit and `baseRef` (`origin/main`): what the
+ * pull request changes at that head. Renames are shown as a delete and an add, so each path has its
+ * own patch. Used to compare heads file by file (see core approval-carry.ts).
+ */
+export async function patchOf(dir: string, head: string, baseRef: string): Promise<string> {
+  const mergeBase = (await git(dir, ['merge-base', head, baseRef])).trim();
+  return git(dir, ['diff', '--no-color', '--no-ext-diff', '--no-renames', '-U3', mergeBase, head]);
+}
+
 export async function commitCountSince(dir: string, base: string): Promise<number> {
   return Number((await git(dir, ['rev-list', '--count', `${base}..HEAD`])).trim());
 }

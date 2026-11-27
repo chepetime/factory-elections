@@ -184,6 +184,11 @@ Safety rules:
 - Agents run with the coder's worktree guard and cannot commit, push or post.
 - The backend first fast-forwards to the PR head and refuses a branch that has diverged.
 - The backend pushes only new commits on top of the head, and only after the profile's `test` command passes. A failed fix is reset.
+- **The approval carries only when code shows it does.** You approved one exact commit. A tending commit goes out under that approval only by the rule in `carryApproval` (`packages/core/src/approval-carry.ts`). It compares each file's patch at the approved head with the new head, against each head's merge base with the PR's base. A patch's fingerprint is its `+`, `-` and context lines without line numbers. No model and no line count decides it. The rule:
+  - every fingerprint is equal (a clean base merge): it is pushed;
+  - `answer-threads`: it is pushed when no protected path moved and every moved file is a file that a trusted reviewer commented on, or a test or doc beside it;
+  - `fix-ci`, a conflict resolution that changes a patch, and anything else: it is not pushed. Protected paths are CI and tool config (`.github/`, `.claude/`), dependency manifests and lockfiles, `.env` files, and the profile's `forbidden_paths`.
+  A commit that does not carry stays in the task's worktree. The backend records a follow-up for the task (added by `factory`), verifies the commit and moves the task to `awaiting-approval`, the usual gate. Tending stops on that PR until you approve or reject. The outcome is `held` in `tending.json`, and no thread is answered or resolved for a change that was not pushed. The decision (`approval_carry`: `carried` or `waiting`, the rule, the reason and the moved files) is on the task for the gate and the receipt. Trusted reviewers come from `TendingDeps.trustedAuthors`; until it is set, no thread widens the carry.
 - Tending never force-pushes and never merges the PR.
 - After 3 fixes without a green PR, tending stops and the PR goes to the inbox. `TendPullRequests` (`project`, `id`) tends one PR now and resumes a stopped one. With an empty `id`, it runs one pass over all PRs.
 

@@ -54,6 +54,8 @@ export interface GitPort {
   /** Merges `ref`: committed when clean, else left in progress with the conflicted paths. */
   mergeRef?(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }>;
   mergeInProgress?(dir: string): Promise<boolean>;
+  /** What the PR changes at `head` against its merge base with `baseRef`: a unified diff. */
+  patchOf?(dir: string, head: string, baseRef: string): Promise<string>;
   abortMerge?(dir: string): Promise<void>;
 }
 

@@ -54,7 +54,7 @@ export const TendFix = z.object({
   at: z.string(),
   /** The head before the fix. */
   sha: z.string(),
-  outcome: z.enum(['pushed', 'no-change', 'failed', 'rerun']),
+  outcome: z.enum(['pushed', 'held', 'no-change', 'failed', 'rerun']),
   cost_usd: z.number().nullable().optional(),
   note: z.string().optional(),
 });

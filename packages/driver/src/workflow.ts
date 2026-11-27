@@ -32,6 +32,8 @@ import {
   type StepDefinition,
   type FollowUpKind,
   followUpPushesItself,
+  followUpAgent,
+  type CarryDecision,
   missingHeadings,
   type TaskRecord,
   type ToolGuard,
@@ -39,6 +41,7 @@ import {
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DriverError, type DriverDeps, type StepPaths } from './ports.ts';
+import { approvedHeadOf, carryRecord, decideCarry } from './carry.ts';
 import { setupInputsKey } from './setup.ts';
 import {
   MAX_DIFF_CHARS,
@@ -692,6 +695,8 @@ export class Driver {
     if (!(await git.fastForwardTo(path, `origin/${branch}`)))
       throw new DriverError(`the task branch has diverged from the pull request (origin/${branch})`);
     const changesAgent = task.workflow !== 'agent' || task.agent !== input.agent;
+    // The follow-up clears the approval; its commit rides on this head's approval only by the carry rule.
+    const approvedHead = approvedHeadOf(task);
     const entry = {
       at: this.deps.now(),
       kind: input.kind,
@@ -724,17 +729,14 @@ export class Driver {
         // pass, the factory approves and pushes it to the same PR; a failed check stops as usual.
         this.deps.log('The merge applied without conflicts. Verifying…');
         const gated = await this.gateAfterFollowUp(project, id);
-        if (gated.stage !== 'awaiting-approval' || !gated.verification?.passed) return gated;
-        await this.approve(project, id, {
-          head: gated.verification.head_sha,
-          note: `Approved by the factory: only origin/${base} was merged in, with no conflicts, and the checks passed.`,
-        });
-        return openPr(this.deps, project, id, {});
+        return this.pushUnderCarry(project, id, gated, approvedHead, 'merge-base');
       }
       note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
     }
     const done = await this.agentRun(project, id, note);
-    return followUpPushesItself(input.kind) ? this.pushReviewFix(project, id, done) : done;
+    return followUpPushesItself(input.kind)
+      ? this.pushUnderCarry(project, id, done, approvedHead, 'review')
+      : done;
   }
 
   /**
@@ -766,16 +768,102 @@ export class Driver {
   }
 
   /**
-   * A review fix that passed the checks is approved by the review loop and pushed to the same PR.
-   * Anything else (a failed check, a question, no change) stays where the run left it.
+   * Pushes a follow-up's commit to the PR under the earlier approval only when code shows its patch
+   * is the approved one (see core approval-carry.ts): a clean base merge changes no file's patch.
+   * Anything else, and a failed check, a question or no change, stays at the approval gate for a
+   * person. The decision is kept on the task either way.
    */
-  private async pushReviewFix(project: string, id: string, task: TaskRecord): Promise<TaskRecord> {
+  private async pushUnderCarry(
+    project: string,
+    id: string,
+    task: TaskRecord,
+    approvedHead: string | undefined,
+    trigger: 'merge-base' | 'review',
+  ): Promise<TaskRecord> {
     if (task.stage !== 'awaiting-approval' || !task.verification?.passed) return task;
+    const head = task.verification.head_sha;
+    const { git } = this.deps;
+    const { path, base } = await this.checkedWorktree(task);
+    const profile = await this.deps.readProfile(project);
+    const patchOf = git.patchOf;
+    const decision = patchOf
+      ? await decideCarry({
+          approvedHead,
+          head,
+          trigger,
+          comments: [],
+          protectedPaths: profile.confirmed.forbidden_paths,
+          patchOf: (sha) => patchOf.call(git, path, sha, `origin/${base}`),
+        })
+      : {
+          carried: false,
+          rule: 'no-approval' as const,
+          reason: 'the git port cannot compare patches',
+          moved: [],
+        };
+    const now = this.deps.now();
+    const recorded = withEvent(
+      { ...task, approval_carry: carryRecord(decision, { approvedHead, head, trigger, at: now }) },
+      now,
+      'approval-carry',
+      decision.carried
+        ? `The approval carries to ${head.slice(0, 8)}: ${decision.reason}`
+        : `The approval does not carry to ${head.slice(0, 8)}: ${decision.reason}. Waiting for your approval.`,
+    );
+    await this.deps.tasks.write(recorded);
+    if (!decision.carried) return recorded;
     await this.approve(project, id, {
-      head: task.verification.head_sha,
-      note: 'Approved by the review loop: the checks passed. Review the PR on GitHub.',
+      head,
+      note: `Approved by the factory under the earlier approval: ${decision.reason}; the checks passed.`,
     });
     return openPr(this.deps, project, id, {});
+  }
+
+  /**
+   * An agent's commit that the carry rule did not clear, made outside a run (PR tending): records
+   * the follow-up and the carry decision, verifies the worktree head and puts it at the approval
+   * gate. Nothing is pushed until a person approves that exact commit.
+   */
+  async holdForApproval(
+    project: string,
+    id: string,
+    input: { note: string; trigger: string; decision: CarryDecision; approvedHead: string | undefined },
+  ): Promise<TaskRecord> {
+    const task = await this.deps.tasks.read(project, id);
+    if (task.stage !== 'pr-opened')
+      throw new DriverError('only a task whose pull request is open can wait here');
+    const { path } = await this.checkedWorktree(task);
+    const head = await this.deps.git.headSha(path);
+    const now = this.deps.now();
+    await this.deps.tasks.write(
+      withEvent(
+        {
+          ...task,
+          approval: undefined,
+          follow_ups: [
+            ...(task.follow_ups ?? []),
+            {
+              at: now,
+              kind: 'custom' as const,
+              note: input.note,
+              agent: followUpAgent(task) ?? 'factory',
+              by: 'factory',
+              ...(task.pr ? { pr_head: task.pr.head_sha } : {}),
+            },
+          ],
+          approval_carry: carryRecord(input.decision, {
+            approvedHead: input.approvedHead,
+            head,
+            trigger: input.trigger,
+            at: now,
+          }),
+        },
+        now,
+        'follow-up',
+        `The factory added a follow-up: ${input.note}`,
+      ),
+    );
+    return this.gateAfterFollowUp(project, id);
   }
 
   /** Verifies the worktree head and puts a follow-up's commit at the approval gate. */

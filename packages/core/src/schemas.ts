@@ -220,6 +220,24 @@ export const TaskRecord = z.looseObject({
       note: z.string().optional(),
     })
     .optional(),
+  /**
+   * The last decision on pushing an agent's later commit under the approval (see approval-carry.ts):
+   * `carried` pushed it, `waiting` stopped it at the approval gate. For the gate and the receipt.
+   */
+  approval_carry: z
+    .looseObject({
+      decision: z.enum(['carried', 'waiting']),
+      rule: NonEmpty,
+      reason: NonEmpty,
+      /** What made the commit: a tending action or the review loop. */
+      trigger: NonEmpty,
+      /** The head the person approved, and the commit that carried or waits. */
+      approved_head: NonEmpty.optional(),
+      head_sha: NonEmpty,
+      moved: z.array(NonEmpty),
+      at: Iso,
+    })
+    .optional(),
   revision_notes: z.array(z.looseObject({ at: Iso, note: NonEmpty })).optional(),
   /** Follow-ups added after the PR opened, oldest first (see follow-ups.ts). */
   follow_ups: z

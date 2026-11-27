@@ -188,7 +188,12 @@ test('a conflict follow-up whose merge applies cleanly needs no agent, and the f
     prHead: ctx.task.pr!.head_sha,
   });
   assert.equal(followed.stage, 'pr-opened', 'only the base came in, so no person needs to approve it');
-  assert.match(followed.approval?.note ?? '', /Approved by the factory: only origin\/main was merged in/);
+  assert.match(
+    followed.approval?.note ?? '',
+    /Approved by the factory under the earlier approval: every file patch equals/,
+  );
+  assert.equal(followed.approval_carry?.decision, 'carried');
+  assert.equal(followed.approval_carry?.rule, 'identical');
   assert.equal(ctx.calls.length, calls, 'no model call');
   assert.equal(ctx.prs(), 1, 'the same PR is updated');
   assert.equal(await readFile(join(ctx.worktree(followed), 'other.txt'), 'utf8'), 'unrelated\n');
@@ -252,22 +257,35 @@ test('a follow-up refuses a branch that diverged from the PR, and other commands
   );
 });
 
-test('a review follow-up pushes its fix to the same PR once the checks pass, and keeps a failing one', async () => {
+test('a review follow-up that changes a file waits at the approval gate; approving that commit updates the same PR', async () => {
   const ctx = await opened();
   ctx.turns.push(write('feature.txt', 'from devin, reviewed\n'));
-  const pushed = await ctx.driver.followUp('demo', ctx.task.id, {
+  const held = await ctx.driver.followUp('demo', ctx.task.id, {
     note: '1. [must-fix] Handle the empty case',
     kind: 'review',
     agent: 'devin',
     by: 'factory',
   });
-  assert.equal(pushed.stage, 'pr-opened', 'no approval gate for a review fix');
-  assert.match(pushed.approval?.note ?? '', /review loop/);
-  assert.equal(pushed.pr?.url, 'https://github.com/example/demo/pull/1');
-  assert.notEqual(pushed.pr?.head_sha, ctx.task.pr?.head_sha, 'the PR has the fix');
+  assert.equal(held.stage, 'awaiting-approval', 'a fix is not sent under the earlier approval');
+  assert.equal(held.approval, undefined);
+  assert.equal(held.approval_carry?.decision, 'waiting');
+  assert.equal(held.approval_carry?.rule, 'not-allowed');
+  assert.deepEqual(held.approval_carry?.moved, ['feature.txt']);
+  assert.equal(held.approval_carry?.approved_head, ctx.task.approval?.head_sha);
+  assert.equal(held.pr?.head_sha, ctx.task.pr?.head_sha, 'the PR is not touched');
+  const gate = await ctx.driver.gate('demo', ctx.task.id);
+  await ctx.driver.approve('demo', ctx.task.id, { head: gate.headSha });
+  const pushed = await ctx.driver.openPr('demo', ctx.task.id);
+  assert.notEqual(
+    pushed.pr?.head_sha,
+    ctx.task.pr?.head_sha,
+    'the PR has the fix after a person approved it',
+  );
   assert.equal(ctx.prs(), 1);
+});
 
-  // A fix that breaks the checks stays in the worktree and is not pushed.
+test('a review follow-up whose checks fail is kept in the worktree and not pushed', async () => {
+  const ctx = await opened();
   ctx.turns.push(async (r) => {
     await rm(join(r.cwd!, 'feature.txt'));
     return { text: 'Removed it.', costUsd: 0.1 };
@@ -279,7 +297,33 @@ test('a review follow-up pushes its fix to the same PR once the checks pass, and
     by: 'factory',
   });
   assert.equal(failed.stage, 'verification-failed');
-  assert.equal((await ctx.read()).pr?.head_sha, pushed.pr?.head_sha, 'the PR keeps the last good fix');
+  assert.equal((await ctx.read()).pr?.head_sha, ctx.task.pr?.head_sha, 'the PR keeps the approved head');
+});
+
+test('a tending fix that the carry rule did not clear is recorded as a follow-up and put at the approval gate', async () => {
+  const ctx = await opened();
+  const worktree = ctx.worktree(ctx.task);
+  await writeFile(join(worktree, 'feature.txt'), 'from devin, fixed by tending\n');
+  sh(worktree, 'commit', '-qam', 'Fix failing CI checks');
+  const decision = {
+    carried: false,
+    rule: 'not-allowed' as const,
+    reason: 'a fix-ci change to feature.txt needs a new approval',
+    moved: ['feature.txt'],
+  };
+  const held = await ctx.driver.holdForApproval('demo', ctx.task.id, {
+    note: 'PR tending fixed failing CI checks: ' + decision.reason,
+    trigger: 'fix-ci',
+    decision,
+    approvedHead: ctx.task.approval?.head_sha,
+  });
+  assert.equal(held.stage, 'awaiting-approval');
+  assert.equal(held.verification?.head_sha, sh(worktree, 'rev-parse', 'HEAD'));
+  assert.equal(held.approval, undefined);
+  assert.equal(held.follow_ups?.at(-1)?.by, 'factory');
+  assert.equal(held.approval_carry?.decision, 'waiting');
+  assert.equal(held.approval_carry?.trigger, 'fix-ci');
+  assert.equal(held.pr?.head_sha, ctx.task.pr?.head_sha, 'the PR is not touched');
 });
 
 test('a follow-up gets the task budget again: the first run spent more than it, and the follow-up still runs', async () => {
