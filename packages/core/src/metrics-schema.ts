@@ -49,7 +49,7 @@ export const MetricsSummarySchema = z.object({
     climb_rate: opt,
     median_duration_ms: opt,
     clean_rate: opt,
-    waste: z.array(RunSignalsSchema),
+    waste: z.array(RunSignalsSchema).default([]),
     unusual: z.array(
       z.object({
         trace_id: z.string(),
