@@ -68,8 +68,7 @@ test('the lockfile tool runs in the check sandbox with the check environment, an
   process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
   t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
   const repo = await diverged(false);
-  const calls: { command: string; env?: Record<string, string>; sandbox?: { reopen?: readonly string[] } }[] =
-    [];
+  const calls: { command: string; env?: NodeJS.ProcessEnv; sandbox?: { reopen?: readonly string[] } }[] = [];
   const shell = {
     runShell: (command: string, options: Parameters<typeof runShell>[1] = {}) => {
       calls.push({ command, env: options.env, sandbox: options.sandbox });
