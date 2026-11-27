@@ -56,6 +56,18 @@ export type BoardIssue = {
  * that starts, reruns or cancels paid model work never happens without a yes.
  */
 /** The column a card shows in while its move is sent: the column the backend will put it in. */
+/** How long a Done task stays on the board, and how many Done tasks show at once. */
+const DONE_SHOWN_MS = 60 * 60_000;
+const DONE_SHOWN_MAX = 5;
+
+/** The Done tasks the column shows: done in the last hour, newest first, at most five. */
+export function recentDone(cards: readonly BoardIssue[], now: number): BoardIssue[] {
+  return cards
+    .filter((c) => now - Date.parse(c.updated_at) <= DONE_SHOWN_MS)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, DONE_SHOWN_MAX);
+}
+
 export function optimisticStatus(
   action: Exclude<DropAction, { kind: 'none' | 'refused' | 'follow-up' }>,
 ): IssueStatus {
@@ -287,6 +299,8 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
           const column = COLUMNS[status];
           const Icon = column.icon;
           const cards = items.filter((i) => i.status === status);
+          // The count is every task in the column; Done shows only the recent ones.
+          const shown = status === 'done' ? recentDone(cards, now) : cards;
           const verdict = dragging ? dropAction(dragging.status, status, dragging.run) : undefined;
           const accepts = verdict && verdict.kind !== 'refused' && verdict.kind !== 'none';
           return (
@@ -363,7 +377,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                 {cards.length === 0 && creating !== status && (
                   <li className="px-1 py-6 text-center text-xs text-muted-foreground">No tasks</li>
                 )}
-                {cards.map((issue) => (
+                {shown.map((issue) => (
                   <li
                     key={issue.key}
                     draggable
