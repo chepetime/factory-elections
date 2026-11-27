@@ -4,7 +4,7 @@
 // result come back here instead of through a PID and an exit file.
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { HeadlessTurn } from '@factory/core';
-import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
+import { claudeMcpConfig, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
 import { turnSandbox } from './sandbox.ts';
 
 /** The model a review turn uses when the turn names none, as on the CLI path. */
@@ -100,8 +100,10 @@ export function claudeTurnOptions(
     ...(turn.tools ? { tools: [...turn.tools] } : {}),
     ...(turn.mcp
       ? {
+          // No allowedTools: the CLI needs --allowedTools for the delegate tool because it skips
+          // permissions, but here a bare allow entry would approve it before canUseTool runs, so a
+          // deny rule naming it would never apply. The guard allows it like any other tool.
           mcpServers: (JSON.parse(claudeMcpConfig(turn.mcp)) as Pick<Options, 'mcpServers'>).mcpServers,
-          allowedTools: [CLAUDE_DELEGATE_TOOL],
         }
       : {}),
     ...(turn.deny.length ? { disallowedTools: [...turn.deny] } : {}),
