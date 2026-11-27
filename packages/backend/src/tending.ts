@@ -358,8 +358,13 @@ export class TendingService {
         : read;
       const now = new Date().toISOString();
       if (isGreen(pr)) record = { ...record, fixes_since_green: 0 };
-      const verdicts = await this.triage(pr, record, settings, cwd);
-      const action = nextTendAction(pr, record, { answerThreads: settings.tending.answer_threads, verdicts });
+      const reasons: Record<string, string> = {};
+      const verdicts = await this.triage(pr, record, settings, cwd, reasons);
+      const action = nextTendAction(pr, record, {
+        answerThreads: settings.tending.answer_threads,
+        verdicts,
+        reasons,
+      });
       record = { ...record, checked_at: now, last: action.kind };
       switch (action.kind) {
         case 'end':
@@ -426,6 +431,7 @@ export class TendingService {
     record: TendRecord,
     settings: ProjectSettings,
     cwd: string,
+    reasons: Record<string, string> = {},
   ): Promise<Record<string, FlakeVerdict>> {
     const verdicts: Record<string, FlakeVerdict> = {};
     if (pr.state !== 'OPEN' || pr.checks.some((c) => c.state === 'pending')) return verdicts;
@@ -440,7 +446,9 @@ export class TendingService {
       const log = check.run_id
         ? await this.github.failedLog(cwd, check.run_id).catch(() => undefined)
         : undefined;
-      verdicts[check.name] = classifyFlake(check, history, log).verdict;
+      const result = classifyFlake(check, history, log);
+      verdicts[check.name] = result.verdict;
+      if (result.verdict === 'no-fix') reasons[check.name] = result.evidence;
     }
     return verdicts;
   }

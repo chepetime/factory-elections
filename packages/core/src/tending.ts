@@ -152,7 +152,12 @@ export const isGitHubLogin = (login: string) =>
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
-  options: { answerThreads: boolean; verdicts?: Readonly<Record<string, FlakeVerdict>> },
+  options: {
+    answerThreads: boolean;
+    verdicts?: Readonly<Record<string, FlakeVerdict>>;
+    /** Why a check is `no-fix`, by check name; used in the stop reason. */
+    reasons?: Readonly<Record<string, string>>;
+  },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
@@ -170,10 +175,17 @@ export function nextTendAction(
     // it. A real failure (see `classifyFlake`) goes straight to a fix. A rerun needs a run to rerun.
     const retried = (c: PrCheck) =>
       record.ci_retries.some((r) => r.sha === pr.head_sha && (r.check === c.name || r.check === '*'));
-    const rerunnable = failed.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
-    const fixable = failed.filter((c) => !rerunnable.includes(c));
-    if (!fixable.length) return { kind: 'rerun', checks: rerunnable };
-    return agentWork({ kind: 'fix-ci', checks: fixable });
+    // A `no-fix` check (cancelled run, missing secret, quota) starts no agent: no PR change helps.
+    const noFix = failed.filter((c) => options.verdicts?.[c.name] === 'no-fix');
+    const rest = failed.filter((c) => !noFix.includes(c));
+    const rerunnable = rest.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
+    const fixable = rest.filter((c) => !rerunnable.includes(c));
+    if (fixable.length) return agentWork({ kind: 'fix-ci', checks: fixable });
+    if (rerunnable.length) return { kind: 'rerun', checks: rerunnable };
+    const why = noFix
+      .map((c) => `${c.name} (${options.reasons?.[c.name] ?? 'needs no PR change'})`)
+      .join(', ');
+    return { kind: 'stop', reason: `no code change can fix: ${why}` };
   }
   if (pr.mergeable === 'UNKNOWN') return { kind: 'wait', reason: 'GitHub is still computing mergeability' };
   return { kind: 'wait', reason: 'green: waiting for review and merge' };
