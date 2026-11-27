@@ -731,8 +731,8 @@ export class BackendService {
   }
   async start(raw: Command): Promise<RunRecord> {
     const command = this.command(raw);
-    if (!['run', 'revise', 'follow-up'].includes(command.action))
-      throw new Error('Only run, revise and follow-up can be scheduled');
+    if (!['run', 'revise', 'follow-up', 'check'].includes(command.action))
+      throw new Error('Only run, revise, follow-up and check can be scheduled');
     if (command.action === 'follow-up' && !command.agent)
       throw new Conflict('Name the agent for the follow-up.');
     const unknown = recoveryBlocker(this.recovery, command.project, command.id);
