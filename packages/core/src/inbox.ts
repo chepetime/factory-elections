@@ -33,7 +33,9 @@ export type InboxKind =
   /** Startup recovery could not read some work, so the backend cannot tell who owns it. */
   | 'recovery'
   /** The daily retro found a waste pattern that repeats across runs (retro.ts). */
-  | 'finding';
+  | 'finding'
+  /** A step and model whose cost per run rose well above its 14-day median (spend-spikes.ts). */
+  | 'spend-spike';
 
 export interface InboxItem {
   id: string;

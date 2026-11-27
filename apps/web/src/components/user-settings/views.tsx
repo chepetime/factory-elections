@@ -383,6 +383,10 @@ const KIND_TEXT: Record<(typeof NOTIFY_KINDS)[number], { label: string; hint: st
   },
   recovery: { label: 'Recovery problems', hint: 'After a restart, the backend could not read some work.' },
   finding: { label: 'Findings', hint: 'The daily retro found a waste pattern that repeats across runs.' },
+  'spend-spike': {
+    label: 'Spend spikes',
+    hint: 'A step and model costs much more per run than its 14-day median.',
+  },
 };
 
 type Permission = NotificationPermission | 'unsupported';

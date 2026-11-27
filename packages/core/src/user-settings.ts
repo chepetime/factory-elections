@@ -23,6 +23,7 @@ export const NOTIFY_KINDS = [
   'review-loop',
   'recovery',
   'finding',
+  'spend-spike',
 ] as const;
 
 export const ProviderSettings = z.object({
