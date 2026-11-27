@@ -55,7 +55,12 @@ else {
 }
 `;
 
-async function fixture(t: TestContext, otherAgents = () => 0, claudeTurn?: ReviewDeps['claudeTurn']) {
+async function fixture(
+  t: TestContext,
+  otherAgents = () => 0,
+  claudeTurn?: ReviewDeps['claudeTurn'],
+  context?: ReviewDeps['github']['context'],
+) {
   const base = await mkdtemp(join(tmpdir(), 'factory-reviews-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const origin = join(base, 'origin.git');
@@ -90,6 +95,7 @@ async function fixture(t: TestContext, otherAgents = () => 0, claudeTurn?: Revie
         branch: branches[n]!,
         url: `https://github.com/o/r/pull/${n}`,
       }),
+      ...(context ? { context } : {}),
     },
     agent: {
       ...claudeCli,
@@ -516,4 +522,63 @@ test('a review without a report says why: stopped, failed, invalid, or refused b
     /ended without a report; 1 of its tool calls was refused/,
   );
   assert.equal(missingReportReason([], ok), 'The review ended without saving a report.');
+});
+
+test('a review turn runs sandboxed with the PR data fetched into its work dir, and a failed part does not stop it', async (t) => {
+  const seen: ClaudeTurnRequest[] = [];
+  const fetched: number[] = [];
+  const { root, reviews } = await fixture(
+    t,
+    () => 0,
+    sdkTurn(seen),
+    async (_cwd, number) => {
+      fetched.push(number);
+      return {
+        files: { 'pr.json': '{"title":"Change 7"}', 'pr.diff': 'diff --git a/feature.txt b/feature.txt\n' },
+        failures: ['threads.json: rate limited'],
+      };
+    },
+  );
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  const first = await settle(reviews, 7);
+  assert.equal(first.state, 'completed');
+  assert.equal(first.report, true, 'the kickoff still produced its payload');
+  const dir = join(root, 'app', 'reviews', '7');
+  const run = JSON.parse(await readFile(join(dir, 'run.json'), 'utf8')) as { worktree: string };
+  assert.deepEqual(seen[0]!.turn.sandbox, { allowWrite: [run.worktree, join(dir, 'work')] });
+  assert.equal(seen[0]!.cwd, run.worktree);
+  assert.equal(await readFile(join(dir, 'work', 'pr.json'), 'utf8'), '{"title":"Change 7"}');
+  assert.match(await readFile(join(dir, 'work', 'pr.diff'), 'utf8'), /^diff --git/);
+  const prompt = seen[0]!.systemPrompt;
+  assert.match(prompt, /### GitHub is not reachable/);
+  assert.ok(prompt.includes(`\`${join(dir, 'work')}/pr.diff\``));
+  assert.match(prompt, /Not fetched[^]*threads\.json: rate limited/);
+
+  // A message the user typed is sandboxed too, and the PR is read again for it.
+  await reviews.reply({ project: 'app', number: 7, text: 'Why?' });
+  await settle(reviews, 7);
+  assert.deepEqual(seen[1]!.turn.sandbox, { allowWrite: [run.worktree, join(dir, 'work')] });
+  assert.deepEqual(fetched, [7, 7]);
+});
+
+test('a fetch that throws, or no fetch at all, leaves the turn running with the failure named', async (t) => {
+  const seen: ClaudeTurnRequest[] = [];
+  const { root, reviews } = await fixture(
+    t,
+    () => 0,
+    sdkTurn(seen),
+    async () => {
+      throw new Error('not logged in\nhint');
+    },
+  );
+  await reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  assert.equal((await settle(reviews, 7)).state, 'completed');
+  assert.match(seen[0]!.systemPrompt, /\(nothing could be fetched\)[^]*GitHub: not logged in\n/);
+  assert.equal(seen[0]!.turn.sandbox?.allowWrite.length, 2);
+  await assert.rejects(readFile(join(root, 'app', 'reviews', '7', 'work', 'pr.json')), /ENOENT/);
+
+  const bare = await fixture(t, () => 0, sdkTurn(seen));
+  await bare.reviews.start({ project: 'app', numbers: [7], mode: 'review' });
+  assert.equal((await settle(bare.reviews, 7)).state, 'completed');
+  assert.match(seen[1]!.systemPrompt, /no GitHub client is configured/);
 });

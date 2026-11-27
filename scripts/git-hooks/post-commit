@@ -1,0 +1,4 @@
+#!/bin/sh
+# Thin launcher: advisory check of a commit on main, in the background.
+dir=$(cd "$(dirname "$0")" && pwd)
+exec node "$dir/../run-post-commit.mjs" "$@"

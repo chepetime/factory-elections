@@ -1,5 +1,7 @@
 // The SDK turn path, with a fake SDK query: no model is called.
 import assert from 'node:assert/strict';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import type { HeadlessTurn } from '@factory/core';
 import { claudeCli, claudeTurnOptions, runClaudeTurn, CLAUDE_DELEGATE_TOOL } from '../src/index.ts';
@@ -32,8 +34,11 @@ test('SDK turn options set what the CLI turn arguments set', () => {
   // The SDK runs in default mode with a guard; see the guard test below.
   assert.equal(options.permissionMode, 'default');
   assert.equal(typeof options.canUseTool, 'function');
-  assert.equal(flag(args, '--setting-sources'), 'project');
-  assert.deepEqual(options.settingSources, ['project']);
+  // No settings source is loaded; the SDK sends `settingSources: []` as `--setting-sources=`.
+  assert.ok(args.includes('--setting-sources='));
+  assert.deepEqual(options.settingSources, []);
+  assert.equal(options.sandbox, undefined, 'a turn that asks for no sandbox gets none');
+  assert.equal(flag(args, '--settings'), undefined);
   assert.equal(flag(args, '--strict-mcp-config'), true);
   assert.equal(options.strictMcpConfig, true);
   assert.equal(flag(args, '--disable-slash-commands'), true);
@@ -139,4 +144,68 @@ test('the SDK review guard allows tools except what a deny rule names, also insi
     if (rule)
       assert.equal((await ask('Bash', { command: `${rule} 1` }, { signal } as never))?.behavior, 'deny');
   }
+});
+
+const reviewTurn: HeadlessTurn = {
+  ...turn,
+  sandbox: { allowWrite: ['/data/reviews/app-feat', '/data/app/reviews/7/work'] },
+};
+
+test('a review turn runs in an OS sandbox: no credential stores, writes only to its dirs, no network', () => {
+  const options = claudeTurnOptions(
+    { turn: reviewTurn, systemPrompt: 'S', cwd: '/w', env: {} },
+    new AbortController(),
+  );
+  const sandbox = options.sandbox!;
+  assert.equal(sandbox.enabled, true);
+  assert.equal(sandbox.failIfUnavailable, true);
+  assert.equal(sandbox.autoAllowBashIfSandboxed, false);
+  assert.equal(sandbox.allowUnsandboxedCommands, false);
+  const home = homedir();
+  assert.deepEqual(sandbox.filesystem?.denyRead, [
+    join(home, '.ssh'),
+    join(home, '.npmrc'),
+    join(home, '.aws'),
+    join(home, '.config', 'gh'),
+    join(home, 'Library', 'Keychains'),
+  ]);
+  assert.deepEqual(sandbox.filesystem?.allowWrite, reviewTurn.sandbox!.allowWrite);
+  assert.deepEqual(sandbox.network?.allowedDomains, [], 'no network unless the turn names domains');
+  const withDomain = claudeTurnOptions(
+    {
+      turn: { ...reviewTurn, sandbox: { allowWrite: ['/w'], allowedDomains: ['api.example.com'] } },
+      systemPrompt: '',
+      cwd: '/w',
+      env: {},
+    },
+    new AbortController(),
+  );
+  assert.deepEqual(withDomain.sandbox?.network?.allowedDomains, ['api.example.com']);
+});
+
+test('the CLI path carries the same sandbox as inline --settings', () => {
+  const args = claudeCli.args(reviewTurn, { systemPrompt: '' });
+  const options = claudeTurnOptions(
+    { turn: reviewTurn, systemPrompt: '', cwd: '/w', env: {} },
+    new AbortController(),
+  );
+  const settings = JSON.parse(flag(args, '--settings') as string) as { sandbox: unknown };
+  assert.deepEqual(settings, { sandbox: options.sandbox });
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.ok(args.includes('--disable-slash-commands'));
+  assert.equal(flag(args, '--tools'), 'Read,Bash');
+});
+
+test('a review turn does not load the pull request own settings or hooks, on either path', () => {
+  const args = claudeCli.args(reviewTurn, { systemPrompt: '' });
+  const options = claudeTurnOptions(
+    { turn: reviewTurn, systemPrompt: '', cwd: '/review/worktree', env: {} },
+    new AbortController(),
+  );
+  // The worktree's .claude/settings.json (hooks included) is the PR author's: no source reads it.
+  assert.deepEqual(options.settingSources, []);
+  assert.equal(options.hooks, undefined);
+  assert.ok(args.includes('--setting-sources='), 'the SDK sends an empty list as this exact argument');
+  assert.ok(!args.includes('project'));
+  assert.ok(!args.includes('--setting-sources'), 'no separate value that could name a source');
 });

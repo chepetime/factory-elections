@@ -176,6 +176,30 @@ test('a fix whose test command fails is not pushed, and three failed fixes stop 
   assert.equal((await f.tending.waiting('app', [f.task])).length, 0);
 });
 
+test('tending pushes the tested commit, and fails when HEAD moved while the test command ran', async (t) => {
+  // The test command commits: HEAD is no longer the commit that was tested.
+  const f = await fixture(
+    t,
+    'git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m sneaky',
+  );
+  f.setPr({ checks: [{ name: 'unit', state: 'fail' }] });
+  f.setAgent(async (r) => {
+    await writeFile(join(r.cwd!, 'app.txt'), 'line one\nfeature\nfixed\n');
+    return { text: '', costUsd: 0.1 };
+  });
+  const before = f.remote('refs/heads/factory/t1');
+  assert.equal((await f.tending.tend(f.task, f.settings))!.kind, 'fix-ci');
+  assert.equal(
+    f.remote('refs/heads/factory/t1'),
+    before,
+    'neither the tested nor the moved commit was pushed',
+  );
+  const [fix] = (await f.tending.record(f.task))!.fixes;
+  assert.equal(fix!.outcome, 'failed');
+  assert.match(fix!.note ?? '', /HEAD moved/);
+  assert.equal(git(f.work, 'rev-parse', 'HEAD'), before, 'the worktree is back at the PR head');
+});
+
 test('review threads get replies; a thread the agent changed code for is resolved after the push', async (t) => {
   const f = await fixture(t);
   f.setPr({
