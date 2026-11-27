@@ -189,7 +189,7 @@ test('payloads parse leniently and settings default to no task manager', () => {
   assert.deepEqual(ReviewPayload.parse({ meta: {} }).findings, []);
   assert.deepEqual(ProjectSettings.parse({}), {
     task_manager: { kind: 'none' },
-    tending: { enabled: false, answer_threads: false, trusted_logins: [] },
+    tending: { enabled: true, answer_threads: true, trusted_logins: [] },
   });
   assert.throws(() => ProjectSettings.parse({ icon: 'way too long icon' }));
 });
@@ -221,4 +221,14 @@ test('stream summary keeps readable steps and the final result', () => {
     result: { ok: true, text: 'Done', costUsd: 1.5, durationMs: 9 },
   });
   assert.equal(summarizeReviewStream(lines, 1).steps.length, 1);
+});
+
+test('a profile with no tending block tends agent PRs, answers threads, and can opt out', () => {
+  const none = ProjectSettings.parse({});
+  assert.equal(none.tending.enabled, true);
+  assert.equal(none.tending.answer_threads, true);
+  assert.deepEqual(none.tending.trusted_logins, []);
+  const off = ProjectSettings.parse({ tending: { enabled: false } });
+  assert.equal(off.tending.enabled, false);
+  assert.equal(ProjectSettings.parse({ tending: { enabled: true } }).tending.answer_threads, true);
 });

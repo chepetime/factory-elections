@@ -477,7 +477,7 @@ export function ProjectSettingsForm({
             <Group>
               <Row
                 label="Enable PR tending"
-                hint="Fix failed checks and merge conflicts on open factory PRs."
+                hint="Fix failed checks and merge conflicts on open factory PRs. On by default; turn it off to stop it."
               >
                 {(id, hint) => (
                   <input
@@ -490,7 +490,10 @@ export function ProjectSettingsForm({
                   />
                 )}
               </Row>
-              <Row label="Answer review threads" hint="Reply to review comments on those PRs.">
+              <Row
+                label="Answer review threads"
+                hint="Reply to review comments from trusted logins on those PRs. On by default."
+              >
                 {(id, hint) => (
                   <input
                     id={id}
