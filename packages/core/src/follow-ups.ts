@@ -1,7 +1,8 @@
 // Follow-ups: more work on a run whose PR is already open, by a workspace agent, on the same branch
 // and PR. The run goes through the usual stages again (coding, the approval gate with the new commit,
-// then a push to the same PR), so the board shows the ticket in progress, in review or blocked, and
-// nothing reaches GitHub without a person approving that exact commit.
+// then a push to the same PR), so the board shows the ticket in progress, in review or blocked.
+// A person approves that exact commit before it reaches GitHub, except for the fixes in
+// `followUpPushesItself`, which the factory approves once the checks pass.
 import type { TaskRecord } from './schemas.ts';
 import { withStage } from './domain.ts';
 import { runWorking } from './issues.ts';
@@ -9,11 +10,12 @@ import { runWorking } from './issues.ts';
 export type FollowUpKind = 'custom' | 'conflicts' | 'review';
 
 /**
- * Whether the follow-up's commit is pushed once the checks pass, without the approval gate. Only
- * the review loop's fixes are: the person reviews the whole PR on GitHub when the loop is done.
+ * Whether the follow-up's commit is pushed once the checks pass, without the approval gate: the
+ * review loop's fixes and conflict resolutions. The person reviews the whole PR on GitHub before
+ * merging it, and a PR that stays conflicted until someone approves the resolution only stalls.
  */
 export function followUpPushesItself(kind: FollowUpKind): boolean {
-  return kind === 'review';
+  return kind === 'review' || kind === 'conflicts';
 }
 
 /**

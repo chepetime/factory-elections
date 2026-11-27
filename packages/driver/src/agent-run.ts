@@ -55,7 +55,8 @@ async function refuseEndedPr(d: Driver, task: TaskRecord, path: string, branch: 
  * More work on a task whose PR is open, by a workspace agent on the same branch and PR (see
  * core follow-ups.ts). It starts from the PR head and refuses a branch that diverged from it. A
  * conflict follow-up merges the base first: a clean merge goes straight to verification, and
- * conflicts go to the agent. Either way the task stops at the approval gate with the new commit.
+ * conflicts go to the agent. Either way the factory pushes the new commit to the PR once the checks
+ * pass; a failed check leaves it where the run stopped.
  */
 export async function followUp(
   d: Driver,
@@ -119,7 +120,15 @@ export async function followUp(
     note = `${input.note}\n\nConflicted files:\n${merge.conflicted.map((f) => `- ${f}`).join('\n')}`;
   }
   const done = await d.agentRun(project, id, note);
-  return followUpPushesItself(input.kind) ? d.pushReviewFix(project, id, done) : done;
+  if (!followUpPushesItself(input.kind)) return done;
+  return d.pushReviewFix(
+    project,
+    id,
+    done,
+    input.kind === 'conflicts'
+      ? `Approved by the factory: the conflicts with origin/${base} were resolved and the checks passed. Review the PR on GitHub.`
+      : undefined,
+  );
 }
 
 /**
@@ -156,20 +165,18 @@ export async function syncBase(
 }
 
 /**
- * A review fix that passed the checks is approved by the review loop and pushed to the same PR.
- * Anything else (a failed check, a question, no change) stays where the run left it.
+ * A review or conflict fix that passed the checks is approved by the factory and pushed to the same
+ * PR. Anything else (a failed check, a question, no change) stays where the run left it.
  */
 export async function pushReviewFix(
   d: Driver,
   project: string,
   id: string,
   task: TaskRecord,
+  note = 'Approved by the review loop: the checks passed. Review the PR on GitHub.',
 ): Promise<TaskRecord> {
   if (task.stage !== 'awaiting-approval' || !task.verification?.passed) return task;
-  await d.approve(project, id, {
-    head: task.verification.head_sha,
-    note: 'Approved by the review loop: the checks passed. Review the PR on GitHub.',
-  });
+  await d.approve(project, id, { head: task.verification.head_sha, note });
   return openPr(d.deps, project, id, {});
 }
 

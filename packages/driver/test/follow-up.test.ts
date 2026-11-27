@@ -1,5 +1,6 @@
 // Follow-ups on a task whose PR is open, against a real git origin and a scripted agent: the agent
-// continues the same branch, the change stops at the approval gate, and approval updates the same PR.
+// continues the same branch, and its change either stops at the approval gate or, for a conflict or
+// review fix that passed the checks, is pushed to the same PR.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -153,7 +154,7 @@ function write(file: string, text: string): Turn {
   };
 }
 
-test('a conflict follow-up hands the conflicts to the agent, stops at the gate, and approval updates the same PR', async () => {
+test('a conflict follow-up hands the conflicts to the agent and pushes the resolution to the same PR once the checks pass', async () => {
   const ctx = await opened();
   await ctx.landOnMain('feature.txt', 'from main\n');
   ctx.turns.push(write('feature.txt', 'from devin and main\n'));
@@ -161,13 +162,13 @@ test('a conflict follow-up hands the conflicts to the agent, stops at the gate, 
     note: 'Resolve the merge conflicts.',
     kind: 'conflicts',
     agent: 'devin',
-    by: 'you',
+    by: 'factory',
+    prHead: ctx.task.pr!.head_sha,
   });
-  assert.equal(followed.stage, 'awaiting-approval', 'the new commit waits for approval');
   assert.match(ctx.calls.at(-1)!.prompt, /Conflicted files:\n- feature\.txt/);
   assert.deepEqual(
     followed.follow_ups?.map((f) => [f.kind, f.agent, f.by]),
-    [['conflicts', 'devin', 'you']],
+    [['conflicts', 'devin', 'factory']],
   );
   const head = sh(ctx.worktree(followed), 'rev-parse', 'HEAD');
   assert.equal(
@@ -175,13 +176,37 @@ test('a conflict follow-up hands the conflicts to the agent, stops at the gate, 
     3,
     'a merge commit',
   );
-  assert.equal(followed.pr?.url, 'https://github.com/example/demo/pull/1', 'the PR stays the same');
-
-  await ctx.driver.approve('demo', ctx.task.id, { head });
-  const updated = await ctx.driver.openPr('demo', ctx.task.id);
-  assert.equal(updated.stage, 'pr-opened');
-  assert.deepEqual([updated.pr?.url, updated.pr?.head_sha], ['https://github.com/example/demo/pull/1', head]);
+  assert.equal(
+    followed.stage,
+    'pr-opened',
+    'the checks passed, so the resolution is pushed without the gate',
+  );
+  assert.match(followed.approval?.note ?? '', /Approved by the factory: .*conflicts.*checks passed/);
+  assert.deepEqual(
+    [followed.pr?.url, followed.pr?.head_sha],
+    ['https://github.com/example/demo/pull/1', head],
+  );
   assert.equal(ctx.prs(), 1, 'no second PR');
+});
+
+test('a conflict resolution that fails the checks is not pushed', async () => {
+  const ctx = await opened();
+  await ctx.landOnMain('feature.txt', 'from main\n');
+  await ctx.setTest('false');
+  ctx.turns.push(write('feature.txt', 'from devin and main\n'));
+  // The agent gets its fix turns on the failure and still cannot make the checks pass.
+  ctx.turns.push(write('fix-1.txt', 'try\n'), write('fix-2.txt', 'try\n'));
+  const followed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: 'Resolve the merge conflicts.',
+    kind: 'conflicts',
+    agent: 'devin',
+    by: 'factory',
+    prHead: ctx.task.pr!.head_sha,
+  });
+  assert.notEqual(followed.stage, 'pr-opened');
+  assert.equal(followed.verification?.passed, false);
+  assert.equal(followed.approval, undefined, 'nothing approved');
+  assert.equal(followed.pr?.head_sha, ctx.task.pr?.head_sha, 'the PR keeps its old head');
 });
 
 test('a conflict follow-up whose merge applies cleanly needs no agent, and the factory pushes it once the checks pass', async () => {
