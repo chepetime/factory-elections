@@ -36,6 +36,8 @@ Diagram identifiers use underscores; stored stages retain hyphens. Failures and 
 
 Execution follows `queued → running → finalizing → completed | failed`. An unfinished record without an owner is `interrupted`. A terminal record with an owner is still `finalizing`: flushing evidence and releasing the lock are part of completion. Evidence-close failure persists a failed run outcome. Nothing automatically replays.
 
+Run record ownership: each backend start raises `<root>/backend-generation` under `backend.lock`, and `run.json` carries `owner_generation` (absent = 0). All `run.json` writes compare the stored generation first (`writeRun`; true compare-and-set on Postgres, serialized in-process on files, not atomic against a process that ignores the lock). A writer that lost the fence writes nothing and logs `finalize.fenced` in the run's `events.jsonl`. Recovery writes `interrupted` with the new generation. Fencing the old driver's `task.json` writes is a follow-up (phase 2).
+
 ## Workflow inventory
 
 | Machine / source | States and transitions | Decision / invariant |

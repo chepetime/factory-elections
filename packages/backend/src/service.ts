@@ -68,7 +68,7 @@ import { environmentChecks, type Check } from '@factory/compose/diagnostics';
 import type { BackgroundRun, Command, Target } from '@factory/backend-client/protocol';
 import { ProfileChecks } from './profile-check.ts';
 import { TaskTraces } from './task-traces.ts';
-import { CommandSchema, RunRecord, TargetSchema, type RunCommand } from './run-record.ts';
+import { CommandSchema, ownerOf, RunRecord, TargetSchema, writeRun, type RunCommand } from './run-record.ts';
 import { performCommand, RunExecutor } from './run-executor.ts';
 
 /**
@@ -167,14 +167,19 @@ export class BackendService {
   readonly outcomes: OutcomeStore;
   /** Keeps open factory PRs moving, for projects that turn it on. */
   readonly tending: TendingService;
+  /** Stamped as `owner_generation` on run records this backend settles; old owners are fenced out. */
+  readonly generation: number;
   constructor(
     root: string,
     runner?: ModelRunner,
     environment?: () => Promise<Check[]>,
     reviewDeps?: ReviewDeps,
     detector?: SettingsDetector,
+    /** This backend's generation from `<root>/backend-generation`; 0 when not started by a server. */
+    generation = 0,
   ) {
     this.root = root;
+    this.generation = generation;
     this.storage = storageFor(root);
     // Reviews read their state from storage; the pool caches that count for all its waiters.
     this.pool = new AgentPool({ max: MAX_AGENTS, external: () => this.reviews.agentsInUse() });
@@ -290,6 +295,7 @@ export class BackendService {
       stopRequested: (runId) => this.dispatcher.stopRequested(runId),
       receipt: (project, id) => this.issueReceipt(project, id),
       kick: () => this.pickup?.kick(),
+      generation,
     });
     this.agents = new AgentService({ root, storage: this.storage, seed: true });
     this.issues = new IssueService({
@@ -761,6 +767,7 @@ export class BackendService {
         label: await this.runLabel(task, command.action, command.agent),
         state: 'queued',
         created_at: new Date().toISOString(),
+        owner_generation: this.generation,
       };
       const taskDir = dirname(this.tasks.taskPath(command.project, command.id));
       const dir = join(taskDir, 'runs', record.id);
@@ -972,7 +979,7 @@ export class BackendService {
     record.error = 'Stopped by you before the run started.';
     record.finished_at = new Date().toISOString();
     record.cleanup = { status: 'clean' };
-    await this.storage.writeDocument(join(dir, 'run.json'), record);
+    await writeRun(this.storage, dir, record, ownerOf(record));
   }
   /**
    * Records that a person checked an uncertain cleanup: nothing from the last run still runs.
@@ -988,10 +995,13 @@ export class BackendService {
       const latest = await this.latest(target);
       if (!latest || !cleanupBlocker(latest.record.cleanup))
         throw new Conflict('The last run has no uncertain cleanup to confirm.');
-      await this.storage.writeDocument(join(latest.dir, 'run.json'), {
-        ...latest.record,
-        cleanup: { ...latest.record.cleanup!, confirmed_at: new Date().toISOString() },
-      });
+      const written = await writeRun(
+        this.storage,
+        latest.dir,
+        { ...latest.record, cleanup: { ...latest.record.cleanup!, confirmed_at: new Date().toISOString() } },
+        ownerOf(latest.record),
+      );
+      if (!written.written) throw new Conflict('The run record changed; try again.');
       return 'Cleanup confirmed; the task can run again.';
     });
   }
@@ -1000,7 +1010,12 @@ export class BackendService {
     await this.tasks.withLock(project, id, async () => {
       const latest = await this.latest(target);
       if (latest)
-        await this.storage.writeDocument(join(latest.dir, 'run.json'), { ...latest.record, dismissed: true });
+        await writeRun(
+          this.storage,
+          latest.dir,
+          { ...latest.record, dismissed: true },
+          ownerOf(latest.record),
+        );
     });
   }
   /**
@@ -1144,17 +1159,25 @@ export class BackendService {
       if (queued === 'scheduled') return 'requeued';
       if (queued === 'settled') return undefined;
     }
-    await this.storage.writeDocument(join(dir, 'run.json'), {
-      ...record,
-      state: 'interrupted',
-      outcome: 'interrupted',
-      // Processes of a run that was running at a crash are not known to be gone.
-      ...(record.state === 'running'
-        ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
-        : {}),
-      error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
-      finished_at: new Date().toISOString(),
-    });
+    const settled = await writeRun(
+      this.storage,
+      dir,
+      {
+        ...record,
+        owner_generation: this.generation,
+        state: 'interrupted',
+        outcome: 'interrupted',
+        // Processes of a run that was running at a crash are not known to be gone.
+        ...(record.state === 'running'
+          ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
+          : {}),
+        error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
+        finished_at: new Date().toISOString(),
+      },
+      ownerOf(record),
+    );
+    // Another backend settled this run first: leave the task to it.
+    if (!settled.written) return undefined;
     const current = await this.tasks.read(project, id);
     if (runWorking(current.stage))
       await this.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
