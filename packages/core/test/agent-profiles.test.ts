@@ -72,6 +72,8 @@ test('free agents pick their Todo tasks, most urgent then oldest, within their s
     task('D-7', { archived: true }),
     task('D-8', { assignee: 'mika' }),
     task('D-9', { assignee: 'old' }),
+    // FE-22 needs FE-21's code: a ticket that waits for its blockers is not started.
+    task('D-0', { priority: 'urgent', waits: true }),
   ];
   const keys = (busy: Map<string, number>, skip?: (t: { key: string }) => boolean) =>
     pickupPlan(agents, tasks, busy, skip).map((t) => t.key);

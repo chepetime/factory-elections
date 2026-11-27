@@ -422,7 +422,9 @@ export class Driver {
   /**
    * Runs the factory's checks again on the task's current commit, with no agent turn. A pass puts
    * it at the approval gate; a failure records the output, as after any run. Agent tasks only: a
-   * pipeline task needs its reviewer step after verification.
+   * pipeline task needs its reviewer step after verification. As before an agent turn, the factory
+   * first merges `origin/<base>` in, so a fix that landed on the base reaches the branch; nothing is
+   * pushed. A conflicting base is undone and left for an agent turn.
    */
   async check(project: string, id: string): Promise<TaskRecord> {
     const task = await this.deps.tasks.read(project, id);
@@ -430,9 +432,21 @@ export class Driver {
     if (blockers.length) throw new DriverError(blockers.map((b) => b.message).join('; '));
     if (task.workflow !== 'agent')
       throw new DriverError('Checking again is for agent tasks; revise a pipeline task.');
-    const { path } = await this.checkedWorktree(task);
+    const { path, base } = await this.checkedWorktree(task);
     if (!(await this.deps.git.isClean(path)))
       throw new DriverError('the task worktree has uncommitted changes; commit them first');
+    const synced = await this.syncBase(task, 'the checks');
+    if (synced.conflicted.length) {
+      await this.deps.git.abortMerge?.(path);
+      const message = [
+        `origin/${base} conflicts with this branch, so the checks did not run. The branch is unchanged.`,
+        `An agent turn must resolve the conflicts: reply here, or add a conflicts follow-up. Conflicted files:`,
+        ...synced.conflicted.map((f) => `- ${f}`),
+      ].join('\n');
+      const current = await this.deps.tasks.read(project, id);
+      await this.deps.tasks.write(withStage(current, this.deps.now(), 'blocked', message));
+      return this.deps.tasks.read(project, id);
+    }
     return this.gateAfterFollowUp(project, id);
   }
 

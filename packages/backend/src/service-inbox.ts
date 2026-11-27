@@ -29,7 +29,10 @@ export async function inbox(s: BackendService): Promise<{ items: InboxItem[]; di
     const tending = await s.tending.waiting(name, tasks).catch(() => []);
     items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
   }
-  items.push(...recoveryInboxItems(s.recovery), ...foreignLockInboxItems([...s.foreignLocks.values()]));
+  items.push(
+    ...recoveryInboxItems(s.recovery),
+    ...foreignLockInboxItems([...s.executor.foreignLocks.values()]),
+  );
   const open = items.filter((i) => !dismissed[i.id]);
   return {
     items: open.sort((a, b) => a.since.localeCompare(b.since)),

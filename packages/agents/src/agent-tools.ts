@@ -11,7 +11,7 @@ const AgentStatus = z.enum(['in_progress', 'in_review', 'blocked']);
 const StatusArgs = z.object({ status: AgentStatus });
 
 /** What the agent asked for during the session, read by the workflow when the session ends. */
-export type SessionReport = { status?: z.infer<typeof AgentStatus> };
+export type SessionReport = { status?: z.infer<typeof AgentStatus>; commented?: boolean };
 
 export function taskTools(input: {
   issues: Pick<AgentBoard, 'comment' | 'setStatus'>;
@@ -30,6 +30,7 @@ export function taskTools(input: {
         const args = CommentArgs.safeParse(raw);
         if (!args.success) return { text: 'Give the comment a body.', isError: true };
         await issues.comment({ project, key, body: args.data.body, author: agent.id });
+        report.commented = true;
         return { text: `Posted on ${key}.` };
       },
     },

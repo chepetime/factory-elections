@@ -1,14 +1,15 @@
 // Shutdown and restart recovery for the backend: drain the runs, then recover, reconcile and
 // requeue them. BackendService methods of the same names call these.
-import { join } from 'node:path';
 import {
+  cleanupBlocker,
   taskCommandBlockers,
   withStage,
   type TaskRecord,
   type RecoveryProblem,
   type RecoveryReport,
 } from '@factory/core';
-import { RunRecord } from './run-record.ts';
+import { ownerOf, RunRecord, writeRun } from './run-record.ts';
+import { Conflict } from './conflict.ts';
 import { RUN_RECOVERY, failsWhenInterrupted } from './recovery-rules.ts';
 import { DRAIN_GRACE_MS, type BackendService } from './service.ts';
 
@@ -161,17 +162,25 @@ export async function reconcileTask(
     if (queued === 'scheduled') return 'requeued';
     if (queued === 'settled') return undefined;
   }
-  await s.storage.writeDocument(join(dir, 'run.json'), {
-    ...record,
-    state: 'interrupted',
-    outcome: 'interrupted',
-    // Processes of a run that was running at a crash are not known to be gone.
-    ...(record.state === 'running'
-      ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
-      : {}),
-    error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
-    finished_at: new Date().toISOString(),
-  });
+  const settled = await writeRun(
+    s.storage,
+    dir,
+    {
+      ...record,
+      owner_generation: s.generation,
+      state: 'interrupted',
+      outcome: 'interrupted',
+      // Processes of a run that was running at a crash are not known to be gone.
+      ...(record.state === 'running'
+        ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
+        : {}),
+      error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
+      finished_at: new Date().toISOString(),
+    },
+    ownerOf(record),
+  );
+  // Another backend settled this run first: leave the task to it.
+  if (!settled.written) return undefined;
   const current = await s.tasks.read(project, id);
   if (failsWhenInterrupted(current.stage))
     await s.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
@@ -213,4 +222,20 @@ export async function requeue(
     await release?.();
     return 'refused';
   }
+}
+
+/**
+ * Called when a run is accepted. Refuses it while the task's previous run may have left processes
+ * (an uncertain cleanup nobody confirmed). Otherwise says whether that run was interrupted: only
+ * then can a dead process have left a stale git lock, and the new run clears the worktree's own
+ * (the driver's stale-locks.ts; docs/state-machines.md).
+ */
+export async function resumeCheck(
+  s: BackendService,
+  target: Parameters<BackendService['latest']>[0],
+): Promise<{ after_interrupted?: true }> {
+  const previous = (await s.latest(target))?.record;
+  const waiting = cleanupBlocker(previous?.cleanup);
+  if (waiting) throw new Conflict(waiting);
+  return previous?.state === 'interrupted' ? { after_interrupted: true } : {};
 }

@@ -1,6 +1,7 @@
 // Starts Todo tasks assigned to agents when those agents have free slots. A start that fails (an
 // unapproved profile, a dirty repository) leaves one note on the task and waits before trying again.
 import {
+  blockerGate,
   pickupPlan,
   runFinished,
   type AgentProfile,
@@ -179,6 +180,11 @@ export class AgentPickup {
           priority: i.priority,
           created_at: i.created_at,
           archived: Boolean(i.archived_at),
+          // FE-22 needs FE-21's code: it waits until FE-21 is Done, or stacks on FE-21's open PR.
+          ...(i.blocked_by.length &&
+          blockerGate(i.blocked_by, board.items, (id) => records.get(id)).kind === 'wait'
+            ? { waits: true }
+            : {}),
           ...(i.run ? { run_stage: i.run.stage } : {}),
           // An agent run that was created but never started (a refused start, a restart) can start again.
           ...(latest?.workflow === 'agent' &&

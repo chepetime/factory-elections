@@ -924,3 +924,17 @@ test('recovery reports a run it cannot read, refuses to change it, and a later r
     await restarted.close();
   }
 });
+
+test('each backend start raises the generation in backend-generation', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-generation-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const options = { root, port: 0, healthPort: 0, token };
+  const first = await startBackend(options);
+  assert.equal((await readFile(join(root, 'backend-generation'), 'utf8')).trim(), '1');
+  await first.close();
+  // A hand-removed lock (a hung backend) lets a new backend start with a larger generation.
+  await rm(join(root, 'backend.lock'), { force: true });
+  const second = await startBackend(options);
+  assert.equal((await readFile(join(root, 'backend-generation'), 'utf8')).trim(), '2');
+  await second.close();
+});

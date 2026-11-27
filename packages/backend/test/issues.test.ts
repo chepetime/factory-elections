@@ -42,13 +42,11 @@ async function setup(
       tending: { enabled: false, answer_threads: false, trusted_logins: [] },
       ...settings,
     }),
-    submit: async ({ prompt, jiraKey }) => {
-      const created = run(
-        prompt,
-        new Date(clock).toISOString(),
-        'queued',
-        jiraKey ? { jira_key: jiraKey } : {},
-      );
+    submit: async ({ prompt, jiraKey, stackOn }) => {
+      const created = run(prompt, new Date(clock).toISOString(), 'queued', {
+        ...(jiraKey ? { jira_key: jiraKey } : {}),
+        ...(stackOn ? { stack_on: stackOn } : {}),
+      });
       tasks.push(created);
       calls.push(`submit:${prompt}`);
       return created.id;
@@ -683,4 +681,88 @@ test('a follow-up asking to merge main or resolve conflicts runs as a conflicts 
     body: '@devin Merge main into this branch and run the tests',
   });
   assert.ok(calls.includes(`followUp:${opened.id}:conflicts:devin:you:`), calls.join('\n'));
+});
+
+test('blockers: set through update, refused when unknown, self or a cycle', async (t) => {
+  const { service } = await setup(t);
+  const project = 'change-elections';
+  for (const title of ['FE-21 code', 'FE-22 needs it', 'Other'])
+    await service.create({ project, title, status: 'todo' });
+  const set = await service.update({ project, key: 'CE-2', blocked_by: ['ce-1', 'CE-1'] });
+  assert.deepEqual(set.blocked_by, ['CE-1']);
+  assert.equal(set.events.at(-1)!.message, 'Set blocked by to CE-1');
+  await assert.rejects(
+    service.update({ project, key: 'CE-1', blocked_by: ['CE-2'] }),
+    (e: unknown) => e instanceof Conflict && /blocking cycle: CE-1 → CE-2 → CE-1/.test((e as Error).message),
+  );
+  await assert.rejects(service.update({ project, key: 'CE-3', blocked_by: ['CE-3'] }), /CE-3 blocks itself/);
+  await assert.rejects(service.update({ project, key: 'CE-3', blocked_by: ['CE-9'] }), /unknown ticket CE-9/);
+  await assert.rejects(
+    service.update({ project, key: 'CE-3', blocked_by: ['XY-1'] }),
+    /XY-1 is not a task of this project/,
+  );
+  const cleared = await service.update({ project, key: 'CE-2', blocked_by: [] });
+  assert.deepEqual(cleared.blocked_by, []);
+});
+
+test('a ticket waits for its blocker, then stacks on the blocker branch once its PR is open', async (t) => {
+  const { service, tasks } = await setup(t);
+  const project = 'change-elections';
+  await service.create({ project, title: 'FE-21 code', status: 'todo' });
+  await service.create({ project, title: 'FE-22 needs it', status: 'todo' });
+  await service.update({ project, key: 'CE-2', blocked_by: ['CE-1'] });
+  await assert.rejects(
+    service.move({ project, key: 'CE-2', to: 'in_progress' }),
+    (e: unknown) => e instanceof Conflict && /Waits for CE-1/.test((e as Error).message),
+  );
+  const blocker = await service.move({ project, key: 'CE-1', to: 'in_progress' });
+  const record = tasks.find((x) => x.id === blocker.issue.run!.id)!;
+  tasks[tasks.indexOf(record)] = {
+    ...record,
+    stage: 'pr-opened',
+    pr: {
+      url: 'https://github.com/o/r/pull/21',
+      branch: `factory/${record.id}`,
+      head_sha: 'abc',
+      at: record.created_at!,
+    },
+    worktree: { path: '/w', branch: `factory/${record.id}`, base_branch: 'main' },
+  } as TaskRecord;
+  const started = await service.move({ project, key: 'CE-2', to: 'in_progress' });
+  assert.equal(started.action, 'start-run');
+  const stacked = tasks.find((x) => x.id === started.issue.run!.id)!;
+  assert.equal(stacked.stack_on, `factory/${record.id}`);
+  assert.match(started.issue.events.at(-1)!.message, /stacked on CE-1/);
+});
+
+test('a run that waits for a person says why: the message of its latest event for its stage', async (t) => {
+  const budget =
+    "Devin spent the budget for this task ($20.08 of $15.00). Raise Devin's budget per task in the agent's settings, then reply here to continue.";
+  const blocked = run('Over budget', '2026-11-18T10:00:00.000Z', 'blocked', {
+    events: [
+      { at: '2026-11-18T10:01:00.000Z', kind: 'stage:blocked', message: 'Devin needs you' },
+      { at: '2026-11-18T10:02:00.000Z', kind: 'stage:coding', message: 'Continuing' },
+      { at: '2026-11-18T10:03:00.000Z', kind: 'stage:blocked', message: budget },
+      { at: '2026-11-18T10:04:00.000Z', kind: 'note', message: 'not a stage event' },
+    ],
+  });
+  const failed = run('Broke', '2026-11-19T10:00:00.000Z', 'failed', {
+    events: [{ at: '2026-11-19T10:01:00.000Z', kind: 'stage:failed', message: 'x'.repeat(500) }],
+  });
+  const approval = run('Ready', '2026-11-20T10:00:00.000Z', 'awaiting-approval', {
+    events: [
+      { at: '2026-11-20T10:01:00.000Z', kind: 'stage:awaiting-approval', message: 'Ready for review' },
+    ],
+  });
+  const coding = run('Working', '2026-11-21T10:00:00.000Z', 'coding', {
+    events: [{ at: '2026-11-21T10:01:00.000Z', kind: 'stage:coding', message: 'Coding' }],
+  });
+  const { service } = await setup(t, [blocked, failed, approval, coding]);
+  const { items } = await service.list('change-elections');
+  const reasons = new Map(items.map((i) => [i.run!.stage, i.run!.reason]));
+  assert.equal(reasons.get('blocked'), budget);
+  assert.equal(reasons.get('failed')?.length, 300, 'a long reason is trimmed');
+  assert.ok(reasons.get('failed')?.endsWith('…'));
+  assert.equal(reasons.get('awaiting-approval'), undefined);
+  assert.equal(reasons.get('coding'), undefined);
 });

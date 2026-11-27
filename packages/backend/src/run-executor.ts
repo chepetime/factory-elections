@@ -20,6 +20,7 @@ import {
   type ModelResult,
   type ModelRunner,
   type ProviderSessionRef,
+  type ForeignLocks,
   type TaskRecord,
   type UserSettings,
 } from '@factory/core';
@@ -30,7 +31,7 @@ import { callManifest, Evidence, withManifest, type TraceLog } from '@factory/ev
 import { SessionLog, transcriptEntries, type MemoryService, type SessionEntry } from '@factory/agents';
 import type { ActivitySnapshot } from '@factory/backend-client/protocol';
 import { RunActivity, trackShell } from './activity.ts';
-import type { RunCommand, RunRecord } from './run-record.ts';
+import { ownerOf, writeRun, type RunCommand, type RunRecord } from './run-record.ts';
 import type { TaskTraces } from './task-traces.ts';
 
 /** Runs one command on the driver and says what it did. */
@@ -89,8 +90,8 @@ export interface RunExecutorDeps {
   receipt(project: string, id: string): Promise<unknown>;
   /** A slot is free again: an agent may take its next Todo task. */
   kick(): void;
-  /** A resumed run found git locks that are not the task's: they wait for a person (the inbox). */
-  foreignLocks?(task: TaskRecord, paths: string[]): void;
+  /** This backend's generation (`<root>/backend-generation`): the owner stamped on run records. */
+  generation?: number;
 }
 
 /** Locks older than the backend's own start belong to a process of an earlier backend. */
@@ -98,12 +99,37 @@ const BACKEND_STARTED = Date.now();
 
 export class RunExecutor {
   private readonly deps: RunExecutorDeps;
+  /** Git locks outside a task that its last resumed run found; they wait for a person. In memory. */
+  readonly foreignLocks = new Map<string, ForeignLocks>();
   /** Aborts each running run's model calls and checks. */
   private readonly controllers = new Map<string, AbortController>();
   /** What each executing run is doing now: current command and last output. */
   private readonly activities = new Map<string, RunActivity>();
   constructor(deps: RunExecutorDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Writes the run record if this backend still owns it. A lost fence writes nothing to run.json
+   * and logs `finalize.fenced` with both generations to the run's events instead.
+   */
+  private async fenced(
+    dir: string,
+    record: RunRecord,
+    expected: number,
+    evidence: Evidence | undefined,
+  ): Promise<boolean> {
+    const result = await writeRun(this.deps.storage, dir, record, expected);
+    if (result.written) return false;
+    const stored = result.current === undefined ? undefined : ownerOf(result.current as RunRecord);
+    evidence?.record('finalize.fenced', {
+      project: record.project,
+      task_id: record.task_id,
+      stored_generation: stored ?? null,
+      own_generation: this.deps.generation ?? 0,
+      attempted_state: record.state,
+    });
+    return true;
   }
 
   /** Whether the run started executing (it holds an abort controller). */
@@ -159,6 +185,9 @@ export class RunExecutor {
     // Cleanup evidence and session references from the run's model calls (ADR 0005).
     const calls: CallCleanup[] = [];
     let sessions: ProviderSessionRef[] = [];
+    // The generation the stored record must carry for this backend's writes to land.
+    let expected = ownerOf(record);
+    let lost = false;
     let manifests: CallManifest[] = [];
     const trace = await this.deps.taskTraces.start(command.project, command.id).catch(() => undefined);
     const sessionKey = `${command.project}/${command.id}`;
@@ -174,7 +203,12 @@ export class RunExecutor {
     try {
       evidence = new Evidence(join(dir, 'events.jsonl'), record.id, this.deps.storage);
       record.state = 'running';
-      await this.deps.storage.writeDocument(join(dir, 'run.json'), record);
+      record.owner_generation = this.deps.generation ?? 0;
+      if (await this.fenced(dir, record, expected, evidence)) {
+        lost = true;
+        throw new Error('Another backend owns this run record; this run did not start.');
+      }
+      expected = record.owner_generation;
       const sink = evidence;
       let logFailure: unknown;
       const log = (message: string) => {
@@ -243,7 +277,13 @@ export class RunExecutor {
           if (record.after_interrupted)
             driver.deps.staleLocks = {
               olderThan: BACKEND_STARTED,
-              ...(this.deps.foreignLocks ? { reported: this.deps.foreignLocks } : {}),
+              reported: (task, paths) =>
+                this.foreignLocks.set(`${task.project}/${task.id}`, {
+                  project: task.project,
+                  task_id: task.id,
+                  paths,
+                  since: new Date().toISOString(),
+                }),
             };
           await performCommand(command, driver);
           if (logFailure) throw logFailure;
@@ -262,7 +302,7 @@ export class RunExecutor {
           : String(error);
       // A worker error must not leave the UI thinking an owned run is still coding.
       const task = await this.deps.tasks.read(command.project, command.id);
-      if (stopped || runWorking(task.stage))
+      if (!lost && (stopped || runWorking(task.stage)))
         await this.deps.tasks.write(withStage(task, new Date().toISOString(), 'failed', record.error));
     } finally {
       this.controllers.delete(record.id);
@@ -280,9 +320,9 @@ export class RunExecutor {
       if (trace) await this.deps.taskTraces.end(trace, command.action, record).catch(() => undefined);
       try {
         try {
-          await this.deps.storage.writeDocument(join(dir, 'run.json'), record);
+          lost = (await this.fenced(dir, record, expected, evidence)) || lost;
           // The receipt reads this run's manifests, so it follows the run record.
-          await this.deps.receipt(command.project, command.id).catch(() => undefined);
+          if (!lost) await this.deps.receipt(command.project, command.id).catch(() => undefined);
         } finally {
           await evidence?.close();
         }
@@ -296,7 +336,8 @@ export class RunExecutor {
         ]
           .filter(Boolean)
           .join('\n');
-        await this.deps.storage.writeDocument(join(dir, 'run.json'), record);
+        // Evidence is closed by now: a lost fence here is only not written.
+        await this.fenced(dir, record, expected, undefined);
       }
     }
   }
