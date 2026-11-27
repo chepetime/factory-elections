@@ -82,14 +82,20 @@ import {
   ReviewTarget,
   RunFile,
   reviewWorktree,
+  stripFrontmatter,
 } from './review-files.ts';
 import { defaultScreen, planAttributes, planRecord, planReviewFile } from './review-screen.ts';
 import type { ScreenRunner } from './review-screen.ts';
-import { missingReportReason, offeredTools, permissionModeOf } from './review-turn-log.ts';
+import {
+  AUTOMATED_TURN_DENY,
+  missingReportReason,
+  offeredTools,
+  permissionModeOf,
+} from './review-turn-log.ts';
 import type { ReviewDetail, ReviewFindingRow, ReviewRow, ReviewStatus } from './review-types.ts';
 
 export { reviewWorktree } from './review-files.ts';
-export { missingReportReason, permissionModeOf } from './review-turn-log.ts';
+export { AUTOMATED_TURN_DENY, missingReportReason, permissionModeOf } from './review-turn-log.ts';
 export type * from './review-types.ts';
 
 export const SKILL_DIR = resolve(
@@ -108,26 +114,6 @@ export const REVIEW_STALL_MS = Number(process.env.FACTORY_REVIEW_STALL_MS ?? 30 
 export const REVIEW_TURN_BUDGET_USD = Number(process.env.FACTORY_REVIEW_BUDGET_USD ?? 25);
 /** Most the child tasks of one review turn may spend together. */
 export const REVIEW_DELEGATE_BUDGET_USD = Number(process.env.FACTORY_REVIEW_DELEGATE_BUDGET_USD ?? 10);
-/**
- * GitHub and git writes the agent may not make on its own. Kickoff and re-review turns get this
- * list; a message the user typed does not, so the user can still ask the agent to post.
- *
- * A hint, not a boundary: prefix patterns miss `git -C . push`, `env X=1 gh api` and any wrapped
- * command. The boundary is the OS sandbox every review turn runs in (see `spawnTurn`).
- */
-export const AUTOMATED_TURN_DENY = [
-  'Bash(gh pr review:*)',
-  'Bash(gh pr comment:*)',
-  'Bash(gh pr merge:*)',
-  'Bash(gh pr close:*)',
-  'Bash(gh pr edit:*)',
-  'Bash(gh pr ready:*)',
-  'Bash(gh issue comment:*)',
-  'Bash(gh issue create:*)',
-  'Bash(gh issue edit:*)',
-  'Bash(gh api:*)',
-  'Bash(git push:*)',
-];
 /** One review turn, as the provider CLI receives it. */
 export type AgentTurn = HeadlessTurn;
 export interface ReviewDeps {
@@ -174,10 +160,6 @@ function agentEnv(provider: AgentCli['id']): NodeJS.ProcessEnv {
 /** The review model, for its context limit. */
 const REVIEW_MODEL = 'claude-opus-5-5';
 
-function stripFrontmatter(text: string): string {
-  return text.replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
-}
-
 export class ReviewService {
   private readonly root: string;
   private readonly projects: ProjectStore;
@@ -201,6 +183,8 @@ export class ReviewService {
   /** Writes a span for each finished turn, with its tool calls. */
   traces?: TraceLog;
   reviewRecords?: PrReviewStore;
+  /** Why the model this review runs is turned off in the user settings, or undefined. */
+  modelRefusal?: (model: string) => Promise<string | undefined>;
   /**
    * Any review turn ended. `kickoff`: a review or re-review turn (its payload, or why there is
    * none); otherwise a person's message, such as "post the comments", which the agent carried out.
@@ -439,7 +423,7 @@ export class ReviewService {
       type: 'review',
       name: turn.label ?? (k === 0 ? 'review' : 'review reply'),
       step: 'review',
-      model: turn.screen?.model ?? REVIEW_MODEL,
+      model: turn.screen?.model ?? this.reviewModel(),
       provider: this.deps.agent.id,
       gateway: 'direct',
       started_at: turn.at,
@@ -452,6 +436,11 @@ export class ReviewService {
     });
     this.traces.append({ ...scope, parent_span_id: spanId }, ...tools.finish(false));
     await this.traces.flush();
+  }
+
+  /** The model reference the review turns run: Claude's review model, or the provider's own (Codex). */
+  private reviewModel(): string {
+    return this.deps.agent.id === 'claude' ? REVIEW_MODEL : this.deps.agent.id;
   }
 
   private dir(project: string, number: number): string {
@@ -712,6 +701,8 @@ export class ReviewService {
     const agent = this.deps.agent;
     const refusal = automated ? missingCapabilities(agent.id, ['denyRules']) : undefined;
     if (refusal) throw new Conflict(`Automated review turns cannot run on ${agent.id}: ${refusal}`);
+    const turnRefused = await this.modelRefusal?.(this.reviewModel());
+    if (turnRefused) throw new Conflict(turnRefused);
     const facts = await this.memory?.prompt(project);
     const systemPrompt = [skill, context, facts].filter(Boolean).join('\n\n');
     const pruned = (await this.memory?.pruned(project)) ?? [];
@@ -741,7 +732,10 @@ export class ReviewService {
         parent_span_id: spanId,
         pr: { url: record.url, number: record.number },
       });
-    const plan = automated ? await planReviewFile(this.deps.screen, join(dir, 'work', 'pr.diff')) : undefined;
+    const plan =
+      automated && agent.id === 'claude'
+        ? await planReviewFile(this.deps.screen, join(dir, 'work', 'pr.diff'))
+        : undefined;
     const turn: AgentTurn = {
       ...(plan ? { model: plan.model } : {}),
       message: message.text,
@@ -913,9 +907,11 @@ export class ReviewService {
     const results: { number: number; ok: boolean; error?: string }[] = [];
     const accepted: number[] = [];
     let inUse = (await this.agentsInUse()) + this.otherAgents();
+    const refused = await this.modelRefusal?.(this.reviewModel());
     for (const number of numbers) {
       const key = `${project}#${number}`;
       try {
+        if (refused) throw new Conflict(refused);
         const previous = await this.readRun(project, number);
         if (this.preparing.has(key) || (await this.status(project, previous, false)).state === 'running')
           throw new Conflict(`PR #${number} is already being reviewed`);

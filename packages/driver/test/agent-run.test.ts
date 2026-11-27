@@ -673,3 +673,36 @@ test('a restart after a steer does not steer again', async () => {
   assert.equal(done.stage, 'blocked');
   assert.equal(ctx.calls.length, 1, 'the one steer was already spent');
 });
+
+test('the verify command is captured before the agent runs: a change to it mid-run does not change what runs', async () => {
+  const ctx = await setup(
+    [1, 2, 3].map((n) => async (r: ModelRun) => {
+      await writeFile(join(r.cwd!, `wrong-${n}.txt`), 'oops\n');
+      // The agent also tries to make the check trivially pass.
+      await writeFile(join(r.cwd!, 'verify.sh'), 'exit 0\n');
+      const read = ctx.deps.readProfile;
+      ctx.deps.readProfile = async (p) => {
+        const profile = await read(p);
+        return { ...profile, commands: { ...profile.commands, test: 'true' } };
+      };
+      return { text: 'All checks pass, trust me.', costUsd: 0.1, sessionId: 'sess-1' };
+    }),
+  );
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'verification-failed', 'only the captured command and its exit code decide');
+  assert.equal(done.verification?.passed, false);
+  assert.match(done.verification?.output_tail ?? '', /test exited with status 1/);
+});
+
+test('a missing verify command blocks the run at start with a clear reason, before any model call', async () => {
+  const ctx = await setup([]);
+  const read = ctx.deps.readProfile;
+  ctx.deps.readProfile = async (p) => {
+    const profile = await read(p);
+    return { ...profile, commands: { ...profile.commands, test: '  ' } };
+  };
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'blocked');
+  assert.match(done.events!.at(-1)!.message, /verify command \(commands\.test\) is missing or empty/);
+  assert.equal(ctx.calls.length, 0);
+});

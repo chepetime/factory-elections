@@ -140,6 +140,19 @@ test('a legacy reruns list loads as retries of every check, and the retries stay
   assert.equal(capped.ci_retries[99]!.sha, 's149');
 });
 
+test('a no-fix failure starts no agent and names the check and reason', () => {
+  const opts = { ...me, verdicts: { unit: 'no-fix' } as const, reasons: { unit: 'cancelled' } };
+  assert.deepEqual(nextTendAction(pr({ checks: [unit] }), record(), opts), {
+    kind: 'stop',
+    reason: 'no code change can fix: unit (cancelled)',
+  });
+  const mixed = nextTendAction(pr({ checks: [unit, lint] }), record(), {
+    ...opts,
+    verdicts: { unit: 'no-fix', lint: 'real' },
+  });
+  assert.deepEqual(mixed, { kind: 'fix-ci', checks: [lint] });
+});
+
 test('nextTendAction holds checks that fail on the base and merges the base once it is green', () => {
   const check = { name: 'unit', state: 'fail' as const, run_id: '1' };
   const run = (base: 'pass' | 'fail' | 'pending' | undefined, rec = record()) =>

@@ -45,7 +45,7 @@ import {
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
 import { clearStaleLocks } from './stale-locks.ts';
-import { checkOptions, checkProfile, verifyWorktree } from './verification.ts';
+import { checkOptions, checkProfile, verifyWorktree, type VerifyCommands } from './verification.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
 export { readPrTemplate, worktreeGuard } from './support.ts';
@@ -451,12 +451,12 @@ export class Driver {
   }
 
   /** Runs the profile's test and full-check commands in the worktree. Does not change the task file. */
-  verify(project: string, id: string) {
-    return verifyWorktree(this.deps, project, id);
+  verify(project: string, id: string, captured?: VerifyCommands) {
+    return verifyWorktree(this.deps, project, id, captured);
   }
 
   // Not private: the step files (agent-run, pr-draft, review-step) call it too.
-  async verifyAndRecord(project: string, id: string): Promise<TaskRecord> {
+  async verifyAndRecord(project: string, id: string, captured?: VerifyCommands): Promise<TaskRecord> {
     // The coder may have changed a lockfile: install again, and send a failure back as feedback.
     const setupFailure = await this.refreshSetup(project, id, await this.deps.readProfile(project));
     const result: Awaited<ReturnType<Driver['verify']>> = setupFailure
@@ -467,7 +467,7 @@ export class Driver {
             (await this.checkedWorktree(await this.deps.tasks.read(project, id))).path,
           ),
         }
-      : await this.verify(project, id);
+      : await this.verify(project, id, captured);
     const task = await this.deps.tasks.read(project, id);
     const now = this.deps.now();
     const verification = {

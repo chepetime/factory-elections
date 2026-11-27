@@ -94,3 +94,8 @@ export async function headLines(path: string, bytes = 64 * 1024): Promise<string
     await file.close();
   }
 }
+
+/** The skill text without its YAML frontmatter. */
+export function stripFrontmatter(text: string): string {
+  return text.replace(/^---\n[\s\S]*?\n---\n/, '').trimStart();
+}

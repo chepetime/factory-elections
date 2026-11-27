@@ -377,6 +377,10 @@ const KIND_TEXT: Record<(typeof NOTIFY_KINDS)[number], { label: string; hint: st
   merge: { label: 'Waiting on merges', hint: 'A ticket waits for its blockers to merge.' },
   review: { label: 'PR reviews', hint: 'A PR review finished and its findings are ready.' },
   tending: { label: 'PR tending', hint: 'Tending could not keep a PR moving on its own.' },
+  'review-loop': {
+    label: 'Review loop stops',
+    hint: 'The review loop of an agent PR stopped and the PR may sit in draft.',
+  },
   recovery: { label: 'Recovery problems', hint: 'After a restart, the backend could not read some work.' },
   finding: { label: 'Findings', hint: 'The daily retro found a waste pattern that repeats across runs.' },
 };
