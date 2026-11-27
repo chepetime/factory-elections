@@ -28,7 +28,7 @@ import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } fr
 import { type ProjectStore, type TaskStore, readProfile } from '@factory/adapters-fs';
 import { readPrTemplate, type Driver } from '@factory/driver';
 import { editPullRequestBody, markPullRequestReady, pullRequestIsDraft } from '@factory/adapters-github';
-import { ReviewLoop } from './review-loop.ts';
+import { ReviewLoop, prReadiness } from './review-loop.ts';
 import { composeDriver } from '@factory/compose';
 import {
   DelegationServer,
@@ -45,7 +45,7 @@ import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
-import { TendingService } from './tending.ts';
+import { TendingService, ghTending } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
@@ -360,6 +360,7 @@ export class BackendService {
         this.issues.note({ project, key: id, kind: 'review-loop', message, ...(review ? { review } : {}) }),
       body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
       github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
+      readiness: async (cwd, number) => prReadiness(await ghTending.pr(cwd, number)),
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.reviewTickets = new ReviewTickets({
@@ -408,18 +409,17 @@ export class BackendService {
             if (settled) await this.tasks.write(settled);
           });
         await this.issues.prOutcome(task.project, task.id, pr);
-        // An agent's draft PR that never got a review loop (it opened before the loop existed, or
-        // the backend was down): start one. The loop ignores a PR it already has a state for.
-        if (pr.state === 'OPEN' && pr.draft && task.workflow === 'agent')
-          await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
+        // An agent's draft PR with no review loop yet (backend was down, or it predates loops) gets one.
+        const agentOpen = pr.state === 'OPEN' && task.workflow === 'agent';
+        if (agentOpen && pr.draft) await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
         // A loop whose review a restart cut waits for a result that never comes: start it again.
-        if (pr.state === 'OPEN' && task.workflow === 'agent') {
+        if (agentOpen) {
           const loop = await this.reviewLoop.state(task);
+          if (loop?.state === 'awaiting-ci') return this.reviewLoop.checksChanged(task);
           if (loop?.state === 'reviewing' && loop.pr === pr.number) {
-            const review = await this.reviews
-              .detail({ project: task.project, number: pr.number })
-              .catch(() => undefined);
-            if (review?.state === 'interrupted') await this.reviewLoop.resumeInterrupted(task);
+            const detail = this.reviews.detail({ project: task.project, number: pr.number });
+            if ((await detail.catch(() => undefined))?.state === 'interrupted')
+              await this.reviewLoop.resumeInterrupted(task);
           }
         }
       },
