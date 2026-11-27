@@ -45,6 +45,26 @@ test('pre-commit fails a staged file with a lint error and passes a clean one', 
   assert.match(failed.stderr, /oxlint failed/);
 });
 
+test('pre-commit checks the staged content, not the working copy', () => {
+  const { dir, git } = repo();
+  const run = () =>
+    spawnSync(process.execPath, [join(scripts, 'run-pre-commit.mjs')], {
+      cwd: dir,
+      env: cleanEnv,
+      encoding: 'utf8',
+    });
+  // Clean staged, broken unstaged edit: passes.
+  writeFileSync(join(dir, 'a.mjs'), 'export const a = 1;\n');
+  git('add', 'a.mjs');
+  writeFileSync(join(dir, 'a.mjs'), 'debugger;\n');
+  assert.equal(run().status, 0, run().stderr);
+  // Broken staged, clean working copy: fails.
+  writeFileSync(join(dir, 'b.mjs'), 'debugger;\n');
+  git('add', 'b.mjs');
+  writeFileSync(join(dir, 'b.mjs'), 'export const b = 1;\n');
+  assert.equal(run().status, 1);
+});
+
 test('post-commit records failed for a broken commit and checks the commit tree, not unstaged edits', () => {
   const { dir, git } = repo();
   const root = mkdtempSync(join(tmpdir(), 'factory-root-'));
