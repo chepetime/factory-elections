@@ -4,6 +4,12 @@
 - Run affected validation: `node scripts/ci-run.mjs origin/main HEAD`.
 - Validate the selector: `node --test scripts/ci-plan.test.mjs`.
 
+Repository rules live in `tests/repo/*.test.ts` (`node:test`, Node built-ins only): relative links in
+`AGENTS.md` and `docs/harnes/*.md` resolve, factory `git commit` calls pass `--no-verify`, and each
+hook script in `.claude/settings.json` exists. `pnpm test` and `ci-run.mjs` run them on every plan,
+also a documentation-only one; run them alone with `node --test tests/repo`. A new file under
+`tests/` is an unknown path to `ci-plan.mjs`, so it selects all workspaces.
+
 PR CI compares the merge base with the checked-out PR merge commit, including changes
 introduced by merging the current base. Workspace manifests and relative source/test imports define dependencies;
 reverse traversal includes all transitive consumers, including test dependencies.
