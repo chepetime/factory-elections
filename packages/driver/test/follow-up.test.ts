@@ -122,8 +122,20 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
     sh(other, 'push', '-q', 'origin', 'main');
   };
   const read = () => store.read('demo', task.id);
+  const write = (t: TaskRecord) => store.write(t);
   const worktree = (t: TaskRecord) => t.worktree!.path;
-  return { driver, task: pr, turns, calls, github, landOnMain, read, worktree, prs: () => created_prs };
+  return {
+    driver,
+    task: pr,
+    turns,
+    calls,
+    github,
+    landOnMain,
+    read,
+    write,
+    worktree,
+    prs: () => created_prs,
+  };
 }
 
 function write(file: string, text: string): Turn {
@@ -164,7 +176,7 @@ test('a conflict follow-up hands the conflicts to the agent, stops at the gate, 
   assert.equal(ctx.prs(), 1, 'no second PR');
 });
 
-test('a conflict follow-up whose merge applies cleanly needs no agent and goes straight to the gate', async () => {
+test('a conflict follow-up whose merge applies cleanly needs no agent, and the factory pushes it once the checks pass', async () => {
   const ctx = await opened();
   await ctx.landOnMain('other.txt', 'unrelated\n');
   const calls = ctx.calls.length;
@@ -175,8 +187,10 @@ test('a conflict follow-up whose merge applies cleanly needs no agent and goes s
     by: 'factory',
     prHead: ctx.task.pr!.head_sha,
   });
-  assert.equal(followed.stage, 'awaiting-approval');
+  assert.equal(followed.stage, 'pr-opened', 'only the base came in, so no person needs to approve it');
+  assert.match(followed.approval?.note ?? '', /Approved by the factory: only origin\/main was merged in/);
   assert.equal(ctx.calls.length, calls, 'no model call');
+  assert.equal(ctx.prs(), 1, 'the same PR is updated');
   assert.equal(await readFile(join(ctx.worktree(followed), 'other.txt'), 'utf8'), 'unrelated\n');
 });
 
@@ -282,4 +296,38 @@ test('a follow-up gets the task budget again: the first run spent more than it, 
   });
   assert.equal(followed.stage, 'awaiting-approval', 'not blocked on the $5 budget');
   assert.match(ctx.calls.at(-1)!.prompt, /Change the text/);
+});
+
+test('the factory merges the base before an agent turn: the agent works on the current base and never merges it', async () => {
+  const ctx = await opened();
+  await ctx.landOnMain('other.txt', 'from main\n');
+  ctx.turns.push(async (r) => {
+    // The base is already in the branch when the agent starts.
+    assert.equal(await readFile(join(r.cwd!, 'other.txt'), 'utf8'), 'from main\n');
+    await writeFile(join(r.cwd!, 'feature.txt'), 'from devin, again\n');
+    return { text: 'Done.', costUsd: 0.1 };
+  });
+  const followed = await ctx.driver.followUp('demo', ctx.task.id, {
+    note: 'Change the text.',
+    kind: 'custom',
+    agent: 'devin',
+    by: 'you',
+  });
+  assert.equal(followed.stage, 'awaiting-approval', 'the agent changed code, so a person approves it');
+});
+
+test('checking again runs the factory checks on the current commit with no agent turn, and a pass goes to approval', async () => {
+  const ctx = await opened();
+  const calls = ctx.calls.length;
+  await assert.rejects(
+    ctx.driver.check('demo', ctx.task.id),
+    /Add a follow-up instead/,
+    'not while the PR is open',
+  );
+  // The agent stopped (its budget, say) with its work committed: the checks need no agent.
+  await ctx.write({ ...(await ctx.read()), stage: 'blocked' });
+  const checked = await ctx.driver.check('demo', ctx.task.id);
+  assert.equal(checked.stage, 'awaiting-approval');
+  assert.equal(checked.verification?.passed, true);
+  assert.equal(ctx.calls.length, calls, 'no model call');
 });

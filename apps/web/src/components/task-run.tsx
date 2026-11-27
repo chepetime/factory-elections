@@ -19,6 +19,7 @@ import {
   openPullRequest,
   rejectTask,
   runTask,
+  checkTask,
 } from '@/app/actions';
 import { ActionForm } from '@/components/action-form';
 import { type Checkpoint } from '@/components/agent-checkpoints';
@@ -831,6 +832,19 @@ export async function renderRun(
         tone={task.stage === 'blocked' ? 'action' : 'danger'}
       >
         {waitingMessage && <p className="text-sm whitespace-pre-wrap">{waitingMessage}</p>}
+        {task.workflow === 'agent' && actions.find((a) => a.action === 'check')?.allowed && (
+          <ActionForm
+            action={checkTask}
+            hidden={hidden}
+            submit="Run the checks again"
+            pendingLabel="Starting…"
+          >
+            <p className="text-xs text-muted-foreground">
+              Runs the factory&apos;s checks on the current commit, outside the agent sandbox, with no agent
+              turn. A pass puts the change at your approval.
+            </p>
+          </ActionForm>
+        )}
         {task.workflow === 'agent' && task.agent && /\bbudget\b/i.test(waitingMessage ?? '') && (
           <Link
             href={`/agents/${encodeURIComponent(task.agent)}?tab=settings&section=general`}

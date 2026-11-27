@@ -46,3 +46,22 @@ export function followUpAgent(task: TaskRecord, assignee?: string): string | und
 export function conflictFollowUpSeen(task: TaskRecord, prHead: string): boolean {
   return (task.follow_ups ?? []).some((f) => f.kind === 'conflicts' && f.pr_head === prHead);
 }
+
+/**
+ * A command that brings the base branch into the task branch: merge, rebase or pull. Agents never
+ * run these: the factory merges the base itself, outside the agent sandbox (which blocks writes
+ * under paths such as `.claude/`, so a merge there can stop half done), and hands real conflicts
+ * to the agent. Returns the refused part of the command.
+ */
+export function baseSyncCommand(command: string): string | undefined {
+  for (const raw of command.split(/&&|\|\||;|\||\n/)) {
+    const part = raw.trim();
+    if (/^git\s+(merge|rebase|pull)\b/.test(part) && !/--(abort|continue|quit|skip)\b/.test(part))
+      return part;
+  }
+  return undefined;
+}
+
+/** What an agent is told about the base branch, so it does not try to sync the branch itself. */
+export const BASE_SYNC_NOTE =
+  'The factory keeps this branch current with the base branch: it merges the base for you before your turn, outside your sandbox, and gives you any conflicts to resolve. Do not run git merge, rebase or pull yourself.';

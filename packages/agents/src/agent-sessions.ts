@@ -8,6 +8,7 @@ import {
   parseModelRef,
   type AgentProfile,
   type TaskRecord,
+  BASE_SYNC_NOTE,
 } from '@factory/core';
 import type { AgentSession } from '@factory/driver';
 import { taskTools, type SessionReport } from './agent-tools.ts';
@@ -104,6 +105,7 @@ export async function buildAgentSession(input: {
     `You are ${agent.name}. ${agent.description}`.trim(),
     `The checks: \`${profile.test}\`, then \`${profile.full_check}\`. Factory runs them again after you stop.`,
     `Do not edit these paths: ${profile.forbidden_paths.join(', ') || '(none)'}.`,
+    BASE_SYNC_NOTE,
     ...(notes ? [`## Notes from your team\n\n${notes}`] : []),
     ...(skills ? [skills] : []),
   ].join('\n\n');

@@ -12,6 +12,8 @@ import {
   FACTORY_PR_TEMPLATE,
   PR_TEMPLATE_PATHS,
   type PrTemplate,
+  BASE_SYNC_NOTE,
+  baseSyncCommand,
 } from '@factory/core';
 
 export const OUTPUT_TAIL = 6000;
@@ -113,6 +115,8 @@ export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard
     check(toolName, input) {
       if (toolName === 'Bash') {
         const command = String(input.command ?? '');
+        const sync = baseSyncCommand(command);
+        if (sync) return `"${sync}" is not allowed: ${BASE_SYNC_NOTE}`;
         const forbidden = isForbiddenCommand(command, profile);
         return forbidden ? `The command "${forbidden}" is not allowed for the coder.` : undefined;
       }
