@@ -38,6 +38,22 @@ test('the generated profile denies writes outside the allowed paths, credential 
   assert.match(profile.slice(lastDeny), /subpath "\/home\/me\/\.ssh"\).*subpath "\/home\/me\/\.aws"/);
 });
 
+test('the profile closes the services that start a process outside it, and reopens only the worktree', () => {
+  const profile = seatbeltProfile({
+    ...policy,
+    hideRoots: ['/data/factory'],
+    reopen: ['/data/factory/a/t1'],
+  });
+  assert.match(
+    profile,
+    /\(deny mach-lookup [^\n]*"com\.apple\.coreservices\.launchservicesd"[^\n]*"com\.apple\.coreservices\.appleevents"/,
+  );
+  const hide = profile.indexOf('(deny file-read-data file-write* (subpath "/data/factory")');
+  const reopen = profile.indexOf('(allow file-read-data file-write* (subpath "/data/factory/a/t1")');
+  const credentials = profile.lastIndexOf('(deny file-read* file-write*');
+  assert.ok(hide !== -1 && hide < reopen && reopen < credentials, 'hide, then reopen, then credentials last');
+});
+
 test('paths are escaped, so a path cannot add rules', () => {
   const profile = seatbeltProfile({ ...policy, allowWrite: ['/w") (allow default) ("'] });
   assert.ok(profile.includes('(subpath "/w\\") (allow default) (\\"")'));
@@ -140,4 +156,44 @@ test('in a real OS sandbox a check cannot see backend variables, read credential
     `${process.execPath} -e "fetch('https://example.com').then(()=>process.exit(0),()=>process.exit(7))"`,
   );
   assert.notEqual(net.code, 0, 'a host outside the allowlist is unreachable');
+});
+
+test('in a real OS sandbox a check cannot read the factory data root, only its own worktree in it', async (t) => {
+  const why = await sandboxUnavailable();
+  if (why) return t.skip(`no OS sandbox here: ${why}`);
+  const root = await mkdtemp(join(tmpdir(), 'factory-root-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const work = join(root, 'app', 'worktrees', 't1');
+  await mkdir(work, { recursive: true });
+  await writeFile(join(root, 'storage.json'), 'database-password');
+  const sandbox: ShellSandbox = {
+    denyRead: [],
+    allowWrite: [work],
+    allowedDomains: [],
+    hideRoots: [root],
+    reopen: [work],
+  };
+  const env = { PATH: process.env.PATH ?? '/usr/bin:/bin' };
+  const exec = (command: string) => runShell(command, { cwd: work, env, sandbox, timeoutMs: 20_000 });
+  assert.notEqual(
+    (await exec(`cat ${join(root, 'storage.json')}`)).code,
+    0,
+    'storage credentials are unreadable',
+  );
+  assert.notEqual((await exec(`ls ${root}`)).code, 0, 'the root cannot be listed');
+  assert.notEqual(
+    (await exec(`ln -s ${join(root, 'storage.json')} s && cat s`)).code,
+    0,
+    'a symlink does not reopen it',
+  );
+  assert.equal(
+    (await exec('echo ok > f && cat f')).stdout.trim(),
+    'ok',
+    'the worktree is readable and writable',
+  );
+  // Tools look for config files in parent folders: a missing one must read as missing, not denied.
+  assert.equal(
+    (await exec(`test -e ${join(root, 'app', '.npmrc')} || echo missing`)).stdout.trim(),
+    'missing',
+  );
 });

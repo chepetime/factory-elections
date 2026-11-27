@@ -55,7 +55,7 @@ import {
   readPrTemplate,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
-import { changeGate, checkProfile, verifyWorktree } from './verification.ts';
+import { changeGate, checkOptions, checkProfile, verifyWorktree } from './verification.ts';
 import { AGENT_FIX_TURNS, changeCheckTool, verificationSteer } from './agent-fixes.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
@@ -366,7 +366,7 @@ export class Driver {
     let output = '';
     this.deps.log(`$ ${command}   # setup`);
     const result = await this.deps.shell.runShell(command, {
-      cwd: task.worktree.path,
+      ...checkOptions(profile, task.worktree.path),
       captureLimit: 0,
       onOutput: (chunk) => {
         output = tail(output + chunk);

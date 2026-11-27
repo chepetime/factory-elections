@@ -48,14 +48,39 @@ export interface SandboxExtra {
  */
 export interface CheckSandbox {
   denyRead: string[];
+  /** Folders closed for reading and writing except under `reopen`: the factory data root. */
+  hideRoots: string[];
+  /** Paths under a `hideRoots` folder the check still uses: its own worktree. */
+  reopen: string[];
   allowWrite: string[];
   allowedDomains: string[];
 }
 
+/**
+ * The factory's data roots: the default one and `FACTORY_ROOT`. They hold the backend token, the
+ * storage credentials and other tasks' worktrees, so a check may not read them.
+ */
+export function factoryDataRoots(home: string, source: NodeJS.ProcessEnv = process.env): string[] {
+  const roots = [`${home}/.local/share/factory`];
+  const root = source.FACTORY_ROOT;
+  if (root && !root.startsWith('/'))
+    throw new Error(`FACTORY_ROOT must be an absolute path to sandbox checks, and it is "${root}".`);
+  if (root && root !== roots[0]) roots.push(root.replace(/\/+$/, ''));
+  return roots;
+}
+
 /** The sandbox for a check in `cwd`: the coder's rules, with the worktree writable. */
-export function checkSandbox(home: string, cwd: string, extra?: SandboxExtra, tmpDir?: string): CheckSandbox {
+export function checkSandbox(
+  home: string,
+  cwd: string,
+  extra?: SandboxExtra,
+  tmpDir?: string,
+  source: NodeJS.ProcessEnv = process.env,
+): CheckSandbox {
   return {
     denyRead: sandboxDenyRead(home),
+    hideRoots: factoryDataRoots(home, source),
+    reopen: [cwd],
     allowWrite: [cwd, ...(tmpDir ? [tmpDir] : []), ...sandboxAllowWrite(home, extra?.allow_write ?? [])],
     allowedDomains: [...SANDBOX_ALLOWED_DOMAINS, ...(extra?.allowed_domains ?? [])],
   };
@@ -86,6 +111,6 @@ export function checkRun(options: {
   const source = options.source ?? process.env;
   return {
     env: { ...checkEnvironment(source, options.sandbox), ...options.extraEnv },
-    sandbox: checkSandbox(options.home, options.cwd, options.sandbox, source.TMPDIR),
+    sandbox: checkSandbox(options.home, options.cwd, options.sandbox, source.TMPDIR, source),
   };
 }

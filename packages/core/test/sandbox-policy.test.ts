@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkEnvironment, checkRun, checkSandbox } from '../src/index.ts';
+import { checkEnvironment, checkRun, checkSandbox, factoryDataRoots } from '../src/index.ts';
 
 const host = {
   PATH: '/usr/bin',
@@ -45,5 +45,15 @@ test('a check runs with its worktree and temp folder writable, credentials unrea
   assert.ok(run.sandbox.allowWrite.includes('/home/me/.npm'));
   assert.ok(run.sandbox.denyRead.includes('/home/me/.ssh'));
   assert.ok(run.sandbox.denyRead.includes('/home/me/.aws'));
-  assert.deepEqual(run.sandbox, checkSandbox('/home/me', '/work/t1', extra, '/var/tmp/x/'));
+  assert.deepEqual(run.sandbox, checkSandbox('/home/me', '/work/t1', extra, '/var/tmp/x/', host));
+});
+
+test('a check cannot read the factory data root, except its own worktree inside it', () => {
+  const cwd = '/data/factory/app/worktrees/t1';
+  const run = checkRun({ cwd, home: '/home/me', source: { ...host, FACTORY_ROOT: '/data/factory/' } });
+  assert.deepEqual(run.sandbox.hideRoots, ['/home/me/.local/share/factory', '/data/factory']);
+  assert.deepEqual(run.sandbox.reopen, [cwd]);
+  assert.deepEqual(factoryDataRoots('/home/me', {}), ['/home/me/.local/share/factory']);
+  // A relative root would hide the wrong folder, so the check does not run at all.
+  assert.throws(() => factoryDataRoots('/home/me', { FACTORY_ROOT: 'data' }), /absolute/);
 });

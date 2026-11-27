@@ -679,6 +679,32 @@ test('verification runs every check with the sandboxed environment, never the ba
   }
 });
 
+test("setup runs the coder's install scripts in the same sandbox as the checks, never with the backend environment", async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, setup: 'pnpm install' },
+  }));
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  const seen: { command: string; env?: Record<string, string>; sandbox?: unknown; cwd: string }[] = [];
+  driver.deps.shell.runShell = async (command, options) => {
+    seen.push({ command, cwd: options.cwd, env: options.env, sandbox: options.sandbox });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await driver.setupWorktree('demo', task.id);
+  const install = seen.find((s) => s.command === 'pnpm install');
+  assert.ok(install, 'setup ran');
+  assert.ok(install.env, 'an explicit environment');
+  assert.equal(install.env.FACTORY_TEST_STORAGE_KEY, undefined);
+  const sandbox = install.sandbox as { allowWrite: string[]; hideRoots: string[]; reopen: string[] };
+  assert.ok(sandbox.allowWrite.includes(install.cwd), 'the worktree is writable');
+  assert.ok(sandbox.hideRoots.length > 0, 'the factory data root is hidden');
+  assert.deepEqual(sandbox.reopen, [install.cwd]);
+});
+
 test('running an already reviewed or approved task cannot spend on more model calls', async () => {
   const { driver, task, runner } = await setup({
     classifier: [ready],

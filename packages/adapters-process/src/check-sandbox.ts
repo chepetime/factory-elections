@@ -10,11 +10,24 @@ import { connect, type AddressInfo, type Socket } from 'node:net';
 /** The rules of one sandbox. The same shape as `CheckSandbox` in `@factory/core`. */
 export interface ShellSandbox {
   denyRead: readonly string[];
+  /** Closed for reading and writing, except under `reopen`. `denyRead` still wins over `reopen`. */
+  hideRoots?: readonly string[];
+  reopen?: readonly string[];
   allowWrite: readonly string[];
   allowedDomains: readonly string[];
 }
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
+
+/** Mach services that start or drive a process outside the caller's sandbox. */
+const LAUNCH_SERVICES = [
+  'com.apple.coreservices.launchservicesd',
+  'com.apple.coreservices.quarantine-resolver',
+  'com.apple.coreservices.appleevents',
+  'com.apple.lsd.open',
+  'com.apple.lsd.mapdb',
+  'com.apple.lsd.modifydb',
+];
 
 const escapeScheme = (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 
@@ -34,8 +47,9 @@ const subpaths = (paths: readonly string[]) =>
 
 /**
  * The Seatbelt profile for a sandbox. Later rules win: everything is allowed, then writes are
- * narrowed to `allowWrite` (and the devices a shell needs), the network to the loopback, and
- * `denyRead` paths are closed for reading and writing last.
+ * narrowed to `allowWrite` (and the devices a shell needs), the network to the loopback, and the
+ * services that start a process outside the sandbox are closed. Then `hideRoots` are closed except
+ * `reopen`, and `denyRead` paths are closed for reading and writing last.
  */
 export function seatbeltProfile(sandbox: ShellSandbox): string {
   const devices = ['null', 'zero', 'tty', 'stdout', 'stderr', 'dtracehelper', 'autofs_nowait'].map(
@@ -51,7 +65,17 @@ export function seatbeltProfile(sandbox: ShellSandbox): string {
     '(allow network-bind (local ip "localhost:*"))',
     '(allow network-inbound (local ip "localhost:*"))',
     '(allow network-outbound (remote ip "localhost:*"))',
+    // `open` asks LaunchServices to start an app, and Apple Events drive other apps (Terminal's
+    // `do script`): either one runs a command that is not in this sandbox.
+    `(deny mach-lookup ${LAUNCH_SERVICES.map((name) => `(global-name "${name}")`).join(' ')})`,
   ];
+  const hidden = subpaths(sandbox.hideRoots ?? []);
+  const reopened = subpaths(sandbox.reopen ?? []);
+  // Contents only: tools look up config files in the worktree's parent folders and treat a denied
+  // lookup as fatal, so names stay visible while contents and directory listings do not.
+  if (hidden.length) lines.push(`(deny file-read-data file-write* ${hidden.join(' ')})`);
+  if (hidden.length && reopened.length)
+    lines.push(`(allow file-read-data file-write* ${reopened.join(' ')})`);
   const denied = subpaths(sandbox.denyRead);
   if (denied.length) lines.push(`(deny file-read* file-write* ${denied.join(' ')})`);
   return lines.join('\n');
