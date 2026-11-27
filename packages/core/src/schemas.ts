@@ -208,6 +208,8 @@ export const TaskRecord = z.looseObject({
       not_run_locally: z.array(NonEmpty).optional(),
       /** Whether the test-weakening check ran (`checked`) or a person allowed test changes. */
       test_integrity: z.enum(['checked', 'allowed']).optional(),
+      /** Built-in protected paths the change touches, which a person allowed for this task. */
+      protected_paths_allowed: z.array(NonEmpty).optional(),
     })
     .optional(),
   review: ReviewOutput.extend({ head_sha: NonEmpty, at: Iso }).optional(),
@@ -239,6 +241,8 @@ export const TaskRecord = z.looseObject({
     .optional(),
   /** A person allowed this task to delete, skip or loosen tests (see test-integrity.ts). */
   allow_test_changes: z.boolean().optional(),
+  /** A person allowed this task to change built-in protected paths (see BUILT_IN_PROTECTED_PATHS). */
+  allow_protected_paths: z.boolean().optional(),
   pr: z.looseObject({ url: NonEmpty, branch: NonEmpty, head_sha: NonEmpty, at: Iso }).optional(),
   /**
    * A PR publication that started and is not recorded yet: saved before each external write

@@ -27,7 +27,9 @@ import {
   type TendingWaiting,
   conflictFollowUpSeen,
   PrStatus,
+  protectedPaths,
 } from '@factory/core';
+import { NO_HOOKS, changedPathsSince } from '@factory/adapters-git';
 import { setupInputsKey, worktreeGuard } from '@factory/driver';
 import { run, runShell } from '@factory/adapters-process';
 
@@ -169,7 +171,8 @@ export const ghTending: TendingGitHub = {
 };
 
 async function git(cwd: string, args: string[]) {
-  return run('git', args, { cwd, timeoutMs: 120_000 });
+  // No repository hooks: `merge` and `commit` would run the PR's own hooks on the host.
+  return run('git', [...NO_HOOKS, ...args], { cwd, timeoutMs: 120_000 });
 }
 async function gitOk(cwd: string, args: string[]): Promise<string> {
   const r = await git(cwd, args);
@@ -365,7 +368,7 @@ export class TendingService {
         prompt,
         cwd,
         tools: 'edit',
-        guard: worktreeGuard(cwd, profile),
+        guard: worktreeGuard(cwd, profile, task.allow_protected_paths === true),
         maxTurns: 120,
         maxBudgetUsd: TEND_BUDGET_USD,
         timeoutMs: TEND_TIMEOUT_MS,
@@ -426,6 +429,16 @@ export class TendingService {
           action.threads.some((t) => t.id === r.thread_id),
         );
         await commitAll(cwd, 'Address review comments');
+      }
+      // The guard cannot see what a Bash command writes. A merged base brings the base's own
+      // changes, so only the agent's commits (fix-ci, review) are checked.
+      if (action.kind !== 'merge-base') {
+        const touched = protectedPaths(
+          await changedPathsSince(cwd, before),
+          profile.confirmed.forbidden_paths,
+          task.allow_protected_paths === true,
+        );
+        if (touched.length) throw new Error(`the change touches protected paths: ${touched.join(', ')}`);
       }
     } catch (error) {
       await git(cwd, ['merge', '--abort']);

@@ -5,12 +5,17 @@ import { run } from '@factory/adapters-process';
 
 export class GitError extends Error {}
 
+/**
+ * Factory git calls run on the host, with its credentials, in worktrees whose contents an agent
+ * wrote. A hook in the worktree (`.husky/pre-push`, `.githooks/*`) would run there too, so every
+ * call that can fire a hook (commit, merge, push, checkout) points hooksPath at nothing.
+ */
+export const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+
+const gitEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' });
+
 async function git(cwd: string, args: string[], input?: string): Promise<string> {
-  const result = await run('git', args, {
-    cwd,
-    input,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-  });
+  const result = await run('git', [...NO_HOOKS, ...args], { cwd, input, env: gitEnv() });
   if (result.code !== 0)
     throw new GitError(`git ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim()}`);
   return result.stdout;
@@ -38,7 +43,7 @@ export async function exclusive<T>(dir: string, action: () => Promise<T>): Promi
 }
 
 async function gitOk(cwd: string, args: string[]): Promise<boolean> {
-  return (await run('git', args, { cwd })).code === 0;
+  return (await run('git', [...NO_HOOKS, ...args], { cwd })).code === 0;
 }
 
 export async function topLevel(dir: string): Promise<string | undefined> {
@@ -135,6 +140,27 @@ export async function addedOrModifiedSince(dir: string, base: string): Promise<s
   return (await git(dir, ['diff', '--name-only', '--diff-filter=d', '-z', `${base}...HEAD`]))
     .split('\0')
     .filter(Boolean);
+}
+
+/**
+ * Every path the branch touches since it left `base`: added, modified and deleted paths, and both
+ * the old and the new path of a rename or copy (`git diff --name-only` shows only the new one, so a
+ * file moved out of a protected folder would look like a new file elsewhere).
+ */
+export async function changedPathsSince(dir: string, base: string): Promise<string[]> {
+  const fields = (await git(dir, ['diff', '--name-status', '-M', '-z', `${base}...HEAD`])).split('\0');
+  const paths: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const status = fields[i];
+    if (!status) continue;
+    // Renames and copies (R100, C75) list two paths; every other status lists one.
+    const count = status.startsWith('R') || status.startsWith('C') ? 2 : 1;
+    for (let n = 0; n < count; n++) {
+      const path = fields[++i];
+      if (path) paths.push(path);
+    }
+  }
+  return [...new Set(paths)];
 }
 
 /** Added and deleted lines per path, retaining rename destinations and binary markers. */
@@ -244,10 +270,11 @@ export async function fastForwardTo(dir: string, ref: string): Promise<boolean> 
  * on conflicts and stays in progress, with the conflicted paths listed. Any other failure throws.
  */
 export async function mergeRef(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }> {
-  const result = await run('git', ['-c', 'user.useConfigOnly=false', 'merge', '--no-edit', '-q', ref], {
-    cwd: dir,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-  });
+  const result = await run(
+    'git',
+    [...NO_HOOKS, '-c', 'user.useConfigOnly=false', 'merge', '--no-edit', '-q', ref],
+    { cwd: dir, env: gitEnv() },
+  );
   if (result.code === 0) return { clean: true, conflicted: [] };
   const conflicted = (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
   if (!conflicted.length) {

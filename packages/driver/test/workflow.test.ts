@@ -529,6 +529,103 @@ test('verification rejects profile-defined generated output', async () => {
   assert.match((await store.read('demo', task.id)).verification!.output_tail, /generated files: bundle\.js/);
 });
 
+/** A task whose worktree exists, with `files` already on main (the profile protects only secrets/). */
+async function withWorktree(files: Record<string, string> = {}) {
+  const ctx = await setup({ classifier: [ready], coder: [writeFeature], reviewer: [approveReview] });
+  for (const [file, text] of Object.entries(files)) {
+    execFileSync('mkdir', ['-p', join(ctx.repo, file, '..')]);
+    await writeFile(join(ctx.repo, file), text);
+  }
+  if (Object.keys(files).length) {
+    sh(ctx.repo, 'add', '.');
+    sh(ctx.repo, 'commit', '-qm', 'protected files');
+  }
+  await ctx.driver.classify('demo', ctx.task.id);
+  await ctx.driver.prepareWorktree('demo', ctx.task.id);
+  const path = (await ctx.store.read('demo', ctx.task.id)).worktree!.path;
+  // What an agent does with Bash or a commit of its own: the change lands without being staged.
+  const commit = (message: string) => {
+    sh(path, 'add', '-A');
+    sh(path, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
+  };
+  return { ...ctx, path, commit };
+}
+
+test('verification fails a rename out of .github/workflows, with a profile that does not list it', async () => {
+  const { driver, task, path, commit } = await withWorktree({ '.github/workflows/ci.yml': 'name: ci\n' });
+  sh(path, 'mv', '.github/workflows/ci.yml', 'ci.yml');
+  await writeFile(join(path, 'feature.txt'), 'done\n');
+  commit('move ci');
+  const result = await driver.verify('demo', task.id);
+  assert.equal(result.passed, false);
+  assert.match(result.output, /protected paths: .*\.github\/workflows\/ci\.yml/);
+});
+
+test('verification fails .GitHub/actions and CODEOWNERS in any folder', async () => {
+  for (const file of ['.GitHub/actions/x.yml', 'docs/CODEOWNERS', '.husky/pre-push', '.env.local']) {
+    const { driver, task, path, commit } = await withWorktree();
+    execFileSync('mkdir', ['-p', join(path, file, '..')]);
+    await writeFile(join(path, file), 'x\n');
+    await writeFile(join(path, 'feature.txt'), 'done\n');
+    commit('add protected file');
+    const result = await driver.verify('demo', task.id);
+    assert.equal(result.passed, false, file);
+    assert.ok(result.output.includes(file), `${file}: ${result.output}`);
+  }
+});
+
+test('a commit the agent made itself, with nothing staged, fails verification on a protected path', async () => {
+  const sneaky: Script = async (r) => {
+    execFileSync('mkdir', ['-p', join(r.cwd!, '.github', 'actions', 'setup')]);
+    await writeFile(join(r.cwd!, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
+    await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+    sh(r.cwd!, 'add', '-A');
+    sh(r.cwd!, 'commit', '-qm', 'agent commit');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task, store } = await setup({ classifier: [ready], coder: [sneaky] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'verification-failed');
+  assert.match(stored.verification!.output_tail, /protected paths: \.github\/actions\/setup\/action\.yml/);
+});
+
+test('the coder guard refuses built-in protected paths for Edit and Write, in any letter case', async () => {
+  let denials: (string | undefined)[] = [];
+  const probe: Script = async (r) => {
+    denials = [
+      r.guard!.check('Write', { file_path: join(r.cwd!, '.github/actions/x/action.yml') }),
+      r.guard!.check('Edit', { file_path: join(r.cwd!, '.Husky/pre-push') }),
+      r.guard!.check('Write', { file_path: join(r.cwd!, 'docs/CODEOWNERS') }),
+      r.guard!.check('Write', { file_path: join(r.cwd!, 'feature.txt') }),
+    ];
+    return writeFeature(r);
+  };
+  const { driver, task } = await setup({ classifier: [ready], coder: [probe], reviewer: [approveReview] });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.ok(denials[0] && denials[1] && denials[2]);
+  assert.equal(denials[3], undefined);
+});
+
+test('a person can allow protected paths for one task; the gate record names them', async () => {
+  const { driver, task, store, path, commit } = await withWorktree();
+  execFileSync('mkdir', ['-p', join(path, '.github', 'workflows')]);
+  await writeFile(join(path, '.github', 'workflows', 'ci.yml'), 'name: ci\n');
+  await writeFile(join(path, 'feature.txt'), 'done\n');
+  commit('add workflow');
+  assert.equal((await driver.verify('demo', task.id)).passed, false);
+  await store.write({ ...(await store.read('demo', task.id)), allow_protected_paths: true });
+  const result = await driver.verify('demo', task.id);
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.protectedPathsAllowed, ['.github/workflows/ci.yml']);
+  assert.match(result.output, /allowed protected paths.*\.github\/workflows\/ci\.yml/);
+  // The profile's own forbidden paths stay forbidden.
+  execFileSync('mkdir', ['-p', join(path, 'secrets')]);
+  await writeFile(join(path, 'secrets', 'k'), 'x');
+  commit('add secret');
+  assert.match((await driver.verify('demo', task.id)).output, /protected paths: secrets\/k/);
+});
+
 test('verification retains only the output tail while forwarding the complete log', async () => {
   const { driver, task } = await setup({
     classifier: [ready],

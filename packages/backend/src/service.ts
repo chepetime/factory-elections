@@ -26,6 +26,7 @@ import {
   recoveryBlocker,
   prBody,
   conflictFollowUpNote,
+  BUILT_IN_PROTECTED_PATHS,
   recoveryInboxItems,
   type RecoveryProblem,
   type RecoveryReport,
@@ -533,7 +534,9 @@ export class BackendService {
           profile: {
             test: profile.commands.test,
             full_check: profile.commands.full_check,
-            forbidden_paths: profile.confirmed.forbidden_paths,
+            forbidden_paths: [
+              ...new Set([...BUILT_IN_PROTECTED_PATHS, ...profile.confirmed.forbidden_paths]),
+            ],
           },
           allowedEnv: process.env.FACTORY_AGENT_ENV_ALLOW,
         });

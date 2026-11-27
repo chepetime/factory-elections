@@ -35,6 +35,8 @@ export interface GitPort {
   unstageAll(dir: string): Promise<void>;
   commit(dir: string, message: string): Promise<string>;
   addedOrModifiedSince(dir: string, base: string): Promise<string[]>;
+  /** Every path the branch touches since `base`: both paths of a rename or copy, and deletions. */
+  changedPathsSince(dir: string, base: string): Promise<string[]>;
   diffSince(dir: string, base: string, stat?: boolean): Promise<string>;
   diffLineCounts(
     dir: string,
