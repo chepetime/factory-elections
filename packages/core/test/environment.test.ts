@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { environmentFailure, prBody, TaskRecord, tooBroadForLocalCheck } from '../src/index.ts';
+import {
+  environmentFailure,
+  ladderStopFailure,
+  prBody,
+  TaskRecord,
+  tooBroadForLocalCheck,
+} from '../src/index.ts';
 
 test('known machine faults in check output are environment failures', () => {
   const cases: [string, RegExp][] = [
@@ -69,4 +75,16 @@ test('the pull request record names the checks that CI must run', () => {
     prBody(task, 'abc123abc123abc'),
     /Verification: passed at `abc123abc123`; not run locally \(too broad for the workstation\): test, full_check\. CI must pass before merge\./,
   );
+});
+
+test('setup failures stop the ladder but are not environment failures', () => {
+  const cases: [string, RegExp][] = [
+    ['sh: pnpm: command not found', /setup/],
+    ['ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile"', /setup/],
+  ];
+  for (const [output, reason] of cases) {
+    assert.equal(environmentFailure(output), undefined, output);
+    assert.match(ladderStopFailure(output)?.reason ?? '', reason);
+  }
+  assert.equal(ladderStopFailure('AssertionError: expected 2 to equal 3'), undefined);
 });
