@@ -149,10 +149,33 @@ export function hasWriteAccess(access: { permission?: string | null; role_name?:
 export const isGitHubLogin = (login: string) =>
   /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?$/.test(login);
 
+/** A check's newest settled result on the base branch tip. */
+export type BaseCheckState = 'pass' | 'fail' | 'pending';
+export type BaseVerdict = 'own' | 'fixed_on_base' | 'base_pending' | 'inherited';
+
+/**
+ * Where a failed PR check stands against the same check on the base: `inherited` (base fails too),
+ * `base_pending` (base is still running), `fixed_on_base` (base passes and has not been merged into
+ * the PR yet), else `own`. After a base merge, what still fails is the PR's own.
+ */
+export function baseVerdict(base: BaseCheckState | undefined, baseMerged: boolean): BaseVerdict {
+  if (base === 'fail') return 'inherited';
+  if (base === 'pending') return 'base_pending';
+  if (base === 'pass' && !baseMerged) return 'fixed_on_base';
+  return 'own';
+}
+
+export const waitingOnBase = (names: readonly string[]) => `Waiting for ${names.join(', ')} to pass on main`;
+
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
-  options: { answerThreads: boolean; verdicts?: Readonly<Record<string, FlakeVerdict>> },
+  options: {
+    answerThreads: boolean;
+    verdicts?: Readonly<Record<string, FlakeVerdict>>;
+    /** The same checks on the base branch tip, by name. A check missing here has no base result. */
+    base?: Readonly<Record<string, BaseCheckState>>;
+  },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
   if (record.stopped) return { kind: 'wait', reason: `stopped: ${record.stopped.reason}` };
@@ -163,8 +186,16 @@ export function nextTendAction(
   if (pr.mergeable === 'CONFLICTING') return agentWork({ kind: 'merge-base' });
   const threads = options.answerThreads ? threadsWaiting(pr, record) : [];
   if (threads.length) return agentWork({ kind: 'answer-threads', threads });
-  const failed = pr.checks.filter((c) => c.state === 'fail');
+  const allFailed = pr.checks.filter((c) => c.state === 'fail');
   if (pr.checks.some((c) => c.state === 'pending')) return { kind: 'wait', reason: 'checks are running' };
+  const baseMerged = record.fixes.some((f) => f.kind === 'merge-base' && f.outcome === 'pushed');
+  const verdictOf = (c: PrCheck) => baseVerdict(options.base?.[c.name], baseMerged);
+  // A check that fails on main too is not this PR's to fix; one main has fixed needs main merged first.
+  const fixedOnBase = allFailed.filter((c) => verdictOf(c) === 'fixed_on_base');
+  if (fixedOnBase.length) return agentWork({ kind: 'merge-base' });
+  const failed = allFailed.filter((c) => verdictOf(c) === 'own');
+  const held = allFailed.filter((c) => !failed.includes(c));
+  if (held.length && !failed.length) return { kind: 'wait', reason: waitingOnBase(held.map((c) => c.name)) };
   if (failed.length) {
     // A check that is not a real failure gets one rerun per commit before an agent spends money on
     // it. A real failure (see `classifyFlake`) goes straight to a fix. A rerun needs a run to rerun.
