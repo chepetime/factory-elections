@@ -280,6 +280,9 @@ export class ClaudeAgentRunner implements ModelRunner {
       // finding 2); a workflow step gets only what its prompt gives it.
       skills: [],
       extraArgs: { 'disable-slash-commands': null },
+      // Only the MCP servers below. The signed-in account's claude.ai connectors load even with
+      // settingSources: [], and their tool definitions can fill most of the context window.
+      strictMcpConfig: true,
       persistSession: request.persistSession === true || Boolean(request.resume),
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
@@ -300,6 +303,7 @@ export class ClaudeAgentRunner implements ModelRunner {
         ...request.env,
         CLAUDE_AGENT_SDK_CLIENT_APP: 'factory-elections/0.1.0',
         MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS),
+        ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
       },
       abortController: controller,
       ...(request.maxBudgetUsd ? { maxBudgetUsd: request.maxBudgetUsd } : {}),

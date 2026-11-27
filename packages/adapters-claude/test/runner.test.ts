@@ -48,6 +48,16 @@ test('a call passes its budget and abort controller to the SDK', async () => {
   assert.ok(seen[0]!.abortController instanceof AbortController);
 });
 
+test("a call loads only the MCP servers it names, never the account's claude.ai connectors", async () => {
+  const seen: Record<string, any>[] = [];
+  const runner = new ClaudeAgentRunner({ query: fake([success()], 0, seen) });
+  await runner.run({ ...request, tools: 'edit' });
+  assert.equal(seen[0]!.strictMcpConfig, true, 'no MCP server from any config the step did not pass');
+  // Connectors on the signed-in claude.ai account load even with settingSources: [] and once filled
+  // most of a 150k agent context with their tool definitions before the agent read any code.
+  assert.equal(seen[0]!.env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
+});
+
 test('a call with no message within the stall limit stops as stalled', async () => {
   const runner = new ClaudeAgentRunner({ query: fake([success()], 5_000), stallCheckMs: 10 });
   await assert.rejects(runner.run({ ...request, stallMs: 50 }), (e: ModelRunError) => e.kind === 'stalled');
