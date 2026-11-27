@@ -124,14 +124,6 @@ export type FeatureAction = z.input<typeof Action>;
 const strip = (text: string) => text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
 const now = () => new Date().toISOString();
 
-/** A ticket follows its task: at the approval gate or later it is done; failed, blocked or rejected, failed. */
-function ticketFromTask(t: Ticket, task: TaskRecord): Ticket {
-  if (TICKET_DONE_STAGES.includes(task.stage)) return { ...t, state: 'done', error: undefined };
-  if (TICKET_FAILED_STAGES.includes(task.stage))
-    return { ...t, state: 'failed', error: task.events?.at(-1)?.message ?? task.stage };
-  return { ...t, state: 'running' };
-}
-
 export class FeatureService {
   private readonly deps: FeatureDeps;
   /** Keys of the steps this service submitted, for idle(). */
@@ -698,88 +690,6 @@ export class FeatureService {
     return { ...feature, tickets };
   }
 
-  // ---------- after a restart ----------
-
-  /**
-   * Settles what a restart left behind in one project. A `working` flag that no execution holds is
-   * cleared in storage (reads already hide it) and the feature says the step was cut. A ticket at
-   * `running` follows its task; one whose task is gone starts over as `waiting`, so the loop makes a
-   * new task for it. Returns the ids it changed.
-   */
-  async reconcile(project: string): Promise<{ cleared: string[]; tickets: string[] }> {
-    const out = { cleared: [] as string[], tickets: [] as string[] };
-    const ids = await readdir(join(this.deps.root, project, 'features')).catch(() => [] as string[]);
-    for (const id of ids) {
-      const feature = await this.read(project, id).catch(() => undefined);
-      if (!feature) continue;
-      const stale = Boolean(feature.working) && !this.working(`${project}/${id}`);
-      const synced: Ticket[] = [];
-      for (const t of feature.tickets) {
-        if (t.state !== 'running') {
-          synced.push(t);
-          continue;
-        }
-        const task = t.task_id
-          ? await this.deps.tasks.read(project, t.task_id).catch(() => undefined)
-          : undefined;
-        synced.push(
-          task ? ticketFromTask(t, task) : { ...t, state: 'waiting', task_id: undefined, error: undefined },
-        );
-      }
-      const changed = synced.filter((t, i) => t.state !== feature.tickets[i]?.state).map((t) => t.id);
-      if (!stale && !changed.length) continue;
-      await this.update(project, id, (latest) => ({
-        ...latest,
-        ...(stale
-          ? {
-              working: undefined,
-              error: latest.error ?? 'The backend stopped during this step. Run it again.',
-            }
-          : {}),
-        // A ticket changed since the read keeps its newer state.
-        tickets: latest.tickets.map((t) =>
-          changed.includes(t.id) && t.state === 'running' ? synced.find((s) => s.id === t.id)! : t,
-        ),
-      }));
-      if (stale) out.cleared.push(id);
-      out.tickets.push(...changed.map((t) => `${id}/${t}`));
-    }
-    return out;
-  }
-
-  /**
-   * Records in a state that says someone works on them, while nothing does: a `working` flag with
-   * no execution, a running ticket whose task has no queued or live run. `since` is the last write
-   * that can only age: the step's start, the task's last update.
-   */
-  async unowned(
-    project: string,
-    scheduled: (taskId: string) => boolean,
-  ): Promise<{ id: string; kind: 'feature' | 'ticket'; state: string; since: string; ticket?: string }[]> {
-    const out: Awaited<ReturnType<FeatureService['unowned']>> = [];
-    const ids = await readdir(join(this.deps.root, project, 'features')).catch(() => [] as string[]);
-    for (const id of ids) {
-      const feature = await this.read(project, id).catch(() => undefined);
-      if (!feature) continue;
-      if (feature.working && !this.working(`${project}/${id}`))
-        out.push({ id, kind: 'feature', state: feature.working.action, since: feature.working.started_at });
-      for (const t of feature.tickets) {
-        if (t.state !== 'running' || (t.task_id && scheduled(t.task_id))) continue;
-        const task = t.task_id
-          ? await this.deps.tasks.read(project, t.task_id).catch(() => undefined)
-          : undefined;
-        out.push({
-          id,
-          kind: 'ticket',
-          ticket: t.id,
-          state: 'running',
-          since: task?.updated_at ?? task?.created_at ?? feature.updated_at,
-        });
-      }
-    }
-    return out;
-  }
-
   // ---------- the implement loop ----------
 
   startTicking(everyMs = TICK_MS): void {
@@ -820,7 +730,10 @@ export class FeatureService {
       const task = t.task_id ? tasks.get(t.task_id) : undefined;
       if (!task)
         return t.blocked_by.length > 1 && !t.blockers_merged_at ? { ...t, state: 'waiting-merge' } : t;
-      return ticketFromTask(t, task);
+      if (TICKET_DONE_STAGES.includes(task.stage)) return { ...t, state: 'done', error: undefined };
+      if (TICKET_FAILED_STAGES.includes(task.stage))
+        return { ...t, state: 'failed', error: task.events?.at(-1)?.message ?? task.stage };
+      return { ...t, state: 'running' };
     });
     // Start every ticket whose blockers are done.
     const { repo } = await this.deps.projects.read(project);
