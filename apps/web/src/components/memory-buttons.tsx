@@ -19,12 +19,12 @@ function useAction(run: () => Promise<{ error?: string }>) {
   return { pending, error, go };
 }
 
-const Failure = ({ error }: { error?: string }) =>
-  error ? (
+const failure = (error?: string) =>
+  error && (
     <p role="alert" className="text-xs text-destructive">
       {error}
     </p>
-  ) : null;
+  );
 
 export function RemoveFact({
   project,
@@ -62,7 +62,7 @@ export function RemoveFact({
       >
         {pending ? 'Removing…' : 'Remove'}
       </Button>
-      <Failure error={error} />
+      {failure(error)}
       {dialog}
     </div>
   );
@@ -81,7 +81,7 @@ export function RestoreToolsButton({
       <Button variant="outline" size="sm" disabled={pending} onClick={go}>
         {pending ? 'Restoring…' : 'Restore tools'}
       </Button>
-      <Failure error={error} />
+      {failure(error)}
     </div>
   );
 }

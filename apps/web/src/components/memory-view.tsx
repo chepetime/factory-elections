@@ -85,8 +85,11 @@ export function MemoryView({
   forget: (project: string, id: string) => ActionResult;
   restore: (project: string) => ActionResult;
 }) {
-  const base = `/projects/${project}/memory`;
   const removed = snapshot?.facts.filter((f) => f.status === 'dropped') ?? [];
+  const group = (title: string, note: string, facts: Fact[]) => (
+    <Group title={title} note={note} facts={facts} project={project} forget={forget} />
+  );
+  const pick = (status: Fact['status']) => snapshot?.facts.filter((f) => f.status === status) ?? [];
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Memory">
@@ -100,48 +103,23 @@ export function MemoryView({
         <>
           <Stats>
             <Stat label="Sessions recorded" value={snapshot.sessions} />
-            <Stat
-              label="Next fact review"
-              value={`${Math.max(0, REVIEW_EVERY - snapshot.pending)} sessions`}
-              note={`every ${REVIEW_EVERY} sessions`}
-            />
+            <Stat label="Until next review" value={Math.max(0, REVIEW_EVERY - snapshot.pending)} />
             <Stat label="Review cost" value={usd(snapshot.review_cost_usd)} />
-            <Stat label="Removed facts" value={removed.length} />
           </Stats>
-          <Group
-            title="Active"
-            note="Told to every agent in this project."
-            facts={snapshot.facts.filter((f) => f.status === 'active')}
-            project={project}
-            forget={forget}
-          />
-          <Group
-            title="Candidates"
-            note={`Proposed by a review; told to agents once ${CONFIRMATIONS} sessions confirm them.`}
-            facts={snapshot.facts.filter((f) => f.status === 'candidate')}
-            project={project}
-            forget={forget}
-          />
-          <p className="text-sm">
-            {showRemoved ? (
-              <Link className="underline underline-offset-2" href={base}>
-                Hide removed facts
-              </Link>
-            ) : (
-              <Link className="underline underline-offset-2" href={`${base}?show=removed`}>
-                Show removed facts ({removed.length})
-              </Link>
-            )}
-          </p>
-          {showRemoved && (
-            <Group
-              title="Removed"
-              note="Not told to agents, and never proposed again with the same text."
-              facts={removed}
-              project={project}
-              forget={forget}
-            />
+          {group('Active', 'Told to every agent in this project.', pick('active'))}
+          {group(
+            'Candidates',
+            `Proposed by a review; told to agents once ${CONFIRMATIONS} sessions confirm them.`,
+            pick('candidate'),
           )}
+          <Link
+            className="text-sm underline underline-offset-2"
+            href={`/projects/${project}/memory${showRemoved ? '' : '?show=removed'}`}
+          >
+            {showRemoved ? 'Hide' : 'Show'} removed facts ({removed.length})
+          </Link>
+          {showRemoved &&
+            group('Removed', 'Not told to agents, and never proposed again with the same text.', removed)}
           <section aria-label="Pruned tools" className="flex flex-col gap-2">
             <h2 className="text-sm font-medium">Pruned tools</h2>
             {snapshot.pruned_tools.length === 0 ? (

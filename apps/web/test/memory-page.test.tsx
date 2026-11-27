@@ -80,7 +80,7 @@ it('Remove drops the fact and shows it under Removed', async () => {
   const html = await render('removed');
   expect(html).toMatch(/aria-label="Removed".*Run `pnpm build` before tests\..*removed by the user/s);
   expect(html).not.toContain('>Remove</button>');
-  expect(html).toContain('Hide removed facts');
+  expect(html).toContain('Hide removed facts (1)');
 });
 
 it('shows the RPC error when memory cannot be read or a fact cannot be removed', async () => {
