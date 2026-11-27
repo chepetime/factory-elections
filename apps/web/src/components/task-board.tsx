@@ -24,6 +24,7 @@ import {
 } from '@factory/core';
 import { STATUS as COLUMNS } from '@/components/task-status';
 import { useConfirm, type Confirm, type ConfirmRequest } from '@/components/confirm-dialog';
+import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 export type BoardIssue = {
@@ -201,22 +202,27 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   const [creating, setCreating] = useState<'backlog' | 'todo'>();
   const [dragging, setDragging] = useState<BoardIssue>();
   const [over, setOver] = useState<IssueStatus>();
-  const [notice, setNotice] = useState<{ kind: 'error' | 'status'; text: string }>();
   const moving = useRef(new Set<string>());
 
   const [confirm, confirmDialog] = useConfirm();
+  /** A move's outcome as a toast: errors stay until closed, the rest fade. */
+  const notify = (kind: 'error' | 'status', text: string) => {
+    if (!text) return;
+    toast.add(
+      kind === 'error' ? { title: text, type: 'error', timeout: 0 } : { title: text, type: 'success' },
+    );
+  };
   const move = async (issue: BoardIssue, to: IssueStatus) => {
     const action = await decideDrop(issue, to, confirm);
     if (!action || action.kind === 'none') return;
     if (action.kind === 'refused') {
-      setNotice({ kind: 'error', text: `${issue.key}: ${action.reason}` });
+      notify('error', `${issue.key}: ${action.reason}`);
       return;
     }
     // The PR is open: more work is a follow-up, written on the task page.
     if (action.kind === 'follow-up') return router.push(followUpHref(project, issue.key));
     if (moving.current.has(issue.key)) return;
     moving.current.add(issue.key);
-    setNotice(undefined);
     startMove(async () => {
       setOptimistic({
         key: issue.key,
@@ -224,11 +230,8 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
       });
       const result = await moveIssue(project, issue.key, to);
       moving.current.delete(issue.key);
-      setNotice(
-        result.error
-          ? { kind: 'error', text: `${issue.key}: ${result.error}` }
-          : { kind: 'status', text: result.message ?? '' },
-      );
+      if (result.error) notify('error', `${issue.key}: ${result.error}`);
+      else notify('status', result.message ?? '');
       router.refresh();
     });
   };
@@ -236,11 +239,8 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
   const archive = (issue: BoardIssue) =>
     startMove(async () => {
       const result = await archiveIssue(project, issue.key, true);
-      setNotice(
-        result.error
-          ? { kind: 'error', text: `${issue.key}: ${result.error}` }
-          : { kind: 'status', text: `${result.message} Restore it from Archived in the sidebar.` },
-      );
+      if (result.error) notify('error', `${issue.key}: ${result.error}`);
+      else notify('status', `${result.message} Restore it from Archived in the sidebar.`);
       router.refresh();
     });
 
@@ -267,15 +267,6 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
           <Plus aria-hidden /> New task
         </Button>
       </header>
-      <p
-        role={notice?.kind === 'error' ? 'alert' : 'status'}
-        className={cn(
-          'min-h-5 px-6 pb-2 text-sm',
-          notice?.kind === 'error' ? 'text-destructive' : 'text-muted-foreground',
-        )}
-      >
-        {notice?.text}
-      </p>
 
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-6 pb-6">
         {ISSUE_STATUSES.map((status) => {
@@ -331,7 +322,7 @@ export function TaskBoard({ project, issues, now }: { project: string; issues: B
                       onDone={(message) => {
                         setCreating(undefined);
                         if (message) {
-                          setNotice({ kind: 'status', text: message });
+                          notify('status', message);
                           router.refresh();
                         }
                       }}
