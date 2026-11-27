@@ -45,7 +45,7 @@ import { FeatureService } from './features.ts';
 import { IssueService } from './issues.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
-import { TendingService } from './tending.ts';
+import { TendingService, ghTending } from './tending.ts';
 import { storageFor, type DataStorage } from '@factory/adapters-data';
 import { Conflict } from './conflict.ts';
 import { PrReviewStore, ReviewService, type ReviewDeps } from '@factory/pr-reviews';
@@ -360,6 +360,18 @@ export class BackendService {
         this.issues.note({ project, key: id, kind: 'review-loop', message, ...(review ? { review } : {}) }),
       body: async (task) => prBody(task, task.pr!.head_sha, (await readPrTemplate(task.worktree!.path)).text),
       github: { markReady: markPullRequestReady, editBody: editPullRequestBody, isDraft: pullRequestIsDraft },
+      readiness: async (cwd, number) => {
+        const pr = await ghTending.pr(cwd, number);
+        if (pr.mergeable === 'CONFLICTING') return { ok: false, reason: 'it conflicts with its base' };
+        const failed = pr.checks.filter((c) => c.state === 'fail');
+        if (failed.length)
+          return { ok: false, reason: `checks are failing: ${failed.map((c) => c.name).join(', ')}` };
+        if (pr.checks.some((c) => c.state !== 'pass' && c.state !== 'skipped'))
+          return { ok: false, reason: 'checks are still pending' };
+        return pr.mergeable === 'MERGEABLE'
+          ? { ok: true }
+          : { ok: false, reason: 'GitHub has not settled whether it merges cleanly' };
+      },
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.reviewTickets = new ReviewTickets({
@@ -412,6 +424,8 @@ export class BackendService {
         // the backend was down): start one. The loop ignores a PR it already has a state for.
         if (pr.state === 'OPEN' && pr.draft && task.workflow === 'agent')
           await this.reviewLoop.prChanged(task, { kind: 'opened', draft: true });
+        // A finished review that waited for green CI hands the draft off once tending sees it green.
+        if (pr.state === 'OPEN' && task.workflow === 'agent') await this.reviewLoop.checksChanged(task);
         // A loop whose review a restart cut waits for a result that never comes: start it again.
         if (pr.state === 'OPEN' && task.workflow === 'agent') {
           const loop = await this.reviewLoop.state(task);
