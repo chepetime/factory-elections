@@ -38,7 +38,16 @@ export async function openPr(
   };
   await intent('push');
   deps.log(`Pushing ${branch}…`);
-  await deps.git.push(path, branch);
+  // Push the SHA the approval gate checked, not the branch: a commit made since then is not sent.
+  await deps.git.push(path, head, branch);
+  // Do not trust the push's exit code: read the ref back from origin. The publication intent stays,
+  // so a retry reconciles instead of repeating a write.
+  const remote = await deps.git.remoteHead(path, branch);
+  if (remote !== head)
+    throw new DriverError(
+      `origin ${branch} is ${remote ? remote.slice(0, 12) : 'missing'} after the push, not the approved ${head.slice(0, 12)}; ` +
+        'the pull request was not opened',
+    );
   await intent('create');
   // A previous attempt may have opened the PR and then failed to record it. Adopt an open PR for
   // this commit; a closed or merged one needs a person, because opening another repeats a write.

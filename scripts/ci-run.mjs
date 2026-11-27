@@ -5,10 +5,14 @@ import { changedFiles, planChanges } from './ci-plan.mjs';
 const plan = planChanges(changedFiles(process.argv[2], process.argv[3] || 'HEAD'));
 console.log(`Affected: ${plan.packages.join(', ') || 'documentation only'}`);
 function run(command, args) {
+  // The post-commit runner reads the last `==> ` line of this output as the failed step.
+  console.log(`==> ${[command === process.execPath ? 'node' : command, ...args].join(' ').slice(0, 120)}`);
   const result = spawnSync(command, args, { stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
 }
+// Repository rules only read files, so they run on every plan, also a docs-only one.
+run(process.execPath, ['--test', '--test-reporter=dot', ...globSync('tests/repo/**/*.test.ts')]);
 if (plan.code) {
   run('pnpm', ['format:check']);
   run('pnpm', ['lint']);

@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   DEFAULT_TASK_LIMITS,
   isForbiddenCommand,
-  isForbiddenPath,
+  protectedPaths,
   type ModelFailure,
   type RepoProfile,
   type ToolGuard,
@@ -109,7 +109,7 @@ export function freePort(): Promise<number> {
 }
 
 /** Keeps an editing agent inside its worktree, off forbidden paths and forbidden commands. */
-export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard {
+export function worktreeGuard(worktree: string, profile: RepoProfile, allowProtected = false): ToolGuard {
   const root = resolve(worktree);
   return {
     check(toolName, input) {
@@ -126,11 +126,12 @@ export function worktreeGuard(worktree: string, profile: RepoProfile): ToolGuard
       const rel = relative(root, target);
       if (rel.startsWith('..') || isAbsolute(rel) || rel === '..' || target.split(sep).includes('.git'))
         return `Only files inside the task worktree (${root}) may be used.`;
+      // The guard cannot see what a Bash command writes; verification checks the whole branch.
       if (
         (toolName === 'Edit' || toolName === 'Write') &&
-        isForbiddenPath(rel, profile.confirmed.forbidden_paths)
+        protectedPaths([rel.split(sep).join('/')], profile.confirmed.forbidden_paths, allowProtected).length
       )
-        return `The path "${rel}" is forbidden by the repository profile.`;
+        return `The path "${rel}" is protected (repository profile or built-in protected paths).`;
       return undefined;
     },
   };
@@ -143,4 +144,14 @@ export async function readPrTemplate(dir: string): Promise<PrTemplate> {
     if (text?.trim()) return { source: path, text };
   }
   return { source: 'factory', text: FACTORY_PR_TEMPLATE };
+}
+
+export function parseJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(trimmed);
+  try {
+    return JSON.parse(fenced ? fenced[1]! : trimmed);
+  } catch {
+    return undefined;
+  }
 }
