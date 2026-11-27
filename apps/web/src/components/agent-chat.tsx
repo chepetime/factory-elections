@@ -15,8 +15,8 @@ import {
   type FactoryMessage,
 } from '@/lib/chat-transport';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { CallChip, iconForTool } from '@/components/bits/call-chip';
-import { ThoughtLine } from '@/components/bits/thought-line';
+import { CallChip, iconForTool } from '@factory/ui/components/call-chip';
+import { ThoughtLine } from '@factory/ui/components/thought-line';
 import { ChatComposer } from '@/components/chat-composer';
 import { useConfirm } from '@/components/confirm-dialog';
 import { LocalTime } from '@/components/local-time';

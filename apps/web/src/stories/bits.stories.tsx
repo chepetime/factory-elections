@@ -2,11 +2,11 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Square, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-import { CallChip, iconForTool, type CallStatus } from '@/components/bits/call-chip';
-import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
-import { LatticeLoader } from '@/components/bits/lattice-loader';
-import { SpecularButton } from '@/components/bits/specular-button';
-import { ThoughtLine } from '@/components/bits/thought-line';
+import { CallChip, iconForTool, type CallStatus } from '@factory/ui/components/call-chip';
+import { DESTRUCTIVE_HOLD, HoldButton } from '@factory/ui/components/hold-button';
+import { LatticeLoader } from '@factory/ui/components/lattice-loader';
+import { SpecularButton } from '@factory/ui/components/specular-button';
+import { ThoughtLine } from '@factory/ui/components/thought-line';
 
 // The React Bits ports with the props the app uses, so their states are visible without a live run.
 const meta = {

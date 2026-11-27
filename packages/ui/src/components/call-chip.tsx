@@ -6,7 +6,7 @@
 // the chip only announces a status it saw change, so a long transcript does not read every call.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, FileText, Pencil, RefreshCw, Search, SquareTerminal, X } from 'lucide-react';
-import { cn } from '@factory/ui/lib/utils';
+import { cn } from '../lib/utils';
 import styles from './call-chip.module.css';
 
 export type CallStatus = 'idle' | 'running' | 'done' | 'error';

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { approveProfile, draftProfile, type ActionState } from '@/app/actions';
 import { useConfirm } from '@/components/confirm-dialog';
-import { LatticeLoader } from '@/components/bits/lattice-loader';
+import { LatticeLoader } from '@factory/ui/components/lattice-loader';
 import { Button } from '@factory/ui/components/button';
 import type { ProfileStatus } from '@/lib/settings';
 import { cn } from '@factory/ui/lib/utils';

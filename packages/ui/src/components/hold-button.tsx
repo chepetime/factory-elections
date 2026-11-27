@@ -14,7 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { cn } from '@factory/ui/lib/utils';
+import { cn } from '../lib/utils';
 import styles from './hold-button.module.css';
 
 type Phase = 'idle' | 'holding' | 'done';

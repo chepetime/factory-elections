@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { animate, useReducedMotion, type AnimationPlaybackControls } from 'motion/react';
 import { Check, ChevronDown, Sparkles } from 'lucide-react';
-import { cn } from '@factory/ui/lib/utils';
+import { cn } from '../lib/utils';
 import styles from './thought-line.module.css';
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;

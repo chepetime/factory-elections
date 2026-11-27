@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react';
 import { reviseTask, stopTask, submitTask, type ActionState } from '@/app/actions';
-import { HoldButton } from '@/components/bits/hold-button';
+import { HoldButton } from '@factory/ui/components/hold-button';
 import { Button } from '@factory/ui/components/button';
 import { Toggle } from '@factory/ui/components/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@factory/ui/components/toggle-group';

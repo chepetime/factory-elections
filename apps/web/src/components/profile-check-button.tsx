@@ -2,7 +2,7 @@
 import { PlayCircle } from 'lucide-react';
 import { useActionState } from 'react';
 import { checkProjectSetup, type ActionState } from '@/app/actions';
-import { LatticeLoader } from '@/components/bits/lattice-loader';
+import { LatticeLoader } from '@factory/ui/components/lattice-loader';
 import { Button } from '@factory/ui/components/button';
 
 export function ProfileCheckButton({

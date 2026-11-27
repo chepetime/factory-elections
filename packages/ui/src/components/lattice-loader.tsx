@@ -4,7 +4,7 @@
 // (https://reactbits.dev, MIT + Commons Clause). Addition: `startedAt` starts the stopwatch at a
 // known time, for work that began before the page opened.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { cn } from '@factory/ui/lib/utils';
+import { cn } from '../lib/utils';
 import styles from './lattice-loader.module.css';
 
 type Grid = 3 | 4;

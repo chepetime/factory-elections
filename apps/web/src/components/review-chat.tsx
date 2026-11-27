@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { sendReviewMessage, startReviews, stopReview } from '@/app/actions';
-import { ThoughtLine } from '@/components/bits/thought-line';
+import { ThoughtLine } from '@factory/ui/components/thought-line';
 import { ChatComposer } from '@/components/chat-composer';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';

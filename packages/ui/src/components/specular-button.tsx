@@ -2,10 +2,11 @@
 // A glass button whose edge catches a light that slides toward the cursor. The light is a WebGL2
 // canvas around the button; without WebGL2 the button keeps its glass body and label. Ported to
 // TypeScript from React Bits' SpecularButton (https://reactbits.dev, MIT + Commons Clause); the
-// shader is unchanged. Addition: `href` renders a Next.js link with the same look.
-import Link from 'next/link';
+// shader is unchanged. Addition: `render` swaps the <button> for another element, e.g. a link.
+import { mergeProps } from '@base-ui/react/merge-props';
+import { useRender } from '@base-ui/react/use-render';
 import { useEffect, useRef, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react';
-import { cn } from '@factory/ui/lib/utils';
+import { cn } from '../lib/utils';
 import styles from './specular-button.module.css';
 
 const PAD = 24;
@@ -176,8 +177,8 @@ const link = (gl: WebGL2RenderingContext) => {
 
 export interface SpecularButtonProps {
   children: ReactNode;
-  /** Renders a link instead of a button. */
-  href?: string;
+  /** Renders this element instead of a <button>, e.g. `render={<Link href="/projects" />}`. */
+  render?: useRender.RenderProp;
   size?: 'sm' | 'md' | 'lg';
   /** Corner radius in px. Past half the height it is a pill. */
   radius?: number;
@@ -211,7 +212,7 @@ export interface SpecularButtonProps {
 
 export function SpecularButton({
   children,
-  href,
+  render,
   size = 'lg',
   radius = 18,
   tint = '#ffffff',
@@ -501,28 +502,11 @@ export function SpecularButton({
     </>
   );
 
-  return href ? (
-    <Link
-      ref={(node: HTMLAnchorElement | null) => {
-        buttonRef.current = node;
-      }}
-      href={href}
-      onClick={onClick}
-      {...shared}
-    >
-      {content}
-    </Link>
-  ) : (
-    <button
-      ref={(node) => {
-        buttonRef.current = node;
-      }}
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
-      {...shared}
-    >
-      {content}
-    </button>
-  );
+  return useRender({
+    render: render ?? <button type={type} disabled={disabled} />,
+    ref: (node: HTMLElement | null) => {
+      buttonRef.current = node;
+    },
+    props: mergeProps<'button'>({ onClick, children: content }, shared),
+  });
 }

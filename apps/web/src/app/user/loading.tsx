@@ -1,4 +1,4 @@
-import { LatticeLoader } from '@/components/bits/lattice-loader';
+import { LatticeLoader } from '@factory/ui/components/lattice-loader';
 
 /** Profile and providers check the CLIs on this machine, which takes a few seconds. */
 export default function Loading() {

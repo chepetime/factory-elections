@@ -1,4 +1,4 @@
-import { LatticeLoader } from '@/components/bits/lattice-loader';
+import { LatticeLoader } from '@factory/ui/components/lattice-loader';
 
 export default function LoadingTickets() {
   return (

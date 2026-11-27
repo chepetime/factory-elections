@@ -3,7 +3,7 @@
 // and reloads the page only when the task itself changes (a new stage, the run finished).
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ThoughtLine } from '@/components/bits/thought-line';
+import { ThoughtLine } from '@factory/ui/components/thought-line';
 import { LiveOutput } from '@/components/live-output';
 import { livePollOutcome, runStatus, type LivePoll, type RunActivity } from '@/lib/task-chat';
 import { cn } from '@factory/ui/lib/utils';

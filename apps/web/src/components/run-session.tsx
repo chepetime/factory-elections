@@ -5,7 +5,7 @@ import { ChevronRight, LoaderCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { CallChip, iconForTool } from '@/components/bits/call-chip';
+import { CallChip, iconForTool } from '@factory/ui/components/call-chip';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { cn } from '@factory/ui/lib/utils';

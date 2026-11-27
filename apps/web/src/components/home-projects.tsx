@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'motion/react';
-import { SpecularButton } from '@/components/bits/specular-button';
+import { SpecularButton } from '@factory/ui/components/specular-button';
 import { ReflectiveCard } from '@/components/backdrops/reflective-card';
 import { HomeBackground } from '@/components/home-background';
 import { LocalTime } from '@/components/local-time';
@@ -116,7 +116,14 @@ export function ProjectCards({ cards }: { cards: HomeCard[] }) {
       </ul>
       <m.div className="mt-6 self-start" {...enter(cardsDone, { y: 8 })}>
         {/* Glass with a lit edge that turns toward the cursor, over the animated background. */}
-        <SpecularButton href="/projects" size="sm" radius={10} tintOpacity={0.08} blur={6} proximity={200}>
+        <SpecularButton
+          render={<Link href="/projects" />}
+          size="sm"
+          radius={10}
+          tintOpacity={0.08}
+          blur={6}
+          proximity={200}
+        >
           <Plus aria-hidden="true" className="size-4" /> Add project
         </SpecularButton>
       </m.div>

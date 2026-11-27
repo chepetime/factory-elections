@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { IssueStatus } from '@factory/core';
 import { archiveIssue, deleteIssue } from '@/app/actions';
-import { DESTRUCTIVE_HOLD, HoldButton } from '@/components/bits/hold-button';
+import { DESTRUCTIVE_HOLD, HoldButton } from '@factory/ui/components/hold-button';
 import { LocalTime } from '@/components/local-time';
 import { StatusLabel } from '@/components/task-status';
 import { Button } from '@factory/ui/components/button';
