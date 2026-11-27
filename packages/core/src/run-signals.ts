@@ -6,12 +6,17 @@
 import type { SpanRecord } from './trace.ts';
 
 export type RunCategory = 'thrash' | 'errors' | 'failed' | 'fine';
+export type WasteKind = 'fail-fix' | 'repeat' | 'oscillation' | 'churn' | 'failure-streak';
 
 export interface RunSignals {
   trace_id: string;
   project: string;
   task_id?: string;
   task_class?: string;
+  /** Who ran it: the provider of its model calls, else the run's step or name. */
+  source?: string;
+  /** The main waste of the run: its kind, and the tool and input shape of its first wasted call. */
+  pattern?: { kind: WasteKind; tool: string; shape: string };
   tool_calls: number;
   /** The most edits of one path. */
   edit_churn: number;
@@ -98,6 +103,26 @@ type Counts = Pick<
   RunSignals,
   'edit_churn' | 'repeated_calls' | 'oscillations' | 'fail_fix_loops' | 'max_failure_streak'
 >;
+
+function wastePattern(calls: readonly Call[], found: ReturnType<typeof findWaste>): RunSignals['pattern'] {
+  const kind: WasteKind | undefined =
+    found.fail_fix_loops > 0
+      ? 'fail-fix'
+      : found.repeated_calls > 0
+        ? 'repeat'
+        : found.oscillations > 0
+          ? 'oscillation'
+          : found.edit_churn >= CHURN_EDITS
+            ? 'churn'
+            : found.max_failure_streak >= FAILURE_STREAK
+              ? 'failure-streak'
+              : undefined;
+  const first = Math.min(...found.wasted);
+  const call = calls[first];
+  if (!kind || !call) return undefined;
+  // An edit is told apart by its path, which the shape drops: churn groups by tool alone.
+  return { kind, tool: call.name, shape: call.edit ? '' : normalizeInput(call.input).slice(0, 120) };
+}
 
 function findWaste(calls: readonly Call[]): Counts & { wasted: Set<number> } {
   const wasted = new Set<number>();
@@ -206,7 +231,9 @@ export function runSignals(spans: readonly SpanRecord[]): RunSignals[] {
     const tools = group
       .filter((s) => s.type === 'tool')
       .sort((a, b) => a.started_at.localeCompare(b.started_at));
-    const found = findWaste(toCalls(tools, run.replay?.verification ?? []));
+    const toolCalls = toCalls(tools, run.replay?.verification ?? []);
+    const found = findWaste(toolCalls);
+    const pattern = wastePattern(toolCalls, found);
     const { wasted, ...counts } = found;
     const wastedCalls = wasted.size;
     const ratio = tools.length ? wastedCalls / tools.length : 0;
@@ -231,11 +258,14 @@ export function runSignals(spans: readonly SpanRecord[]): RunSignals[] {
       counts.max_failure_streak >= FAILURE_STREAK ||
       emptyAnswers > 0 ||
       (tools.length >= 4 && failedCalls / tools.length >= 0.5);
+    const source = group.find((s) => s.type === 'model' && s.provider)?.provider ?? run.step ?? run.name;
     out.push({
       trace_id: run.trace_id,
       project: run.project,
       ...(run.task_id ? { task_id: run.task_id } : {}),
       ...(run.task_class ? { task_class: run.task_class } : {}),
+      source,
+      ...(pattern ? { pattern } : {}),
       tool_calls: tools.length,
       ...counts,
       empty_answers: emptyAnswers,

@@ -17,6 +17,7 @@ export * from './issues.ts';
 export * from './trace.ts';
 export * from './metrics.ts';
 export * from './run-signals.ts';
+export * from './retro.ts';
 export * from './metrics-schema.ts';
 export * from './inbox.ts';
 export * from './tending.ts';

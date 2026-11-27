@@ -122,6 +122,16 @@ test('a Codex run ranks by tokens with unknown cost', () => {
   );
 });
 
+test('a run names its source and the tool and input shape of its main waste', () => {
+  const calls = Array.from({ length: 4 }, (_, i) => tool('Bash', `pnpm build --run ${i}${i}${i}${i}`));
+  const [s] = runSignals([run(), model({ provider: 'claude' }), ...calls]);
+  assert.equal(s!.source, 'claude');
+  assert.deepEqual(s!.pattern, { kind: 'repeat', tool: 'Bash', shape: 'pnpm build --run #' });
+  const [clean] = runSignals([run('t2'), tool('Read', 'src/a.ts', 'completed', 't2')]);
+  assert.equal(clean!.pattern, undefined);
+  assert.equal(clean!.source, 'run', 'no model span: the run name');
+});
+
 test('an empty final message from the coder counts as an error', () => {
   const [s] = runSignals([run(), model({ attributes: { final_chars: 0 } }), tool('Edit', 'src/a.ts')]);
   assert.equal(s!.empty_answers, 1);

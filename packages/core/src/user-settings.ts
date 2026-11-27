@@ -21,6 +21,7 @@ export const NOTIFY_KINDS = [
   'review',
   'tending',
   'recovery',
+  'finding',
 ] as const;
 
 export const ProviderSettings = z.object({
