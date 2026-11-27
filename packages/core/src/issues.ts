@@ -1,7 +1,7 @@
 // Tasks on a project's board ("issues" in code, since "task" already names a factory run).
 // An issue is planned work with a key like CE-12; each factory run it starts is one of its runs.
 import { z } from 'zod';
-import { TaskId, type Stage } from './schemas.ts';
+import { TaskId, type Stage, type TaskRecord } from './schemas.ts';
 import { commandAllowedIn } from './task-controls.ts';
 
 export const ISSUE_STATUSES = [
@@ -306,6 +306,7 @@ export function dropAction(from: IssueStatus, to: IssueStatus, run?: RunSummary)
 /**
  * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.
  * `owned`: a live run holds the task now, whatever its stage says.
+ * `reason`: why a run that waits for a person stopped: its latest message for the current stage.
  */
 export type IssueRun = {
   id: string;
@@ -314,7 +315,21 @@ export type IssueRun = {
   waiting?: boolean;
   waiting_for?: QueueWait;
   owned: boolean;
+  reason?: string;
 };
+
+/** Stages that wait for a person to act, so the board says why. Approval needs no reason. */
+const REASON_STAGES: readonly Stage[] = ['blocked', 'failed', 'verification-failed'];
+const REASON_MAX = 300;
+
+/** Why a run waits for a person: the message of its latest `stage:<stage>` event, trimmed. */
+export function stageReason(task: Pick<TaskRecord, 'stage' | 'events'>): string | undefined {
+  if (!REASON_STAGES.includes(task.stage)) return undefined;
+  const kind = `stage:${task.stage}`;
+  const message = task.events?.findLast((e) => e.kind === kind)?.message.trim();
+  if (!message) return undefined;
+  return message.length > REASON_MAX ? `${message.slice(0, REASON_MAX - 1).trimEnd()}…` : message;
+}
 export type IssueView = Omit<Issue, 'status'> & {
   key: string;
   /** The column it shows in: the latest run's status unless a person set one since. */
