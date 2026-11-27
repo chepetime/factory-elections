@@ -1,0 +1,23 @@
+{
+  "title": "State machines",
+  "pages": [
+    "task-stages",
+    "runs",
+    "projects",
+    "coding",
+    "approval-and-publication",
+    "pr-reviews",
+    "pr-tending",
+    "features",
+    "feature-tickets",
+    "tasks-board",
+    "agent-pickup",
+    "chats",
+    "memory",
+    "backend",
+    "storage",
+    "task-page",
+    "ui",
+    "action-discovery"
+  ]
+}
