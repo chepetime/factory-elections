@@ -43,3 +43,4 @@ export * from './feature-controls.ts';
 export * from './run-attention.ts';
 export * from './mentions.ts';
 export * from './review-tickets.ts';
+export * from './worktree-sweep.ts';
