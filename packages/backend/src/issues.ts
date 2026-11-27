@@ -7,6 +7,8 @@ import { z } from 'zod';
 import {
   ReviewOutcome,
   asksForBaseMerge,
+  blockedByProblems,
+  blockerGate,
   parseMentions,
   defaultPrefix,
   dropAction,
@@ -45,8 +47,14 @@ export type IssueDeps = {
   /** Whether a run of this task is accepted, running or finalizing in this backend. */
   owned?: (project: string, id: string) => boolean;
   settings: (project: string) => Promise<ProjectSettings>;
-  /** Creates a factory run and returns its id; it does not start it. */
-  submit: (input: { project: string; prompt: string; jiraKey?: string; agent?: string }) => Promise<string>;
+  /** Creates a factory run and returns its id; it does not start it. `stackOn`: the branch it starts from. */
+  submit: (input: {
+    project: string;
+    prompt: string;
+    jiraKey?: string;
+    agent?: string;
+    stackOn?: string;
+  }) => Promise<string>;
   /** Sends a person's note to a waiting run; agent runs resume their session with it. */
   revise?: (project: string, id: string, note: string) => Promise<unknown>;
   /** Starts the task's run; `reply` is a person's comment the agent reads (blocked agent tasks). */
@@ -97,6 +105,8 @@ const UpdateInput = z.object({
   /** A `YYYY-MM-DD` day, or null to clear it. */
   start_date: PlanDate.nullable().optional(),
   due_date: PlanDate.nullable().optional(),
+  /** Keys of this project's tickets that must be Done first; [] clears them. */
+  blocked_by: z.array(Key).max(20).optional(),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
 const FollowUpInput = z.object({
@@ -254,20 +264,24 @@ export class IssueService {
   }
 
   /** One read-change-write of a ticket, for services that own a ticket field (review tickets). */
-  edit(project: string, key: string, change: (issue: Issue, at: string) => Issue): Promise<IssueView> {
+  edit(
+    project: string,
+    key: string,
+    change: (issue: Issue, at: string, board: IssueBoard) => Issue,
+  ): Promise<IssueView> {
     return this.change(project, key, change);
   }
 
   private async change(
     project: string,
     key: string,
-    edit: (issue: Issue, at: string) => Issue,
+    edit: (issue: Issue, at: string, board: IssueBoard) => Issue,
   ): Promise<IssueView> {
     return this.serial(async () => {
       const { board, runs } = await this.sync(project);
       const current = this.find(board, key);
       const at = this.now();
-      const updated = Issue.parse({ ...edit(current, at), updated_at: at });
+      const updated = Issue.parse({ ...edit(current, at, board), updated_at: at });
       await this.write(project, {
         ...board,
         items: board.items.map((i) => (i.number === current.number ? updated : i)),
@@ -320,10 +334,11 @@ export class IssueService {
   }
 
   async update(raw: unknown): Promise<IssueView> {
-    const { project, key, assignee, start_date, due_date, ...patch } = UpdateInput.parse(raw);
+    const { project, key, assignee, start_date, due_date, blocked_by, ...patch } = UpdateInput.parse(raw);
     if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
     const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
-    const updated = await this.change(project, key, (issue, at) => {
+    const prefix = await this.prefix(project);
+    const updated = await this.change(project, key, (issue, at, board) => {
       const changed = Object.entries(patch).filter(
         ([field, value]) => value !== undefined && value !== issue[field as keyof Issue],
       );
@@ -358,11 +373,44 @@ export class IssueService {
           message: value ? `Set the ${label} to ${value}` : `Removed the ${label}`,
         });
       }
+      const keys = blocked_by && this.blockers(prefix, issue, board, blocked_by);
+      if (keys && keys.join() !== issue.blocked_by.join()) {
+        next = { ...next, blocked_by: keys };
+        events.push({
+          at,
+          kind: 'edit:blocked_by',
+          message: keys.length ? `Set blocked by to ${keys.join(', ')}` : 'Removed the blockers',
+        });
+      }
       if (!events.length) return issue;
       return { ...next, events: [...issue.events, ...events] };
     });
     this.deps.changed?.();
     return updated;
+  }
+
+  /** The new blockers as keys with the current prefix; refuses other projects, unknown keys and cycles. */
+  private blockers(prefix: string, issue: Issue, board: IssueBoard, raw: string[]): string[] {
+    const keys = [
+      ...new Set(
+        raw.map((k) => {
+          const number = issueNumber(k);
+          if (!number || k.trim().split('-')[0]!.toUpperCase() !== prefix)
+            throw new Conflict(`${k} is not a task of this project. Use keys like ${prefix}-1.`);
+          return issueKey(prefix, number);
+        }),
+      ),
+    ];
+    const self = issueKey(prefix, issue.number);
+    const items = board.items.map((i) => ({
+      key: issueKey(prefix, i.number),
+      blocked_by:
+        i.number === issue.number ? keys : i.blocked_by.map((b) => issueKey(prefix, issueNumber(b)!)),
+    }));
+    // Only this ticket's problems: an older link to a deleted ticket must not block the edit.
+    const problems = blockedByProblems(items).filter((p) => new RegExp(`\\b${self}\\b`).test(p));
+    if (problems.length) throw new Conflict(`Cannot set the blockers: ${problems.join('; ')}.`);
+    return keys;
   }
 
   async comment(raw: unknown): Promise<IssueView> {
@@ -601,7 +649,14 @@ export class IssueService {
       const issue = this.find(board, key);
       const prefix = await this.prefix(project);
       const view = this.view(prefix, issue, runs);
-      const action = dropAction(view.status, to, view.run);
+      const gate = issue.blocked_by.length
+        ? blockerGate(
+            issue.blocked_by,
+            board.items.map((i) => this.view(prefix, i, runs)),
+            (id) => runs.get(id),
+          )
+        : undefined;
+      const action = dropAction(view.status, to, view.run, gate?.kind === 'wait' ? gate.open : []);
       if (action.kind === 'refused') throw new Conflict(action.reason);
       if (action.kind === 'follow-up')
         throw new Conflict('The pull request is open. Add a follow-up with instructions from the task page.');
@@ -633,11 +688,13 @@ export class IssueService {
           prompt: issuePrompt(issue),
           ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
           ...(issue.assignee ? { agent: issue.assignee } : {}),
+          ...(gate?.kind === 'stack' ? { stackOn: gate.branch } : {}),
         });
+        const stacked = gate?.kind === 'stack' ? `, stacked on ${gate.key} (${gate.branch})` : '';
         updated = {
           ...issue,
           runs: [...issue.runs, runId],
-          events: [...issue.events, event('Started a run')],
+          events: [...issue.events, event(`Started a run${stacked}`)],
         };
       }
       if (action.kind === 'run') updated = { ...issue, events: [...issue.events, event('Ran again')] };
