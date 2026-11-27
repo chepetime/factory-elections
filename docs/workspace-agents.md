@@ -20,9 +20,11 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 1. Set the task's **Agent** on the task page, or use **Assign work** on the agent's page.
 2. Put the task in **Todo**. The agent starts it when it has a free slot (see Pickup below). You can also move the task to **In progress** to start it now. The run is a factory run with `workflow: agent`. The driver's `agentRun` in `packages/driver/src/workflow.ts` runs it:
    - It prepares the worktree, with no classifier step.
+   - New work starts from `origin/<base>` after a fetch, not the local base: PRs merged on GitHub are in, and unpushed local commits stay out. Push the base first if a task needs a local fix. A stacked ticket starts from its blocker's branch; a repository with no remote starts from the local base.
    - It runs one model session with `tools: edit`, the coder guard (`worktreeGuard`), the OS sandbox and the agent's budget. The session persists, so later turns resume it.
    - It commits what the agent left, then runs the profile's checks (verify).
    - The stage becomes `awaiting-approval` if the checks pass, `verification-failed` if they fail, and `blocked` if the agent asked for help or made no change.
+   - **Fix turns.** When verification fails for a reason the agent can fix (size limit, weakened tests, late edits, failing checks), the same session gets the failure and an instruction for it, up to two times (`AGENT_FIX_TURNS` in `packages/driver/src/agent-fixes.ts`). An environment fault gets no fix turn. After the last fix turn, the task stays `verification-failed` for you.
 3. There is no reviewer step. You review the change, approve it, and open the pull request, as for any run. The agent cannot push.
 
 **Pickup.** `AgentPickup` (`packages/agents/src/agent-pickup.ts`) checks every 20 seconds, after a run ends, and after you change a task.
@@ -42,6 +44,7 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 
 - `comment`: posts on the task as the agent.
 - `set_status`: sets the task to `in_progress`, `in_review` or `blocked`. Done and cancelled stay with you.
+- `check_change`: runs Factory's change gates (at most 400 non-test lines, no weakened tests) on the committed change, the same way verification runs them.
 - `delegate`: starts a child task, as for the coder.
 
 ## Follow-ups
@@ -49,9 +52,10 @@ The backend keeps all agents in one document, `<data root>/.workspace/agents.jso
 A task whose PR is open is done, and its run is finished. More work on it is a **follow-up**: a workspace agent continues the same worktree, branch and PR (`packages/core/src/follow-ups.ts`, `Driver.followUp`).
 
 - **Start one** from the task page (Follow up, under the run), or drag the Done card to In progress, which opens the same form. Pick the agent (default: the run's agent, then the task's assignee) and write instructions, or use the **Resolve merge conflicts** preset.
-- **Safe start.** The driver fetches the PR branch and its base, fast-forwards the worktree to the PR head, and refuses a branch that diverged from it. A conflict follow-up merges the base in. A clean merge needs no agent and goes straight to verification. Otherwise the agent gets the list of conflicted files, and the driver refuses to commit while a conflict marker remains, and aborts the merge on failure.
+- **Safe start.** The driver fetches the PR branch and its base, fast-forwards the worktree to the PR head, and refuses a branch that diverged from it. A conflict follow-up merges the base in. The driver regenerates a conflicted lockfile (`pnpm-lock.yaml`, `package-lock.json`) from the base's copy itself (`packages/driver/src/merge-conflicts.ts`). It does the same for a conflicted file that matches a profile `regenerate` rule: it takes the base's copy and runs the rule's command once from the worktree root. Only the other conflicts, and files whose command failed, go to the agent. A clean merge needs no agent and goes straight to verification. Otherwise the agent gets the list of conflicted files, and the driver refuses to commit while a conflict marker remains, and aborts the merge on failure.
 - **Board.** The run goes through the usual stages again, so the ticket moves by itself: Todo while it waits for the agent, In progress while it works, Blocked when the agent asks for help (`set_status`), In review with the new commit. If the agent changes nothing, the ticket goes back to Done and the PR is unchanged.
 - **Same gate.** Nothing reaches GitHub without your approval of the new commit. Opening the PR again pushes to the same branch and updates the task's own PR. A closed or merged PR stops it and asks you to reopen it or reject the task.
+- **PR merged meanwhile.** If the PR merges or closes on GitHub while a follow-up is out of `pr-opened` (working, at the gate, blocked or failed), the next tending pass records "PR #N was merged on GitHub; the follow-up is moot", puts the run back at `pr-opened`, and sets the ticket Done (Cancelled for a closed PR). The driver starts no follow-up turn, and no reply turn on one, for a PR that is not open (`refuseEndedPr` in `packages/driver/src/agent-run.ts`).
 - **Automatic conflicts.** When PR tending is off for the project, the tending pass (every 10 minutes) adds a conflict follow-up for the task's agent when its open PR conflicts with the base, once per PR head (`TendingService.watchConflict`). With tending on, tending resolves conflicts itself and pushes after the tests pass.
 
 **Review loop.** When an agent's change is approved and opened as a **draft** PR, the factory starts a senior-pr-review of it (`packages/backend/src/review-loop.ts`, rules in `packages/core/src/review-loop.ts`):

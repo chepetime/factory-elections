@@ -125,6 +125,28 @@ test('the review context names the skill, payload, PR, task manager and profile'
   assert.match(reviewKickoff('rereview', { number: 3, branch: 'b' }), /^Re-review PR #3/);
 });
 
+test('the review context says GitHub is not reachable, lists the fetched files and the failures', () => {
+  const input = {
+    skillDir: 's',
+    payload: 'p',
+    workDir: '/d/work',
+    pr: { number: 1, branch: 'b', url: '' },
+  };
+  const text = reviewContext({
+    ...input,
+    github: { files: ['pr.json', 'pr.diff'], failures: ['threads.json: rate limited'] },
+  });
+  assert.match(text, /### GitHub is not reachable/);
+  assert.match(text, /- `\/d\/work\/pr\.diff`: the diff of the pull request/);
+  assert.match(text, /Not fetched[^]*- threads\.json: rate limited/);
+  assert.match(text, /cannot post to GitHub from this turn/);
+  assert.match(
+    reviewContext({ ...input, github: { files: [], failures: ['no GitHub client is configured'] } }),
+    /\(nothing could be fetched\)/,
+  );
+  assert.doesNotMatch(reviewContext(input), /not reachable/);
+});
+
 test('the review chat pairs each message with its turn and skips sub-agent output', () => {
   const turns = [
     {
@@ -167,7 +189,7 @@ test('payloads parse leniently and settings default to no task manager', () => {
   assert.deepEqual(ReviewPayload.parse({ meta: {} }).findings, []);
   assert.deepEqual(ProjectSettings.parse({}), {
     task_manager: { kind: 'none' },
-    tending: { enabled: false, answer_threads: false },
+    tending: { enabled: false, answer_threads: false, trusted_logins: [] },
   });
   assert.throws(() => ProjectSettings.parse({ icon: 'way too long icon' }));
 });

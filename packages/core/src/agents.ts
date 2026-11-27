@@ -203,6 +203,12 @@ export interface HeadlessTurn {
   mcp?: McpEndpoint;
   /** Built-in tools to offer; absent: the provider's default set. */
   tools?: readonly string[];
+  /**
+   * Run the turn's commands in an OS sandbox, for providers that have one. Writes are limited to
+   * `allowWrite`; the network to `allowedDomains` (none when absent); credential stores are
+   * unreadable. Deny rules alone are not a boundary, so a turn that reads untrusted text sets this.
+   */
+  sandbox?: { allowWrite: readonly string[]; allowedDomains?: readonly string[] };
 }
 
 export interface McpEndpoint {

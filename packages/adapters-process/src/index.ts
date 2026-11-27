@@ -1,5 +1,14 @@
 // Spawns processes without a shell unless a profile command explicitly needs /bin/sh.
 import { spawn } from 'node:child_process';
+import {
+  proxyEnvironment,
+  sandboxedCommand,
+  sandboxUnavailable,
+  startDomainProxy,
+  type ShellSandbox,
+} from './check-sandbox.ts';
+
+export * from './check-sandbox.ts';
 
 export interface ProcessResult {
   code: number;
@@ -32,6 +41,15 @@ export interface RunOptions {
    * so test runners and servers that a check started are stopped too.
    */
   group?: boolean;
+}
+
+export interface ShellOptions extends RunOptions {
+  /**
+   * Run the command in an OS sandbox (see check-sandbox.ts). Needs `env`: the command gets exactly
+   * that environment, plus the proxy variables. When the sandbox cannot start, the command does
+   * not run (exit code 126); it is never run without it.
+   */
+  sandbox?: ShellSandbox | undefined;
 }
 
 /** How long a stopped process gets between SIGTERM and SIGKILL. */
@@ -133,9 +151,31 @@ export function run(
   });
 }
 
-/** Runs a profile command through /bin/sh -c, as approved in the repository profile. */
-export function runShell(command: string, options: RunOptions = {}): Promise<ProcessResult> {
-  return run('/bin/sh', ['-c', command], options);
+/**
+ * Runs a profile command via /bin/sh -c, as approved in the repository profile. With
+ * `options.sandbox` the command runs under the OS sandbox and fails closed when there is none.
+ */
+export async function runShell(command: string, options: ShellOptions = {}): Promise<ProcessResult> {
+  const { sandbox, ...runOptions } = options;
+  if (!sandbox) return run('/bin/sh', ['-c', command], runOptions);
+  const refuse = (why: string): ProcessResult => {
+    const message = `[not run: ${why}. Checks run in an OS sandbox and are never run without it.]\n`;
+    runOptions.onOutput?.(message);
+    return { code: 126, stdout: '', stderr: message };
+  };
+  if (!runOptions.env) return refuse('a sandboxed command needs an explicit environment');
+  const unavailable = await sandboxUnavailable();
+  if (unavailable) return refuse(unavailable);
+  const proxy = await startDomainProxy(sandbox.allowedDomains);
+  try {
+    const { file, args } = sandboxedCommand(command, sandbox);
+    return await run(file, args, {
+      ...runOptions,
+      env: { ...runOptions.env, ...proxyEnvironment(proxy.port) },
+    });
+  } finally {
+    await proxy.close();
+  }
 }
 
 export interface DetachedOptions {

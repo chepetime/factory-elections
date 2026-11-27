@@ -105,6 +105,7 @@ Adding a project (here or in the web app) also drafts its profile and prints the
 - `commands.test` must install dependencies with the repository's lockfile and run its tests in a fresh worktree.
 - `commands.full_check` must run the remaining required checks.
 - `confirmed.forbidden_paths` and `confirmed.forbidden_commands` define the coder's limits.
+- `regenerate` (optional) lists committed files a command generates, as `{ paths: [<glob>], command: <command> }`. When a merge of the base conflicts on a matching file, the factory takes the base's copy, runs the command once from the worktree root, and stages the files; if the command fails, the files go to the agent.
 - Set `approved_at` to the review date as a quoted string, such as `'2026-11-17'`, after reviewing the profile.
 
 For a pnpm repository, commands might be:

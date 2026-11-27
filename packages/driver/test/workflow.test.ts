@@ -100,7 +100,8 @@ async function setup(
     tasks: store,
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
-    shell: { runShell },
+    // These tests run real commands; the sandbox itself is covered in adapters-process.
+    shell: { runShell: (command, options) => runShell(command, { ...options, sandbox: undefined }) },
     github: {
       createPullRequest: async (o) => (prs.push(o), 'https://github.com/example/demo/pull/1'),
       pullRequestsFrom: async () => [],
@@ -529,6 +530,103 @@ test('verification rejects profile-defined generated output', async () => {
   assert.match((await store.read('demo', task.id)).verification!.output_tail, /generated files: bundle\.js/);
 });
 
+/** A task whose worktree exists, with `files` already on main (the profile protects only secrets/). */
+async function withWorktree(files: Record<string, string> = {}) {
+  const ctx = await setup({ classifier: [ready], coder: [writeFeature], reviewer: [approveReview] });
+  for (const [file, text] of Object.entries(files)) {
+    execFileSync('mkdir', ['-p', join(ctx.repo, file, '..')]);
+    await writeFile(join(ctx.repo, file), text);
+  }
+  if (Object.keys(files).length) {
+    sh(ctx.repo, 'add', '.');
+    sh(ctx.repo, 'commit', '-qm', 'protected files');
+  }
+  await ctx.driver.classify('demo', ctx.task.id);
+  await ctx.driver.prepareWorktree('demo', ctx.task.id);
+  const path = (await ctx.store.read('demo', ctx.task.id)).worktree!.path;
+  // What an agent does with Bash or a commit of its own: the change lands without being staged.
+  const commit = (message: string) => {
+    sh(path, 'add', '-A');
+    sh(path, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
+  };
+  return { ...ctx, path, commit };
+}
+
+test('verification fails a rename out of .github/workflows, with a profile that does not list it', async () => {
+  const { driver, task, path, commit } = await withWorktree({ '.github/workflows/ci.yml': 'name: ci\n' });
+  sh(path, 'mv', '.github/workflows/ci.yml', 'ci.yml');
+  await writeFile(join(path, 'feature.txt'), 'done\n');
+  commit('move ci');
+  const result = await driver.verify('demo', task.id);
+  assert.equal(result.passed, false);
+  assert.match(result.output, /protected paths: .*\.github\/workflows\/ci\.yml/);
+});
+
+test('verification fails .GitHub/actions and CODEOWNERS in any folder', async () => {
+  for (const file of ['.GitHub/actions/x.yml', 'docs/CODEOWNERS', '.husky/pre-push', '.env.local']) {
+    const { driver, task, path, commit } = await withWorktree();
+    execFileSync('mkdir', ['-p', join(path, file, '..')]);
+    await writeFile(join(path, file), 'x\n');
+    await writeFile(join(path, 'feature.txt'), 'done\n');
+    commit('add protected file');
+    const result = await driver.verify('demo', task.id);
+    assert.equal(result.passed, false, file);
+    assert.ok(result.output.includes(file), `${file}: ${result.output}`);
+  }
+});
+
+test('a commit the agent made itself, with nothing staged, fails verification on a protected path', async () => {
+  const sneaky: Script = async (r) => {
+    execFileSync('mkdir', ['-p', join(r.cwd!, '.github', 'actions', 'setup')]);
+    await writeFile(join(r.cwd!, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
+    await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+    sh(r.cwd!, 'add', '-A');
+    sh(r.cwd!, 'commit', '-qm', 'agent commit');
+    return { text: 'ok', costUsd: 0.1 };
+  };
+  const { driver, task, store } = await setup({ classifier: [ready], coder: [sneaky] });
+  await assert.rejects(driver.run('demo', task.id, { maxAttempts: 1 }), /verification still failing/);
+  const stored = await store.read('demo', task.id);
+  assert.equal(stored.stage, 'verification-failed');
+  assert.match(stored.verification!.output_tail, /protected paths: \.github\/actions\/setup\/action\.yml/);
+});
+
+test('the coder guard refuses built-in protected paths for Edit and Write, in any letter case', async () => {
+  let denials: (string | undefined)[] = [];
+  const probe: Script = async (r) => {
+    denials = [
+      r.guard!.check('Write', { file_path: join(r.cwd!, '.github/actions/x/action.yml') }),
+      r.guard!.check('Edit', { file_path: join(r.cwd!, '.Husky/pre-push') }),
+      r.guard!.check('Write', { file_path: join(r.cwd!, 'docs/CODEOWNERS') }),
+      r.guard!.check('Write', { file_path: join(r.cwd!, 'feature.txt') }),
+    ];
+    return writeFeature(r);
+  };
+  const { driver, task } = await setup({ classifier: [ready], coder: [probe], reviewer: [approveReview] });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  assert.ok(denials[0] && denials[1] && denials[2]);
+  assert.equal(denials[3], undefined);
+});
+
+test('a person can allow protected paths for one task; the gate record names them', async () => {
+  const { driver, task, store, path, commit } = await withWorktree();
+  execFileSync('mkdir', ['-p', join(path, '.github', 'workflows')]);
+  await writeFile(join(path, '.github', 'workflows', 'ci.yml'), 'name: ci\n');
+  await writeFile(join(path, 'feature.txt'), 'done\n');
+  commit('add workflow');
+  assert.equal((await driver.verify('demo', task.id)).passed, false);
+  await store.write({ ...(await store.read('demo', task.id)), allow_protected_paths: true });
+  const result = await driver.verify('demo', task.id);
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.protectedPathsAllowed, ['.github/workflows/ci.yml']);
+  assert.match(result.output, /allowed protected paths.*\.github\/workflows\/ci\.yml/);
+  // The profile's own forbidden paths stay forbidden.
+  execFileSync('mkdir', ['-p', join(path, 'secrets')]);
+  await writeFile(join(path, 'secrets', 'k'), 'x');
+  commit('add secret');
+  assert.match((await driver.verify('demo', task.id)).output, /protected paths: secrets\/k/);
+});
+
 test('verification retains only the output tail while forwarding the complete log', async () => {
   const { driver, task } = await setup({
     classifier: [ready],
@@ -552,6 +650,59 @@ test('verification retains only the output tail while forwarding the complete lo
   assert.ok(streamed > 1_000_000);
   assert.ok(result.output.length <= 6001);
   assert.match(result.output, /failure-end/);
+});
+
+test('verification runs every check with the sandboxed environment, never the backend environment', async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  const seen: { command: string; env?: Record<string, string>; sandbox?: unknown; cwd: string }[] = [];
+  driver.deps.shell.runShell = async (command, options) => {
+    seen.push({ command, cwd: options.cwd, env: options.env, sandbox: options.sandbox });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await driver.verify('demo', task.id);
+  assert.deepEqual(
+    seen.map((s) => s.command),
+    ['test -f feature.txt', 'true'],
+  );
+  for (const call of seen) {
+    assert.ok(call.env, 'an explicit environment');
+    assert.equal(call.env.FACTORY_TEST_STORAGE_KEY, undefined);
+    assert.equal(call.env.PATH, process.env.PATH);
+    const sandbox = call.sandbox as { allowWrite: string[]; denyRead: string[]; allowedDomains: string[] };
+    assert.ok(sandbox.allowWrite.includes(call.cwd), 'the worktree is writable');
+    assert.ok(sandbox.denyRead.some((p) => p.endsWith('/.ssh')));
+    assert.deepEqual(sandbox.allowedDomains, ['registry.npmjs.org']);
+  }
+});
+
+test("setup runs the coder's install scripts in the same sandbox as the checks, never with the backend environment", async (t) => {
+  process.env.FACTORY_TEST_STORAGE_KEY = 'backend-only-secret';
+  t.after(() => void delete process.env.FACTORY_TEST_STORAGE_KEY);
+  const { driver, task } = await setup({ classifier: [ready], coder: [writeFeature] });
+  withProfile(driver, (profile) => ({
+    ...profile,
+    commands: { ...profile.commands, setup: 'pnpm install' },
+  }));
+  await driver.classify('demo', task.id);
+  await driver.prepareWorktree('demo', task.id);
+  const seen: { command: string; env?: Record<string, string>; sandbox?: unknown; cwd: string }[] = [];
+  driver.deps.shell.runShell = async (command, options) => {
+    seen.push({ command, cwd: options.cwd, env: options.env, sandbox: options.sandbox });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await driver.setupWorktree('demo', task.id);
+  const install = seen.find((s) => s.command === 'pnpm install');
+  assert.ok(install, 'setup ran');
+  assert.ok(install.env, 'an explicit environment');
+  assert.equal(install.env.FACTORY_TEST_STORAGE_KEY, undefined);
+  const sandbox = install.sandbox as { allowWrite: string[]; hideRoots: string[]; reopen: string[] };
+  assert.ok(sandbox.allowWrite.includes(install.cwd), 'the worktree is writable');
+  assert.ok(sandbox.hideRoots.length > 0, 'the factory data root is hidden');
+  assert.deepEqual(sandbox.reopen, [install.cwd]);
 });
 
 test('running an already reviewed or approved task cannot spend on more model calls', async () => {
@@ -1210,6 +1361,57 @@ test('the publication intent is saved before the push, so a failed push leaves a
   await assert.rejects(driver.openPr('demo', task.id), /network down/);
   const record = await driver.deps.tasks.read('demo', task.id);
   assert.deepEqual([record.publication?.step, record.stage], ['push', 'approved']);
+});
+
+test('a commit made after the head check is not pushed: openPr sends the approved SHA only', async () => {
+  const { driver, task, remote, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  const real = driver.deps.git;
+  // After the head check, while openPr does its other async work, someone commits in the worktree.
+  driver.deps.git = {
+    ...real,
+    isClean: async (dir) => {
+      await writeFile(join(dir, 'late.txt'), 'late\n');
+      sh(dir, 'add', 'late.txt');
+      sh(dir, 'commit', '-qm', 'late commit nobody approved');
+      return real.isClean(dir);
+    },
+  };
+  const opened = await driver.openPr('demo', task.id);
+  const branch = `factory/${task.id}`;
+  assert.notEqual(sh(opened.worktree!.path, 'rev-parse', 'HEAD').trim(), gate.headSha, 'the branch moved');
+  assert.equal(
+    sh(remote, 'rev-parse', `refs/heads/${branch}`).trim(),
+    gate.headSha,
+    'origin has the approved SHA, not the moved branch tip',
+  );
+  assert.equal(opened.pr?.head_sha, gate.headSha);
+  assert.equal(prs.length, 1);
+});
+
+test('a push that leaves another commit on the remote fails openPr and keeps the publication intent', async () => {
+  const { driver, task, prs } = await setup({
+    classifier: [ready],
+    coder: [writeFeature],
+    reviewer: [approveReview],
+  });
+  await driver.run('demo', task.id, { maxAttempts: 1 });
+  const gate = await driver.gate('demo', task.id);
+  await driver.approve('demo', task.id, { head: gate.headSha });
+  // The push reports success, but origin's ref is not the approved SHA (a hook, a proxy, a concurrent push).
+  driver.deps.git = { ...driver.deps.git, remoteHead: async () => 'f'.repeat(40) };
+  await assert.rejects(driver.openPr('demo', task.id), /after the push, not the approved/);
+  const record = await driver.deps.tasks.read('demo', task.id);
+  assert.deepEqual([record.publication?.step, record.publication?.head_sha], ['push', gate.headSha]);
+  assert.equal(record.pr, undefined);
+  assert.equal(record.stage, 'approved');
+  assert.equal(prs.length, 0, 'no pull request was opened');
 });
 
 test('a runtime check (Reticle) runs after full_check: yes passes, no fails, unknown passes for a human to check', async () => {

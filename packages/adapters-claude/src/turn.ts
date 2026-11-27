@@ -5,6 +5,7 @@
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { HeadlessTurn } from '@factory/core';
 import { CLAUDE_DELEGATE_TOOL, claudeMcpConfig, MCP_TOOL_TIMEOUT_MS } from './cli.ts';
+import { turnSandbox } from './sandbox.ts';
 
 /** The model a review turn uses when the turn names none, as on the CLI path. */
 export const CLAUDE_TURN_MODEL = 'claude-opus-5-5';
@@ -66,6 +67,7 @@ export function claudeTurnOptions(
   abortController: AbortController,
 ): Options {
   const { turn } = request;
+  const sandbox = turnSandbox(turn);
   return {
     model: turn.model ?? CLAUDE_TURN_MODEL,
     cwd: request.cwd,
@@ -80,8 +82,10 @@ export function claudeTurnOptions(
         ? { behavior: 'deny', message: `${toolName} is not allowed in this turn (${denied}).` }
         : { behavior: 'allow', updatedInput: input };
     },
-    // --setting-sources project --strict-mcp-config --disable-slash-commands
-    settingSources: ['project'],
+    // --setting-sources= --strict-mcp-config --disable-slash-commands. No settings source is loaded:
+    // the repository's .claude/settings.json is the pull request's own, so it is untrusted (its hooks
+    // would run code at session start). The review skill is in the system prompt.
+    settingSources: [],
     strictMcpConfig: true,
     skills: [],
     extraArgs: { 'disable-slash-commands': null },
@@ -89,6 +93,7 @@ export function claudeTurnOptions(
     persistSession: true,
     env: { ...request.env, MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS) },
     abortController,
+    ...(sandbox ? { sandbox } : {}),
     ...(turn.budgetUsd ? { maxBudgetUsd: turn.budgetUsd } : {}),
     ...(turn.tools ? { tools: [...turn.tools] } : {}),
     ...(turn.mcp

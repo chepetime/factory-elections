@@ -69,7 +69,8 @@ async function opened(first: Turn = write('feature.txt', 'from devin\n')) {
     tasks: store,
     readProfile: (p) => fsAdapter.readProfile(root, p),
     git,
-    shell: { runShell },
+    // These tests run real commands; the sandbox itself is covered in adapters-process.
+    shell: { runShell: (command, options) => runShell(command, { ...options, sandbox: undefined }) },
     github: {
       createPullRequest: async () => {
         created_prs++;
@@ -272,6 +273,11 @@ test('a review follow-up pushes its fix to the same PR once the checks pass, and
     await rm(join(r.cwd!, 'feature.txt'));
     return { text: 'Removed it.', costUsd: 0.1 };
   });
+  // Factory sends the failure back twice; the agent keeps its change, so the task waits for a person.
+  ctx.turns.push(
+    async () => ({ text: 'The reviewer asked for it.', costUsd: 0.1 }),
+    async () => ({ text: 'Still removed.', costUsd: 0.1 }),
+  );
   const failed = await ctx.driver.followUp('demo', ctx.task.id, {
     note: '1. [must-fix] Remove the file',
     kind: 'review',
@@ -330,4 +336,23 @@ test('checking again runs the factory checks on the current commit with no agent
   assert.equal(checked.stage, 'awaiting-approval');
   assert.equal(checked.verification?.passed, true);
   assert.equal(ctx.calls.length, calls, 'no model call');
+});
+
+test('a follow-up for a PR that merged on GitHub starts no turn and leaves the task as it was', async () => {
+  const ctx = await opened();
+  ctx.github[0]!.state = 'MERGED';
+  const calls = ctx.calls.length;
+  await assert.rejects(
+    ctx.driver.followUp('demo', ctx.task.id, {
+      note: 'Rename the file.',
+      kind: 'custom',
+      agent: 'devin',
+      by: 'you',
+    }),
+    /pull request is merged/,
+  );
+  assert.equal(ctx.calls.length, calls, 'no model call');
+  const after = await ctx.read();
+  assert.equal(after.stage, 'pr-opened');
+  assert.equal(after.follow_ups, undefined, 'no follow-up recorded');
 });

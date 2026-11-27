@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { checkSandbox, factorySecretFiles } from '@factory/core';
 import { sandboxFor } from '../src/index.ts';
+
+test('the coder sandbox and the check sandbox read the same shared rules', () => {
+  const extra = { allowed_domains: ['x.example.com'], allow_write: ['/w'] };
+  const coder = sandboxFor('edit', '/home/me', extra);
+  const check = checkSandbox('/home/me', '/work', extra);
+  assert.deepEqual(check.denyRead, coder?.filesystem?.denyRead);
+  assert.deepEqual(check.allowedDomains, coder?.network?.allowedDomains);
+  // The check also writes in its worktree; everything else is the coder's list.
+  assert.equal(check.allowWrite[0], '/work');
+  assert.deepEqual(check.allowWrite.slice(1), coder?.filesystem?.allowWrite);
+});
 
 test('steps without Bash run without a sandbox', () => {
   assert.equal(sandboxFor('none'), undefined);
@@ -20,7 +32,9 @@ test('the coder runs Bash in a sandbox it cannot leave and that keeps the guard 
     '/home/me/.aws',
     '/home/me/.config/gh',
     '/home/me/Library/Keychains',
+    ...factorySecretFiles('/home/me'),
   ]);
+  assert.ok(sandbox?.filesystem?.denyRead?.includes('/home/me/.local/share/factory/storage.json'));
   const locks = /^\/(private\/)?tmp\/pnpm-store-operation-locks-\d+$/;
   for (const path of sandbox?.filesystem?.allowWrite ?? [])
     assert.ok(path.startsWith('/home/me/') || locks.test(path), path);

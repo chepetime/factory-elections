@@ -6,28 +6,22 @@ import {
   ProjectName,
   TaskId,
   executionPhase,
-  runWorking,
   taskActions,
   taskCommandBlockers,
-  withStage,
   newTraceId,
   taskClass,
-  inboxItems,
-  type InboxItem,
   type ModelRunner,
   type TaskControls,
   type TaskRecord,
   CleanupRecord,
   cleanupBlocker,
   failureOutcome,
-  taskSpend,
-  envNames,
   type QueueWait,
   recoveryBlocker,
   prBody,
   conflictFollowUpNote,
-  recoveryInboxItems,
-  type RecoveryProblem,
+  settleEndedPr,
+  BUILT_IN_PROTECTED_PATHS,
   type RecoveryReport,
 } from '@factory/core';
 import { Evidence, ExperimentStore, OutcomeStore, saveTaskReceipt, TraceLog } from '@factory/evidence';
@@ -40,7 +34,6 @@ import {
   DelegationServer,
   MemoryService,
   AgentService,
-  availableSkills,
   buildAgentSession,
   ChatService,
   AgentPickup,
@@ -70,6 +63,12 @@ import { ProfileChecks } from './profile-check.ts';
 import { TaskTraces } from './task-traces.ts';
 import { CommandSchema, ownerOf, RunRecord, TargetSchema, writeRun, type RunCommand } from './run-record.ts';
 import { performCommand, RunExecutor } from './run-executor.ts';
+import * as recovery from './service-recovery.ts';
+import * as inbox from './service-inbox.ts';
+import * as stats from './service-stats.ts';
+
+/** A moved BackendService method's parameters after the service itself. */
+type Rest<F> = F extends (s: BackendService, ...rest: infer R) => unknown ? R : never;
 
 /**
  * Task runs that may execute at once. Each has its own worktree; the git adapter serializes the
@@ -80,9 +79,6 @@ export const taskWorkers = () => Math.max(1, Number(process.env.FACTORY_TASK_WOR
 /** How long shutdown waits for the active runs before it stops them. */
 export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 60_000);
 /** How often recovery retries what it could not read. */
-const RECOVERY_RETRY_MS = Number(process.env.FACTORY_RECOVERY_RETRY_MS ?? 30_000);
-const INTERRUPTED =
-  'The backend stopped during this run. Run the task again to continue from the last saved step.';
 
 export class BackendService {
   readonly storage: DataStorage;
@@ -98,7 +94,8 @@ export class BackendService {
   /** Every agent this backend runs takes a slot here; reviews count from outside. */
   readonly pool: AgentPool;
   /** The task run queue. */
-  private readonly dispatcher: Dispatcher;
+  // Not private: service-recovery.ts uses it too.
+  readonly dispatcher: Dispatcher;
   /** Senior-pr-review rounds on agents' draft PRs (review-loop.ts). */
   readonly reviewLoop: ReviewLoop;
   /** Someone's PR as a review ticket: rounds, your decision, posting, re-review on new commits. */
@@ -108,7 +105,8 @@ export class BackendService {
   /** Span ledger entries for runs, PRs and the approval gate, and the queries over them. */
   private readonly taskTraces: TaskTraces;
   /** Executes accepted runs and holds what is live about each one. */
-  private readonly executor: RunExecutor;
+  // Not private: service-recovery.ts uses it too.
+  readonly executor: RunExecutor;
   readonly root: string;
   private readonly runner?: ModelRunner;
   /** The `delegate` MCP server. Children take agent slots like any other agent. */
@@ -399,6 +397,14 @@ export class BackendService {
       this.reviewLoop.reviewEnded(project, number, payload, reason);
     this.tending = new TendingService({
       prObserved: async (task, pr) => {
+        // A follow-up whose PR merged or closed on GitHub can never be pushed: end the run at
+        // pr-opened again, before the outcome, so the board's status comes from the outcome.
+        if (pr.state !== 'OPEN' && task.stage !== 'pr-opened' && !this.isScheduled(task.project, task.id))
+          await this.tasks.withLock(task.project, task.id, async () => {
+            const current = await this.tasks.read(task.project, task.id);
+            const settled = settleEndedPr(current, pr, new Date().toISOString());
+            if (settled) await this.tasks.write(settled);
+          });
         await this.issues.prOutcome(task.project, task.id, pr);
         // An agent's draft PR that never got a review loop (it opened before the loop existed, or
         // the backend was down): start one. The loop ignores a PR it already has a state for.
@@ -445,45 +451,22 @@ export class BackendService {
       log: (line) => process.stderr.write(`${line}\n`),
     });
   }
-  private inboxPath(): string {
-    return join(this.root, 'inbox', 'dismissed.json');
+  inboxPath(...args: Rest<typeof inbox.inboxPath>) {
+    return inbox.inboxPath(this, ...args);
   }
-  private async dismissed(): Promise<Record<string, string>> {
-    try {
-      return (await this.storage.readDocument(this.inboxPath())) as Record<string, string>;
-    } catch {
-      return {};
-    }
+
+  dismissed(...args: Rest<typeof inbox.dismissed>) {
+    return inbox.dismissed(this, ...args);
   }
-  /** Everything that waits on the human, across projects, oldest first. */
-  async inbox(): Promise<{ items: InboxItem[]; dismissed: number }> {
-    const dismissed = await this.dismissed();
-    const items: InboxItem[] = [];
-    for (const { name } of await this.projects.list()) {
-      const [tasks, features, reviews] = await Promise.all([
-        this.tasks.list(name).catch(() => []),
-        this.features.all(name).catch(() => []),
-        this.reviews.waiting(name).catch(() => []),
-      ]);
-      const tending = await this.tending.waiting(name, tasks).catch(() => []);
-      items.push(...inboxItems({ project: name, tasks, features, reviews, tending }));
-    }
-    items.push(...recoveryInboxItems(this.recovery));
-    const open = items.filter((i) => !dismissed[i.id]);
-    return {
-      items: open.sort((a, b) => a.since.localeCompare(b.since)),
-      dismissed: items.length - open.length,
-    };
+
+  inbox(...args: Rest<typeof inbox.inbox>) {
+    return inbox.inbox(this, ...args);
   }
-  /** Hides an inbox item until it waits again for a new reason. */
-  async dismissInbox(raw: unknown): Promise<void> {
-    const { id } = z.object({ id: z.string().min(1).max(400) }).parse(raw);
-    if (!this.storage.config) await mkdir(join(this.root, 'inbox'), { recursive: true });
-    await this.storage.writeDocument(this.inboxPath(), {
-      ...(await this.dismissed()),
-      [id]: new Date().toISOString(),
-    });
+
+  dismissInbox(...args: Rest<typeof inbox.dismissInbox>) {
+    return inbox.dismissInbox(this, ...args);
   }
+
   /** Tends one task's PR now (or every tended PR), and lets a stopped PR be tended again. */
   async tendNow(raw: unknown) {
     const { project, id } = z
@@ -528,18 +511,21 @@ export class BackendService {
     return composeDriver(this.root, log, runner, signal, this.delegation, {
       repositoryFacts: (project) => this.memory.prompt(project),
       contextLimits: async (project) => (await this.settings.get(project)).context_tokens,
-      agentSession: async (task, reply) => {
+      agentSession: async (task, reply, from) => {
         if (!task.agent) throw new Conflict('This run has no agent.');
         const profile = await readProfile(this.root, task.project);
         return buildAgentSession({
           task,
           ...(reply ? { reply } : {}),
+          ...(from ? { from } : {}),
           agent: await this.agents.active(task.agent),
           issues: this.issues,
           profile: {
             test: profile.commands.test,
             full_check: profile.commands.full_check,
-            forbidden_paths: profile.confirmed.forbidden_paths,
+            forbidden_paths: [
+              ...new Set([...BUILT_IN_PROTECTED_PATHS, ...profile.confirmed.forbidden_paths]),
+            ],
           },
           allowedEnv: process.env.FACTORY_AGENT_ENV_ALLOW,
         });
@@ -584,60 +570,10 @@ export class BackendService {
       });
     });
   }
-  /** An agent's tasks across projects, its recent runs, and its last 30 days. */
-  async agentStats(raw: unknown) {
-    const agent = await this.agents.get(raw);
-    const projects = await this.projects.list();
-    const since = Date.now() - 30 * 86_400_000;
-    const per = await Promise.all(
-      projects.map(async ({ name }) => {
-        const [board, tasks] = await Promise.all([this.issues.list(name), this.tasks.list(name)]);
-        const owner = new Map(board.items.flatMap((i) => i.runs.map((r) => [r, i] as const)));
-        return {
-          work: board.items
-            .filter((i) => i.assignee === agent.id && !i.archived_at)
-            .map((i) => ({
-              project: name,
-              key: i.key,
-              title: i.title,
-              status: i.status,
-              priority: i.priority,
-              updated_at: i.updated_at,
-            })),
-          runs: tasks
-            .filter((t) => t.agent === agent.id)
-            .map((t) => ({
-              project: name,
-              id: t.id,
-              stage: t.stage,
-              created_at: t.created_at ?? '',
-              updated_at: t.updated_at ?? t.created_at ?? '',
-              cost_usd: taskSpend(t),
-              key: owner.get(t.id)?.key,
-              title: owner.get(t.id)?.title ?? t.name ?? t.prompt.split('\n')[0]!.slice(0, 100),
-            })),
-        };
-      }),
-    );
-    const runs = per.flatMap((p) => p.runs).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    const recent = runs.filter((r) => Date.parse(r.updated_at) > since);
-    return {
-      agent,
-      skills_available: await availableSkills(),
-      /** Env names the operator lets agents pass; names only, never values. */
-      env_allowed: envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
-      work: per.flatMap((p) => p.work),
-      running: runs.filter((r) => r.stage === 'coding' || r.stage === 'reviewing' || r.stage === 'queued'),
-      runs: runs.slice(0, 10),
-      last30: {
-        runs: recent.length,
-        completed: recent.filter(
-          (r) => r.stage === 'awaiting-approval' || r.stage === 'approved' || r.stage === 'pr-opened',
-        ).length,
-        cost_usd: recent.reduce((sum, r) => sum + r.cost_usd, 0),
-      },
-    };
+  agentStats(...args: Rest<typeof stats.agentStats>) {
+    return stats.agentStats(this, ...args);
   }
+
   async profileStatus(raw: unknown) {
     const { project } = z.object({ project: ProjectName }).parse(raw);
     await this.projects.read(project);
@@ -785,7 +721,8 @@ export class BackendService {
     }
   }
   /** Queues an accepted run on the dispatcher. It takes over the reservation and the task lock. */
-  private schedule(
+  // Not private: service-recovery.ts uses it too.
+  schedule(
     command: RunCommand,
     record: RunRecord,
     dir: string,
@@ -855,7 +792,8 @@ export class BackendService {
   catalog(project?: string) {
     return systemCatalog({ projects: this.projects, traces: this.traces }, project);
   }
-  private async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
+  // Not private: service-recovery.ts uses it too.
+  async latest(target: Target): Promise<{ record: RunRecord; dir: string } | undefined> {
     const { project, id } = this.target(target);
     const taskDir = dirname(this.tasks.taskPath(project, id));
     let pointer;
@@ -1018,202 +956,41 @@ export class BackendService {
         );
     });
   }
-  /**
-   * Stops acceptance, lets the active run finish for `graceMs`, then stops its model calls and
-   * checks. Queued runs that have not started stay queued for the next start.
-   */
-  async drain(graceMs = DRAIN_GRACE_MS): Promise<void> {
-    // Waiting runs see the shutdown now and stay queued for the next start.
-    this.dispatcher.close();
-    clearTimeout(this.recoveryRetry);
-    this.pickup.stop();
-    this.profileChecks.stopAll();
-    const deadline = setTimeout(() => {
-      this.executor.abortAll();
-    }, graceMs);
-    try {
-      // Acceptance already in flight may be reserving a lock or writing its durable record.
-      await Promise.all([this.dispatcher.drained(), this.executions.drain(graceMs)]);
-    } finally {
-      clearTimeout(deadline);
-    }
-  }
-
   /** What startup recovery could not settle; `pending` until the first recovery ends. */
-  private recovery: RecoveryReport = { state: 'pending', problems: [] };
-  private recoveryRetry?: NodeJS.Timeout;
-  recoveryReport(): RecoveryReport {
-    return this.recovery;
+  // Not private: service-recovery.ts uses it too.
+  recovery: RecoveryReport = { state: 'pending', problems: [] };
+  // Not private: service-recovery.ts uses it too.
+  recoveryRetry?: NodeJS.Timeout;
+
+  drain(...args: Rest<typeof recovery.drain>) {
+    return recovery.drain(this, ...args);
   }
 
-  /**
-   * After a restart: a run that was running is marked interrupted and its task made resumable; a
-   * run that never started is queued again. Call once, while this service owns the data root. A
-   * project or task it cannot read goes into the recovery report, and it is retried until it
-   * succeeds.
-   */
-  async recover(): Promise<{ requeued: number; interrupted: number; problems: number }> {
-    const counts = { requeued: 0, interrupted: 0, problems: 0 };
-    const problems: RecoveryProblem[] = [];
-    const failed = (project: string, error: unknown, task_id?: string) =>
-      problems.push({
-        project,
-        ...(task_id ? { task_id } : {}),
-        error: error instanceof Error ? error.message : String(error),
-        since: this.problemSince(project, task_id),
-      });
-    let projects: { name: string }[] = [];
-    try {
-      projects = await this.projects.list();
-    } catch (error) {
-      failed('*', error);
-    }
-    for (const project of projects) {
-      let tasks: TaskRecord[];
-      try {
-        tasks = await this.tasks.list(project.name);
-      } catch (error) {
-        failed(project.name, error);
-        continue;
-      }
-      for (const task of tasks) {
-        try {
-          const result = await this.reconcileTask(project.name, task.id);
-          if (result) counts[result]++;
-        } catch (error) {
-          failed(project.name, error, task.id);
-        }
-      }
-    }
-    counts.problems = problems.length;
-    this.finishRecovery(problems);
-    return counts;
+  recoveryReport(...args: Rest<typeof recovery.recoveryReport>) {
+    return recovery.recoveryReport(this, ...args);
   }
 
-  /** Reconciles only what the last recovery could not read. Safe to call again at any time. */
-  async reconcile(): Promise<RecoveryReport> {
-    if (this.recovery.state !== 'degraded') return this.recovery;
-    const problems: RecoveryProblem[] = [];
-    for (const problem of this.recovery.problems) {
-      try {
-        if (problem.project === '*') {
-          await this.recover();
-          return this.recovery;
-        }
-        const ids = problem.task_id
-          ? [problem.task_id]
-          : (await this.tasks.list(problem.project)).map((t) => t.id);
-        for (const id of ids) {
-          try {
-            await this.reconcileTask(problem.project, id);
-          } catch (error) {
-            problems.push({
-              ...problem,
-              task_id: id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      } catch (error) {
-        problems.push({ ...problem, error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-    this.finishRecovery(problems);
-    return this.recovery;
+  recover(...args: Rest<typeof recovery.recover>) {
+    return recovery.recover(this, ...args);
   }
 
-  private problemSince(project: string, task_id?: string): string {
-    return (
-      this.recovery.problems.find((p) => p.project === project && p.task_id === task_id)?.since ??
-      new Date().toISOString()
-    );
+  reconcile(...args: Rest<typeof recovery.reconcile>) {
+    return recovery.reconcile(this, ...args);
   }
 
-  private finishRecovery(problems: RecoveryProblem[]): void {
-    this.recovery = {
-      state: problems.length ? 'degraded' : 'ok',
-      checked_at: new Date().toISOString(),
-      problems,
-    };
-    clearTimeout(this.recoveryRetry);
-    this.recoveryRetry = undefined;
-    if (problems.length && this.dispatcher.accepting) {
-      this.recoveryRetry = setTimeout(() => void this.reconcile().catch(() => undefined), RECOVERY_RETRY_MS);
-      this.recoveryRetry.unref();
-    }
+  problemSince(...args: Rest<typeof recovery.problemSince>) {
+    return recovery.problemSince(this, ...args);
   }
 
-  /**
-   * Settles one task's latest run if no live owner holds it: queued again, or interrupted. Throws
-   * when the run cannot be read, so the caller reports it. A missing run is not an error.
-   */
-  private async reconcileTask(project: string, id: string): Promise<'requeued' | 'interrupted' | undefined> {
-    const target = { project, id };
-    const latest = await this.latest(target);
-    if (!latest || this.dispatcher.active(latest.record.id)) return undefined;
-    const { record, dir } = latest;
-    if (record.state !== 'queued' && record.state !== 'running') return undefined;
-    await this.tasks.clearDeadLock(project, id);
-    if (record.state === 'queued') {
-      const queued = await this.requeue(record, dir);
-      if (queued === 'scheduled') return 'requeued';
-      if (queued === 'settled') return undefined;
-    }
-    const settled = await writeRun(
-      this.storage,
-      dir,
-      {
-        ...record,
-        owner_generation: this.generation,
-        state: 'interrupted',
-        outcome: 'interrupted',
-        // Processes of a run that was running at a crash are not known to be gone.
-        ...(record.state === 'running'
-          ? { cleanup: { status: 'uncertain', reasons: ['the backend stopped while the run was running'] } }
-          : {}),
-        error: record.state === 'queued' ? 'The run could not be queued again after a restart.' : INTERRUPTED,
-        finished_at: new Date().toISOString(),
-      },
-      ownerOf(record),
-    );
-    // Another backend settled this run first: leave the task to it.
-    if (!settled.written) return undefined;
-    const current = await this.tasks.read(project, id);
-    if (runWorking(current.stage))
-      await this.tasks.write(withStage(current, new Date().toISOString(), 'failed', INTERRUPTED));
-    return 'interrupted';
+  finishRecovery(...args: Rest<typeof recovery.finishRecovery>) {
+    return recovery.finishRecovery(this, ...args);
   }
 
-  /**
-   * Queues a recovered run again. `settled`: under the task lock the run turned out to be owned or
-   * no longer queued, so nothing is done. `refused`: it cannot run again.
-   */
-  private async requeue(record: RunRecord, dir: string): Promise<'scheduled' | 'settled' | 'refused'> {
-    const reservation = this.dispatcher.reserve();
-    if (!reservation) return 'refused';
-    let release: (() => Promise<void>) | undefined;
-    try {
-      release = await this.tasks.acquireLock(record.project, record.task_id);
-      // Read again under the lock: a start in this process may have written and scheduled it.
-      const fresh = await this.latest({ project: record.project, id: record.task_id });
-      if (
-        !fresh ||
-        fresh.record.id !== record.id ||
-        fresh.record.state !== 'queued' ||
-        this.dispatcher.active(record.id)
-      ) {
-        reservation();
-        await release();
-        return 'settled';
-      }
-      const task = await this.tasks.read(record.project, record.task_id);
-      if (taskCommandBlockers(task, record.action).length) throw new Error('blocked');
-      this.schedule(record.command, record, dir, release, reservation);
-      return 'scheduled';
-    } catch {
-      reservation();
-      await release?.();
-      return 'refused';
-    }
+  reconcileTask(...args: Rest<typeof recovery.reconcileTask>) {
+    return recovery.reconcileTask(this, ...args);
+  }
+
+  requeue(...args: Rest<typeof recovery.requeue>) {
+    return recovery.requeue(this, ...args);
   }
 }

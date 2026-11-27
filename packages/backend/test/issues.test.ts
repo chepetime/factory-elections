@@ -39,7 +39,7 @@ async function setup(
     tasks: { list: async () => tasks },
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
       ...settings,
     }),
     submit: async ({ prompt, jiraKey }) => {
@@ -392,7 +392,7 @@ test('a task view says whether a live run holds its latest run', async (t) => {
     owned: (_project, id) => id === live.id,
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async () => '',
     run: async () => undefined,
@@ -422,7 +422,7 @@ test('an interrupted run at coding can be archived and deleted; a live run canno
     owned: (_project, id) => id === live.id,
     settings: async () => ({
       task_manager: { kind: 'none' },
-      tending: { enabled: false, answer_threads: false },
+      tending: { enabled: false, answer_threads: false, trusted_logins: [] },
     }),
     submit: async () => '',
     run: async () => undefined,
@@ -617,6 +617,29 @@ test('a merged PR moves its task to Done once, a closed one to Cancelled, a reop
     await service.prOutcome('change-elections', 'not-a-run', { number: 5, state: 'MERGED' }),
     undefined,
   );
+});
+
+test('a recorded merge sets Done again when a later run stage moved the task back to In review', async (t) => {
+  const pr = {
+    url: 'https://github.com/o/r/pull/5',
+    branch: 'factory/x',
+    head_sha: 'h1',
+    at: '2026-11-18T10:00:00.000Z',
+  };
+  const opened = run('Update Effect', '2026-11-18T10:00:00.000Z', 'pr-opened', {
+    workflow: 'agent',
+    agent: 'devin',
+    pr,
+  });
+  const { service, tasks } = await setup(t, [opened]);
+  const merged = await service.prOutcome('change-elections', opened.id, { number: 5, state: 'MERGED' });
+  // A follow-up ran on meanwhile and was settled back to pr-opened after the merge was recorded.
+  const later = new Date(Date.parse(merged!.status_at) + 500).toISOString();
+  tasks[0] = { ...opened, stage: 'pr-opened', updated_at: later };
+  assert.equal((await service.get({ project: 'change-elections', key: 'CE-1' })).status, 'in_review');
+  const again = await service.prOutcome('change-elections', opened.id, { number: 5, state: 'MERGED' });
+  assert.equal(again?.status, 'done');
+  assert.equal(again?.events.filter((e) => e.kind === 'pr-outcome').length, 1, 'the merge is recorded once');
 });
 
 test("@mentioning the run's own agent on an open PR starts a follow-up for it", async (t) => {

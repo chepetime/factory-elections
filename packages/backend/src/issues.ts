@@ -520,8 +520,15 @@ export class IssueService {
         };
       });
     }
-    if (known?.state === pr.state && known.number === pr.number) return undefined;
     const merged = pr.state === 'MERGED';
+    if (known?.state === pr.state && known.number === pr.number) {
+      // Recorded already, but a later run stage (a follow-up settled after the merge) shows the
+      // task in review again: set the status once more, without a second event. A status a person
+      // set since is theirs.
+      const status = merged ? 'done' : 'cancelled';
+      if (view.status === status || view.stored_status !== status) return undefined;
+      return this.change(project, view.key, (issue, at) => ({ ...issue, status, status_at: at }));
+    }
     return this.change(project, view.key, (issue, at) => ({
       ...issue,
       pr_outcome: { state: pr.state as 'MERGED' | 'CLOSED', number: pr.number, at },
