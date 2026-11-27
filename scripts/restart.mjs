@@ -4,10 +4,12 @@
 //   2. sends SIGTERM to this checkout's scripts/web.mjs, so the backend drains and removes its lock;
 //   3. starts `scripts/start.mjs` detached (logs in <data root>/logs/stack.log);
 //   4. waits for the backend RPC and the web app, then prints one status line.
-// Usage: pnpm run restart [--force] [--prod] [--from-agent-session] [--dry-run] (`run`: pnpm 12 has a
-// built-in `restart` that needs a `stop` script). --prod builds; the
+// Usage: pnpm restart [--force] [--prod] [--from-agent-session] [--dry-run]. --prod builds; the
 // default is dev. --dry-run prints what it would stop and why, and changes nothing. It runs only in
 // the primary checkout: a worktree runs its own stack with `pnpm worktree run`.
+// `pnpm stop` (--stop) runs steps 1 and 2 only.
+// pnpm's built-in `pnpm restart` runs the stop, restart and start scripts in turn, all with
+// npm_command=restart. This script does the whole restart; under it, `stop` and `start.mjs` step aside.
 import './load-env.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
@@ -23,6 +25,8 @@ const root = dataRoot();
 const args = process.argv.slice(2);
 const force = args.includes('--force');
 const dryRun = args.includes('--dry-run');
+const stopOnly = args.includes('--stop');
+if (stopOnly && process.env.npm_command === 'restart') process.exit(0); // the restart script stops it
 const startArgs = [
   ...(args.includes('--prod') ? [] : ['--dev']),
   ...(args.includes('--from-agent-session') ? ['--from-agent-session'] : []),
@@ -128,7 +132,7 @@ async function main() {
         data_root: root,
         web_pids: running,
         busy,
-        would_restart: !busy.length || force,
+        [stopOnly ? 'would_stop' : 'would_restart']: !busy.length || force,
       }),
     );
     return;
@@ -136,21 +140,53 @@ async function main() {
   if (running.length && (await reachable())) {
     const busy = await busyTasks();
     if (busy.length && !force) {
-      console.error(`Not restarting: these tasks have a run working or waiting: ${busy.join(', ')}.`);
+      console.error(
+        `Not ${stopOnly ? 'stopping' : 'restarting'}: these tasks have a run working or waiting: ${busy.join(', ')}.`,
+      );
       console.error('Wait for them, or pass --force (the backend drains them for up to 5 min).');
       process.exitCode = 1;
       return;
     }
-    if (busy.length) console.log(`Restarting anyway; the drain may cut: ${busy.join(', ')}.`);
+    if (busy.length)
+      console.log(`${stopOnly ? 'Stopping' : 'Restarting'} anyway; the drain may cut: ${busy.join(', ')}.`);
   }
   closeBackendClient();
 
+  if (service && stopOnly)
+    throw new Error(
+      'The stack runs as a launchd agent, which restarts it; stop it with node scripts/service.mjs uninstall.',
+    );
   if (service) {
     execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${LABEL}`], { stdio: 'inherit' });
     await waitUp(undefined, join(root, 'logs', 'stack.log'));
     return;
   }
 
+  await stopStack(running);
+  if (stopOnly) {
+    console.log(running.length ? 'Stopped.' : 'Nothing to stop: no web.mjs runs from this checkout.');
+    return;
+  }
+
+  mkdirSync(join(root, 'logs'), { recursive: true });
+  const logPath = join(root, 'logs', 'stack.log');
+  const log = openSync(logPath, 'a');
+  // Without pnpm's npm_* variables: under `pnpm restart`, start.mjs would read them and step aside.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('npm_')));
+  const child = spawn(process.execPath, [join(repo, 'scripts', 'start.mjs'), ...startArgs], {
+    cwd: repo,
+    env,
+    detached: true,
+    stdio: ['ignore', log, log],
+  });
+  child.unref();
+
+  await waitUp(child, logPath);
+  console.log(`(started pid ${child.pid})`);
+}
+
+/** SIGTERM to web.mjs, then waits for the backend drain and its lock, and for any stray Next.js. */
+async function stopStack(running) {
   for (const pid of running) process.kill(pid, 'SIGTERM');
   if (running.length) process.stdout.write(`Stopping web.mjs (${running.join(', ')})`);
   const lock = join(root, 'backend.lock');
@@ -171,19 +207,6 @@ async function main() {
     for (let i = 0; i < 30 && nextPids().length; i++) await sleep(1000);
     if (nextPids().length) throw new Error(`Next.js (${nextPids().join(', ')}) did not stop; inspect it.`);
   }
-
-  mkdirSync(join(root, 'logs'), { recursive: true });
-  const logPath = join(root, 'logs', 'stack.log');
-  const log = openSync(logPath, 'a');
-  const child = spawn(process.execPath, [join(repo, 'scripts', 'start.mjs'), ...startArgs], {
-    cwd: repo,
-    detached: true,
-    stdio: ['ignore', log, log],
-  });
-  child.unref();
-
-  await waitUp(child, logPath);
-  console.log(`(started pid ${child.pid})`);
 }
 
 /** Waits for the backend RPC and the web app, then prints the running commit. */

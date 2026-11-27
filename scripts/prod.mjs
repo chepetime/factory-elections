@@ -26,7 +26,7 @@ const taken = await fetch(web, { signal: AbortSignal.timeout(2000) }).then(
   () => true,
   () => false,
 );
-if (taken) fail(`${web} already answers. Stop that server (pnpm run restart for the factory) or set PORT.`);
+if (taken) fail(`${web} already answers. Stop that server (pnpm restart for the factory) or set PORT.`);
 
 if (!args.includes('--no-install')) {
   console.log('==> Installing dependencies (pnpm install --frozen-lockfile)');

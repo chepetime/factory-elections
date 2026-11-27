@@ -66,6 +66,6 @@ try {
   lines.push('Last main check: none recorded (the post-commit hook writes logs/main-checks.jsonl).');
 }
 lines.push(
-  `Tools: pnpm run restart [--dry-run] · pnpm shot <path> · pnpm factory paths|issue show|review diagnose|spans · see docs/harnes/RECIPES.md`,
+  `Tools: pnpm restart [--dry-run] · pnpm shot <path> · pnpm factory paths|issue show|review diagnose|spans · see docs/harnes/RECIPES.md`,
 );
 process.stdout.write(`${lines.join('\n')}\n`);

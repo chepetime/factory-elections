@@ -23,6 +23,7 @@
     "prod": "node scripts/prod.mjs",
     "web": "node scripts/web.mjs",
     "restart": "node scripts/restart.mjs",
+    "stop": "node scripts/restart.mjs --stop",
     "shot": "node scripts/shot.mjs",
     "storybook": "pnpm --filter @factory/web storybook",
     "storybook:build": "pnpm --filter @factory/web storybook:build",

@@ -20,16 +20,16 @@ With the dependency and build caches warm it is ready in about 10 seconds; a col
 Production mode does not reload. Every change, including `apps/web` and `packages/ui`, needs a new build and restart:
 
 ```sh
-pnpm run restart --prod
+pnpm restart --prod
 ```
 
-`pnpm run restart` without `--prod` brings the stack back in dev mode.
+`pnpm restart` without `--prod` brings the stack back in dev mode.
 
 ## Troubleshooting
 
 | Message | Cause and fix |
 | --- | --- |
-| `prod: http://localhost:3000 already answers` | Another server holds the port, often a dev stack. Stop it (`pnpm run restart --dry-run` names it), or set `PORT`. |
+| `prod: http://localhost:3000 already answers` | Another server holds the port, often a dev stack. Stop it (`pnpm restart --dry-run` names it), or set `PORT`. |
 | `This shell runs inside a Claude Code session` | Start it from your own terminal. Agent turns started from an agent session inherit its permission limits. |
 | `Backend lock … names a stopped process … from this boot` | A backend from this boot did not drain. Confirm its workers stopped, remove the lock, run again. |
 | `pnpm install failed` | The lockfile and `package.json` disagree, or the registry is unreachable. Run `pnpm install` and read its error. |

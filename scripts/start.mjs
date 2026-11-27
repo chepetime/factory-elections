@@ -75,6 +75,9 @@ function run(script, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// pnpm's built-in `pnpm restart` runs this after scripts/restart.mjs, which already started the stack.
+if (process.env.npm_command === 'restart') process.exit(0);
+
 const ACCEPT_AGENT_SESSION = '--from-agent-session';
 const passThrough = process.argv.slice(2).filter((a) => a !== ACCEPT_AGENT_SESSION);
 if (hostAgentSession(process.env) && !process.argv.includes(ACCEPT_AGENT_SESSION)) {

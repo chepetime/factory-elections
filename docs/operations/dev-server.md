@@ -43,12 +43,12 @@ Keep the same URLs and ports across restarts.
 
 ### Stop and restart
 
-Send SIGTERM to the `node scripts/web.mjs` process. The backend then drains its runs and removes its lock.
-
 ```sh
-pkill -TERM -f 'node scripts/web.mjs'
-pnpm start -- --dev
+pnpm restart   # stop, then start again in the background (add --prod for production mode)
+pnpm stop      # stop only
 ```
+
+Both refuse while a task run works or waits (`--force` overrides), send SIGTERM to `scripts/web.mjs`, and wait while the backend drains its runs and removes its lock. `--dry-run` shows what they would stop. Ctrl-C in the terminal running `pnpm start` does the same stop.
 
 Do not kill the process group with SIGKILL, and do not stop a background task in a way that skips the drain. A skipped drain leaves `backend.lock`. Drain can take as long as the active work (up to `FACTORY_DRAIN_GRACE_MS`, default 5 min).
 
