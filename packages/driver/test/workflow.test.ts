@@ -150,7 +150,7 @@ test("the repository's own PR template wins over the factory's", async () => {
 test('verification failure climbs the ladder with the failure output', async () => {
   const noop: Script = async (r) => (
     await writeFile(join(r.cwd!, 'other.txt'), 'x\n'),
-    { text: 'ok', costUsd: null }
+    { text: 'ok', costUsd: 0.01 }
   );
   const { driver, task, runner } = await setup({
     classifier: [ready],
