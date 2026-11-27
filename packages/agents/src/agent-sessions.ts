@@ -86,6 +86,8 @@ function taskText(issue: IssueView): string {
 export async function buildAgentSession(input: {
   task: TaskRecord;
   reply?: string;
+  /** `factory`: the reply is Factory's own message (a fix turn), not a person's comment. */
+  from?: 'factory';
   agent: AgentProfile;
   issues: Pick<AgentBoard, 'get' | 'comment' | 'setStatus'>;
   profile: { test: string; full_check: string; forbidden_paths: readonly string[] };
@@ -111,7 +113,7 @@ export async function buildAgentSession(input: {
   ].join('\n\n');
   const unseen = newComments(issue, task);
   const prompt = reply
-    ? `The person replied on ${issue.key}:\n\n${reply}`
+    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}`
     : task.agent_session && unseen.length
       ? `New comments on ${issue.key} since your last turn:\n\n${unseen.map((c) => `- ${c}`).join('\n')}`
       : task.agent_session

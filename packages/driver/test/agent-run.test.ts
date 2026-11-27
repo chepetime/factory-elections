@@ -63,6 +63,10 @@ async function setup(
   };
   let status: 'in_review' | 'blocked' | undefined;
   const replies: (string | undefined)[] = [];
+  const senders: (string | undefined)[] = [];
+  const grants: {
+    tools?: readonly { name: string; call(args: unknown): Promise<{ text: string; isError?: boolean }> }[];
+  }[] = [];
   let tick = 0;
   const deps: DriverDeps = {
     tasks: store,
@@ -91,8 +95,15 @@ async function setup(
     },
     now: () => new Date(Date.UTC(2026, 10, 13, 0, 0, tick++)).toISOString(),
     log: () => {},
-    agentSession: async (_task, reply): Promise<AgentSession> => {
+    delegation: {
+      grant: (options) => {
+        grants.push(options);
+        return undefined;
+      },
+    },
+    agentSession: async (_task, reply, from): Promise<AgentSession> => {
       replies.push(reply);
+      senders.push(from);
       status = undefined;
       return {
         name: 'Devin',
@@ -113,6 +124,8 @@ async function setup(
     task,
     calls,
     replies,
+    senders,
+    grants,
     block: () => (status = 'blocked'),
   };
 }
@@ -250,4 +263,102 @@ test("an agent run drafts its PR from the agent's report, in the template, befor
   );
   assert.match(writer.prompt, /<template source="factory">/);
   assert.doesNotMatch(writer.prompt, /<review>/, 'an agent run has no reviewer');
+});
+
+test('a failed verification goes back to the same agent session with the failure, and a fixed change reaches the gate', async () => {
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'wrong.txt'), 'oops\n');
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Fixed.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(ctx.calls.length, 2);
+  assert.equal(ctx.calls[1]!.resume, 'sess-1', 'the agent keeps its memory of the work');
+  assert.deepEqual(ctx.senders, [undefined, 'factory'], 'the fix turn comes from the factory, not a person');
+  assert.match(ctx.replies[1]!, /exited with status 1/, 'the agent sees what failed');
+  assert.match(ctx.replies[1]!, /check_change/, 'and how to check again before it stops');
+  assert.ok(done.events!.some((e) => /Verification failed; Devin gets fix turn 1 of 2/.test(e.message)));
+});
+
+test('the factory gives at most two fix turns, then the task waits for a person', async () => {
+  const ctx = await setup(
+    [1, 2, 3].map((n) => async (r: ModelRun) => {
+      await writeFile(join(r.cwd!, `wrong-${n}.txt`), 'oops\n');
+      return { text: 'Tried.', costUsd: 0.1, sessionId: 'sess-1' };
+    }),
+  );
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'verification-failed');
+  assert.equal(ctx.calls.length, 3, 'the first turn and two fix turns');
+});
+
+test('an agent session gets a check_change tool that runs the size and test gates on its commits', async () => {
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), `${'line\n'.repeat(401)}`);
+      execFileSync('git', ['add', '.'], { cwd: r.cwd! });
+      execFileSync('git', ['commit', '-qm', 'big'], { cwd: r.cwd! });
+      const tool = ctx.grants.at(-1)!.tools!.find((t) => t.name === 'check_change')!;
+      const big = await tool.call({});
+      assert.equal(big.isError, true);
+      assert.match(big.text, /401 non-test lines; limit is 400/);
+      assert.match(big.text, /feature\.txt \(401\)/, 'it names the largest files');
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      execFileSync('git', ['commit', '-qam', 'small'], { cwd: r.cwd! });
+      const small = await tool.call({});
+      assert.equal(small.isError ?? false, false);
+      assert.match(small.text, /passes the size and test gates/);
+      return { text: 'Done.', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+  ]);
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+});
+
+test("new work starts from GitHub's base branch: local-only commits stay out, merged PRs are in", async () => {
+  const ctx = await setup([
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Added it.', costUsd: 0.1, sessionId: 's' };
+    },
+  ]);
+  const repo = ctx.task.repo;
+  const remote = `${repo}-origin.git`;
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+  sh(repo, 'remote', 'add', 'origin', remote);
+  sh(repo, 'push', '-q', 'origin', 'main');
+  // A PR merged on GitHub that the local checkout has not pulled.
+  const other = `${repo}-other`;
+  execFileSync('git', ['clone', '-q', remote, other]);
+  sh(other, 'config', 'user.name', 't');
+  sh(other, 'config', 'user.email', 't@example.com');
+  await writeFile(join(other, 'merged.txt'), 'from GitHub\n');
+  sh(other, 'add', '.');
+  sh(other, 'commit', '-qm', 'merged on GitHub');
+  sh(other, 'push', '-q', 'origin', 'main');
+  // A commit on local main that was never pushed.
+  await writeFile(join(repo, 'local.txt'), 'not pushed\n');
+  sh(repo, 'add', '.');
+  sh(repo, 'commit', '-qm', 'local only');
+
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(done.stage, 'awaiting-approval');
+  const worktree = ctx.calls[0]!.cwd!;
+  assert.equal(existsSync(join(worktree, 'merged.txt')), true, 'the merged PR is in');
+  assert.equal(existsSync(join(worktree, 'local.txt')), false, 'the unpushed commit stays out');
+  assert.match(done.events!.find((e) => e.kind === 'worktree')!.message, /from origin\/main at /);
+  const tracked = (() => {
+    try {
+      return sh(worktree, 'config', '--get', `branch.factory/${ctx.task.id}.merge`).trim();
+    } catch {
+      return undefined; // exit 1: no such key
+    }
+  })();
+  assert.equal(tracked, undefined, 'the task branch does not track main');
 });

@@ -45,3 +45,4 @@ From the primary checkout: `pnpm restart --dry-run`, then `pnpm restart`. See th
 ## Known failure modes of stuck tickets
 
 - **Verification lists source files as uncommitted, and the agent's transcript shows `tool "delegate" sent no response or progress for 300s`:** Claude Code stopped waiting for a silent `delegate` call, the parent turn ended, and the child kept editing while the factory verified. The factory MCP config now sets a per-server `timeout`, and the delegate server stops a child when its call is dropped or its grant is revoked (`packages/agents/src/delegation.ts`). If a branch already has the late edits, check that they are committed, then use **Run the checks again**.
+- **A failure the agent can fix (size limit, weakened tests, late edits, failing checks):** the agent gets two fix turns with the failure before the task waits for you. A task still at `verification-failed` used both; read its last fix turn before you reply.
