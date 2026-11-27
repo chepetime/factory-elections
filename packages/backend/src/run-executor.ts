@@ -20,6 +20,7 @@ import {
   type ModelResult,
   type ModelRunner,
   type ProviderSessionRef,
+  type ForeignLocks,
   type TaskRecord,
   type UserSettings,
 } from '@factory/core';
@@ -93,8 +94,13 @@ export interface RunExecutorDeps {
   generation?: number;
 }
 
+/** Locks older than the backend's own start belong to a process of an earlier backend. */
+const BACKEND_STARTED = Date.now();
+
 export class RunExecutor {
   private readonly deps: RunExecutorDeps;
+  /** Git locks outside a task that its last resumed run found; they wait for a person. In memory. */
+  readonly foreignLocks = new Map<string, ForeignLocks>();
   /** Aborts each running run's model calls and checks. */
   private readonly controllers = new Map<string, AbortController>();
   /** What each executing run is doing now: current command and last output. */
@@ -268,6 +274,17 @@ export class RunExecutor {
           };
           const driver = this.deps.driver(log, checked, controller.signal);
           driver.deps.shell = trackShell(driver.deps.shell, activity);
+          if (record.after_interrupted)
+            driver.deps.staleLocks = {
+              olderThan: BACKEND_STARTED,
+              reported: (task, paths) =>
+                this.foreignLocks.set(`${task.project}/${task.id}`, {
+                  project: task.project,
+                  task_id: task.id,
+                  paths,
+                  since: new Date().toISOString(),
+                }),
+            };
           await performCommand(command, driver);
           if (logFailure) throw logFailure;
         },

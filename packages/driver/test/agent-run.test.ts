@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { ModelResult, ModelRun, ModelRunner } from '@factory/core';
@@ -536,6 +536,50 @@ test('a resumed turn that failed before any activity retries with its own prompt
   assert.equal(ctx.calls[1]!.resume, 'sess-1');
   assert.equal(ctx.calls[1]!.prompt, 'Please also add feature.txt', "the person's reply is kept");
   assert.equal(ctx.calls[1]!.prompt, ctx.calls[0]!.prompt);
+});
+
+/** A task whose first turn stopped at `blocked`, with a backdated lock a killed backend left in its worktree. */
+async function resumeWithStaleLock() {
+  const ctx = await setup([
+    async () => {
+      ctx.ask();
+      return { text: 'Which file name?', costUsd: 0.1, sessionId: 'sess-1' };
+    },
+    async (r) => {
+      await writeFile(join(r.cwd!, 'feature.txt'), 'done\n');
+      return { text: 'Done.', costUsd: 0.2, sessionId: 'sess-1' };
+    },
+  ]);
+  await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  const worktree = ctx.store.worktreePath('demo', ctx.task.id);
+  const lock = join(sh(worktree, 'rev-parse', '--absolute-git-dir').trim(), 'index.lock');
+  await writeFile(lock, '');
+  const hourAgo = new Date(Date.now() - 3_600_000);
+  await utimes(lock, hourAgo, hourAgo);
+  const logged: string[] = [];
+  ctx.deps.log = (line) => logged.push(line);
+  // No git runs in the temp worktree; the probe is the real one's stand-in.
+  ctx.deps.git = {
+    ...git,
+    clearStaleGitLocks: (dir, options) =>
+      git.clearStaleGitLocks(dir, { ...options, liveGit: async () => false }),
+  };
+  return { ...ctx, lock, logged };
+}
+
+test('a resume after an interrupted run clears the stale index.lock and gets past stageAll', async () => {
+  const ctx = await resumeWithStaleLock();
+  ctx.deps.staleLocks = { olderThan: Date.now() };
+  const resumed = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 });
+  assert.equal(resumed.stage, 'awaiting-approval');
+  assert.equal(existsSync(ctx.lock), false);
+  assert.ok(ctx.logged.includes(`Removed stale git lock ${ctx.lock}`), 'the removal is in the run log');
+});
+
+test('without the interrupted-run signal the lock stays, and the run fails at stageAll', async () => {
+  const ctx = await resumeWithStaleLock();
+  await assert.rejects(ctx.driver.run('demo', ctx.task.id, { maxAttempts: 3 }), /File exists/);
+  assert.equal(existsSync(ctx.lock), true);
 });
 
 const PROGRESS = { text: 'Waiting for tests, then I commit.', costUsd: 0.1, sessionId: 'sess-1' };

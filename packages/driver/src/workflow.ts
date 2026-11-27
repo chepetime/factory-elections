@@ -44,6 +44,7 @@ import {
   parseJsonText,
 } from './support.ts';
 import { checkedWorktree } from './worktree.ts';
+import { clearStaleLocks } from './stale-locks.ts';
 import { checkOptions, checkProfile, verifyWorktree } from './verification.ts';
 import { openPr } from './publication.ts';
 export type { ProfileCheckResult, ProfileCheckStep } from './support.ts';
@@ -395,6 +396,7 @@ export class Driver {
    * lockfiles changed. A failure stops the run before any model call; running the task again retries it.
    */
   async setupWorktree(project: string, id: string): Promise<TaskRecord> {
+    await clearStaleLocks(this.deps, await this.deps.tasks.read(project, id));
     const profile = await this.deps.readProfile(project);
     const failure = await this.refreshSetup(project, id, profile);
     const task = await this.deps.tasks.read(project, id);

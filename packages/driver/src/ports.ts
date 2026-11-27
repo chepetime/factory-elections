@@ -61,6 +61,18 @@ export interface GitPort {
   mergeRef?(dir: string, ref: string): Promise<{ clean: boolean; conflicted: string[] }>;
   mergeInProgress?(dir: string): Promise<boolean>;
   abortMerge?(dir: string): Promise<void>;
+  /**
+   * Removes the stale locks of the task worktree (see adapters-git stale-locks.ts) and reports
+   * the repository's other locks without touching them.
+   */
+  clearStaleGitLocks?(
+    dir: string,
+    options: { branch: string; olderThan: number },
+  ): Promise<{
+    removed: string[];
+    kept: { path: string; reason: string }[];
+    reported: string[];
+  }>;
 }
 
 export interface ShellPort {
@@ -171,6 +183,12 @@ export interface DriverDeps {
   signal?: AbortSignal;
   /** Absent: no step can start child tasks. */
   delegation?: DelegationPort;
+  /**
+   * Set for a run that resumes an interrupted one with nothing left to confirm: its worktree's
+   * stale git locks are cleared before the first git command. Locks of this age or newer stay.
+   * `reported` receives the locks outside the task, which are never removed.
+   */
+  staleLocks?: { olderThan: number; reported?(task: TaskRecord, paths: string[]): void };
   /** Confirmed repository facts for system prompts (the backend's memory). */
   repositoryFacts?(project: string): Promise<string | undefined>;
   /** The project's context size limits; absent: the default. */

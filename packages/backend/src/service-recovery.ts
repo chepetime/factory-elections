@@ -1,6 +1,7 @@
 // Shutdown and restart recovery for the backend: drain the runs, then recover, reconcile and
 // requeue them. BackendService methods of the same names call these.
 import {
+  cleanupBlocker,
   taskCommandBlockers,
   withStage,
   type TaskRecord,
@@ -8,6 +9,7 @@ import {
   type RecoveryReport,
 } from '@factory/core';
 import { ownerOf, RunRecord, writeRun } from './run-record.ts';
+import { Conflict } from './conflict.ts';
 import { RUN_RECOVERY, failsWhenInterrupted } from './recovery-rules.ts';
 import { DRAIN_GRACE_MS, type BackendService } from './service.ts';
 
@@ -220,4 +222,20 @@ export async function requeue(
     await release?.();
     return 'refused';
   }
+}
+
+/**
+ * Called when a run is accepted. Refuses it while the task's previous run may have left processes
+ * (an uncertain cleanup nobody confirmed). Otherwise says whether that run was interrupted: only
+ * then can a dead process have left a stale git lock, and the new run clears the worktree's own
+ * (the driver's stale-locks.ts; docs/state-machines.md).
+ */
+export async function resumeCheck(
+  s: BackendService,
+  target: Parameters<BackendService['latest']>[0],
+): Promise<{ after_interrupted?: true }> {
+  const previous = (await s.latest(target))?.record;
+  const waiting = cleanupBlocker(previous?.cleanup);
+  if (waiting) throw new Conflict(waiting);
+  return previous?.state === 'interrupted' ? { after_interrupted: true } : {};
 }

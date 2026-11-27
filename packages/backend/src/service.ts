@@ -692,8 +692,7 @@ export class BackendService {
       const blockers = taskCommandBlockers(task, command.action);
       if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
       // A run that may have left processes behind blocks the next one on the same worktree.
-      const waiting = cleanupBlocker((await this.latest(command))?.record.cleanup);
-      if (waiting) throw new Conflict(waiting);
+      const resumed = await recovery.resumeCheck(this, command);
       if (command.action === 'revise') await this.taskTraces.gate(task, 'revise').catch(() => undefined);
       const blocked = await this.runBlocker(command.project);
       if (blocked) throw new Conflict(blocked);
@@ -708,6 +707,7 @@ export class BackendService {
         state: 'queued',
         created_at: new Date().toISOString(),
         owner_generation: this.generation,
+        ...resumed,
       };
       const taskDir = dirname(this.tasks.taskPath(command.project, command.id));
       const dir = join(taskDir, 'runs', record.id);

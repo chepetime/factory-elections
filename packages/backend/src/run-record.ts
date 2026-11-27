@@ -41,6 +41,11 @@ export const RunRecord = z.object({
   outcome: ExecutionOutcome.optional(),
   /** Whether the run's processes are known to be gone. Absent: not recorded. */
   cleanup: CleanupRecord.optional(),
+  /**
+   * Set when the task's previous run was interrupted and nothing was left to confirm: this run
+   * clears the worktree's stale git locks before its first git command.
+   */
+  after_interrupted: z.boolean().optional(),
   /** The provider sessions the run's model calls used, as references. */
   provider_sessions: z.array(ProviderSessionRef).optional(),
   /** What the run's model calls were given: one entry per distinct configuration (Phase 4). */
