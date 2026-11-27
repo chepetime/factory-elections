@@ -55,3 +55,24 @@ export function offeredTools(lines: readonly string[]): string[] {
   }
   return [];
 }
+
+/**
+ * GitHub and git writes the agent may not make on its own. Kickoff and re-review turns get this
+ * list; a message the user typed does not, so the user can still ask the agent to post.
+ *
+ * A hint, not a boundary: prefix patterns miss `git -C . push`, `env X=1 gh api` and any wrapped
+ * command. The boundary is the OS sandbox every review turn runs in (see `spawnTurn`).
+ */
+export const AUTOMATED_TURN_DENY = [
+  'Bash(gh pr review:*)',
+  'Bash(gh pr comment:*)',
+  'Bash(gh pr merge:*)',
+  'Bash(gh pr close:*)',
+  'Bash(gh pr edit:*)',
+  'Bash(gh pr ready:*)',
+  'Bash(gh issue comment:*)',
+  'Bash(gh issue create:*)',
+  'Bash(gh issue edit:*)',
+  'Bash(gh api:*)',
+  'Bash(git push:*)',
+];

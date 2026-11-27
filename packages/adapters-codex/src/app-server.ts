@@ -5,6 +5,7 @@
 // One process per call: initialize, start or resume a thread, start one turn, read its stream,
 // then close stdin. A stop sends the native `turn/interrupt`, waits a bounded time, closes the
 // process group, and checks that the commands the server started are gone.
+import { isolatedCodexHome } from './home.ts';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
   agentEnvironment,
@@ -51,8 +52,8 @@ export function appServerArgs(o: { mcp?: McpEndpoint } = {}): string[] {
     'app-server',
     '--listen',
     'stdio://',
-    // app-server has no --ignore-user-config: the user's config.toml loads. The thread request
-    // sets approval, sandbox, model and instructions, so those user settings do not apply.
+    // app-server has no --ignore-user-config, so the process runs with an isolated CODEX_HOME
+    // (see isolatedCodexHome); the thread request sets approval, sandbox, model and instructions.
     '-c',
     'approval_policy="never"',
     '--disable',
@@ -583,6 +584,7 @@ export class CodexAppServerRunner implements ModelRunner {
             ...envNames(process.env.FACTORY_AGENT_ENV_ALLOW),
             ...(request.passEnv ?? []),
           ]),
+          CODEX_HOME: isolatedCodexHome(process.env),
           ...request.env,
           ...(request.mcp ? { [CODEX_TOKEN_ENV]: request.mcp.token } : {}),
         },

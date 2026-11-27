@@ -147,3 +147,34 @@ test('a ticket over its cap starts no fix, and waits so a raised cap resumes it'
   assert.equal(nextTendAction(pr({ checks: [failed] }), record({ reruns: ['h1'] }), over).kind, 'wait');
   assert.equal(nextTendAction(pr({ mergeable: 'CONFLICTING' }), record(), over).kind, 'wait');
 });
+
+test('a no-fix failure starts no agent and names the check and reason', () => {
+  const opts = { ...me, verdicts: { unit: 'no-fix' } as const, reasons: { unit: 'cancelled' } };
+  assert.deepEqual(nextTendAction(pr({ checks: [unit] }), record(), opts), {
+    kind: 'stop',
+    reason: 'no code change can fix: unit (cancelled)',
+  });
+  const mixed = nextTendAction(pr({ checks: [unit, lint] }), record(), {
+    ...opts,
+    verdicts: { unit: 'no-fix', lint: 'real' },
+  });
+  assert.deepEqual(mixed, { kind: 'fix-ci', checks: [lint] });
+});
+
+test('nextTendAction holds checks that fail on the base and merges the base once it is green', () => {
+  const check = { name: 'unit', state: 'fail' as const, run_id: '1' };
+  const run = (base: 'pass' | 'fail' | 'pending' | undefined, rec = record()) =>
+    nextTendAction(pr({ checks: [check] }), rec, { ...me, ...(base ? { base: { unit: base } } : {}) });
+  assert.deepEqual(run('fail'), { kind: 'wait', reason: 'Waiting for unit to pass on main' });
+  assert.deepEqual(run('pending'), { kind: 'wait', reason: 'Waiting for unit to pass on main' });
+  assert.equal(run('pass').kind, 'merge-base');
+  assert.equal(run(undefined).kind, 'rerun');
+  const merged = record({ fixes: [{ kind: 'merge-base', at: 't', sha: 'h0', outcome: 'pushed' }] });
+  assert.equal(run('pass', merged).kind, 'rerun');
+  const spent = record({ fixes_since_green: 3 });
+  assert.equal(run('fail', spent).kind, 'wait');
+  assert.equal(run('pending', spent).kind, 'wait');
+  const own = { name: 'lint', state: 'fail' as const };
+  const mixed = nextTendAction(pr({ checks: [check, own] }), record(), { ...me, base: { unit: 'fail' } });
+  assert.equal(mixed.kind, 'fix-ci');
+});

@@ -19,7 +19,7 @@ Start from a cold or warm machine:
 pnpm start -- --dev
 ```
 
-`pnpm start` removes a `backend.lock` from before the last boot, starts OrbStack and the Docker data services when storage is configured, then runs `pnpm web -- --dev` (backend and Next.js dev). Without `--dev` it builds and serves production mode.
+`pnpm start` removes a `backend.lock` from before the last boot, starts OrbStack and the Docker data services when storage is configured, then runs `pnpm web -- --dev` (backend and Next.js dev). For production mode, see [Run in production mode](production.md).
 
 Verify:
 

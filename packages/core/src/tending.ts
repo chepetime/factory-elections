@@ -149,6 +149,24 @@ export function hasWriteAccess(access: { permission?: string | null; role_name?:
 export const isGitHubLogin = (login: string) =>
   /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?$/.test(login);
 
+/** A check's newest settled result on the base branch tip. */
+export type BaseCheckState = 'pass' | 'fail' | 'pending';
+export type BaseVerdict = 'own' | 'fixed_on_base' | 'base_pending' | 'inherited';
+
+/**
+ * Where a failed PR check stands against the same check on the base: `inherited` (base fails too),
+ * `base_pending` (base is still running), `fixed_on_base` (base passes and has not been merged into
+ * the PR yet), else `own`. After a base merge, what still fails is the PR's own.
+ */
+export function baseVerdict(base: BaseCheckState | undefined, baseMerged: boolean): BaseVerdict {
+  if (base === 'fail') return 'inherited';
+  if (base === 'pending') return 'base_pending';
+  if (base === 'pass' && !baseMerged) return 'fixed_on_base';
+  return 'own';
+}
+
+export const waitingOnBase = (names: readonly string[]) => `Waiting for ${names.join(', ')} to pass on main`;
+
 export function nextTendAction(
   pr: PrState,
   record: TendRecord,
@@ -157,6 +175,10 @@ export function nextTendAction(
     verdicts?: Readonly<Record<string, FlakeVerdict>>;
     /** The ticket's total spend has reached its cap: no new agent work starts. */
     ticketCapReached?: boolean;
+    /** Why a check is `no-fix`, by check name; used in the stop reason. */
+    reasons?: Readonly<Record<string, string>>;
+    /** The same checks on the base branch tip, by name. A check missing here has no base result. */
+    base?: Readonly<Record<string, BaseCheckState>>;
   },
 ): TendAction {
   if (pr.state !== 'OPEN') return { kind: 'end', state: pr.state };
@@ -171,16 +193,33 @@ export function nextTendAction(
   if (pr.mergeable === 'CONFLICTING') return agentWork({ kind: 'merge-base' });
   const threads = options.answerThreads ? threadsWaiting(pr, record) : [];
   if (threads.length) return agentWork({ kind: 'answer-threads', threads });
-  const failed = pr.checks.filter((c) => c.state === 'fail');
+  const allFailed = pr.checks.filter((c) => c.state === 'fail');
   if (pr.checks.some((c) => c.state === 'pending')) return { kind: 'wait', reason: 'checks are running' };
+  const baseMerged = record.fixes.some((f) => f.kind === 'merge-base' && f.outcome === 'pushed');
+  const verdictOf = (c: PrCheck) => baseVerdict(options.base?.[c.name], baseMerged);
+  // A check that fails on main too is not this PR's to fix; one main has fixed needs main merged first.
+  const fixedOnBase = allFailed.filter((c) => verdictOf(c) === 'fixed_on_base');
+  if (fixedOnBase.length) return agentWork({ kind: 'merge-base' });
+  const failed = allFailed.filter((c) => verdictOf(c) === 'own');
+  const held = allFailed.filter((c) => !failed.includes(c));
+  if (held.length && !failed.length) return { kind: 'wait', reason: waitingOnBase(held.map((c) => c.name)) };
   if (failed.length) {
     // A check that is not a real failure gets one rerun per commit before an agent spends money on
     // it. A real failure (see `classifyFlake`) goes straight to a fix. A rerun needs a run to rerun.
     const retried = (c: PrCheck) =>
       record.ci_retries.some((r) => r.sha === pr.head_sha && (r.check === c.name || r.check === '*'));
-    const rerunnable = failed.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
-    const fixable = failed.filter((c) => !rerunnable.includes(c));
-    if (!fixable.length) return { kind: 'rerun', checks: rerunnable };
+    // A `no-fix` check (cancelled run, missing secret, quota) starts no agent: no PR change helps.
+    const noFix = failed.filter((c) => options.verdicts?.[c.name] === 'no-fix');
+    const rest = failed.filter((c) => !noFix.includes(c));
+    const rerunnable = rest.filter((c) => c.run_id && options.verdicts?.[c.name] !== 'real' && !retried(c));
+    const fixable = rest.filter((c) => !rerunnable.includes(c));
+    if (!fixable.length) {
+      if (rerunnable.length) return { kind: 'rerun', checks: rerunnable };
+      const why = noFix
+        .map((c) => `${c.name} (${options.reasons?.[c.name] ?? 'needs no PR change'})`)
+        .join(', ');
+      return { kind: 'stop', reason: `no code change can fix: ${why}` };
+    }
     // The same fix on the same head that changed nothing never runs twice: only a new head, which
     // a person or a push brings, can change the outcome. Tending stops and the PR goes to the inbox.
     const idle = record.fixes.findLast((f) => f.kind === 'fix-ci' && f.sha === pr.head_sha);

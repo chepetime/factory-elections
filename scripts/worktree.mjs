@@ -3,14 +3,17 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
 
 const help = `Usage: node scripts/worktree.mjs <command>
   new <branch> [base=HEAD] [--install]  Create an isolated sibling checkout
   list                               List Git worktrees
   remove <branch>                     Remove a clean linked checkout; keep branch
   run <web-port> <backend-port> [health-port=backend+1]  Start isolated fullstack
-Dependencies use pnpm's shared store; node_modules and secrets are never copied.
+Dependencies use pnpm's shared store; --install clones node_modules copy-on-write from the
+main checkout when the lockfile matches (scripts/seed-node-modules.mjs). Secrets are never copied.
 `;
+const seedScript = fileURLToPath(new URL('./seed-node-modules.mjs', import.meta.url));
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trimEnd();
 
 try {
@@ -40,7 +43,8 @@ try {
     git('worktree', 'add', '-b', branch, destination, base);
     console.log(destination);
     if (install) {
-      const result = spawnSync('pnpm', ['install', '--frozen-lockfile'], {
+      // Clone node_modules from the main checkout when the lockfile matches; else a normal install.
+      const result = spawnSync(process.execPath, [seedScript, destination, main], {
         cwd: destination,
         stdio: 'inherit',
       });

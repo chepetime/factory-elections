@@ -18,6 +18,7 @@ export function ResizablePane({
   breakpoint = 'lg',
   label,
   className,
+  hidden = false,
   children,
 }: {
   spec: PaneSpec;
@@ -28,6 +29,8 @@ export function ResizablePane({
   /** The pane's accessible name; the handle is "Resize <label>". */
   label: string;
   className?: string;
+  /** Render nothing: the page's saved setting hides the pane. */
+  hidden?: boolean;
   children: ReactNode;
 }) {
   const [width, setWidth] = useState(initialWidth);
@@ -42,6 +45,7 @@ export function ResizablePane({
     save(w);
   };
   const sign = edge === 'left' ? -1 : 1;
+  if (hidden) return null;
 
   return (
     <aside
