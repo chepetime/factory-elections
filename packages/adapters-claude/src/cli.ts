@@ -1,5 +1,6 @@
 // Claude Code's headless CLI (`claude -p --output-format stream-json`) as an AgentCli.
 import type { AgentCli, AgentEvent, HeadlessTurn } from '@factory/core';
+import { turnSandbox } from './sandbox.ts';
 
 /** The `delegate` tool, as Claude Code names a tool on the backend's MCP server. */
 export const CLAUDE_DELEGATE_TOOL = 'mcp__factory__delegate';
@@ -15,6 +16,11 @@ export function claudeMcpConfig(mcp: NonNullable<HeadlessTurn['mcp']>): string {
   });
 }
 
+function sandboxArgs(turn: HeadlessTurn): string[] {
+  const sandbox = turnSandbox(turn);
+  return sandbox ? ['--settings', JSON.stringify({ sandbox })] : [];
+}
+
 export const claudeCli: AgentCli = {
   id: 'claude',
   command: 'claude',
@@ -22,12 +28,15 @@ export const claudeCli: AgentCli = {
     '-p',
     // Same runner as the `elections review` CLI; deny rules still apply in this mode.
     '--dangerously-skip-permissions',
-    // Load only the repository's settings and CLAUDE.md: not the user's skills, plugins, hooks or
-    // MCP servers (claude.ai connectors included). The review skill is in the system prompt.
-    // Measured on change-elections: 111 tools / 46 skills / 45 MCP servers became 25 / 0 / 0,
-    // and each model call carried ~10k fewer input tokens.
-    '--setting-sources',
-    'project',
+    // Load no settings: not the user's skills, plugins, hooks or MCP servers (claude.ai connectors
+    // included), and not the repository's .claude/settings.json, which is the pull request's own and
+    // so untrusted (its hooks would run code at session start). The review skill is in the system
+    // prompt. Measured on change-elections with the project source then loaded: 111 tools / 46
+    // skills / 45 MCP servers became 25 / 0 / 0, and each model call carried ~10k fewer input tokens.
+    // The empty value is what the SDK sends for `settingSources: []`.
+    '--setting-sources=',
+    // The OS sandbox, as inline settings: the SDK passes its `sandbox` option the same way.
+    ...sandboxArgs(turn),
     '--strict-mcp-config',
     '--disable-slash-commands',
     '--model',
