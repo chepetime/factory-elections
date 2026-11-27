@@ -25,6 +25,8 @@ import { StatusLabel } from '@/components/task-status';
 import { Fact, Facts, renderRun, Section } from '@/components/task-run';
 import { isProjectName, isTaskId, readDiff, showTask } from '@/lib/factory';
 import { getIssue } from '@/lib/issues';
+import { userSettings } from '@/lib/user-settings';
+import { TaskDetailsToggle } from '@/components/task-details-toggle';
 import { listAgents } from '@/lib/agents';
 import { ResizablePane } from '@/components/resizable-pane';
 import { RunSessionView } from '@/components/run-session';
@@ -142,13 +144,19 @@ export default async function TaskPage({
       : !runId && query.panel !== 'run'
         ? 'details'
         : 'run';
+  // The sidebar follows the saved setting (on when it cannot be read). A `?panel=` link opens it for
+  // that view without changing the setting; the toggle in the header saves the choice.
+  const savedPane = await userSettings();
+  const paneSaved = savedPane.ok ? savedPane.value.tasks.details_pane : true;
+  const showPane =
+    paneSaved || ['run', 'status', 'timeline', 'changes', 'details'].includes(query.panel ?? '');
   const panelHref = (p: Panel) =>
     `/projects/${project}/tasks/${issue.key}?panel=${p}${query.run ? `&run=${query.run}` : ''}`;
-  const session = runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
-  const changes = runId && panel === 'changes' ? await readDiff(project, runId) : undefined;
+  const session = showPane && runId && panel === 'run' ? await readRunSession(project, runId) : undefined;
+  const changes = showPane && runId && panel === 'changes' ? await readDiff(project, runId) : undefined;
   const [agentList, detailsWidth, ...loaded] = await Promise.all([
     Promise.resolve(roster),
-    paneWidth(TASK_DETAILS_PANE),
+    showPane ? paneWidth(TASK_DETAILS_PANE) : Promise.resolve(0),
     ...issue.runs.map((rid) =>
       rid === runId && run?.ok
         ? Promise.resolve(run.value.task)
@@ -217,7 +225,9 @@ export default async function TaskPage({
   const prUrls = new Set(pulls.map((p) => p.url));
   // Review turns are read only for the Timeline tab: they need a span query.
   const reviewSpans =
-    panel === 'timeline' && prUrls.size ? await listSpans('review', 500, { project, days: 90 }) : undefined;
+    showPane && panel === 'timeline' && prUrls.size
+      ? await listSpans('review', 500, { project, days: 90 })
+      : undefined;
   const reviewTurns = reviewSpans?.ok
     ? reviewSpans.value.items
         .filter((s) => s.pr && prUrls.has(s.pr.url))
@@ -231,17 +241,22 @@ export default async function TaskPage({
           ...(s.pr?.number ? { pr: { number: s.pr.number } } : {}),
         }))
     : [];
-  const timeline = ticketTimeline(
-    issue,
-    records,
-    {
-      ...(creator
-        ? { creator: creator === 'you' ? 'you' : creator === 'factory' ? 'the factory' : agentName(creator)! }
-        : {}),
-      agent: agentName,
-    },
-    reviewTurns,
-  );
+  const timeline = showPane
+    ? ticketTimeline(
+        issue,
+        records,
+        {
+          ...(creator
+            ? {
+                creator:
+                  creator === 'you' ? 'you' : creator === 'factory' ? 'the factory' : agentName(creator)!,
+              }
+            : {}),
+          agent: agentName,
+        },
+        reviewTurns,
+      )
+    : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col max-lg:overflow-y-auto lg:flex-row">
@@ -262,6 +277,7 @@ export default async function TaskPage({
           <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
           <span className="font-mono text-xs text-muted-foreground">{issue.key}</span>
           <span className="min-w-0 truncate font-medium">{issue.title}</span>
+          <TaskDetailsToggle shown={showPane} />
         </nav>
         {issue.archived_at && <IssueArchivedBanner project={project} issueKey={issue.key} />}
 
@@ -326,7 +342,7 @@ export default async function TaskPage({
                     {prLabel(run.value.task.pr.url)}
                   </a>
                 )}
-                {panel !== 'run' && (
+                {(!showPane || panel !== 'run') && (
                   <Link
                     href={panelHref('run')}
                     className="shrink-0 rounded-lg border px-2.5 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
@@ -385,6 +401,7 @@ export default async function TaskPage({
 
       <ResizablePane
         spec={TASK_DETAILS_PANE}
+        hidden={!showPane}
         initialWidth={detailsWidth}
         edge="left"
         label="Task details"

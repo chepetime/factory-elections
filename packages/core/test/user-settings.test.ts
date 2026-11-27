@@ -45,3 +45,13 @@ test('notification settings name every inbox kind', () => {
   assert.equal(covered, true);
   assert.deepEqual(UserSettings.parse({}).notifications, { browser: false, muted: [] });
 });
+
+test('the ticket sidebar is shown by default, including for settings saved without the key', () => {
+  assert.equal(UserSettings.parse({}).tasks.details_pane, true);
+  const old = UserSettings.parse({
+    tasks: { default_type: 'review', start_runs: true, jira_key_field: false },
+  });
+  assert.equal(old.tasks.details_pane, true);
+  assert.equal(old.tasks.default_type, 'review');
+  assert.equal(UserSettings.parse({ tasks: { details_pane: false } }).tasks.details_pane, false);
+});
