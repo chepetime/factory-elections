@@ -130,6 +130,8 @@ export async function followUp(
 export async function syncBase(
   d: Driver,
   task: TaskRecord,
+  /** What the merge comes before, for the log. */
+  before = 'the turn',
 ): Promise<{ merged: boolean; conflicted: string[] }> {
   const { git } = d.deps;
   const none = { merged: false, conflicted: [] };
@@ -142,14 +144,14 @@ export async function syncBase(
     d.deps.log(`Could not fetch origin/${base}; the branch is not synced: ${(error as Error).message}`);
     return none;
   }
-  const before = await git.headSha(path);
+  const head = await git.headSha(path);
   const merge = await mergeBase(d.deps, path, `origin/${base}`, await d.deps.readProfile(task.project));
   if (!merge.clean) {
     d.deps.log(`Merged origin/${base} into ${branch}: conflicts in ${merge.conflicted.join(', ')}`);
     return { merged: true, conflicted: merge.conflicted };
   }
-  const merged = (await git.headSha(path)) !== before;
-  if (merged) d.deps.log(`Merged origin/${base} into ${branch} before the turn.`);
+  const merged = (await git.headSha(path)) !== head;
+  if (merged) d.deps.log(`Merged origin/${base} into ${branch} before ${before}.`);
   return { merged, conflicted: [] };
 }
 
