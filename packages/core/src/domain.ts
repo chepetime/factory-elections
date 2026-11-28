@@ -274,22 +274,28 @@ export function ticketSpend(
   return { run, review, tending, chat, total: run + review + tending + chat };
 }
 
+function workStartedAt(task: TaskRecord): string {
+  const handoff = task.agent_handoffs?.at(-1)?.at ?? '';
+  const followUp = task.follow_ups?.at(-1)?.at ?? '';
+  return handoff > followUp ? handoff : followUp;
+}
+
 /**
- * Dollars spent on the task's current work: since its latest follow-up, or since it started. A
- * follow-up is new work on the same branch, so it gets the whole task budget again; the earlier
+ * Dollars spent since the latest follow-up or agent handoff, or since the task started.
+ * A follow-up or handoff gets its own task budget; the earlier
  * spend stays in `taskSpend`. Unknown costs count as zero, as in `taskSpend`.
  */
 export function workSpend(task: TaskRecord): number {
-  const since = task.follow_ups?.at(-1)?.at;
+  const since = workStartedAt(task);
   return (task.attempts ?? [])
-    .filter((a) => !since || a.started_at >= since)
+    .filter((a) => a.started_at >= since)
     .reduce((sum, a) => sum + (a.cost_usd ?? 0), 0);
 }
 
-/** Attempts since the task's latest follow-up whose cost is unknown (`cost_usd` null), never $0. */
+/** Attempts in the task's current work whose cost is unknown (`cost_usd` null), never $0. */
 export function unknownCostAttempts(task: TaskRecord): StepAttempt[] {
-  const since = task.follow_ups?.at(-1)?.at;
-  return (task.attempts ?? []).filter((a) => (!since || a.started_at >= since) && a.cost_usd === null);
+  const since = workStartedAt(task);
+  return (task.attempts ?? []).filter((a) => a.started_at >= since && a.cost_usd === null);
 }
 
 /** How many of the task's attempts have an unknown cost, for the whole task or only its current work. */

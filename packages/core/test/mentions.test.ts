@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { insertMention, mentionAt, parseMentions, ticketSpend, workSpend, TaskRecord } from '../src/index.ts';
+import {
+  insertMention,
+  mentionAt,
+  parseMentions,
+  ticketSpend,
+  unknownCostCount,
+  workSpend,
+  TaskRecord,
+} from '../src/index.ts';
 
 test('parseMentions finds known agents once, in order, case-insensitive, not in code or emails', () => {
   assert.deepEqual(parseMentions('@Mika and @devin, then @mika again', ['devin', 'mika']), ['mika', 'devin']);
@@ -54,6 +62,13 @@ test('workSpend counts only the attempts since the latest follow-up', () => {
     ],
   };
   assert.equal(workSpend(followed as TaskRecord), 2);
+  const handedOff = {
+    ...followed,
+    agent_handoffs: [{ at: '2026-11-26T12:00:00.000Z', from: 'devin', to: 'carlos' }],
+  };
+  assert.equal(workSpend(handedOff as TaskRecord), 0, 'the new agent gets a fresh budget');
+  assert.equal(unknownCostCount(handedOff as TaskRecord, 'work'), 0);
+  assert.equal(ticketSpend(handedOff as TaskRecord).total, 10, 'previous spend stays on the task');
 });
 
 test('a follow-up that asks to merge or rebase on the base, or to resolve conflicts, is a base merge', async () => {

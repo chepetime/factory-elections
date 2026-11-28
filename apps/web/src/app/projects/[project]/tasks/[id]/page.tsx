@@ -477,6 +477,8 @@ export default async function TaskPage({
                       runId={runId!}
                       initial={session.value}
                       author={runAuthor ?? { name: 'Factory', avatar: '🏭' }}
+                      handoffs={runRecord?.agent_handoffs}
+                      authors={authors}
                     />
                   ) : (
                     session && (

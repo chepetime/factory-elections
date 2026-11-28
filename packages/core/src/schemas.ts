@@ -271,6 +271,7 @@ export const TaskRecord = z.looseObject({
   /** The agent working an `agent` run, and its provider session for resumes. */
   agent: NonEmpty.optional(),
   agent_session: NonEmpty.optional(),
+  agent_handoffs: z.array(z.object({ at: Iso, from: NonEmpty.optional(), to: NonEmpty })).optional(),
 });
 export type TaskRecord = z.infer<typeof TaskRecord>;
 

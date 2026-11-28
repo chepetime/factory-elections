@@ -175,10 +175,16 @@ export class RunExecutor {
     if (!agent) return;
     const task = await this.deps.tasks.read(project, id);
     if (task.workflow !== 'agent' || task.agent === agent) return;
+    const at = new Date().toISOString();
     await this.deps.tasks.write(
       withStage(
-        { ...task, agent, agent_session: undefined },
-        new Date().toISOString(),
+        {
+          ...task,
+          agent,
+          agent_session: undefined,
+          agent_handoffs: [...(task.agent_handoffs ?? []), { at, from: task.agent, to: agent }],
+        },
+        at,
         task.stage,
         `Handed the next turn to ${agent}.`,
       ),

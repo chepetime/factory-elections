@@ -8,6 +8,7 @@ import { AgentAvatar } from '@/components/agent-avatar';
 import { CallChip, iconForTool } from '@factory/ui/components/call-chip';
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
+import type { TaskRecord } from '@factory/core';
 import { cn } from '@factory/ui/lib/utils';
 
 type Entry =
@@ -87,16 +88,32 @@ function ToolCall({
   );
 }
 
+type Author = { name: string; avatar: string };
+
+function authorAt(
+  at: string,
+  author: Author,
+  handoffs: TaskRecord['agent_handoffs'],
+  authors: Record<string, Author>,
+): Author {
+  const previous = handoffs?.find((handoff) => at < handoff.at)?.from;
+  return previous ? (authors[previous] ?? { name: previous, avatar: '🤖' }) : author;
+}
+
 export function RunSessionView({
   project,
   runId,
   initial,
   author,
+  handoffs,
+  authors,
 }: {
   project: string;
   runId: string;
   initial: Session;
-  author: { name: string; avatar: string };
+  author: Author;
+  handoffs?: TaskRecord['agent_handoffs'];
+  authors: Record<string, Author>;
 }) {
   const router = useRouter();
   const [session, setSession] = useState(initial);
@@ -185,7 +202,12 @@ export function RunSessionView({
     else
       blocks.push(
         <div key={i} className={cn('flex gap-2.5', e.sub && 'ml-4 border-l pl-3')}>
-          <AgentAvatar agent={author} size="sm" decorative className="mt-0.5" />
+          <AgentAvatar
+            agent={authorAt(e.at, author, handoffs, authors)}
+            size="sm"
+            decorative
+            className="mt-0.5"
+          />
           <div className="min-w-0 flex-1 text-sm leading-relaxed">
             <Markdown text={e.text} />
           </div>

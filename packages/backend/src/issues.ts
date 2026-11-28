@@ -610,7 +610,12 @@ export class IssueService {
     mentions: string[],
   ): Promise<IssueView | undefined> {
     const record = view.run && (await this.deps.tasks.list(project)).find((t) => t.id === view.run!.id);
-    const runAgent = record?.workflow === 'agent' ? record.agent : undefined;
+    const runAgent =
+      record && pendingAgentHandoff(record, view.assignee)
+        ? view.assignee
+        : record?.workflow === 'agent'
+          ? record.agent
+          : undefined;
     // The run's agent first, when it is mentioned: it knows the branch.
     const agent = runAgent && mentions.includes(runAgent) ? runAgent : mentions[0]!;
     const name = this.deps.agentName ? await this.deps.agentName(agent).catch(() => agent) : agent;
