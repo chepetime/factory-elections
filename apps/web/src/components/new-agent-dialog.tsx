@@ -17,19 +17,21 @@ import {
 } from '@factory/ui/components/dialog';
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
-import { AGENT_MODELS } from '@/lib/agent-models';
+import { type UserProvider } from '@factory/core';
+import { AgentModelSelect, AgentProviderSelect } from './agent-model-select';
+import type { AgentModelOptions } from '@/lib/agent-model-options';
 
 const field = 'flex flex-col gap-1.5 text-sm';
-const select =
-  'h-9 rounded-lg border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';
 
 /** `base`: the agents list the new agent's page opens under. */
-export function NewAgentButton({ base }: { base: string }) {
+export function NewAgentButton({ base, models }: { base: string; models: AgentModelOptions }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
   const id = useId();
+  const [provider, setProvider] = useState<UserProvider>('claude');
+  const [model, setModel] = useState(models.claude[0]?.id ?? '');
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button size="sm" />}>
@@ -52,7 +54,8 @@ export function NewAgentButton({ base }: { base: string }) {
                 name: String(form.get('name') ?? ''),
                 avatar: String(form.get('avatar') ?? '').trim() || undefined,
                 description: String(form.get('description') ?? ''),
-                model: String(form.get('model') ?? ''),
+                model,
+                auto_pickup: provider === 'claude',
               });
               if (result.error) return setError(result.error);
               setOpen(false);
@@ -86,16 +89,31 @@ export function NewAgentButton({ base }: { base: string }) {
               placeholder="Reviews accessibility in our web app and fixes what it finds."
             />
           </label>
-          <label className={field} htmlFor={`${id}-model`}>
-            Model
-            <select id={`${id}-model`} name="model" defaultValue={AGENT_MODELS[0].id} className={select}>
-              {AGENT_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}: {m.hint}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className={field}>
+            <label htmlFor={`${id}-provider`}>Provider</label>
+            <AgentProviderSelect
+              id={`${id}-provider`}
+              provider={provider}
+              onChange={(next) => {
+                setProvider(next);
+                setModel(models[next][0]?.id ?? '');
+              }}
+            />
+          </div>
+          <div className={field}>
+            <label htmlFor={`${id}-model`}>Model</label>
+            <AgentModelSelect
+              id={`${id}-model`}
+              model={model}
+              options={models[provider]}
+              onChange={setModel}
+            />
+          </div>
+          {provider !== 'claude' && (
+            <p className="text-xs text-muted-foreground">
+              Board tasks and chats currently require Claude Code.
+            </p>
+          )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -103,7 +121,7 @@ export function NewAgentButton({ base }: { base: string }) {
           )}
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || !model}>
               {pending ? 'Creating…' : 'Create agent'}
             </Button>
           </DialogFooter>

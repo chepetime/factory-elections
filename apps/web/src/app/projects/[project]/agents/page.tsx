@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { LocalTime } from '@/components/local-time';
 import { NewAgentButton } from '@/components/new-agent-dialog';
+import { agentModelOptions } from '@/lib/agent-model-options';
 import { modelName } from '@/lib/agent-models';
 import { agentStats, listAgents } from '@/lib/agents';
 import { isProjectName } from '@/lib/factory';
@@ -37,7 +38,10 @@ export default async function AgentsPage({
   const shown = all
     .filter((a) => Boolean(a.archived_at) === archived)
     .filter((a) => !query || `${a.name} ${a.description}`.toLowerCase().includes(query));
-  const stats = await Promise.all(shown.map((a) => agentStats(a.id)));
+  const [stats, models] = await Promise.all([
+    Promise.all(shown.map((a) => agentStats(a.id))),
+    agentModelOptions(),
+  ]);
   const counts = {
     all: all.filter((a) => !a.archived_at).length,
     archived: all.filter((a) => a.archived_at).length,
@@ -58,7 +62,7 @@ export default async function AgentsPage({
             change before it becomes a pull request. Every project shares the same agents.
           </p>
         </div>
-        <NewAgentButton base={base} />
+        <NewAgentButton base={base} models={models} />
       </header>
 
       <div className="flex flex-wrap items-center gap-2">

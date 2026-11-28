@@ -26,6 +26,7 @@ export async function createAgent(input: {
   avatar?: string;
   description?: string;
   model?: string;
+  auto_pickup?: boolean;
 }): Promise<AgentActionState & { id?: string }> {
   if (!input.name.trim()) return { error: 'Give the agent a name.' };
   const result = await createAgentRun(input);

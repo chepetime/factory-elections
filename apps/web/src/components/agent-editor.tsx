@@ -18,7 +18,10 @@ import {
 } from '@factory/ui/components/dialog';
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
-import { AGENT_MODELS, EFFORTS } from '@/lib/agent-models';
+import { EFFORTS } from '@/lib/agent-models';
+import { parseModelRef } from '@factory/core';
+import { AgentModelSelect, AgentProviderSelect } from './agent-model-select';
+import type { AgentModelOptions } from '@/lib/agent-model-options';
 import { cn } from '@factory/ui/lib/utils';
 
 const select =
@@ -310,8 +313,17 @@ function Row({
   );
 }
 
-export function GeneralForm({ id, initial }: { id: string; initial: General }) {
+export function GeneralForm({
+  id,
+  initial,
+  models,
+}: {
+  id: string;
+  initial: General;
+  models: AgentModelOptions;
+}) {
   const [value, setValue] = useState(initial);
+  const [provider, setProvider] = useState(() => parseModelRef(initial.model).provider);
   const { pending, state, save } = useAgentSave(id);
   const f = useId();
   const set = <K extends keyof General>(key: K, v: General[K]) => setValue({ ...value, [key]: v });
@@ -352,22 +364,31 @@ export function GeneralForm({ id, initial }: { id: string; initial: General }) {
             onChange={(e) => set('description', e.target.value)}
           />
         </Row>
-        <Row label="Model" hint="Agent runs and chats need a Claude model." htmlFor={`${f}-model`}>
-          <select
+        <Row
+          label="Provider"
+          htmlFor={`${f}-provider`}
+          hint={provider !== 'claude' ? 'Board tasks and chats currently require Claude Code.' : undefined}
+        >
+          <AgentProviderSelect
+            id={`${f}-provider`}
+            provider={provider}
+            onChange={(next) => {
+              setProvider(next);
+              setValue({
+                ...value,
+                model: models[next][0]?.id ?? '',
+                auto_pickup: next === 'claude' && value.auto_pickup,
+              });
+            }}
+          />
+        </Row>
+        <Row label="Model" htmlFor={`${f}-model`}>
+          <AgentModelSelect
             id={`${f}-model`}
-            value={value.model}
-            onChange={(e) => set('model', e.target.value)}
-            className={cn(select, 'w-full')}
-          >
-            {AGENT_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}: {m.hint}
-              </option>
-            ))}
-            {!AGENT_MODELS.some((m) => m.id === value.model) && (
-              <option value={value.model}>{value.model}</option>
-            )}
-          </select>
+            model={value.model}
+            options={models[provider]}
+            onChange={(model) => set('model', model)}
+          />
         </Row>
         <Row label="Effort" htmlFor={`${f}-effort`}>
           <select
@@ -394,6 +415,7 @@ export function GeneralForm({ id, initial }: { id: string; initial: General }) {
               type="checkbox"
               className="size-4"
               checked={value.auto_pickup}
+              disabled={provider !== 'claude'}
               onChange={(e) => set('auto_pickup', e.target.checked)}
             />
             {value.auto_pickup ? 'On' : 'Off: start each task yourself'}

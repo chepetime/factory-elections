@@ -17,6 +17,7 @@ import {
 import { LocalTime } from '@/components/local-time';
 import { Markdown } from '@/components/markdown';
 import { STATUS } from '@/components/task-status';
+import { agentModelOptions } from '@/lib/agent-model-options';
 import { modelName } from '@/lib/agent-models';
 import { AGENT_FACTORY_INSTRUCTIONS, agentStats, type AgentRunLine, type AgentStats } from '@/lib/agents';
 import { isProjectName, listProjects } from '@/lib/factory';
@@ -314,6 +315,30 @@ function Pane({ title, intro, children }: { title: string; intro?: ReactNode; ch
   );
 }
 
+async function AgentGeneralPane({ agent, archived }: { agent: AgentStats['agent']; archived: boolean }) {
+  const models = await agentModelOptions();
+  return (
+    <Pane title="General">
+      <GeneralForm
+        key={agent.updated_at}
+        id={agent.id}
+        models={models}
+        initial={{
+          name: agent.name,
+          avatar: agent.avatar,
+          description: agent.description,
+          model: agent.model,
+          effort: agent.effort,
+          concurrency: agent.concurrency,
+          task_budget_usd: agent.task_budget_usd,
+          auto_pickup: agent.auto_pickup,
+        }}
+      />
+      <ArchiveAgent id={agent.id} name={agent.name} archived={archived} />
+    </Pane>
+  );
+}
+
 export default async function AgentPage({
   params,
   searchParams,
@@ -480,25 +505,7 @@ export default async function AgentPage({
                 </ul>
               </Pane>
             )}
-            {section === 'general' && (
-              <Pane title="General">
-                <GeneralForm
-                  key={agent.updated_at}
-                  id={agent.id}
-                  initial={{
-                    name: agent.name,
-                    avatar: agent.avatar,
-                    description: agent.description,
-                    model: agent.model,
-                    effort: agent.effort,
-                    concurrency: agent.concurrency,
-                    task_budget_usd: agent.task_budget_usd,
-                    auto_pickup: agent.auto_pickup,
-                  }}
-                />
-                <ArchiveAgent id={agent.id} name={agent.name} archived={archived} />
-              </Pane>
-            )}
+            {section === 'general' && <AgentGeneralPane agent={agent} archived={archived} />}
             {section === 'environment' && (
               <Pane
                 title="Environment"
