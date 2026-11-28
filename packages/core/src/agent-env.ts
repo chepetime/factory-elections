@@ -50,6 +50,7 @@ const PREFIXES = ['LC_', 'XDG_', 'MISE_', '__MISE_', 'ASDF_', 'NVM_', 'FNM_'] as
 export const PROVIDER_ENV: Record<ProviderId, readonly string[]> = {
   claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CONFIG_DIR'],
   codex: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'CODEX_HOME'],
+  pi: ['PI_CODING_AGENT_DIR'],
 };
 
 /** A variable name: what `sandbox.pass_env` and FACTORY_AGENT_ENV_ALLOW may list. */

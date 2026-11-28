@@ -28,6 +28,13 @@ export function providerRunner(log: (line: string) => void = () => {}): ModelRun
         return new ClaudeAgentRunner({ onProgress: log }).run(request);
       },
     },
+    pi: {
+      capabilities: PROVIDER_CAPABILITIES.pi,
+      async run(request) {
+        const { runPi } = await import('./pi.ts');
+        return runPi(request);
+      },
+    },
     // FACTORY_CODEX_TRANSPORT=app-server selects the phase 2 app-server runner; the default stays
     // `codex exec`.
     codex:

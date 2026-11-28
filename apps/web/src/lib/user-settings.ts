@@ -32,7 +32,7 @@ export function saveUserSettingsRun(settings: unknown): Promise<Result<UserSetti
 /** The "responds" check: a real one-word model call, so only ever from an explicit Test click. */
 export function testProviderRun(provider: string): Promise<Result<ProviderCheck>> {
   return attempt(async () =>
-    ProviderCheck.parse(JSON.parse((await backendCall('TestProvider', { provider })).json)),
+    ProviderCheck.parse(JSON.parse((await backendCall('TestProvider', { provider }, 90_000)).json)),
   );
 }
 export function userEnvironment(): Promise<Result<UserEnvironment>> {

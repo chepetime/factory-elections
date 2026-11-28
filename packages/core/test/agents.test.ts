@@ -23,6 +23,10 @@ test('model references name the provider; ladders accept codex rungs', () => {
   assert.deepEqual(parseModelRef('claude-opus-5-5'), { provider: 'claude', model: 'claude-opus-5-5' });
   assert.deepEqual(parseModelRef('codex'), { provider: 'codex' });
   assert.deepEqual(parseModelRef('codex:gpt-5.5'), { provider: 'codex', model: 'gpt-5.5' });
+  const pi = 'pi:openai-codex/gpt-5.6-luna';
+  assert.equal(ModelRef.parse(pi), pi);
+  assert.deepEqual(parseModelRef(pi), { provider: 'pi', model: 'openai-codex/gpt-5.6-luna' });
+  assert.equal(ModelRef.safeParse('pi:gpt-5.6-luna').success, false);
   assert.equal(ModelRef.safeParse('gpt-5.5').success, false);
   assert.ok(
     ModelLadder.safeParse({ name: 'x', rungs: [{ name: 'r', model: 'codex', effort: 'low' }] }).success,

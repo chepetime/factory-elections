@@ -16,7 +16,6 @@ import {
   type McpEndpoint,
   type ModelRun,
   type ModelRunner,
-  type ProviderId,
   type ToolAccess,
   type ToolGuard,
   type TraceScope,
@@ -28,7 +27,10 @@ export const MAX_DELEGATION_DEPTH = Number(process.env.FACTORY_DELEGATION_DEPTH 
 export const CHILD_BUDGET_USD = 2;
 const CHILD_TIMEOUT_MS = 30 * 60_000;
 const CHILD_STALL_MS = 10 * 60_000;
-const DEFAULT_MODEL: Record<ProviderId, string> = { claude: 'claude-sonnet-5-5', codex: 'codex:gpt-5-codex' };
+const DEFAULT_MODEL: Record<DelegateInput['provider'], string> = {
+  claude: 'claude-sonnet-5-5',
+  codex: 'codex:gpt-5-codex',
+};
 
 const CHILD_SYSTEM_PROMPT = [
   'You are a child task. Another agent started you with the factory delegate tool.',

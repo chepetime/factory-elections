@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { ModelResult, ModelRun, ModelRunner } from './ports.ts';
 import { tokenCapForModel } from './prices.ts';
 
-export const ProviderId = z.enum(['claude', 'codex']);
+export const ProviderId = z.enum(['claude', 'codex', 'pi']);
 export type ProviderId = z.infer<typeof ProviderId>;
 
 /**
@@ -14,13 +14,17 @@ export type ProviderId = z.infer<typeof ProviderId>;
  */
 export const ModelRef = z
   .string()
-  .regex(/^(claude-[\w.-]+|codex(:[\w.-]+)?)$/, 'use a claude-… model id, codex or codex:<model>');
+  .regex(
+    /^(claude-[\w.-]+|codex(:[\w.-]+)?|pi:[\w.-]+\/[\w./-]+)$/,
+    'use a Claude model id, codex[:<model>], or pi:<provider>/<model>',
+  );
 export type ModelRef = z.infer<typeof ModelRef>;
 
 /** The provider and provider-side model a reference names. `model` is absent for the default. */
 export function parseModelRef(ref: string): { provider: ProviderId; model?: string } {
   if (ref === 'codex') return { provider: 'codex' };
   if (ref.startsWith('codex:')) return { provider: 'codex', model: ref.slice('codex:'.length) };
+  if (ref.startsWith('pi:')) return { provider: 'pi', model: ref.slice('pi:'.length) };
   return { provider: 'claude', model: ref };
 }
 
@@ -88,6 +92,21 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     supplementalInput: false,
     callIds: true,
     // A cancelled `codex exec` leaves its shell command running (docs/runtime-baseline.md).
+    descendantCleanup: false,
+  },
+  pi: {
+    toolGuard: false,
+    denyRules: false,
+    osSandbox: false,
+    budget: false,
+    tokenCap: false,
+    costReport: true,
+    structuredOutput: false,
+    resume: false,
+    mcp: false,
+    interrupt: true,
+    supplementalInput: false,
+    callIds: false,
     descendantCleanup: false,
   },
 };
@@ -261,7 +280,7 @@ export function eventSession(events: readonly AgentEvent[]): string | undefined 
 
 /** The `delegate` tool's input, as every provider sends it. */
 export const DelegateInput = z.object({
-  provider: ProviderId.describe('Which agent runs the child task'),
+  provider: ProviderId.exclude(['pi']).describe('Which agent runs the child task'),
   task: z.string().trim().min(1).max(50_000).describe('What the child must do, with all context it needs'),
   access: z
     .enum(['read-only', 'edit'])
