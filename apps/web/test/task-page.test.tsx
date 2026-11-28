@@ -198,12 +198,30 @@ it('shows model attempts and their combined cost, preserving unknown costs', asy
     ok: true,
     value: { task: unknown, execution: 'completed', actions: taskActions(unknown, 'completed') },
   });
-  expect(await html(undefined, 'details')).toContain('unknown');
+  expect(await html(undefined, 'details')).toContain('$1.25 known · 1 unknown attempt');
 });
 
 it('shows the approval diff in a copyable code view and reports read errors', async () => {
   observe('completed', 'awaiting-approval');
-  const current = { ...task, stage: 'awaiting-approval' as const };
+  const at = '2026-01-01';
+  const turn = {
+    step: 'agent',
+    rung: 'first',
+    model: 'pi:openai-codex/gpt-5.6-luna',
+    effort: 'high' as const,
+    started_at: at,
+    finished_at: at,
+    outcome: 'completed' as const,
+    cost_usd: 0.30178584,
+  };
+  const current = {
+    ...task,
+    stage: 'awaiting-approval' as const,
+    attempts: [
+      turn,
+      { ...turn, step: 'pr-writer', model: 'claude-sonnet', outcome: 'failed' as const, cost_usd: null },
+    ],
+  };
   vi.mocked(readTaskControls).mockResolvedValue({
     ok: true,
     value: {
@@ -219,6 +237,7 @@ it('shows the approval diff in a copyable code view and reports read errors', as
     value: 'diff --git a/a b/a\n--- a/a\n+++ b/a\n-old line\n+new line\n',
   });
   const page = await html(undefined, 'details');
+  expect(page).toContain('$0.30 known · 1 unknown attempt');
   expect(page).toContain('Full diff');
   expect(page).toContain('Changes.diff');
   expect(page).toContain('+new line');

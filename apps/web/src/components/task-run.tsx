@@ -10,6 +10,8 @@ import {
   type AgentProfile,
   runWorking,
   taskActions,
+  taskSpend,
+  unknownCostCount,
   type TaskRecord,
   stageLabel,
   stageReason,
@@ -65,10 +67,13 @@ function quotedName(task: TaskRecord): string {
 }
 
 export function money(task: TaskRecord): string {
-  const attempts = task.attempts ?? [];
-  if (attempts.length === 0) return '—';
-  if (attempts.some((a) => a.cost_usd === null)) return 'unknown';
-  return `$${attempts.reduce((sum, a) => sum + (a.cost_usd ?? 0), 0).toFixed(2)}`;
+  const count = task.attempts?.length ?? 0;
+  if (count === 0) return '—';
+  const unknown = unknownCostCount(task);
+  if (unknown === count) return 'unknown';
+  const subtotal = `$${taskSpend(task).toFixed(2)}`;
+  if (!unknown) return subtotal;
+  return `${subtotal} known · ${unknown} unknown ${unknown === 1 ? 'attempt' : 'attempts'}`;
 }
 
 /** `git diff --stat` as rows: file, changed lines and a small added/removed bar. */
