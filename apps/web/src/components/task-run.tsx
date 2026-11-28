@@ -765,7 +765,7 @@ export async function renderRun(
         )}
         {task.workflow === 'agent' && task.agent && /\bbudget\b/i.test(waitingMessage ?? '') && (
           <Link
-            href={`/agents/${encodeURIComponent(task.agent)}?tab=settings&section=general`}
+            href={`/projects/${project}/agents/${encodeURIComponent(task.agent)}?tab=settings&section=general`}
             className="mt-2 inline-flex h-8 items-center rounded-lg border bg-background px-3 text-sm font-medium hover:bg-muted"
           >
             Raise {who}&apos;s budget

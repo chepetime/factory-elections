@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Fragment, type ReactNode } from 'react';
 
 /** Agents a text may @mention, by id: their mention renders as a chip linking to the agent. */
-export type MentionNames = Readonly<Record<string, { name: string; avatar: string }>>;
+/** Mentioned agents by id; `href` is their page (`/projects/<project>/agents/<id>`), when known. */
+export type MentionNames = Readonly<Record<string, { name: string; avatar: string; href?: string }>>;
 
 function inline(text: string, key: string, mentions?: MentionNames): ReactNode[] {
   const parts: ReactNode[] = [];
@@ -26,20 +27,28 @@ function inline(text: string, key: string, mentions?: MentionNames): ReactNode[]
     else if (m[5]) {
       const id = m[5].toLowerCase();
       const agent = mentions?.[id];
+      // Agent pages live under a project; without one the mention is a chip, not a link.
+      const chip =
+        'inline-flex items-baseline gap-1 rounded-md bg-orange-500/10 px-1 font-medium text-orange-700 no-underline dark:text-orange-300';
+      const face = agent && (
+        <>
+          <span aria-hidden className="text-[0.9em]">
+            {agent.avatar}
+          </span>
+          {agent.name}
+        </>
+      );
       parts.push(
-        agent ? (
-          <Link
-            key={k}
-            href={`/agents/${id}`}
-            className="inline-flex items-baseline gap-1 rounded-md bg-orange-500/10 px-1 font-medium text-orange-700 no-underline hover:bg-orange-500/20 dark:text-orange-300"
-          >
-            <span aria-hidden className="text-[0.9em]">
-              {agent.avatar}
-            </span>
-            {agent.name}
+        !agent ? (
+          m[0]
+        ) : agent.href ? (
+          <Link key={k} href={agent.href} className={`${chip} hover:bg-orange-500/20`}>
+            {face}
           </Link>
         ) : (
-          m[0]
+          <span key={k} className={chip}>
+            {face}
+          </span>
         ),
       );
     } else

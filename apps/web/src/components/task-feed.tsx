@@ -62,10 +62,12 @@ function Happenings({ events }: { events: IssueEvent[] }) {
 export type Authors = Record<string, { name: string; avatar: string }>;
 
 function CommentBody({
+  project,
   comment,
   reply,
   authors,
 }: {
+  project: string;
   comment: IssueComment;
   reply?: boolean;
   authors: Authors;
@@ -85,7 +87,11 @@ function CommentBody({
         <Markdown
           text={comment.body}
           mentions={Object.fromEntries(
-            (comment.mentions ?? []).flatMap((id) => (authors[id] ? [[id, authors[id]]] : [])),
+            (comment.mentions ?? []).flatMap((id) =>
+              authors[id]
+                ? [[id, { ...authors[id], href: `/projects/${project}/agents/${encodeURIComponent(id)}` }]]
+                : [],
+            ),
           )}
         />
       </div>
@@ -111,9 +117,9 @@ function Thread({
       aria-label={`Comment thread, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
       className="overflow-hidden rounded-xl border bg-card shadow-xs"
     >
-      <CommentBody comment={root} authors={authors} />
+      <CommentBody project={project} comment={root} authors={authors} />
       {replies.map((r) => (
-        <CommentBody key={r.id} comment={r} reply authors={authors} />
+        <CommentBody key={r.id} project={project} comment={r} reply authors={authors} />
       ))}
       <IssueReplyBox
         project={project}
