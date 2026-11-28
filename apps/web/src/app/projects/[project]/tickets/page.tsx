@@ -13,7 +13,7 @@ export async function generateMetadata({
   params: Promise<{ project: string }>;
 }): Promise<Metadata> {
   const { project } = await params;
-  return { title: isProjectName(project) ? await projectTitle(project, 'Tickets') : 'Tickets' };
+  return { title: isProjectName(project) ? await projectTitle(project, 'Remote Tickets') : 'Remote Tickets' };
 }
 
 export default async function TicketsPage({ params }: { params: Promise<{ project: string }> }) {

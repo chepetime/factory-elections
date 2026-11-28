@@ -33,6 +33,18 @@ test('ticket listing uses the registered repository and configured command, with
   assert.equal(calls, 0);
   manager = { kind: 'jira', list_tickets: 'tracker list --project APP' };
   assert.deepEqual(await service.list({ project: 'app' }), { configured: true, text: 'APP-1 Fix login' });
+  // JSON tickets come back parsed too, for the cards.
+  stdout = '[{"number":7,"title":"Fix login","labels":[{"name":"bug","color":"d73a4a"}]}]';
+  assert.deepEqual((await service.list({ project: 'app' })).tickets, [
+    { key: '#7', title: 'Fix login', labels: [{ name: 'bug', color: 'd73a4a' }], assignees: [] },
+  ]);
+  manager = { kind: 'github', list_tickets: 'tracker list --project APP', project_key: 'acme/app' };
+  assert.equal(
+    (await service.list({ project: 'app' })).tickets?.[0]?.url,
+    'https://github.com/acme/app/issues/7',
+    'a GitHub issue links through the project key',
+  );
+  manager = { kind: 'jira', list_tickets: 'tracker list --project APP' };
   stdout = '';
   assert.deepEqual(await service.list({ project: 'app' }), { configured: true, text: '' });
   stopped = 'timeout';

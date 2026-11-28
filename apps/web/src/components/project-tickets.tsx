@@ -1,9 +1,12 @@
 'use client';
+// Remote Tickets: the project's own tracker (Jira, GitHub Issues, Linear…), listed by its configured
+// command. JSON output becomes cards with search and label filters; any other output shows as text.
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { Button } from '@factory/ui/components/button';
+import { TicketCards } from '@/components/remote-ticket-cards';
 import type { TicketList } from '@/lib/tickets';
 
 export function ProjectTickets({
@@ -17,12 +20,19 @@ export function ProjectTickets({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const tickets = list?.tickets;
   return (
     <section className="flex h-full min-h-0 flex-col" aria-labelledby="tickets-heading" aria-busy={pending}>
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-6 py-5">
-        <h1 id="tickets-heading" className="text-lg font-semibold">
-          Tickets
-        </h1>
+        <div>
+          <h1 id="tickets-heading" className="text-lg font-semibold">
+            Remote Tickets
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Open tickets in this project’s tracker
+            {tickets ? ` · ${tickets.length}` : ''}
+          </p>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -50,7 +60,7 @@ export function ProjectTickets({
         ) : !list?.configured ? (
           <div className="flex flex-col items-start gap-3 text-sm">
             <p className="text-muted-foreground">
-              Connect your project’s ticket tracker to list tickets here.
+              Connect your project’s ticket tracker to list its tickets here.
             </p>
             <Link
               href={`/projects/${project}/settings`}
@@ -59,10 +69,23 @@ export function ProjectTickets({
               Configure tickets
             </Link>
           </div>
+        ) : tickets ? (
+          <TicketCards tickets={tickets} raw={list.text} project={project} />
         ) : !list.text ? (
           <p className="text-sm text-muted-foreground">No open tickets. Refresh to check for new work.</p>
         ) : (
-          <pre className="w-max min-w-full font-mono text-sm leading-7">{list.text}</pre>
+          <>
+            <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
+              The list command prints text, so it shows as is. For cards, make it print JSON, for example{' '}
+              <code className="font-mono text-xs">gh issue list --json number,title,labels,state,url</code>,
+              in{' '}
+              <Link href={`/projects/${project}/settings`} className="underline underline-offset-4">
+                ticket settings
+              </Link>
+              .
+            </p>
+            <pre className="w-max min-w-full font-mono text-sm leading-7">{list.text}</pre>
+          </>
         )}
       </div>
     </section>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProjectName, type ProjectSettings } from '@factory/core';
+import { parseTickets, ProjectName, type ProjectSettings } from '@factory/core';
 import type { ProjectStore } from '@factory/adapters-fs';
 import { runShell } from '@factory/adapters-process';
 
@@ -37,6 +37,19 @@ export class TicketService {
       throw new Error(
         `Could not load tickets: ${(result.stderr || result.stdout).trim().slice(-2000) || `command exited with code ${result.code}`}`,
       );
-    return { configured: true, text: result.stdout.trim() };
+    const text = result.stdout.trim();
+    // JSON tickets become cards on the Remote Tickets page; any other output shows as text.
+    const parsed = parseTickets(text);
+    // GitHub output lists `number` without `url` unless asked: link it through the project's repo.
+    const repoKey = manager.kind === 'github' ? manager.project_key?.trim() : undefined;
+    const tickets =
+      parsed && repoKey && /^[\w.-]+\/[\w.-]+$/.test(repoKey)
+        ? parsed.map((t) =>
+            t.url || !/^#\d+$/.test(t.key)
+              ? t
+              : { ...t, url: `https://github.com/${repoKey}/issues/${t.key.slice(1)}` },
+          )
+        : parsed;
+    return { configured: true, text, ...(tickets ? { tickets } : {}) };
   }
 }

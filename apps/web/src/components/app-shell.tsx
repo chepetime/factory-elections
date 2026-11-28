@@ -654,7 +654,7 @@ function Sidebar({
                 href={`/projects/${project}/tickets`}
                 current={/^\/projects\/[^/]+\/tickets(?:\/|$)/.test(pathname)}
               >
-                <Tickets className="size-4 text-muted-foreground" /> Tickets
+                <Tickets className="size-4 text-muted-foreground" /> Remote Tickets
               </SidebarLink>
               <div role="separator" className="my-1 h-px bg-border" />
               {AGENT_PAGES.map(({ segment, label, icon: Icon }) => {

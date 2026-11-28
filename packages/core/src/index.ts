@@ -47,3 +47,4 @@ export * from './run-attention.ts';
 export * from './mentions.ts';
 export * from './review-tickets.ts';
 export * from './worktree-sweep.ts';
+export * from './remote-tickets.ts';
