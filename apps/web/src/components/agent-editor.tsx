@@ -19,7 +19,7 @@ import {
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
 import { EFFORTS } from '@/lib/agent-models';
-import { parseModelRef } from '@factory/core';
+import { boardModelRefusal, parseModelRef } from '@factory/core';
 import { AgentModelSelect, AgentProviderSelect } from './agent-model-select';
 import type { AgentModelOptions } from '@/lib/agent-model-options';
 import { cn } from '@factory/ui/lib/utils';
@@ -324,7 +324,7 @@ export function GeneralForm({
 }) {
   const [value, setValue] = useState(initial);
   const [provider, setProvider] = useState(() => parseModelRef(initial.model).provider);
-  const supportsPickup = provider === 'claude';
+  const supportsPickup = !!value.model && !boardModelRefusal(value.model);
   const { pending, state, save } = useAgentSave(id);
   const f = useId();
   const set = <K extends keyof General>(key: K, v: General[K]) => setValue({ ...value, [key]: v });
@@ -368,7 +368,7 @@ export function GeneralForm({
         <Row
           label="Provider"
           htmlFor={`${f}-provider`}
-          hint={provider !== 'claude' ? 'Board tasks and chats currently require Claude Code.' : undefined}
+          hint={provider !== 'claude' ? 'Chats currently require Claude Code.' : undefined}
         >
           <AgentProviderSelect
             id={`${f}-provider`}

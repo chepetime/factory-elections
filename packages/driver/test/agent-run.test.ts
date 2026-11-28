@@ -166,6 +166,38 @@ test('an agent run works in one guarded session, then the driver commits and ver
   assert.equal((await store.read('demo', task.id)).attempts?.at(-1)?.step, 'agent');
 });
 
+test('a Pi board turn edits through guarded Factory tools and reaches approval', async () => {
+  const ctx = await setup([
+    async (request) => {
+      assert.equal(request.tools, 'none');
+      assert.equal(request.guard, undefined);
+      assert.equal(request.resume, undefined, 'does not resume the previous Claude session');
+      assert.ok(request.maxBudgetUsd);
+      const shell = ctx.grants[0]?.tools?.find((tool) => tool.name === 'shell');
+      assert.ok(shell && request.mcp);
+      assert.equal((await shell.call({ command: 'git push origin HEAD' })).isError, true);
+      assert.equal((await shell.call({ command: 'printf done > feature.txt' })).isError, false);
+      return { text: 'Added feature.txt.', costUsd: 0.1, sessionId: 'pi-session' };
+    },
+  ]);
+  const originalSession = ctx.deps.agentSession!;
+  ctx.deps.agentSession = async (...args) => ({
+    ...(await originalSession(...args)),
+    model: 'pi:openai-codex/gpt-5.6-luna',
+  });
+  ctx.deps.delegation = {
+    grant(options) {
+      ctx.grants.push(options);
+      return { endpoint: { url: 'http://127.0.0.1/mcp', token: 'test' }, revoke() {}, spent: () => 0 };
+    },
+  };
+  await ctx.store.write({ ...ctx.task, agent_session: 'old-session' });
+  const done = await ctx.driver.run('demo', ctx.task.id, { maxAttempts: 1 });
+  assert.equal(done.stage, 'awaiting-approval');
+  assert.equal(done.agent_session, 'pi-session');
+  assert.equal(done.agent_session_provider, 'pi');
+});
+
 test('an agent that asks for help waits, and a reply resumes its session', async () => {
   const ctx = await setup([
     async () => {

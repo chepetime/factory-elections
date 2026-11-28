@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import {
   DEFAULT_STEP_LIMITS,
   protectedPaths,
+  parseModelRef,
+  resumableAgentSession,
   taskTitle,
   taskCommandBlockers,
   hasUncappedUnknownCost,
@@ -20,12 +22,13 @@ import {
 import { readFile } from 'node:fs/promises';
 import { DriverError } from './ports.ts';
 import { MINUTE, errorCost, failureText } from './support.ts';
-import { changeGate, verifyCommandProblem, type VerifyCommands } from './verification.ts';
-import { AGENT_FIX_TURNS, branchGapSteer, changeCheckTool, verificationSteer } from './agent-fixes.ts';
+import { verifyCommandProblem, type VerifyCommands } from './verification.ts';
+import { AGENT_FIX_TURNS, branchGapSteer, verificationSteer } from './agent-fixes.ts';
 import { noChangeBlocked, backgroundWork, steerPrompt, steersNoChange } from './agent-settle.ts';
 import { openPr } from './publication.ts';
 import { retrySpent, runWithResultRetry } from './result-retry.ts';
 import { mergeBase } from './merge-conflicts.ts';
+import { prepareAgentTools } from './agent-shell.ts';
 import type { Driver } from './workflow.ts';
 
 /** Changed files that still hold a conflict marker line. */
@@ -260,11 +263,6 @@ export async function agentRun(
     );
     await d.deps.tasks.write(task);
 
-    const sandbox = {
-      allowed_domains: profile.sandbox?.allowed_domains,
-      allow_write: profile.sandbox?.allow_write,
-    };
-    const guard = d.coderGuard(path, profile, task);
     const access = await d.coderAccess(project, id, task.repo, profile);
     const limits = {
       signal: d.deps.signal,
@@ -272,29 +270,14 @@ export async function agentRun(
       stallMs: DEFAULT_STEP_LIMITS.stall_minutes * MINUTE,
       maxBudgetUsd: Math.max(0.01, left),
     };
-    const grant = d.deps.delegation?.grant({
-      label: `agent ${project}/${id}`,
-      cwd: path,
-      access: 'edit',
-      sandbox,
-      budgetUsd: Math.min(left, DEFAULT_STEP_LIMITS.budget_usd),
-      guard,
-      runner: d.deps.runner,
-      tools: [
-        ...session.tools,
-        changeCheckTool(async () => {
-          const current = await d.deps.tasks.read(project, id);
-          return changeGate(d.deps, path, compare, current.allow_test_changes === true);
-        }),
-      ],
-      ...(limits.signal ? { signal: limits.signal } : {}),
-    });
-    const passEnv = [...(profile.sandbox?.pass_env ?? []), ...session.passEnv];
+    const agentTools = prepareAgentTools(d, task, profile, session, path, compare, left, access.env);
     const started = d.deps.now();
     let outcome: StepAttempt['outcome'] = 'completed';
     let error: string | undefined;
     let costUsd: number | null = null;
-    let sessionId = task.agent_session;
+    const provider = parseModelRef(session.model).provider;
+    const resume = resumableAgentSession(task, provider);
+    let sessionId = resume;
     // The agent's last message: what it says it did, for the PR writer.
     let report = '';
     let saving: Promise<void> = Promise.resolve();
@@ -306,20 +289,15 @@ export async function agentRun(
         {
           ...limits,
           step: 'agent',
-          sandbox,
-          ...(access.env ? { env: access.env } : {}),
-          ...(passEnv.length ? { passEnv } : {}),
+          ...agentTools.request(),
           model: session.model,
           effort: session.effort,
-          tools: 'edit',
           cwd: path,
-          ...(await d.agentExtras(project, session.model, session.systemPrompt)),
+          ...(await d.agentExtras(project, session.model, agentTools.instructions)),
           prompt: session.prompt,
-          guard,
           maxTurns: 300,
           persistSession: true,
-          ...(task.agent_session ? { resume: task.agent_session } : {}),
-          ...(grant ? { mcp: grant.endpoint } : {}),
+          ...(resume ? { resume } : {}),
           // Save the session as soon as it exists: a stopped or crashed call must still resume it,
           // or the next reply starts an agent that remembers nothing of its own work.
           onEvent: (event) => {
@@ -328,7 +306,11 @@ export async function agentRun(
             sessionId = event.id;
             saving = saving.then(async () => {
               const current = await d.deps.tasks.read(project, id);
-              await d.deps.tasks.write({ ...current, agent_session: event.id });
+              await d.deps.tasks.write({
+                ...current,
+                agent_session: event.id,
+                agent_session_provider: provider,
+              });
             });
           },
         },
@@ -360,11 +342,11 @@ export async function agentRun(
       error = failureText(e);
       costUsd = errorCost(e);
     } finally {
-      grant?.revoke();
+      await agentTools.close();
       await access.cleanup();
       await saving.catch(() => undefined);
     }
-    const childCost = grant?.spent() ?? 0;
+    const childCost = agentTools.spent();
     if (childCost) costUsd = (costUsd ?? 0) + childCost;
 
     let committed = false;
@@ -427,7 +409,8 @@ export async function agentRun(
       {
         ...task,
         attempts: [...(task.attempts ?? []), attempt],
-        ...(sessionId ? { agent_session: sessionId } : {}),
+        agent_session: sessionId,
+        agent_session_provider: sessionId ? provider : undefined,
       },
       d.deps.now(),
       'attempt',

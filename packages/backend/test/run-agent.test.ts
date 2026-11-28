@@ -34,9 +34,9 @@ test('resuming a reassigned run selects the new agent or refuses their unsupport
       command,
       task,
       async () => carlos.id,
-      async () => ({ ...carlos, model: 'codex:gpt-6.2-sol' }),
+      async () => ({ ...carlos, model: 'codex:unpriced' }),
     ),
-    /Carlos uses codex:gpt-6.2-sol/,
+    /Carlos: codex:unpriced has no price/,
   );
   assert.equal(
     await handoffAgent(

@@ -2,7 +2,7 @@
 import { access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PROVIDER_CAPABILITIES, ProviderRouter, type ModelRunner } from '@factory/core';
+import { PROVIDER_CAPABILITIES, ProviderRouter, type ModelRun, type ModelRunner } from '@factory/core';
 // A constant only: the Codex adapter has no SDK, so this import stays cheap.
 import { CODEX_APP_SERVER_CAPABILITIES } from '@factory/adapters-codex';
 import * as fsAdapter from '@factory/adapters-fs';
@@ -16,6 +16,13 @@ const step = (name: string): StepPaths => ({
   step: join(DEFINITIONS, 'steps', `${name}.yaml`),
   ladder: join(DEFINITIONS, 'ladders', `${name}.yaml`),
 });
+
+function codexAppServer(request: ModelRun): boolean {
+  return (
+    process.env.FACTORY_CODEX_TRANSPORT === 'app-server' ||
+    (request.tools === 'none' && request.mcp?.tools?.includes('shell') === true)
+  );
+}
 
 /** Every provider behind one ModelRunner; the model reference picks the provider. */
 export function providerRunner(log: (line: string) => void = () => {}): ModelRunner {
@@ -35,24 +42,18 @@ export function providerRunner(log: (line: string) => void = () => {}): ModelRun
         return runPi(request);
       },
     },
-    // FACTORY_CODEX_TRANSPORT=app-server selects the phase 2 app-server runner; the default stays
-    // `codex exec`.
-    codex:
-      process.env.FACTORY_CODEX_TRANSPORT === 'app-server'
-        ? {
-            capabilities: CODEX_APP_SERVER_CAPABILITIES,
-            async run(request) {
-              const { CodexAppServerRunner } = await import('@factory/adapters-codex');
-              return new CodexAppServerRunner({ onProgress: log }).run(request);
-            },
-          }
-        : {
-            capabilities: PROVIDER_CAPABILITIES.codex,
-            async run(request) {
-              const { CodexRunner } = await import('@factory/adapters-codex');
-              return new CodexRunner({ onProgress: log }).run(request);
-            },
-          },
+    codex: {
+      capabilitiesFor: (request) =>
+        codexAppServer(request) ? CODEX_APP_SERVER_CAPABILITIES : PROVIDER_CAPABILITIES.codex,
+      async run(request) {
+        const { CodexAppServerRunner, CodexRunner } = await import('@factory/adapters-codex');
+        return (
+          codexAppServer(request)
+            ? new CodexAppServerRunner({ onProgress: log })
+            : new CodexRunner({ onProgress: log })
+        ).run(request);
+      },
+    },
   });
 }
 

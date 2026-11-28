@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import {
   AGENT_FACTORY_INSTRUCTIONS,
   envNames,
+  boardModelRefusal,
   parseModelRef,
+  resumableAgentSession,
   type AgentProfile,
   type TaskRecord,
   BASE_SYNC_NOTE,
@@ -103,9 +105,8 @@ export async function buildAgentSession(input: {
   allowedEnv?: string;
 }): Promise<AgentSession> {
   const { task, reply, agent, issues, profile } = input;
-  // Codex cannot screen tool calls, and an agent edits the repository: it must run under the guard.
-  if (parseModelRef(agent.model).provider !== 'claude')
-    throw new Conflict(`${agent.name} uses ${agent.model}. Agent runs need a Claude model for now.`);
+  const refusal = boardModelRefusal(agent.model);
+  if (refusal) throw new Conflict(`${agent.name}: ${refusal}`);
   const issue = await issues.get({ project: task.project, key: task.id });
   const report: SessionReport = {};
   const notes = agent.instructions.trim();
@@ -120,11 +121,12 @@ export async function buildAgentSession(input: {
     ...(skills ? [skills] : []),
   ].join('\n\n');
   const unseen = newComments(issue, task);
+  const resumed = resumableAgentSession(task, parseModelRef(agent.model).provider);
   const prompt = reply
-    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}${task.agent_session ? '' : `\n\n${taskText(issue, task)}`}`
-    : task.agent_session && unseen.length
+    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}${resumed ? '' : `\n\n${taskText(issue, task)}`}`
+    : resumed && unseen.length
       ? `New comments on ${issue.key} since your last turn:\n\n${unseen.map((c) => `- ${c}`).join('\n')}`
-      : task.agent_session
+      : resumed
         ? `Continue ${issue.key}.`
         : taskText(issue, task);
   const allowed = new Set(envNames(input.allowedEnv));

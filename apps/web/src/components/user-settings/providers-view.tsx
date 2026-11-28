@@ -17,7 +17,7 @@ const PROVIDER_HINTS: Record<UserProvider, string> = {
   claude: 'Runs tasks, reviews, agents and chats. Models come from the factory catalog.',
   codex:
     'Runs coding steps. Codex cannot list its models: the configured one shows here, and you can add more by id.',
-  pi: 'Models come from pi --list-models. The factory cannot run Pi yet, so these settings take effect when it can.',
+  pi: 'Models come from pi --list-models. Factory can route model calls through Pi.',
 };
 
 /** Every model to show for a provider: what the CLI offers, what you added, and what you turned off. */

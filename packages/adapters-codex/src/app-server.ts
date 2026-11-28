@@ -48,7 +48,7 @@ export const CODEX_APP_SERVER_CAPABILITIES: ProviderCapabilities = {
 };
 
 /** `codex app-server` arguments: the same isolation as `execArgs`, where app-server accepts it. */
-export function appServerArgs(o: { mcp?: McpEndpoint } = {}): string[] {
+export function appServerArgs(o: { mcp?: McpEndpoint; brokered?: boolean } = {}): string[] {
   return [
     'app-server',
     '--listen',
@@ -63,6 +63,18 @@ export function appServerArgs(o: { mcp?: McpEndpoint } = {}): string[] {
     'browser_use',
     '--disable',
     'computer_use',
+    ...(o.brokered
+      ? [
+          '--disable',
+          'shell_tool',
+          '--disable',
+          'plugins',
+          '--disable',
+          'multi_agent',
+          '-c',
+          'web_search="disabled"',
+        ]
+      : []),
     ...mcpArgs(o.mcp),
   ];
 }
@@ -546,6 +558,17 @@ const alive = (pid: number) => {
   }
 };
 
+function stoppedCost(request: ModelRun, turn: AppServerTurn, kind: StopKind): number | null {
+  const spent = usageCostUsd(request.model, turn.usage());
+  return kind === 'budget' && request.maxBudgetUsd !== undefined
+    ? Math.max(request.maxBudgetUsd, spent ?? 0)
+    : spent;
+}
+
+function brokeredShell(request: ModelRun): boolean {
+  return request.tools === 'none' && request.mcp?.tools?.includes('shell') === true;
+}
+
 export class CodexAppServerRunner implements ModelRunner {
   readonly options: CodexAppServerRunnerOptions;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
@@ -577,7 +600,7 @@ export class CodexAppServerRunner implements ModelRunner {
 
     const conn = new Connection(
       o.command ?? 'codex',
-      [...(o.commandArgs ?? []), ...appServerArgs(request.mcp ? { mcp: request.mcp } : {})],
+      [...(o.commandArgs ?? []), ...appServerArgs({ mcp: request.mcp, brokered: brokeredShell(request) })],
       {
         ...(request.cwd ? { cwd: request.cwd } : {}),
         env: {
@@ -685,7 +708,10 @@ export class CodexAppServerRunner implements ModelRunner {
       );
       await race(Promise.race([turnDone, exitedEarly]));
     } catch (error) {
-      if (error instanceof Stop) throw await this.stopped(conn, turn, stopKind!, turnDone);
+      if (error instanceof Stop) {
+        const stopped = await this.stopped(conn, turn, stopKind!, turnDone);
+        throw Object.assign(stopped, { costUsd: stoppedCost(request, turn, stopKind!) });
+      }
       await conn.shutdown(o.exitGraceMs ?? 3_000);
       if (error instanceof CodexRunError) throw error;
       // A server that died during a turn leaves no tree to check: its commands may still run.

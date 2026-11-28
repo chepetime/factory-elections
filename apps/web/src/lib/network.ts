@@ -67,10 +67,9 @@ export interface NetworkInput {
 export const WINDOW_MINUTES = 10;
 
 const AGENTS = [
-  { id: 'claude', name: 'Claude Code', runner: true },
-  { id: 'codex', name: 'Codex', runner: true },
-  // Detected on the machine, but the factory cannot run work on it yet.
-  { id: 'pi', name: 'Pi', runner: false },
+  { id: 'claude', name: 'Claude Code' },
+  { id: 'codex', name: 'Codex' },
+  { id: 'pi', name: 'Pi' },
 ] as const;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -147,7 +146,7 @@ export function buildNetwork({ health, environment, runs, modelCalls, now }: Net
     const calls = recent.filter((c) => c.provider === agent.id);
     const status: NodeStatus = !probe
       ? 'unknown'
-      : !probe.installed || !agent.runner
+      : !probe.installed
         ? 'off'
         : mine.some((r) => !r.waiting)
           ? 'working'
@@ -162,18 +161,15 @@ export function buildNetwork({ health, environment, runs, modelCalls, now }: Net
         ? 'Checking…'
         : !probe.installed
           ? 'Not installed'
-          : !agent.runner
-            ? `Installed, not used${probe.version ? ` · v${probe.version.replace(/^v/, '')}` : ''}`
-            : mine.length
-              ? `${plural(mine.length, 'run')} ${mine.some((r) => !r.waiting) ? 'working' : 'waiting'}`
-              : probe.version
-                ? `v${probe.version.replace(/^v/, '')}`
-                : 'Installed',
+          : mine.length
+            ? `${plural(mine.length, 'run')} ${mine.some((r) => !r.waiting) ? 'working' : 'waiting'}`
+            : probe.version
+              ? `v${probe.version.replace(/^v/, '')}`
+              : 'Installed',
       status,
       lines: [
         ...(probe?.version ? [`Version ${probe.version}.`] : []),
         ...(probe?.error ? [probe.error] : []),
-        ...(agent.runner ? [] : ['The factory has no runner for it yet, so no work goes to it.']),
         ...mine.map((r) => `${r.project} ${r.key}: ${r.waiting ? 'waiting for you' : 'working'}.`),
         `${plural(calls.length, 'model call')} in the last ${WINDOW_MINUTES} minutes.`,
       ],
@@ -199,23 +195,19 @@ export function buildNetwork({ health, environment, runs, modelCalls, now }: Net
     const node = nodes.find((n) => n.id === id)!;
     const calls = recent.filter((c) => c.provider === id);
     const failed = calls.filter((c) => c.outcome === 'failed').length;
-    const runner = AGENTS.find((a) => a.id === id)!.runner;
     return {
       id: `backend-${id}`,
       from: 'backend',
       to: id,
-      status: !runner
-        ? 'unmeasured'
-        : !up || node.status === 'off' || node.status === 'unknown'
+      status:
+        !up || node.status === 'off' || node.status === 'unknown'
           ? 'down'
           : calls.length || node.status === 'working'
             ? 'live'
             : 'idle',
       calls: calls.length,
       failed,
-      label: runner
-        ? `${plural(calls.length, 'model call')}${failed ? `, ${failed} failed` : ''}`
-        : 'No runner yet',
+      label: `${plural(calls.length, 'model call')}${failed ? `, ${failed} failed` : ''}`,
     };
   };
 

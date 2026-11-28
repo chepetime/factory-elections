@@ -59,7 +59,7 @@ SDK tasks now also set `skills: []` and `--disable-slash-commands`, so finding 2
 
 ## App-server (phase 2)
 
-`FACTORY_CODEX_TRANSPORT=app-server` selects `CodexAppServerRunner` (`packages/adapters-codex/src/app-server.ts`). The default stays `codex exec`. The runner drives `codex app-server` over stdio JSON-RPC. `packages/adapters-codex/protocol/` has the schema parts it uses.
+`FACTORY_CODEX_TRANSPORT=app-server` selects `CodexAppServerRunner` (`packages/adapters-codex/src/app-server.ts`). The default stays `codex exec` for ordinary calls. Board tasks use app-server for its streaming token limit, disable the native shell, and route commands through Factory’s guarded MCP tool. The runner drives `codex app-server` over stdio JSON-RPC. `packages/adapters-codex/protocol/` has the schema parts it uses.
 
 `node scripts/capture-provider-fixtures.ts codex-app-server` runs the scenarios through the runner. It writes `app-server-*.jsonl` fixtures. Three runs on 24 Nov 2026, codex-cli 0.172.0, low effort:
 

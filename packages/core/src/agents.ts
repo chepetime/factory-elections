@@ -3,7 +3,8 @@
 // running it with weaker controls.
 import { z } from 'zod';
 import type { ModelResult, ModelRun, ModelRunner } from './ports.ts';
-import { tokenCapForModel } from './prices.ts';
+import type { TaskRecord } from './schemas.ts';
+import { priceFor, tokenCapForModel } from './prices.ts';
 
 export const ProviderId = z.enum(['claude', 'codex', 'pi']);
 export type ProviderId = z.infer<typeof ProviderId>;
@@ -26,6 +27,18 @@ export function parseModelRef(ref: string): { provider: ProviderId; model?: stri
   if (ref.startsWith('codex:')) return { provider: 'codex', model: ref.slice('codex:'.length) };
   if (ref.startsWith('pi:')) return { provider: 'pi', model: ref.slice('pi:'.length) };
   return { provider: 'claude', model: ref };
+}
+
+/** Sessions created before providers were recorded belong to Claude. */
+export function resumableAgentSession(task: TaskRecord, provider: ProviderId): string | undefined {
+  return (task.agent_session_provider ?? 'claude') === provider ? task.agent_session : undefined;
+}
+
+/** Board tasks need a price to convert Codex usage into an interruptible token cap. */
+export function boardModelRefusal(ref: string): string | undefined {
+  if (parseModelRef(ref).provider === 'codex' && !priceFor(ref))
+    return `${ref} has no price in Factory's budget table. Select a priced Codex model for board tasks.`;
+  return undefined;
 }
 
 /** What a provider enforces itself. The backend checks these before it gives the provider work. */
@@ -98,12 +111,12 @@ export const PROVIDER_CAPABILITIES: Record<ProviderId, ProviderCapabilities> = {
     toolGuard: false,
     denyRules: false,
     osSandbox: false,
-    budget: false,
+    budget: true,
     tokenCap: false,
     costReport: true,
     structuredOutput: false,
-    resume: false,
-    mcp: false,
+    resume: true,
+    mcp: true,
     interrupt: true,
     supplementalInput: false,
     callIds: false,
@@ -320,7 +333,7 @@ export class ProviderRouter implements ModelRunner {
     const provider = this.provider(request);
     const runner = this.runners[provider];
     if (!runner) return `${provider} is not available on this backend`;
-    const have = runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
+    const have = runner.capabilitiesFor?.(request) ?? runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
     const unbounded =
       request.maxTokens !== undefined
         ? !have.tokenCap
@@ -342,7 +355,7 @@ export class ProviderRouter implements ModelRunner {
     if (refusal) throw new ProviderRefused(`${request.step ?? 'model call'}: ${refusal}`);
     const provider = this.provider(request);
     const runner = this.runners[provider]!;
-    const have = runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
+    const have = runner.capabilitiesFor?.(request) ?? runner.capabilities ?? PROVIDER_CAPABILITIES[provider];
     // A provider that counts tokens, not dollars, gets the dollar limit as a token cap.
     const bound =
       !have.budget && have.tokenCap && request.maxBudgetUsd !== undefined && request.maxTokens === undefined

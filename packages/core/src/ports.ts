@@ -84,6 +84,7 @@ export interface ModelRunner {
   run(request: ModelRun): Promise<ModelResult>;
   /** What this runner enforces. Absent: the provider defaults in PROVIDER_CAPABILITIES. */
   readonly capabilities?: ProviderCapabilities;
+  capabilitiesFor?(request: ModelRun): ProviderCapabilities;
 }
 
 /**

@@ -6,7 +6,7 @@ import {
   blockingFindings,
   executionBusy,
   pendingAgentHandoff,
-  parseModelRef,
+  boardModelRefusal,
   type AgentProfile,
   runWorking,
   taskActions,
@@ -446,9 +446,11 @@ function taskRunAuthor(
 }
 
 function handoffMessage(agent: AgentProfile, previous: string): string {
-  return parseModelRef(agent.model).provider === 'claude'
-    ? `Reply below to start a new session with ${agent.name}. ${previous}'s work stays on this branch.`
-    : `${agent.name} uses ${agent.model}. Board tasks currently require Claude Code. The last turn belonged to ${previous}.`;
+  const refusal = boardModelRefusal(agent.model);
+  return (
+    refusal ??
+    `Reply below to start a new session with ${agent.name}. ${previous}'s work stays on this branch.`
+  );
 }
 
 export async function renderRun(

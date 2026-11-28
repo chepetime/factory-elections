@@ -46,8 +46,22 @@ describe('buildNetwork', () => {
     // Nothing records CLI traffic, so the map says so instead of drawing it idle.
     expect(edge(snapshot, 'cli-backend').status).toBe('unmeasured');
     expect(node(snapshot, 'pi')).toMatchObject({ status: 'off', detail: 'Not installed' });
-    // Pi has no runner, so its link is not measured even when it is installed.
-    expect(edge(snapshot, 'backend-pi')).toMatchObject({ status: 'unmeasured', label: 'No runner yet' });
+    expect(edge(snapshot, 'backend-pi')).toMatchObject({ status: 'down', label: '0 model calls' });
+  });
+
+  it('shows installed Pi and counts its calls', () => {
+    const snapshot = build({
+      environment: {
+        ...environment,
+        value: {
+          ...environment.value,
+          providers: { ...environment.value.providers, pi: installed },
+        },
+      },
+      modelCalls: [{ provider: 'pi', started_at: minutesAgo(1), outcome: 'completed' }],
+    });
+    expect(node(snapshot, 'pi')).toMatchObject({ status: 'ok', detail: 'v2.1.0' });
+    expect(edge(snapshot, 'backend-pi')).toMatchObject({ status: 'live', calls: 1 });
   });
 
   it('counts model calls per CLI inside the window only, with their failures', () => {

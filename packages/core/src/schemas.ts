@@ -1,6 +1,6 @@
 // Validated shapes shared by the CLI, adapters and web app. Mirrors resources/*.schema.json.
 import { z } from 'zod';
-import { ModelRef } from './agents.ts';
+import { ModelRef, ProviderId } from './agents.ts';
 
 export const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -271,6 +271,7 @@ export const TaskRecord = z.looseObject({
   /** The agent working an `agent` run, and its provider session for resumes. */
   agent: NonEmpty.optional(),
   agent_session: NonEmpty.optional(),
+  agent_session_provider: ProviderId.optional(),
   agent_handoffs: z.array(z.object({ at: Iso, from: NonEmpty.optional(), to: NonEmpty })).optional(),
 });
 export type TaskRecord = z.infer<typeof TaskRecord>;

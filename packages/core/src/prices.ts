@@ -15,6 +15,7 @@ export const PRICE_TABLE_VERSION = '2026-11-27';
  * listed has an unknown cost: it is never priced at a guessed rate.
  */
 export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = {
+  'gpt-6.2-sol': { input: 2, cachedInput: 0.1, output: 10 },
   'gpt-5': { input: 1.25, cachedInput: 0.125, output: 10 },
   'gpt-5-codex': { input: 1.25, cachedInput: 0.125, output: 10 },
   'gpt-5.1': { input: 1.25, cachedInput: 0.125, output: 10 },

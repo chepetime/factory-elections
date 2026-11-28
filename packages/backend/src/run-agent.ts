@@ -1,6 +1,6 @@
 import {
   Conflict,
-  parseModelRef,
+  boardModelRefusal,
   pendingAgentHandoff,
   type AgentProfile,
   type TaskRecord,
@@ -18,8 +18,8 @@ export async function handoffAgent(
   const id = await assigneeForRun();
   if (!id || !pendingAgentHandoff(task, id)) return undefined;
   const agent = await activeAgent(id);
-  if (parseModelRef(agent.model).provider !== 'claude')
-    throw new Conflict(`${agent.name} uses ${agent.model}. Agent runs need a Claude model for now.`);
+  const refusal = boardModelRefusal(agent.model);
+  if (refusal) throw new Conflict(`${agent.name}: ${refusal}`);
   return id;
 }
 

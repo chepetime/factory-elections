@@ -17,7 +17,7 @@ import {
 } from '@factory/ui/components/dialog';
 import { Input } from '@factory/ui/components/input';
 import { Textarea } from '@factory/ui/components/textarea';
-import { type UserProvider } from '@factory/core';
+import { boardModelRefusal, type UserProvider } from '@factory/core';
 import { AgentModelSelect, AgentProviderSelect } from './agent-model-select';
 import type { AgentModelOptions } from '@/lib/agent-model-options';
 
@@ -55,7 +55,7 @@ export function NewAgentButton({ base, models }: { base: string; models: AgentMo
                 avatar: String(form.get('avatar') ?? '').trim() || undefined,
                 description: String(form.get('description') ?? ''),
                 model,
-                auto_pickup: provider === 'claude',
+                auto_pickup: !boardModelRefusal(model),
               });
               if (result.error) return setError(result.error);
               setOpen(false);
@@ -110,9 +110,7 @@ export function NewAgentButton({ base, models }: { base: string; models: AgentMo
             />
           </div>
           {provider !== 'claude' && (
-            <p className="text-xs text-muted-foreground">
-              Board tasks and chats currently require Claude Code.
-            </p>
+            <p className="text-xs text-muted-foreground">Chats currently require Claude Code.</p>
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
