@@ -64,6 +64,15 @@ export async function generateMetadata({
   return { title: issue.ok ? `${issue.value.key} ${clip(issue.value.title)} · ${label}` : `Task · ${label}` };
 }
 
+function runReason(
+  id: string | undefined,
+  latest: { id: string; waiting?: boolean; reason?: string } | undefined,
+  task?: TaskRecord,
+) {
+  if (latest && id === latest.id) return latest.waiting ? undefined : latest.reason;
+  return task ? stageReason(task) : undefined;
+}
+
 export default async function TaskPage({
   params,
   searchParams,
@@ -144,6 +153,7 @@ export default async function TaskPage({
       ? renderRun(project, runId, {
           startFailed: query.start === 'failed',
           fallback: reply,
+          assignee: runId === issue.run?.id ? assigned : undefined,
           runHref: `/projects/${project}/tasks/${issue.key}?panel=run${query.run ? `&run=${query.run}` : ''}`,
         })
       : undefined,
@@ -159,8 +169,7 @@ export default async function TaskPage({
     ),
   ]);
   // Why the shown run waits for a person; a queued turn on the latest run makes it stale.
-  const reason =
-    run?.ok && !(issue.run?.waiting && runId === issue.run.id) ? stageReason(run.value.task) : undefined;
+  const reason = runReason(runId, issue.run, run?.ok ? run.value.task : undefined);
   const runStart = runId && run?.ok ? (run.value.task.created_at ?? '') : undefined;
   const feed = feedItems(issue);
   const before = runStart === undefined ? feed : feed.filter((h) => h.at < runStart);
@@ -483,7 +492,7 @@ export default async function TaskPage({
                     href={panelHref('status')}
                     className="mx-5 mb-2 flex shrink-0 items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
                   >
-                    <span>{runAuthor?.name ?? 'The run'} needs you.</span>
+                    <span>This run needs your attention.</span>
                     <span className="font-medium">Open Status and actions →</span>
                   </Link>
                 )}

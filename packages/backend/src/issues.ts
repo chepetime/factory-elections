@@ -22,6 +22,7 @@ import {
   ProjectName,
   runHeld,
   stageReason,
+  pendingAgentHandoff,
   statusFromStage,
   syncedStatus,
   TaskId,
@@ -307,7 +308,7 @@ export class IssueService {
     const latest = issue.runs.at(-1);
     const task = latest ? runs.get(latest) : undefined;
     const waiting = task ? this.queued(task.project, task.id) : undefined;
-    const reason = task ? stageReason(task) : undefined;
+    const reason = task && !pendingAgentHandoff(task, issue.assignee) ? stageReason(task) : undefined;
     const run = task
       ? {
           id: task.id,
@@ -384,6 +385,12 @@ export class IssueService {
       });
     const runs = new Map(tasks.map((t) => [t.id, t]));
     return { prefix, items: board.items.map((i) => this.view(prefix, i, runs)) };
+  }
+
+  /** Reads the current assignee without importing new runs or taking the issue lock. */
+  async assigneeForRun(project: string, id: string): Promise<string | undefined> {
+    const issue = this.lookup(await this.read(project), id);
+    return issue?.runs.at(-1) === id ? issue.assignee : undefined;
   }
 
   async get(raw: unknown): Promise<IssueView> {

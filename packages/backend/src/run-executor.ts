@@ -171,6 +171,20 @@ export class RunExecutor {
     const task = await this.deps.tasks.read(project, id).catch(() => undefined);
     return task?.workflow === 'agent' && task.worktree ? transcriptEntries(task.worktree.path) : [];
   }
+  private async handoff({ project, id }: RunCommand, agent?: string): Promise<void> {
+    if (!agent) return;
+    const task = await this.deps.tasks.read(project, id);
+    if (task.workflow !== 'agent' || task.agent === agent) return;
+    await this.deps.tasks.write(
+      withStage(
+        { ...task, agent, agent_session: undefined },
+        new Date().toISOString(),
+        task.stage,
+        `Handed the next turn to ${agent}.`,
+      ),
+    );
+  }
+
   /**
    * Runs an accepted command that holds its worker, agent and pool slot, and writes its record.
    * `release` frees the slots once the agent is done, before the record is written.
@@ -286,6 +300,7 @@ export class RunExecutor {
                   since: new Date().toISOString(),
                 }),
             };
+          await this.handoff(command, record.handoff_agent);
           await performCommand(command, driver);
           if (logFailure) throw logFailure;
         },

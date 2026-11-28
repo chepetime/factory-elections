@@ -32,6 +32,7 @@ export const RunRecord = z.object({
   action: TaskCommand,
   command: CommandSchema,
   label: z.string(),
+  handoff_agent: z.string().optional(),
   state: z.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   created_at: z.string(),
   finished_at: z.string().optional(),

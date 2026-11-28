@@ -1,3 +1,4 @@
+import { runLabel, handoffAgent } from './run-agent.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -12,7 +13,6 @@ import {
   taskClass,
   type ModelRunner,
   type TaskControls,
-  type TaskRecord,
   CleanupRecord,
   cleanupBlocker,
   failureOutcome,
@@ -122,20 +122,6 @@ export class BackendService {
   readonly chats: ChatService;
   /** Starts Todo tasks assigned to free agents. The server starts it; tests call `tick`. */
   readonly pickup: AgentPickup;
-  /** What the run's steps are, for the progress line: an agent run has no classifier or reviewer. */
-  private async runLabel(task: TaskRecord, action: string, agent?: string): Promise<string> {
-    if (action === 'follow-up' || task.workflow === 'agent') {
-      const id = (action === 'follow-up' && agent) || task.agent;
-      const name = id ? ((await this.agents.get({ id }).catch(() => undefined))?.name ?? id) : 'Agent';
-      if (action === 'follow-up') return `${name}: follow-up on the open PR → commit → checks`;
-      return action === 'run'
-        ? `${name}: session → commit → checks`
-        : `${name} read your reply: session → commit → checks`;
-    }
-    return action === 'run'
-      ? 'Running classify → code → verify → review'
-      : 'Revising: code → verify → review';
-  }
   /** A task's session: every agent message, tool call and result of its runs, live while one works. */
   async runSession(raw: unknown): Promise<{ entries: SessionEntry[]; live: boolean }> {
     const { project, id } = z.object({ project: ProjectName, id: TaskId }).parse(raw);
@@ -690,6 +676,12 @@ export class BackendService {
       const task = await this.tasks.read(command.project, command.id);
       const blockers = taskCommandBlockers(task, command.action);
       if (blockers.length) throw new Conflict(blockers.map((b) => b.message).join('; '));
+      const handoff = await handoffAgent(
+        command,
+        task,
+        () => this.issues.assigneeForRun(task.project, task.id),
+        (id) => this.agents.active(id),
+      );
       // A run that may have left processes behind blocks the next one on the same worktree.
       const resumed = await recovery.resumeCheck(this, command);
       if (command.action === 'revise') await this.taskTraces.gate(task, 'revise').catch(() => undefined);
@@ -702,7 +694,13 @@ export class BackendService {
         task_id: command.id,
         action: command.action,
         command,
-        label: await this.runLabel(task, command.action, command.agent),
+        label: await runLabel(
+          task,
+          command,
+          async (id) => (await this.agents.get({ id }).catch(() => undefined))?.name ?? id,
+          handoff,
+        ),
+        handoff_agent: handoff,
         state: 'queued',
         created_at: new Date().toISOString(),
         owner_generation: this.generation,
@@ -740,11 +738,8 @@ export class BackendService {
           const task = await this.tasks.read(command.project, command.id).catch(() => undefined);
           // A follow-up runs as its named agent, also on a task the pipeline did.
           const name =
-            command.action === 'follow-up' && command.agent
-              ? command.agent
-              : task?.workflow === 'agent'
-                ? task.agent
-                : undefined;
+            (command.action === 'follow-up' ? command.agent : record.handoff_agent) ||
+            (task?.workflow === 'agent' ? task.agent : undefined);
           if (!name) return undefined;
           const limit = (await this.agents.get({ id: name }).catch(() => undefined))?.concurrency ?? 1;
           return { name, limit };

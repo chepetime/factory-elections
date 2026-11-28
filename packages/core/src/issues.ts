@@ -351,6 +351,13 @@ export function dropAction(
   return { kind: 'set-status', status: to };
 }
 
+/** A different assignee can pick up the next turn of an open agent run. */
+export function pendingAgentHandoff(task: TaskRecord, assignee?: string): boolean {
+  return Boolean(
+    assignee && !task.pr && task.workflow === 'agent' && task.agent !== assignee && !runFinished(task.stage),
+  );
+}
+
 /** A task's latest run, as the board shows it. */
 /**
  * `waiting`: a new turn is queued; the stage is still the old one. `waiting_for`: why it has not started.

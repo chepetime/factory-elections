@@ -121,7 +121,7 @@ export async function buildAgentSession(input: {
   ].join('\n\n');
   const unseen = newComments(issue, task);
   const prompt = reply
-    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}`
+    ? `${input.from === 'factory' ? 'Factory on' : 'The person replied on'} ${issue.key}:\n\n${reply}${task.agent_session ? '' : `\n\n${taskText(issue, task)}`}`
     : task.agent_session && unseen.length
       ? `New comments on ${issue.key} since your last turn:\n\n${unseen.map((c) => `- ${c}`).join('\n')}`
       : task.agent_session

@@ -1,14 +1,18 @@
-import { Bot, CircleCheck } from 'lucide-react';
+import { CircleCheck } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 import {
   approvalBlockers,
   blockingFindings,
   executionBusy,
+  pendingAgentHandoff,
+  parseModelRef,
+  type AgentProfile,
   runWorking,
   taskActions,
   type TaskRecord,
   stageLabel,
+  stageReason,
 } from '@factory/core';
 import { AttentionCard } from '@/components/attention-card';
 import { Disclosure, Fact, Facts, Section } from '@/components/task-panel';
@@ -33,7 +37,7 @@ import { OutputBlock } from '@/components/output-block';
 import { TaskChatComposer } from '@/components/task-chat';
 import { buttonVariants } from '@factory/ui/components/button';
 import { Input } from '@factory/ui/components/input';
-import { AgentAvatar } from '@/components/agent-avatar';
+import { AgentMessage, type RunAuthor } from '@/components/agent-message';
 import { listAgents } from '@/lib/agents';
 import { RunWatch } from '@/components/run-watch';
 import { backgroundRun, readDiff, readTaskControls, type Gate } from '@/lib/factory';
@@ -310,43 +314,6 @@ function DecisionOptions({
   );
 }
 
-/** Who speaks in a run: the workspace agent for an agent run, else Factory's pipeline. */
-export type RunAuthor = { name: string; avatar: string };
-
-export function AgentMessage({
-  at,
-  author,
-  children,
-}: {
-  at?: string;
-  author?: RunAuthor;
-  children: ReactNode;
-}) {
-  return (
-    <div className="group/msg flex gap-3">
-      {author ? (
-        <AgentAvatar agent={author} decorative className="mt-0.5 size-7 text-sm" />
-      ) : (
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground">
-          <Bot className="size-4" aria-hidden />
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="mb-1 text-xs text-muted-foreground">
-          {author?.name ?? 'Factory'}
-          {at && (
-            <span className={SHOW_ON_HOVER.msg}>
-              {' '}
-              · <LocalTime iso={at} format="date-time" />
-            </span>
-          )}
-        </p>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function StepList({
   steps,
   extra,
@@ -466,6 +433,24 @@ export type RunParts = {
  * Loads one factory run and renders its parts. `fallback` replaces the locked composer, so a board
  * task can take comments while its run takes no notes.
  */
+function taskRunAuthor(
+  task: TaskRecord,
+  roster: Awaited<ReturnType<typeof listAgents>> | undefined,
+): RunAuthor | undefined {
+  const found = roster?.ok ? roster.value.find((a) => a.id === task.agent) : undefined;
+  return found
+    ? { name: found.name, avatar: found.avatar }
+    : task.workflow === 'agent' && task.agent
+      ? { name: task.agent, avatar: '🤖' }
+      : undefined;
+}
+
+function handoffMessage(agent: AgentProfile, previous: string): string {
+  return parseModelRef(agent.model).provider === 'claude'
+    ? `Reply below to start a new session with ${agent.name}. ${previous}'s work stays on this branch.`
+    : `${agent.name} uses ${agent.model}. Board tasks currently require Claude Code. The last turn belonged to ${previous}.`;
+}
+
 export async function renderRun(
   project: string,
   id: string,
@@ -473,7 +458,8 @@ export async function renderRun(
     startFailed = false,
     fallback,
     runHref,
-  }: { startFailed?: boolean; fallback?: ReactNode; runHref?: string } = {},
+    assignee,
+  }: { startFailed?: boolean; fallback?: ReactNode; runHref?: string; assignee?: AgentProfile } = {},
 ): Promise<{ ok: true; value: RunParts } | { ok: false; error: string }> {
   // The controls and the background run are independent reads: start them together.
   const [shown, run] = await Promise.all([readTaskControls(project, id), backgroundRun(project, id)]);
@@ -494,12 +480,7 @@ export async function renderRun(
     task.workflow === 'agent' && task.agent ? listAgents() : undefined,
     gate ? readDiff(project, id) : undefined,
   ]);
-  const found = roster?.ok ? roster.value.find((a) => a.id === task.agent) : undefined;
-  const author: RunAuthor | undefined = found
-    ? { name: found.name, avatar: found.avatar }
-    : task.workflow === 'agent' && task.agent
-      ? { name: task.agent, avatar: '🤖' }
-      : undefined;
+  const author = taskRunAuthor(task, roster);
   const gateError = controls.gate_error;
   const diff = diffResult?.ok ? diffResult.value : undefined;
   const phase = taskPhase(controls.execution, run);
@@ -694,8 +675,9 @@ export async function renderRun(
     </>
   );
 
-  const waitingMessage = [...(task.events ?? [])].reverse().find((e) => e.kind.startsWith('stage:'))?.message;
+  const waitingMessage = stageReason(task);
   const who = author?.name ?? 'The factory';
+  const handoff = assignee && pendingAgentHandoff(task, assignee.id) ? assignee : undefined;
   const attention =
     busy || phase === 'unavailable' ? undefined : showReady && gate ? (
       <div className="flex flex-col gap-1">
@@ -741,6 +723,10 @@ export async function renderRun(
             ?.blockers.map((b) => b.message)
             .join('; ')}
         </p>
+      </AttentionCard>
+    ) : handoff ? (
+      <AttentionCard title={`Assigned to ${handoff.name}`} kind="reply">
+        <p className="text-sm">{handoffMessage(handoff, who)}</p>
       </AttentionCard>
     ) : ['blocked', 'failed', 'verification-failed'].includes(task.stage) ? (
       <AttentionCard
