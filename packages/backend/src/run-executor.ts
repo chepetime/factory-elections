@@ -1,6 +1,7 @@
 // Executes one accepted task run: its model calls, driver steps, session log and run record. It
 // holds what is live about each run (abort controller, activity, session) for the service to read.
 import { dirname, join } from 'node:path';
+import type { Halt } from './model-gate.ts';
 import {
   combineCleanup,
   Conflict,
@@ -81,6 +82,8 @@ export interface RunExecutorDeps {
   taskTraces: TaskTraces;
   memory: Pick<MemoryService, 'recording'>;
   user: { get(): Promise<UserSettings> };
+  /** The emergency stop: while it is on, every model call of a run is refused. */
+  halt?: Halt;
   /** The model runner for a run; `log` receives its progress lines. */
   runner(log: (line: string) => void): ModelRunner;
   driver(log: (line: string) => void, runner: ModelRunner, signal: AbortSignal): Driver;
@@ -249,9 +252,12 @@ export class RunExecutor {
           const traced = this.deps.memory.recording(command.project, record.id, sink.runner(ledger, span));
           // Read once per run: a change in user settings applies from the next run.
           const user = await this.deps.user.get();
+          const halt = this.deps.halt;
           const checked: ModelRunner = {
             async run(original) {
               if (logFailure) throw logFailure;
+              const halted = halt?.refusal();
+              if (halted) throw new Conflict(halted);
               const { model, refused } = checkModel(user, original.model);
               if (refused) throw new Conflict(refused);
               const request = {

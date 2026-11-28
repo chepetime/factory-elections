@@ -65,6 +65,19 @@ export async function startBackend(options: ServerOptions) {
     options.detector,
     generation,
   );
+  // The timers that start work by themselves. The emergency stop turns them off; resuming starts them.
+  const startBackground = () => {
+    if (process.env.FACTORY_AGENT_PICKUP !== '0') service.pickup.start();
+    service.features.startTicking();
+    service.tending.startTicking();
+    service.reviewTickets.startTicking();
+  };
+  const stopBackground = () => {
+    service.pickup.stop();
+    service.features.stopTicking();
+    service.tending.stopTicking();
+    service.reviewTickets.stopTicking();
+  };
   // Writes per project since this backend started, for GetVersions.
   const changes = new ChangeCounter(service.storage);
   // Ledger scans can be expensive. Share one refresh across callers and cache it briefly.
@@ -428,6 +441,18 @@ export async function startBackend(options: ServerOptions) {
       StartRun: async (request: Command) => ({ json: JSON.stringify(await service.start(request)) }),
       GetBackground: async (request: Target) => ({ json: JSON.stringify(await service.background(request)) }),
       StopRun: async (request: Target) => ({ text: await service.stopRun(request) }),
+      GetEmergencyStop: async () => ({ json: JSON.stringify(service.halt.get()) }),
+      EmergencyStop: async () => {
+        // The switch goes on before anything is interrupted; then no timer starts new work.
+        const state = await service.halt.stop();
+        stopBackground();
+        return { json: JSON.stringify(state) };
+      },
+      ResumeFactory: async () => {
+        const state = await service.halt.resume();
+        startBackground();
+        return { json: JSON.stringify(state) };
+      },
       ConfirmCleanup: async (request: Target) => ({ text: await service.confirmCleanup(request) }),
       StartProfileCheck: async (request: Target) => ({
         json: JSON.stringify(await service.profileChecks.start(ProjectName.parse(request.project))),
@@ -474,6 +499,8 @@ export async function startBackend(options: ServerOptions) {
           .finally(() => requests.delete(execution));
       };
     }
+    // Read the switch before the first request, so a stop pressed before a restart still holds.
+    await service.halt.load();
     rpc.addService(definition, implementation);
     await new Promise<void>((done, reject) => {
       health.once('error', reject);
@@ -487,11 +514,9 @@ export async function startBackend(options: ServerOptions) {
     trace.record('server.started', { port, effect: true });
     // This process owns the data root now, so runs left by a previous backend can be settled.
     const recovered = await service.recover();
-    if (process.env.FACTORY_AGENT_PICKUP !== '0') service.pickup.start();
     service.reviews.startSweeping();
-    service.features.startTicking();
-    service.tending.startTicking();
-    service.reviewTickets.startTicking();
+    // While the emergency stop holds, the timers that start work stay off until it is released.
+    if (!service.halt.on) startBackground();
     trace.record('server.recovered', recovered);
     const delegation = await service.delegation.start();
     trace.record('server.delegation', { url: delegation });

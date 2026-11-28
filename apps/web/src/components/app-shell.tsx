@@ -49,6 +49,7 @@ import { HarborMark } from '@/components/harbor-mark';
 import { SidebarWork, type IssueSummary } from '@/components/sidebar-work';
 import { SidebarLink } from '@/components/sidebar-link';
 import { UserSidebar } from '@/components/user-sidebar';
+import { EmergencyStopBanner, EmergencyStopButton, EmergencyStopProvider } from '@/components/emergency-stop';
 import { cn } from '@factory/ui/lib/utils';
 import {
   DropdownMenu,
@@ -251,86 +252,89 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-neutral-950 text-foreground">
-      {drawer && (
-        <button
-          type="button"
-          aria-label="Close sidebar"
-          className="fixed inset-0 z-30 bg-black/30 min-[900px]:hidden"
-          onClick={() => setDrawer(false)}
-        />
-      )}
-      <div
-        ref={drawerRef}
-        inert={narrow && !drawer}
-        className={cn(
-          'flex shrink-0 bg-neutral-950 max-[899px]:fixed max-[899px]:inset-y-0 max-[899px]:left-0 max-[899px]:z-40 max-[899px]:shadow-xl max-[899px]:transition-transform max-[899px]:duration-200 max-[899px]:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-          !drawer && 'max-[899px]:-translate-x-full',
+    <EmergencyStopProvider>
+      <div className="relative flex h-dvh overflow-hidden bg-neutral-950 text-foreground">
+        {drawer && (
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            className="fixed inset-0 z-30 bg-black/30 min-[900px]:hidden"
+            onClick={() => setDrawer(false)}
+          />
         )}
-      >
-        <Rail pathname={pathname} />
-        {!global && (
-          // The sidebar and the main container form one light panel on the black frame.
-          <div className="flex bg-sidebar min-[900px]:my-2 min-[900px]:rounded-l-xl">
-            {user ? (
-              <UserSidebar width={width} onClose={() => setDrawer(false)} />
-            ) : (
-              <Sidebar
-                width={width}
-                setWidth={setWidth}
-                projects={projects}
-                project={project}
-                current={current}
-                tasks={tasks}
-                activeId={params.id}
-                onPick={pick}
-                onRefresh={refresh}
-                onClose={() => setDrawer(false)}
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      <main
-        // Same panel on every page, so the container keeps its place; only the sidebar comes and goes.
-        className={cn(
-          'flex min-w-0 flex-1 flex-col min-[900px]:my-2 min-[900px]:mr-2',
-          // The homepage draws its own background, so it has no panel or raised container.
-          home ? 'overflow-hidden min-[900px]:rounded-xl' : 'bg-sidebar p-2',
-          !home && (global ? 'min-[900px]:rounded-xl' : 'min-[900px]:rounded-r-xl min-[900px]:pl-0'),
-        )}
-      >
         <div
+          ref={drawerRef}
+          inert={narrow && !drawer}
           className={cn(
-            'flex min-h-0 flex-1 flex-col overflow-hidden',
-            !home && 'rounded-xl border bg-background shadow-xs',
+            'flex shrink-0 bg-neutral-950 max-[899px]:fixed max-[899px]:inset-y-0 max-[899px]:left-0 max-[899px]:z-40 max-[899px]:shadow-xl max-[899px]:transition-transform max-[899px]:duration-200 max-[899px]:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+            !drawer && 'max-[899px]:-translate-x-full',
           )}
         >
-          <div className="flex items-center gap-2 border-b bg-background px-3 py-2 min-[900px]:hidden">
-            <button
-              type="button"
-              aria-label="Open sidebar"
-              ref={openButton}
-              className={railButton}
-              onClick={() => setDrawer(true)}
-            >
-              <MenuIcon className="size-4" />
-            </button>
-            <span className="truncate text-sm font-medium">
-              {global ? 'Harbor Lighthouse' : user ? 'User settings' : (project ?? 'Harbor Lighthouse')}
-            </span>
-          </div>
-          {fullBleed ? (
-            <div className="relative min-h-0 flex-1">{children}</div>
-          ) : (
-            <div className="relative min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-5xl px-6 py-6">{children}</div>
+          <Rail pathname={pathname} />
+          {!global && (
+            // The sidebar and the main container form one light panel on the black frame.
+            <div className="flex bg-sidebar min-[900px]:my-2 min-[900px]:rounded-l-xl">
+              {user ? (
+                <UserSidebar width={width} onClose={() => setDrawer(false)} />
+              ) : (
+                <Sidebar
+                  width={width}
+                  setWidth={setWidth}
+                  projects={projects}
+                  project={project}
+                  current={current}
+                  tasks={tasks}
+                  activeId={params.id}
+                  onPick={pick}
+                  onRefresh={refresh}
+                  onClose={() => setDrawer(false)}
+                />
+              )}
             </div>
           )}
         </div>
-      </main>
-    </div>
+
+        <main
+          // Same panel on every page, so the container keeps its place; only the sidebar comes and goes.
+          className={cn(
+            'flex min-w-0 flex-1 flex-col min-[900px]:my-2 min-[900px]:mr-2',
+            // The homepage draws its own background, so it has no panel or raised container.
+            home ? 'overflow-hidden min-[900px]:rounded-xl' : 'bg-sidebar p-2',
+            !home && (global ? 'min-[900px]:rounded-xl' : 'min-[900px]:rounded-r-xl min-[900px]:pl-0'),
+          )}
+        >
+          <div
+            className={cn(
+              'flex min-h-0 flex-1 flex-col overflow-hidden',
+              !home && 'rounded-xl border bg-background shadow-xs',
+            )}
+          >
+            <EmergencyStopBanner />
+            <div className="flex items-center gap-2 border-b bg-background px-3 py-2 min-[900px]:hidden">
+              <button
+                type="button"
+                aria-label="Open sidebar"
+                ref={openButton}
+                className={railButton}
+                onClick={() => setDrawer(true)}
+              >
+                <MenuIcon className="size-4" />
+              </button>
+              <span className="truncate text-sm font-medium">
+                {global ? 'Harbor Lighthouse' : user ? 'User settings' : (project ?? 'Harbor Lighthouse')}
+              </span>
+            </div>
+            {fullBleed ? (
+              <div className="relative min-h-0 flex-1">{children}</div>
+            ) : (
+              <div className="relative min-h-0 flex-1 overflow-y-auto">
+                <div className="mx-auto max-w-5xl px-6 py-6">{children}</div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    </EmergencyStopProvider>
   );
 }
 
@@ -447,12 +451,15 @@ function Rail({ pathname }: { pathname: string }) {
         ))}
       </div>
 
+      <div className="mt-auto flex flex-col items-center">
+        <EmergencyStopButton />
+      </div>
       <Link
         href="/settings"
         aria-label="Settings"
         title="Settings"
         aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
-        className={cn(railItem, 'mt-auto mb-2 shrink-0', pathname.startsWith('/settings') && railActive)}
+        className={cn(railItem, 'mb-2 shrink-0', pathname.startsWith('/settings') && railActive)}
       >
         <Settings className="size-4" />
       </Link>

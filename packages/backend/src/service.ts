@@ -43,6 +43,7 @@ import {
 } from '@factory/agents';
 import { FeatureService } from './features.ts';
 import { gatedRunner, reviewRefusal } from './model-gate.ts';
+import { emergencyStopFor, type EmergencyStop } from './emergency-stop.ts';
 import { IssueService } from './issues.ts';
 import { approveProfile, ensureProfileDraft, profileStatus } from './profile-draft.ts';
 import { removeWorktree } from '@factory/adapters-git';
@@ -84,6 +85,8 @@ export const DRAIN_GRACE_MS = Number(process.env.FACTORY_DRAIN_GRACE_MS ?? 5 * 6
 
 export class BackendService {
   readonly storage: DataStorage;
+  /** The emergency stop: while it is on, nothing starts and every model call is refused. */
+  readonly halt: EmergencyStop;
   readonly tasks: TaskStore;
   readonly team: TeamService;
   readonly profileChecks: ProfileChecks;
@@ -167,6 +170,7 @@ export class BackendService {
     this.root = root;
     this.generation = generation;
     this.storage = storageFor(root);
+    this.halt = emergencyStopFor(this);
     // Reviews read their state from storage; the pool caches that count for all its waiters.
     this.pool = new AgentPool({ max: MAX_AGENTS, external: () => this.reviews.agentsInUse() });
     this.dispatcher = new Dispatcher({ workers: taskWorkers(), pool: this.pool });
@@ -203,7 +207,7 @@ export class BackendService {
     this.experiments = new ExperimentStore(root, this.storage);
     this.prReviewRecords = new PrReviewStore(root, this.storage);
     this.outcomes = new OutcomeStore(root, this.storage);
-    const base = gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user);
+    const base = gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user, this.halt);
     this.delegation = new DelegationServer({
       // Children of a traced call carry `traceParent`; other calls pass through untraced.
       runner: this.traces.runner(base, () => undefined),
@@ -211,7 +215,7 @@ export class BackendService {
       traceParent: (token) => this.traces.grantParent(token),
     });
     this.reviews.delegation = this.delegation;
-    this.reviews.modelRefusal = (model) => reviewRefusal(this.user, model);
+    this.reviews.modelRefusal = (model) => reviewRefusal(this.user, model, this.halt);
     this.memory = new MemoryService(
       root,
       (project) => this.traces.runner(base, () => ({ trace_id: newTraceId(), project }), 'memory-review'),
@@ -278,6 +282,7 @@ export class BackendService {
       runner: (log) => this.runner ?? composeDriver(this.root, log).deps.runner,
       driver: (log, runner, signal) => this.driver(log, runner, signal),
       stopRequested: (runId) => this.dispatcher.stopRequested(runId),
+      halt: this.halt,
       receipt: (project, id) => this.issueReceipt(project, id),
       kick: () => this.pickup?.kick(),
       generation,
@@ -323,13 +328,13 @@ export class BackendService {
       blocker: (p) => this.runBlocker(p),
       route: async (task) => {
         const runner = this.traces.runner(
-          gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user),
+          gatedRunner(() => this.runner ?? composeDriver(this.root).deps.runner, this.user, this.halt),
           () => ({ trace_id: newTraceId(), project: task.project }),
           'model',
         );
         return routeTask({ task, agents: await this.agents.list(), runner });
       },
-      accepting: () => this.dispatcher.accepting,
+      accepting: () => this.dispatcher.accepting && !this.halt.on,
       log: (line) => process.stderr.write(`${line}\n`),
     });
     this.reviewLoop = new ReviewLoop({
@@ -434,6 +439,7 @@ export class BackendService {
           })),
         ),
       slot: () => this.pool.tryAcquire(),
+      halted: () => this.halt.on,
       storage: this.storage,
       log: (line) => process.stderr.write(`${line}\n`),
     });
@@ -666,7 +672,7 @@ export class BackendService {
       throw new Error('Only run, revise, follow-up and check can be scheduled');
     if (command.action === 'follow-up' && !command.agent)
       throw new Conflict('Name the agent for the follow-up.');
-    const unknown = recoveryBlocker(this.recovery, command.project, command.id);
+    const unknown = this.halt.refusal() ?? recoveryBlocker(this.recovery, command.project, command.id);
     if (unknown) throw new Conflict(unknown);
     const reservation = this.dispatcher.reserve();
     if (!reservation) throw new Conflict('Backend is stopping or its queue is full');

@@ -126,6 +126,9 @@ service Factory {
   rpc GetBackground(Target) returns (Snapshot);
   rpc ClearLog(Target) returns (Text);
   rpc StopRun(Target) returns (Text);
+  rpc GetEmergencyStop(Empty) returns (Snapshot);
+  rpc EmergencyStop(Empty) returns (Snapshot);
+  rpc ResumeFactory(Empty) returns (Snapshot);
   rpc ConfirmCleanup(Target) returns (Text);
   rpc StartProfileCheck(Target) returns (Snapshot);
   rpc GetProfileCheck(Target) returns (Snapshot);

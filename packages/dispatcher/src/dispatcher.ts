@@ -141,6 +141,11 @@ export class Dispatcher {
     return this.completions.get(run);
   }
 
+  /** The ids of every run accepted and not settled, queued or working. */
+  activeRuns(): string[] {
+    return [...this.completions.keys()];
+  }
+
   /** Every active job's completion. */
   pending(): Promise<void>[] {
     return [...this.completions.values()];

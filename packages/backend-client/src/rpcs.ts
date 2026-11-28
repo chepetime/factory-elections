@@ -123,6 +123,12 @@ export const RPCS = {
   GetBackground: ['Target', 'Snapshot'],
   ClearLog: ['Target', 'Text'],
   StopRun: ['Target', 'Text'],
+  /** The emergency stop's switch (`EmergencyStopState` as json). */
+  GetEmergencyStop: ['Empty', 'Snapshot'],
+  /** Turns the emergency stop on and interrupts every agent; returns the switch. */
+  EmergencyStop: ['Empty', 'Snapshot'],
+  /** Turns the emergency stop off so work can start again; returns the switch. */
+  ResumeFactory: ['Empty', 'Snapshot'],
   ConfirmCleanup: ['Target', 'Text'],
   StartProfileCheck: ['Target', 'Snapshot'],
   GetProfileCheck: ['Target', 'Snapshot'],

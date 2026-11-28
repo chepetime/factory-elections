@@ -116,6 +116,13 @@ export class Executions {
     return true;
   }
 
+  /** Stops every execution that runs now; each finalizes as `cancelled`. Returns how many. */
+  interruptAll(): number {
+    const keys = [...this.live.keys()];
+    for (const key of keys) this.interrupt(key);
+    return keys.length;
+  }
+
   /** Resolves when the work under the key has finalized. */
   settled(key: string): Promise<void> {
     return this.live.get(key)?.done ?? Promise.resolve();

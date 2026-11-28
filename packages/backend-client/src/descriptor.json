@@ -567,6 +567,18 @@
                   "requestType": "Target",
                   "responseType": "Text"
                 },
+                "GetEmergencyStop": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "EmergencyStop": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
+                "ResumeFactory": {
+                  "requestType": "Empty",
+                  "responseType": "Snapshot"
+                },
                 "ConfirmCleanup": {
                   "requestType": "Target",
                   "responseType": "Text"

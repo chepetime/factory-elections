@@ -652,6 +652,45 @@ test('StopRun aborts the active run, and the task says you stopped it', async (t
   assert.match(task.events!.at(-1)!.message, /Stopped by you/);
 });
 
+test('the emergency stop interrupts the active run, refuses new runs until resumed', async (t) => {
+  let signals = 0;
+  const runner: ModelRunner = {
+    run: (request) =>
+      new Promise((_, fail) => {
+        if (request.signal) signals++;
+        request.signal?.addEventListener('abort', () =>
+          fail(Object.assign(new Error('model run stopped: aborted'), { kind: 'aborted' })),
+        );
+      }),
+  };
+  const { server, id } = await fixture(t, runner);
+  assert.deepEqual(JSON.parse((await backendCall('GetEmergencyStop', {})).json), { on: false });
+  await backendCall('StartRun', { project: 'demo', id, action: 'run' });
+  for (let i = 0; i < 200 && signals === 0; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(signals, 1);
+
+  const stopped = JSON.parse((await backendCall('EmergencyStop', {})).json);
+  assert.equal(stopped.on, true);
+  assert.ok(stopped.since);
+  assert.deepEqual(stopped.stopped, { runs: 1, reviews: 0, executions: 0 });
+  const run = await finished(id);
+  assert.equal(run.state, 'failed');
+
+  await assert.rejects(
+    backendCall('StartRun', { project: 'demo', id, action: 'run' }),
+    /emergency stop is on/,
+  );
+  assert.equal(server.service.isScheduled('demo', id), false, 'a refused start queues nothing');
+  assert.equal(JSON.parse((await backendCall('GetEmergencyStop', {})).json).on, true);
+
+  assert.deepEqual(JSON.parse((await backendCall('ResumeFactory', {})).json), { on: false });
+  await backendCall('StartRun', { project: 'demo', id, action: 'run' });
+  for (let i = 0; i < 200 && signals < 2; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(signals, 2, 'after resuming, a run calls the model again');
+  await backendCall('StopRun', { project: 'demo', id });
+  await finished(id);
+});
+
 test('a stopped call that cannot vouch for its processes leaves the run cleanup uncertain', async (t) => {
   let signals = 0;
   const runner: ModelRunner = {

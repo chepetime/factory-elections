@@ -68,6 +68,8 @@ export interface TendingDeps {
   runner(task: TaskRecord): ModelRunner;
   /** Takes an agent slot at once, or returns undefined when every slot is in use. */
   slot(): Promise<(() => void) | undefined>;
+  /** True while the emergency stop is on: no pass runs, so nothing is pushed, posted or started. */
+  halted?: () => boolean;
   storage: {
     readDocument(path: string): Promise<unknown>;
     writeDocument(path: string, data: unknown): Promise<void>;
@@ -284,6 +286,7 @@ export class TendingService {
     return (this.ticking ??= this.pass().finally(() => (this.ticking = undefined)));
   }
   private async pass(): Promise<void> {
+    if (this.deps.halted?.()) return;
     for (const { name } of await this.deps.projects.list()) {
       const settings = await this.deps.settings(name).catch(() => undefined);
       if (!settings) continue;
@@ -338,7 +341,7 @@ export class TendingService {
   /** Tends one PR once: reads it, picks the next action and does it. */
   async tend(task: TaskRecord, settings: ProjectSettings): Promise<TendAction | undefined> {
     const key = `${task.project}/${task.id}`;
-    if (this.busy.has(key) || !task.pr || !task.worktree) return undefined;
+    if (this.deps.halted?.() || this.busy.has(key) || !task.pr || !task.worktree) return undefined;
     this.busy.add(key);
     try {
       const number = Number(/\/pull\/(\d+)/.exec(task.pr.url)?.[1]);

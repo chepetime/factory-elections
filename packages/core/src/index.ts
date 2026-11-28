@@ -19,6 +19,7 @@ export * from './trace.ts';
 export * from './metrics.ts';
 export * from './run-signals.ts';
 export * from './retro.ts';
+export * from './emergency-stop.ts';
 export * from './metrics-schema.ts';
 export * from './spend-caps.ts';
 export * from './spend-spikes.ts';

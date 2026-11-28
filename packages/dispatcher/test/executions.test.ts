@@ -90,3 +90,16 @@ test('drain refuses new work, interrupts what outlasts the grace period, and wai
   assert.equal(pool.inUse(), 0);
   await assert.rejects(executions.submit(spec('p/b').value), /shutting down/);
 });
+
+test('interruptAll stops every running execution and counts them', async () => {
+  const { pool, executions } = setup();
+  const a = spec('p/a');
+  const b = spec('p/b');
+  await executions.submit(a.value);
+  await executions.submit(b.value);
+  assert.equal(executions.interruptAll(), 2);
+  await Promise.all([executions.settled('p/a'), executions.settled('p/b')]);
+  assert.deepEqual([...a.ends, ...b.ends], [{ outcome: 'cancelled' }, { outcome: 'cancelled' }]);
+  assert.equal(pool.inUse(), 0);
+  assert.equal(executions.interruptAll(), 0);
+});
