@@ -27,7 +27,12 @@ export async function GET(_request: Request, ctx: { params: Promise<{ project: s
         : undefined,
       agent:
         i.assignee && agents.get(i.assignee)
-          ? { id: i.assignee, name: agents.get(i.assignee)!.name, avatar: agents.get(i.assignee)!.avatar }
+          ? {
+              id: i.assignee,
+              name: agents.get(i.assignee)!.name,
+              avatar: agents.get(i.assignee)!.avatar,
+              model: agents.get(i.assignee)!.model,
+            }
           : undefined,
     })),
   );

@@ -14,6 +14,8 @@ import type {
   NodeKind,
   NodeStatus,
 } from '@/lib/network';
+import { ProviderId } from '@factory/core';
+import { ProviderIcon } from '@/components/provider-icon';
 import { cn } from '@factory/ui/lib/utils';
 
 const POLL_MS = 5000;
@@ -168,6 +170,7 @@ function Card({
   const place = PLACE[node.id];
   if (!place) return null;
   const Icon = ICON[node.kind];
+  const provider = ProviderId.safeParse(node.id);
   const status = STATUS[node.status];
   return (
     <button
@@ -189,7 +192,11 @@ function Card({
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        {provider.success ? (
+          <ProviderIcon provider={provider.data} />
+        ) : (
+          <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        )}
         <span className="min-w-0 truncate text-sm font-medium">{node.name}</span>
       </span>
       <span className="truncate text-xs text-muted-foreground">{node.detail}</span>

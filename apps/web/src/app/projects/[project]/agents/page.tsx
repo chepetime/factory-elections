@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { parseModelRef } from '@factory/core';
+import { ProviderIcon } from '@/components/provider-icon';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { LocalTime } from '@/components/local-time';
 import { NewAgentButton } from '@/components/new-agent-dialog';
@@ -160,7 +162,12 @@ export default async function AgentsPage({
                         {agent.archived_at ? 'Archived' : working ? 'Working' : 'Idle'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{modelName(agent.model)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      <span className="inline-flex items-center gap-2">
+                        <ProviderIcon provider={parseModelRef(agent.model).provider} model={agent.model} />
+                        {modelName(agent.model)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {last ? <LocalTime iso={last} format="date-time" /> : 'Not yet'}
                     </td>

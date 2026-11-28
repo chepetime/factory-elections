@@ -1,8 +1,9 @@
 'use client';
 // The sidebar's work lists: open board tasks, then their agents (runs) grouped by what they need.
-import { Bot, LoaderCircle } from 'lucide-react';
+import { Bot, Circle, Clock3, LoaderCircle } from 'lucide-react';
 import {
   ATTENTION_LABELS,
+  parseModelRef,
   runAttention,
   runNeed,
   type IssueStatus,
@@ -12,6 +13,7 @@ import {
 import { STATUS } from '@/components/task-status';
 import { cn } from '@factory/ui/lib/utils';
 import { SidebarLink } from '@/components/sidebar-link';
+import { ProviderIcon } from '@/components/provider-icon';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { SidebarTaskMenu } from '@/components/sidebar-task-menu';
 import { useEffect, useState } from 'react';
@@ -28,7 +30,7 @@ export interface IssueSummary {
   /** `waiting`: a new turn is queued until the agent is free. `owned`: a live run holds the task. */
   run?: { stage: Stage; waiting?: boolean; owned?: boolean };
   /** The agent assigned to the task. */
-  agent?: { id: string; name: string; avatar: string };
+  agent?: { id: string; name: string; avatar: string; model: string };
 }
 
 // The groups come from the shared rule; a rejected run ("closed") is not listed.
@@ -53,6 +55,27 @@ function reason(id: Group, i: IssueSummary): string | undefined {
 const OPEN: IssueStatus[] = ['in_progress', 'in_review', 'blocked', 'todo', 'backlog'];
 /** Done agents older than this leave the list; the board keeps them. */
 const DONE_DAYS = 7;
+
+function AgentActivity({ section, issue }: { section: Group; issue: IssueSummary }) {
+  const status = reason(section, issue);
+  const Icon = section === 'working' ? LoaderCircle : issue.run?.waiting ? Clock3 : Circle;
+  const label = section === 'working' ? 'Working' : issue.run?.waiting ? 'Waiting' : status;
+  return (
+    <span title={label} className="inline-flex size-3.5 shrink-0 items-center justify-center">
+      <Icon
+        aria-hidden
+        className={cn(
+          'size-full',
+          section === 'working'
+            ? 'text-amber-600 motion-safe:animate-spin dark:text-amber-400'
+            : 'text-muted-foreground/60',
+          !label && 'size-1.5 fill-current',
+        )}
+      />
+      {label && <span className="sr-only">{label}</span>}
+    </span>
+  );
+}
 
 function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -156,7 +179,12 @@ export function SidebarWork({
                 <ul className="flex flex-col gap-px">
                   {members.map((i) => (
                     <li key={i.key} className="group/row relative">
-                      <SidebarLink href={href(i.key)} current={i.key === activeKey} className="pr-8 pl-2">
+                      <SidebarLink
+                        href={href(i.key)}
+                        current={i.key === activeKey}
+                        title={`${i.key} ${i.title}`}
+                        className="gap-1.5 pr-8 pl-2"
+                      >
                         {i.agent ? (
                           <span title={i.agent.name} className="shrink-0">
                             <AgentAvatar agent={i.agent} size="sm" />
@@ -169,24 +197,20 @@ export function SidebarWork({
                             <Bot className="size-3 text-muted-foreground" aria-label="Pipeline run" />
                           </span>
                         )}
+                        {i.agent?.model ? (
+                          <ProviderIcon
+                            provider={parseModelRef(i.agent.model).provider}
+                            model={i.agent.model}
+                          />
+                        ) : (
+                          <span className="size-4 shrink-0" aria-hidden />
+                        )}
                         <span className={KEY}>{i.key}</span>
                         <span className="min-w-0 flex-1 truncate">{i.title}</span>
-                        <span className="shrink-0 text-xs text-foreground/75 tabular-nums">
+                        <span className="w-[3ch] shrink-0 text-right text-xs text-foreground/75 tabular-nums">
                           {ago(i.updated_at)}
                         </span>
-                        {section.id === 'working' && (
-                          <LoaderCircle
-                            className="size-3.5 shrink-0 text-amber-600 motion-safe:animate-spin dark:text-amber-400"
-                            aria-label="Working"
-                          />
-                        )}
-                        {/* The heading names the state; a row adds its reason only when the heading does not say it. */}
-                        {reason(section.id, i) && (
-                          <span className="shrink-0 text-xs text-foreground/75">{reason(section.id, i)}</span>
-                        )}
-                        {i.run!.waiting && (
-                          <span className="shrink-0 text-xs text-foreground/75">waiting</span>
-                        )}
+                        <AgentActivity section={section.id} issue={i} />
                         {section.id === 'done' && <span className="sr-only">, pull request opened</span>}
                       </SidebarLink>
                       {menu(i)}
