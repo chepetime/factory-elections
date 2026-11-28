@@ -2,7 +2,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { backendCall } from '@factory/backend-client';
-import { Issue, IssueStatus, QueueWait, Stage } from '@factory/core';
+import { Issue, IssueStatus, QueueWait, RemoteLink, Stage } from '@factory/core';
 import { backendError, type Result } from '@/lib/factory';
 import { cache } from 'react';
 
@@ -48,7 +48,8 @@ type Method =
   | 'CommentIssue'
   | 'FollowUpIssue'
   | 'ArchiveIssue'
-  | 'DeleteIssue';
+  | 'DeleteIssue'
+  | 'PromoteTickets';
 async function call(method: Method, project: string, body: object): Promise<unknown> {
   return JSON.parse((await backendCall(method, { project, json: JSON.stringify(body) })).json);
 }
@@ -67,6 +68,14 @@ export function createIssueRun(project: string, input: object): Promise<Result<I
 }
 export function updateIssueRun(project: string, input: object): Promise<Result<IssueView>> {
   return attempt(async () => IssueView.parse(await call('UpdateIssue', project, input)));
+}
+const Promoted = z.object({
+  created: z.array(IssueView),
+  skipped: z.array(z.object({ key: z.string(), task: z.string() })),
+});
+/** One Backlog task per remote ticket; tickets another task already links come back as skipped. */
+export function promoteTicketsRun(project: string, tickets: RemoteLink[]) {
+  return attempt(async () => Promoted.parse(await call('PromoteTickets', project, { tickets })));
 }
 export function moveIssueRun(project: string, key: string, to: IssueStatus) {
   return attempt(async () => MoveResult.parse(await call('MoveIssue', project, { key, to })));

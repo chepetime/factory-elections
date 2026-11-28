@@ -28,6 +28,7 @@ import {
   type DropAction,
   type FollowUpKind,
   PlanDate,
+  RemoteLink,
   followUpAgent,
   type ProjectSettings,
   type Stage,
@@ -97,6 +98,7 @@ const CreateInput = z.object({
   jira_key: z.string().trim().max(100).optional(),
   /** `you` from the board; an agent's id when its tool creates the task. */
   created_by: z.string().min(1).max(100).default('you'),
+  remote_tickets: z.array(RemoteLink).max(50).default([]),
 });
 const UpdateInput = z.object({
   project: ProjectName,
@@ -111,6 +113,13 @@ const UpdateInput = z.object({
   due_date: PlanDate.nullable().optional(),
   /** Keys of this project's tickets that must be Done first; [] clears them. */
   blocked_by: z.array(Key).max(20).optional(),
+  /** The tracker tickets this task works on, as the whole new list; [] unlinks them all. */
+  remote_tickets: z.array(RemoteLink).max(50).optional(),
+});
+const PromoteInput = z.object({
+  project: ProjectName,
+  /** Tickets from the Remote Tickets page; each becomes one Backlog task linked to it. */
+  tickets: z.array(RemoteLink).min(1).max(200),
 });
 const MoveInput = z.object({ project: ProjectName, key: Key, to: IssueStatus });
 const FollowUpInput = z.object({
@@ -150,9 +159,59 @@ function firstLine(text: string): string {
   return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
+/** The run's Jira key: the task's own, else its first linked ticket that has a Jira-style key. */
+function jiraKeyOf(issue: Issue): string | undefined {
+  return issue.jira_key ?? issue.remote_tickets.find((l) => /^[A-Z][A-Z0-9]+-\d+$/.test(l.key))?.key;
+}
+
+/** Links by key, first one kept: a key links a task to a ticket once. */
+function unique(links: RemoteLink[]): RemoteLink[] {
+  const seen = new Set<string>();
+  return links.filter((l) => !seen.has(l.key) && seen.add(l.key));
+}
+
+/** The issue with its remote tickets replaced by `links`, and an event per link changed. */
+function relink(
+  issue: Issue,
+  links: RemoteLink[] | undefined,
+  at: string,
+  events: { at: string; kind: string; message: string }[],
+): Issue {
+  if (!links) return issue;
+  const changed = linkChanges(issue.remote_tickets, links, at);
+  events.push(...changed);
+  return changed.length ? { ...issue, remote_tickets: unique(links) } : issue;
+}
+
+/** Timeline events for the links added and removed between two lists. */
+function linkChanges(before: RemoteLink[], after: RemoteLink[], at: string) {
+  const had = new Set(before.map((l) => l.key));
+  const has = new Set(after.map((l) => l.key));
+  return [
+    ...[...has]
+      .filter((k) => !had.has(k))
+      .map((k) => ({ at, kind: 'edit:remote_tickets', message: `Linked ${k}` })),
+    ...[...had]
+      .filter((k) => !has.has(k))
+      .map((k) => ({ at, kind: 'edit:remote_tickets', message: `Unlinked ${k}` })),
+  ];
+}
+
 /** The prompt a run started from the board gets: the title, then the description. */
-export function issuePrompt(issue: Pick<Issue, 'title' | 'description'>): string {
-  return issue.description.trim() ? `${issue.title}\n\n${issue.description.trim()}` : issue.title;
+export function issuePrompt(
+  issue: Pick<Issue, 'title' | 'description'> & { remote_tickets?: RemoteLink[] },
+): string {
+  const parts = [issue.title, issue.description.trim()];
+  // The tracker's tickets this task works on: the agent reads them with the project's ticket command.
+  const links = issue.remote_tickets ?? [];
+  if (links.length)
+    parts.push(
+      [
+        'Remote tickets:',
+        ...links.map((l) => `- ${l.key}${l.title ? ` ${l.title}` : ''}${l.url ? ` (${l.url})` : ''}`),
+      ].join('\n'),
+    );
+  return parts.filter(Boolean).join('\n\n');
 }
 
 export class IssueService {
@@ -345,6 +404,51 @@ export class IssueService {
     });
   }
 
+  /**
+   * Makes one Backlog task per remote ticket, linked to it, in one write. A ticket another task
+   * already links is skipped and named with that task, so promoting twice never duplicates work.
+   * Backlog, not Todo: agent pickup only takes Todo tasks, so nothing starts until a person moves it.
+   */
+  async promote(raw: unknown): Promise<{ created: IssueView[]; skipped: { key: string; task: string }[] }> {
+    const { project, tickets } = PromoteInput.parse(raw);
+    const prefix = await this.prefix(project);
+    const result = await this.serial(project, async () => {
+      const { board, runs } = await this.sync(project);
+      const owner = new Map<string, string>();
+      for (const i of board.items)
+        if (!i.archived_at) for (const l of i.remote_tickets) owner.set(l.key, issueKey(prefix, i.number));
+      const at = this.now();
+      let next = board.next;
+      const made: Issue[] = [];
+      const skipped: { key: string; task: string }[] = [];
+      for (const ticket of unique(tickets)) {
+        const task = owner.get(ticket.key);
+        if (task) {
+          skipped.push({ key: ticket.key, task });
+          continue;
+        }
+        const issue = Issue.parse({
+          number: next++,
+          title: (ticket.title || ticket.key).slice(0, 200),
+          description: ticket.url ? `From ${ticket.key}: ${ticket.url}` : `From ${ticket.key}.`,
+          status: 'backlog',
+          status_at: at,
+          remote_tickets: [ticket],
+          created_by: 'you',
+          events: [{ at, kind: 'created', message: `Created from ${ticket.key}` }],
+          created_at: at,
+          updated_at: at,
+        });
+        owner.set(ticket.key, issueKey(prefix, issue.number));
+        made.push(issue);
+      }
+      if (made.length) await this.write(project, { ...board, next, items: [...board.items, ...made] });
+      return { created: made.map((i) => this.view(prefix, i, runs)), skipped };
+    });
+    if (result.created.length) this.deps.changed?.();
+    return result;
+  }
+
   async create(raw: unknown, extra: { review?: Issue['review'] } = {}): Promise<IssueView> {
     const input = CreateInput.parse(raw);
     const created = await this.serial(input.project, async () => {
@@ -359,6 +463,7 @@ export class IssueService {
         priority: input.priority,
         jira_key: input.jira_key || undefined,
         created_by: input.created_by,
+        remote_tickets: input.remote_tickets,
         ...(extra.review ? { review: extra.review } : {}),
         events: [{ at, kind: 'created', message: 'Created' }],
         created_at: at,
@@ -372,7 +477,8 @@ export class IssueService {
   }
 
   async update(raw: unknown): Promise<IssueView> {
-    const { project, key, assignee, start_date, due_date, blocked_by, ...patch } = UpdateInput.parse(raw);
+    const { project, key, assignee, start_date, due_date, blocked_by, remote_tickets, ...patch } =
+      UpdateInput.parse(raw);
     if (assignee && !this.deps.agentName) throw new Conflict('Agents are not available.');
     const agentName = assignee ? await this.deps.agentName!(assignee) : undefined;
     const prefix = await this.prefix(project);
@@ -395,6 +501,7 @@ export class IssueService {
           message: assignee ? `Assigned to ${agentName}` : 'Removed the agent',
         });
       }
+      next = relink(next, remote_tickets, at, events);
       const start = start_date === undefined ? issue.start_date : (start_date ?? undefined);
       const due = due_date === undefined ? issue.due_date : (due_date ?? undefined);
       if (start && due && due < start) throw new Conflict('The due date is before the start date.');
@@ -724,7 +831,7 @@ export class IssueService {
         runId = await this.deps.submit({
           project,
           prompt: issuePrompt(issue),
-          ...(issue.jira_key ? { jiraKey: issue.jira_key } : {}),
+          ...(jiraKeyOf(issue) ? { jiraKey: jiraKeyOf(issue) } : {}),
           ...(issue.assignee ? { agent: issue.assignee } : {}),
           ...(gate?.kind === 'stack' ? { stackOn: gate.branch } : {}),
         });

@@ -507,6 +507,10 @@
                   "requestType": "Empty",
                   "responseType": "Snapshot"
                 },
+                "PromoteTickets": {
+                  "requestType": "SettingsUpdate",
+                  "responseType": "Snapshot"
+                },
                 "DismissInboxItem": {
                   "requestType": "SettingsUpdate",
                   "responseType": "Text"

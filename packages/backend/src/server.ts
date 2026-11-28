@@ -369,6 +369,11 @@ export async function startBackend(options: ServerOptions) {
       },
       GetInbox: async () => ({ json: JSON.stringify(await service.inbox()) }),
       GetVersions: async () => ({ json: JSON.stringify(changes.versions()) }),
+      PromoteTickets: async (request) => ({
+        json: JSON.stringify(
+          await service.issues.promote({ ...jsonObject(request.json), project: request.project }),
+        ),
+      }),
       DismissInboxItem: async (request) => {
         await service.dismissInbox(jsonObject(request.json));
         return { text: 'dismissed' };

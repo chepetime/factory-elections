@@ -1,4 +1,5 @@
-// The summary under a ticket's title: status, priority, agent, creator, dates and feature.
+// The summary under a ticket's title: status, priority, agent, creator, dates, feature and the
+// remote tickets it works on.
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { issueCreator } from '@factory/core';
@@ -10,6 +11,7 @@ import {
 } from '@/components/issue-editor';
 import { type IssueView } from '@/lib/issues';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { RemoteTicketsField } from '@/components/remote-tickets-field';
 
 type SummaryAgent = { id: string; name: string; avatar: string; archived: boolean };
 
@@ -124,6 +126,10 @@ export function TaskSummary({
           <span className="font-mono text-xs">{issue.jira_key}</span>
         </SummaryItem>
       )}
+      <div className="col-span-full flex min-w-0 flex-col gap-0.5">
+        <span className="text-xs text-muted-foreground">Remote tickets</span>
+        <RemoteTicketsField project={project} issueKey={issue.key} links={issue.remote_tickets} />
+      </div>
     </div>
   );
 }

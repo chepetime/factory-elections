@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import type { RemoteTicket } from '@factory/core';
 import { TicketCards } from '@/components/remote-ticket-cards';
 
@@ -55,7 +55,7 @@ const meta = {
       },
     },
   },
-  args: { tickets: full, raw: JSON.stringify(full), project: 'demo' },
+  args: { tickets: full, raw: JSON.stringify(full), project: 'demo', onPromote: fn(async () => {}) },
 } satisfies Meta<typeof TicketCards>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -70,6 +70,29 @@ export const Cards: Story = {
     await userEvent.type(canvas.getByRole('searchbox', { name: 'Search tickets' }), 'mika');
     await expect(canvas.getAllByRole('article')).toHaveLength(1);
     await expect(canvas.getByText('1 of 3 tickets')).toBeVisible();
+  },
+};
+
+/** A linked ticket links to its task; the others can be selected and made into tasks in bulk. */
+export const Promote: Story = {
+  args: { linked: { '#217': 'DEM-4' } },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('link', { name: 'Task DEM-4' })).toBeVisible();
+    await expect(canvas.queryByRole('checkbox', { name: 'Select #217' })).toBeNull();
+    await userEvent.click(canvas.getByRole('button', { name: 'Select the 2 shown without a task' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Create 2 tasks' }));
+    await expect(args.onPromote).toHaveBeenCalledWith([
+      {
+        key: '#219',
+        title: "Leaving an organization keeps the member's team memberships",
+        url: 'https://github.com/acme/app/issues/219',
+      },
+      {
+        key: 'PROJ-12',
+        title: 'Export ballots as CSV with the precinct totals and a checksum row at the end of each file',
+      },
+    ]);
   },
 };
 

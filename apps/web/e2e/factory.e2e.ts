@@ -181,7 +181,7 @@ async function page(path: string): Promise<Page> {
 
 test('the task list shows the seeded task at the approval gate', async () => {
   const p = await page('/projects/demo/tasks');
-  await p.getByRole('heading', { name: 'Tasks', exact: true }).waitFor();
+  await p.getByRole('heading', { name: 'Tasks', exact: true, level: 1 }).waitFor();
   await p.getByText('Add the feature file').first().waitFor();
   await p.close();
 });

@@ -839,3 +839,70 @@ test('reads take no lock, and a write in one project does not hold another proje
   await writing;
   assert.ok((await service.list('change-elections')).items.some((i) => i.title === 'Held write'));
 });
+
+test('promoting remote tickets makes linked Backlog tasks once, and skips tickets already linked', async (t) => {
+  const { service } = await setup(t);
+  const bug = { key: '#219', title: 'Leaving keeps memberships', url: 'https://github.com/o/r/issues/219' };
+  const first = await service.promote({
+    project: 'change-elections',
+    tickets: [bug, { key: '#217', title: 'Support console' }, bug],
+  });
+  assert.deepEqual(
+    first.created.map((i) => [i.title, i.status, i.remote_tickets.map((l) => l.key), i.description]),
+    [
+      ['Leaving keeps memberships', 'backlog', ['#219'], 'From #219: https://github.com/o/r/issues/219'],
+      ['Support console', 'backlog', ['#217'], 'From #217.'],
+    ],
+  );
+  assert.deepEqual(first.skipped, []);
+  const again = await service.promote({ project: 'change-elections', tickets: [bug, { key: '#300' }] });
+  assert.deepEqual(again.skipped, [{ key: '#219', task: first.created[0]!.key }]);
+  assert.deepEqual(
+    again.created.map((i) => i.title),
+    ['#300'],
+    'a ticket without a title is named by its key',
+  );
+});
+
+test('a task links several remote tickets, and each link change is on its timeline', async (t) => {
+  const { service } = await setup(t);
+  const created = await service.create({ project: 'change-elections', title: 'Ship exports' });
+  assert.deepEqual(created.remote_tickets, []);
+  const linked = await service.update({
+    project: 'change-elections',
+    key: created.key,
+    remote_tickets: [
+      { key: 'VOTE-4' },
+      { key: '#12', url: 'https://github.com/o/r/issues/12' },
+      { key: 'VOTE-4' },
+    ],
+  });
+  assert.deepEqual(
+    linked.remote_tickets.map((l) => l.key),
+    ['VOTE-4', '#12'],
+  );
+  const unlinked = await service.update({
+    project: 'change-elections',
+    key: created.key,
+    remote_tickets: [{ key: '#12', url: 'https://github.com/o/r/issues/12' }],
+  });
+  assert.deepEqual(
+    unlinked.events.filter((e) => e.kind === 'edit:remote_tickets').map((e) => e.message),
+    ['Linked VOTE-4', 'Linked #12', 'Unlinked VOTE-4'],
+  );
+});
+
+test("a run's prompt lists the task's remote tickets", () => {
+  assert.equal(
+    issuePrompt({
+      title: 'Ship exports',
+      description: 'CSV first.',
+      remote_tickets: [
+        { key: 'VOTE-4', title: 'Exports' },
+        { key: '#12', url: 'https://github.com/o/r/issues/12' },
+      ],
+    }),
+    'Ship exports\n\nCSV first.\n\nRemote tickets:\n- VOTE-4 Exports\n- #12 (https://github.com/o/r/issues/12)',
+  );
+  assert.equal(issuePrompt({ title: 'Only a title', description: '' }), 'Only a title');
+});

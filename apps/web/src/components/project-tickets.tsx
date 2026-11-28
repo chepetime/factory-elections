@@ -6,17 +6,24 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { Button } from '@factory/ui/components/button';
+import { toast } from '@factory/ui/components/toast';
+import type { RemoteLink } from '@factory/core';
+import { promoteTickets } from '@/app/actions';
 import { TicketCards } from '@/components/remote-ticket-cards';
+import { issuesChanged } from '@/lib/issues-changed';
 import type { TicketList } from '@/lib/tickets';
 
 export function ProjectTickets({
   project,
   list,
   error,
+  linked,
 }: {
   project: string;
   list?: TicketList;
   error?: string;
+  /** Ticket key → the task that already links it. */
+  linked?: Record<string, string>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -70,7 +77,13 @@ export function ProjectTickets({
             </Link>
           </div>
         ) : tickets ? (
-          <TicketCards tickets={tickets} raw={list.text} project={project} />
+          <TicketCards
+            tickets={tickets}
+            raw={list.text}
+            project={project}
+            linked={linked}
+            onPromote={(selected) => promote(project, selected)}
+          />
         ) : !list.text ? (
           <p className="text-sm text-muted-foreground">No open tickets. Refresh to check for new work.</p>
         ) : (
@@ -90,4 +103,15 @@ export function ProjectTickets({
       </div>
     </section>
   );
+}
+
+/** Makes Backlog tasks of the tickets; the action refreshes this page, so their cards link the tasks. */
+async function promote(project: string, tickets: RemoteLink[]) {
+  const result = await promoteTickets(project, tickets);
+  if (result.error) {
+    toast.add({ title: 'Could not create tasks', description: result.error, type: 'error' });
+    return;
+  }
+  toast.add({ title: result.message ?? 'Done.', type: 'success' });
+  if (result.created?.length) issuesChanged();
 }

@@ -2,6 +2,7 @@
 // An issue is planned work with a key like CE-12; each factory run it starts is one of its runs.
 import { z } from 'zod';
 import { boardProblems } from './features.ts';
+import { RemoteLink } from './remote-tickets.ts';
 import { TaskId, type Stage, type TaskRecord } from './schemas.ts';
 import { commandAllowedIn } from './task-controls.ts';
 
@@ -75,6 +76,8 @@ export const Issue = z.object({
   /** Factory runs this issue started or wraps, oldest first. */
   runs: z.array(TaskId).default([]),
   jira_key: z.string().trim().min(1).max(100).optional(),
+  /** Tickets in the project's own tracker this task works on (Jira, GitHub Issues…), in link order. */
+  remote_tickets: z.array(RemoteLink).max(50).default([]),
   /** The agent that works this task; moving it to In progress starts that agent's session. */
   assignee: z.string().min(1).optional(),
   /** Who created it: `you`, the id of the agent that did, or `factory` for a wrapped run. */

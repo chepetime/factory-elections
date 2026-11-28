@@ -102,6 +102,11 @@ export const RPCS = {
    * board in this backend, and the backend's boot id. Clients poll it and reload lists only on change.
    */
   GetVersions: ['Empty', 'Snapshot'],
+  /**
+   * `json`: `{ tickets: [{ key, title?, url? }] }`. One Backlog task per remote ticket, linked to
+   * it; tickets already linked are skipped. Returns `{ created, skipped: [{ key, task }] }`.
+   */
+  PromoteTickets: ['SettingsUpdate', 'Snapshot'],
   /** `json`: `{ id }`; `project` is unused. */
   DismissInboxItem: ['SettingsUpdate', 'Text'],
   /** Tends task `id`'s PR now (and resumes a stopped one); empty `id`: one pass over every tended PR. */

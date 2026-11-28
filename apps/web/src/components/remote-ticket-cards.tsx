@@ -1,9 +1,10 @@
 'use client';
 // Remote ticket cards: search, label filters and one card per ticket from the project's tracker.
-import { ExternalLink, MessageSquare, Search, User } from 'lucide-react';
+import { ExternalLink, ListPlus, MessageSquare, Search, SquareArrowOutUpRight, User } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import type { RemoteTicket } from '@factory/core';
+import type { RemoteLink, RemoteTicket } from '@factory/core';
+import { Button } from '@factory/ui/components/button';
 import { Input } from '@factory/ui/components/input';
 import { cn } from '@factory/ui/lib/utils';
 import { LocalTime } from '@/components/local-time';
@@ -11,17 +12,48 @@ import { LocalTime } from '@/components/local-time';
 /** Labels offered as filters: the most used ones, so a long tail does not crowd the bar. */
 const LABEL_FILTERS = 12;
 
+/** What a task keeps of a ticket: its key, title and link. */
+const linkOf = (t: RemoteTicket): RemoteLink => ({
+  key: t.key,
+  title: t.title,
+  ...(t.url ? { url: t.url } : {}),
+});
+
 export function TicketCards({
   tickets,
   raw,
   project,
+  linked = {},
+  onPromote,
 }: {
   tickets: RemoteTicket[];
   raw: string;
   project: string;
+  /** Ticket key → the key of the task that already links it. */
+  linked?: Record<string, string>;
+  /** Makes one Backlog task per ticket; absent hides the promote controls. */
+  onPromote?: (tickets: RemoteLink[]) => Promise<void>;
 }) {
   const [query, setQuery] = useState('');
   const [label, setLabel] = useState<string>();
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const promote = async (list: RemoteTicket[]) => {
+    if (!onPromote || !list.length) return;
+    setBusy(true);
+    try {
+      await onPromote(list.map(linkOf));
+      setSelected(new Set());
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggle = (key: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const labels = useMemo(() => {
     const counts = new Map<string, { color?: string; count: number }>();
     for (const t of tickets)
@@ -85,18 +117,41 @@ export function TicketCards({
           </div>
         )}
       </div>
-      <p role="status" className="text-xs text-muted-foreground">
-        {shown.length === tickets.length
-          ? `${tickets.length} ticket${tickets.length === 1 ? '' : 's'}`
-          : `${shown.length} of ${tickets.length} tickets`}
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <p role="status" className="text-xs text-muted-foreground">
+          {shown.length === tickets.length
+            ? `${tickets.length} ticket${tickets.length === 1 ? '' : 's'}`
+            : `${shown.length} of ${tickets.length} tickets`}
+        </p>
+        {onPromote && (
+          <SelectionBar
+            open={shown.filter((t) => !linked[t.key])}
+            selected={tickets.filter((t) => selected.has(t.key))}
+            busy={busy}
+            onSelect={(keys) => setSelected(new Set(keys))}
+            onPromote={promote}
+          />
+        )}
+      </div>
       {shown.length === 0 ? (
         <p className="text-sm text-muted-foreground">No ticket matches. Clear the search or the label.</p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((t) => (
             <li key={t.key}>
-              <TicketCard ticket={t} />
+              <TicketCard
+                ticket={t}
+                project={project}
+                task={linked[t.key]}
+                {...(onPromote
+                  ? {
+                      selected: selected.has(t.key),
+                      busy,
+                      onToggle: () => toggle(t.key),
+                      onPromote: () => promote([t]),
+                    }
+                  : {})}
+              />
             </li>
           ))}
         </ul>
@@ -122,10 +177,78 @@ export function TicketCards({
   );
 }
 
-function TicketCard({ ticket: t }: { ticket: RemoteTicket }) {
+/** Select the open tickets shown, and make tasks of the selected ones. */
+function SelectionBar({
+  open,
+  selected,
+  busy,
+  onSelect,
+  onPromote,
+}: {
+  open: RemoteTicket[];
+  selected: RemoteTicket[];
+  busy: boolean;
+  onSelect: (keys: string[]) => void;
+  onPromote: (tickets: RemoteTicket[]) => void;
+}) {
+  if (!open.length && !selected.length) return null;
   return (
-    <article className="flex h-full flex-col gap-3 rounded-xl border bg-card p-4 text-sm shadow-xs transition-colors hover:border-foreground/20">
+    <div role="group" aria-label="Selected tickets" className="flex items-center gap-2 text-xs">
+      {selected.length ? (
+        <>
+          <span className="font-medium tabular-nums">{selected.length} selected</span>
+          <Button size="sm" disabled={busy} onClick={() => onPromote(selected)}>
+            <ListPlus aria-hidden />
+            {busy ? 'Creating…' : `Create ${selected.length === 1 ? 'task' : `${selected.length} tasks`}`}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onSelect([])}>
+            Clear
+          </Button>
+        </>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={() => onSelect(open.map((t) => t.key))}>
+          Select the {open.length} shown without a task
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function TicketCard({
+  ticket: t,
+  project,
+  task,
+  selected,
+  busy,
+  onToggle,
+  onPromote,
+}: {
+  ticket: RemoteTicket;
+  project: string;
+  /** The task that already links this ticket. */
+  task?: string | undefined;
+  selected?: boolean;
+  busy?: boolean;
+  onToggle?: () => void;
+  onPromote?: () => void;
+}) {
+  return (
+    <article
+      className={cn(
+        'flex h-full flex-col gap-3 rounded-xl border bg-card p-4 text-sm shadow-xs transition-colors hover:border-foreground/20',
+        selected && 'border-primary/60 ring-1 ring-primary/40',
+      )}
+    >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {onToggle && !task && (
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={onToggle}
+            aria-label={`Select ${t.key}`}
+            className="size-4 accent-primary"
+          />
+        )}
         <span className="font-mono font-medium text-foreground/80">{t.key}</span>
         {t.type && <span>{t.type}</span>}
         {t.state && (
@@ -164,7 +287,39 @@ function TicketCard({ ticket: t }: { ticket: RemoteTicket }) {
         </ul>
       )}
       <TicketFooter ticket={t} />
+      <TaskLink project={project} task={task} busy={busy} onPromote={onPromote} />
     </article>
+  );
+}
+
+/** The task this ticket became, or the button that makes one. */
+function TaskLink({
+  project,
+  task,
+  busy,
+  onPromote,
+}: {
+  project: string;
+  task?: string | undefined;
+  busy?: boolean | undefined;
+  onPromote?: (() => void) | undefined;
+}) {
+  if (task)
+    return (
+      <Link
+        href={`/projects/${project}/tasks/${task}`}
+        className="inline-flex items-center gap-1.5 self-start rounded-md text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <SquareArrowOutUpRight aria-hidden className="size-3.5" />
+        Task {task}
+      </Link>
+    );
+  if (!onPromote) return null;
+  return (
+    <Button size="sm" variant="outline" className="self-start" disabled={busy} onClick={onPromote}>
+      <ListPlus aria-hidden />
+      Create task
+    </Button>
   );
 }
 

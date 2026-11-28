@@ -21,6 +21,14 @@ export const RemoteTicket = z.object({
 });
 export type RemoteTicket = z.infer<typeof RemoteTicket>;
 
+/** A task's link to a ticket in the project's tracker. A task can have several; see `Issue`. */
+export const RemoteLink = z.object({
+  key: z.string().trim().min(1).max(100),
+  title: z.string().trim().max(300).optional(),
+  url: z.url().max(2000).optional(),
+});
+export type RemoteLink = z.infer<typeof RemoteLink>;
+
 type Json = Record<string, unknown>;
 const object = (v: unknown): Json | undefined =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : undefined;

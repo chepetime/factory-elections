@@ -89,6 +89,7 @@ function issue(run?: { id: string; stage: TaskRecord['stage']; waiting?: boolean
     priority: 'none' as const,
     runs: run ? [run.id] : [],
     blocked_by: [] as string[],
+    remote_tickets: [],
     comments: [],
     events: [],
     created_at: '2026-01-01T00:00:00.000Z',

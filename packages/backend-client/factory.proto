@@ -111,6 +111,7 @@ service Factory {
   rpc AddExperiment(SettingsUpdate) returns (Snapshot);
   rpc GetInbox(Empty) returns (Snapshot);
   rpc GetVersions(Empty) returns (Snapshot);
+  rpc PromoteTickets(SettingsUpdate) returns (Snapshot);
   rpc DismissInboxItem(SettingsUpdate) returns (Text);
   rpc TendPullRequests(Target) returns (Snapshot);
   rpc ListTickets(Target) returns (Snapshot);

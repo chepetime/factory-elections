@@ -41,8 +41,15 @@ import {
   followUpIssueRun,
   moveIssueRun,
   updateIssueRun,
+  promoteTicketsRun,
 } from '@/lib/issues';
-import { HOME_BACKGROUNDS, IssueStatus, USER_PROVIDERS, type HomeBackground } from '@factory/core';
+import {
+  HOME_BACKGROUNDS,
+  IssueStatus,
+  USER_PROVIDERS,
+  type HomeBackground,
+  type RemoteLink,
+} from '@factory/core';
 import {
   saveUserSettingsRun,
   testProviderRun,
@@ -480,6 +487,8 @@ export async function updateIssue(
     start_date?: string | null;
     due_date?: string | null;
     blocked_by?: string[];
+    /** The whole new list of linked tracker tickets. */
+    remote_tickets?: RemoteLink[];
   },
 ): Promise<ActionState> {
   if (!isProjectName(project) || !ISSUE_KEY.test(key)) return { error: 'Invalid task.' };
@@ -487,6 +496,24 @@ export async function updateIssue(
   revalidatePath(`/projects/${project}/tasks`, 'layout');
   if (patch.assignee !== undefined) revalidatePath('/projects/[project]/agents', 'layout');
   return updated.ok ? { message: 'Saved.' } : { error: updated.error };
+}
+
+/** Promotes remote tickets to Backlog tasks: one each, linked; already linked ones are skipped. */
+export async function promoteTickets(
+  project: string,
+  tickets: RemoteLink[],
+): Promise<ActionState & { created?: string[] }> {
+  if (!isProjectName(project) || !tickets.length) return { error: 'Choose a ticket first.' };
+  const promoted = await promoteTicketsRun(project, tickets);
+  revalidatePath(`/projects/${project}`, 'layout');
+  if (!promoted.ok) return { error: promoted.error };
+  const { created, skipped } = promoted.value;
+  const made = created.map((i) => i.key);
+  const parts = [
+    made.length ? `Created ${made.length === 1 ? 'task' : `${made.length} tasks`} ${made.join(', ')}.` : '',
+    skipped.length ? `Already linked: ${skipped.map((s) => `${s.key} → ${s.task}`).join(', ')}.` : '',
+  ];
+  return { message: parts.filter(Boolean).join(' '), created: made };
 }
 
 export async function commentIssue(_prev: ActionState, form: FormData): Promise<ActionState> {
