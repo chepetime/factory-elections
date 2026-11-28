@@ -10,12 +10,16 @@ describe('mentions in comments', () => {
     const html = renderToStaticMarkup(
       <Markdown
         text="@devin Resolve the conflicts, ping @nobody, not `@devin`"
-        mentions={{ devin: agents[0]! }}
+        mentions={{ devin: { ...agents[0]!, href: '/projects/demo/agents/devin' } }}
       />,
     );
+    // Agent pages live under a project; a bare /agents/<id> has no route.
     expect(html).toMatch(
-      /<a [^>]*href="\/agents\/devin"[^>]*><span aria-hidden="true"[^>]*>🐸<\/span>Devin<\/a> Resolve/,
+      /<a [^>]*href="\/projects\/demo\/agents\/devin"[^>]*><span aria-hidden="true"[^>]*>🐸<\/span>Devin<\/a> Resolve/,
     );
+    const unlinked = renderToStaticMarkup(<Markdown text="@devin hi" mentions={{ devin: agents[0]! }} />);
+    expect(unlinked).not.toContain('<a ');
+    expect(unlinked).toContain('Devin');
     expect(html).toContain('ping @nobody');
     expect(html).toContain('<code');
     expect(html).not.toContain('[@Devin]');
