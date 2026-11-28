@@ -324,6 +324,7 @@ export function GeneralForm({
 }) {
   const [value, setValue] = useState(initial);
   const [provider, setProvider] = useState(() => parseModelRef(initial.model).provider);
+  const supportsPickup = provider === 'claude';
   const { pending, state, save } = useAgentSave(id);
   const f = useId();
   const set = <K extends keyof General>(key: K, v: General[K]) => setValue({ ...value, [key]: v });
@@ -333,7 +334,7 @@ export function GeneralForm({
       className="flex flex-col"
       onSubmit={(e) => {
         e.preventDefault();
-        save(value);
+        save({ ...value, auto_pickup: supportsPickup && value.auto_pickup });
       }}
     >
       <div className="divide-y">
@@ -377,7 +378,6 @@ export function GeneralForm({
               setValue({
                 ...value,
                 model: models[next][0]?.id ?? '',
-                auto_pickup: next === 'claude' && value.auto_pickup,
               });
             }}
           />
@@ -414,11 +414,11 @@ export function GeneralForm({
               id={`${f}-pickup`}
               type="checkbox"
               className="size-4"
-              checked={value.auto_pickup}
-              disabled={provider !== 'claude'}
+              checked={supportsPickup && value.auto_pickup}
+              disabled={!supportsPickup}
               onChange={(e) => set('auto_pickup', e.target.checked)}
             />
-            {value.auto_pickup ? 'On' : 'Off: start each task yourself'}
+            {supportsPickup ? (value.auto_pickup ? 'On' : 'Off: start each task yourself') : 'Unavailable'}
           </label>
         </Row>
         <Row label="Concurrency" hint="Tasks it works at the same time, 1 to 5." htmlFor={`${f}-concurrency`}>
